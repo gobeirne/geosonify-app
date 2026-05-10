@@ -181,7 +181,7 @@
 <h4>The core idea</h4>
 <p>A full 9-character alphanumeric code like <code>91v91qsxr</code> encodes a location to roughly 2-metre precision. A nearby point — say, 66 metres away — might encode to <code>91v91qz8d</code>. These two codes share a long common prefix: <code>91v91q</code>. The only difference is the final three characters. Delta encoding exploits this: instead of transmitting the full second code, you only transmit what changed — <code>z8d</code>. The receiver, who already has the first code, can reconstruct the second by replacing the last 3 characters of <code>91v91qsxr</code> with <code>z8d</code>.</p>
 <p>The format looks like this:</p>
-<pre>91v91qsxr~z8d~trv~opf~…</pre>
+<pre>91v91qsxr~z8d~trv~ropf~1x1a2~…</pre>
 <p>The first code is transmitted in full. Each subsequent tilde-separated segment is a suffix delta — just the characters that differ from the previous code, always from the right. The receiver reconstructs each full code by taking the appropriate prefix from the previous code and appending the delta.</p>
 
 <h4>Gear changes</h4>
