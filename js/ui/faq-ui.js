@@ -267,7 +267,7 @@
       parts.push(`</div>`);
     }
 
-    // ── Credits — native .card matching original style ──
+// ── Credits — native .card matching original style ──
     if (data.credits && data.credits.lines && data.credits.lines.length) {
       parts.push(`
 <div class="card">
@@ -280,6 +280,13 @@
 </div>`);
     }
 
+    // ── Social image — in a card so it gets the white background and rounded edges ──
+    if (data.socialImage) {
+      parts.push(`
+<div class="card" style="overflow:hidden;">
+  <img src="${esc(data.socialImage.src)}" alt="${esc(data.socialImage.alt)}" style="width:100%;display:block;">
+</div>`);
+    }
     rootEl.innerHTML = parts.join('\n');
 
     // ── Wire up accordions ──
