@@ -308,7 +308,11 @@
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
         '<strong>NATO phonetic alphabet</strong> per ICAO Annex 10.',
       ]
-    }
+    },
+	socialImage: {
+  src: 'geosonify.png',
+  alt: 'geosonify!'  // ← translators replace this with their language's equivalent
+}
 
   }; // end GEOSONIFY_FAQ
 
