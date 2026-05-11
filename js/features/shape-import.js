@@ -158,6 +158,96 @@ const ShapeImport = (function () {
     return extractLargestRing(geometry);
   }
 
+  // ── Multi-group extraction (preserves all rings / polygons) ──
+
+  /**
+   * Extract ALL rings/linestrings/points from a GeoJSON geometry as
+   * separate groups.  Each group is an array of {lat, lon}.
+   * Returns array of groups: [{lat,lon}[], {lat,lon}[], ...]
+   */
+  function extractAllRings(geometry) {
+    if (!geometry) return [];
+
+    function ringToLatLon(ring) {
+      return ring.map(c => ({ lat: c[1], lon: c[0] }));
+    }
+
+    switch (geometry.type) {
+      case 'Point':
+        return [[{ lat: geometry.coordinates[1], lon: geometry.coordinates[0] }]];
+
+      case 'MultiPoint':
+        return geometry.coordinates.map(c => [{ lat: c[1], lon: c[0] }]);
+
+      case 'LineString':
+        return [geometry.coordinates.map(c => ({ lat: c[1], lon: c[0] }))];
+
+      case 'MultiLineString':
+        return geometry.coordinates
+          .filter(line => line.length > 0)
+          .map(line => line.map(c => ({ lat: c[1], lon: c[0] })));
+
+      case 'Polygon':
+        // Outer ring only (skip holes)
+        return [ringToLatLon(geometry.coordinates[0])];
+
+      case 'MultiPolygon':
+        // Outer ring of each polygon
+        return geometry.coordinates
+          .map(polygon => ringToLatLon(polygon[0]))
+          .filter(ring => ring.length > 0);
+
+      case 'GeometryCollection':
+        {
+          const groups = [];
+          for (const geom of (geometry.geometries || [])) {
+            groups.push(...extractAllRings(geom));
+          }
+          return groups;
+        }
+
+      default:
+        return [];
+    }
+  }
+
+  /**
+   * From a full GeoJSON object, extract ALL geometries as separate groups.
+   * Returns { groups: [{lat,lon}[],...], name: string }.
+   * `groups` will have length > 1 for multi-geometry data.
+   */
+  function extractAllFromGeoJSON(geojson) {
+    if (!geojson) return { groups: [], name: 'GeoJSON' };
+
+    let name = 'GeoJSON';
+    const groups = [];
+
+    if (geojson.type === 'FeatureCollection') {
+      for (const feature of (geojson.features || [])) {
+        if (!name || name === 'GeoJSON') {
+          if (feature.properties && feature.properties.name) {
+            name = feature.properties.name;
+          }
+        }
+        if (feature.geometry) {
+          groups.push(...extractAllRings(feature.geometry));
+        }
+      }
+    } else if (geojson.type === 'Feature') {
+      if (geojson.properties && geojson.properties.name) {
+        name = geojson.properties.name;
+      }
+      if (geojson.geometry) {
+        groups.push(...extractAllRings(geojson.geometry));
+      }
+    } else {
+      // Bare geometry
+      groups.push(...extractAllRings(geojson));
+    }
+
+    return { groups, name };
+  }
+
   // ── KML Parser ────────────────────────────────────────────
 
   function parseKML(kmlText) {
@@ -300,7 +390,8 @@ const ShapeImport = (function () {
     if (result.geojson) {
       const pts = extractLargestRing(result.geojson);
       if (pts.length > 0) {
-        return { coords: pts, name: result.display_name, type: result.type };
+        const groups = extractAllRings(result.geojson);
+        return { coords: pts, name: result.display_name, type: result.type, groups };
       }
     }
 
@@ -320,7 +411,7 @@ const ShapeImport = (function () {
    * Returns an array of candidate objects, sorted with relations first,
    * then by descending point count (longest geometry first).
    * Each candidate: { display_name, osm_type, osm_id, type, pointCount,
-   *                   lengthKm, coords, geojson }
+   *                   lengthKm, coords }
    */
   async function fetchPlaceCandidates(placeName) {
     const url = 'https://nominatim.openstreetmap.org/search?' +
@@ -341,18 +432,16 @@ const ShapeImport = (function () {
       throw new Error(`No results found for "${placeName}"`);
     }
 
-    // Build candidate list with coords extracted
     const candidates = [];
     for (const r of results) {
       let coords = [];
       if (r.geojson) {
         coords = extractLargestRing(r.geojson);
       }
-      // Estimate length in km using bounding box diagonal as a rough proxy
+      // Estimate length in km via sampled segment sum
       let lengthKm = null;
       if (coords.length >= 2) {
         let totalDist = 0;
-        // Use a sampled sum of segments for a rough linear length
         const step = Math.max(1, Math.floor(coords.length / 200));
         for (let i = 0; i < coords.length - step; i += step) {
           const a = coords[i], b = coords[i + step];
@@ -364,10 +453,10 @@ const ShapeImport = (function () {
       }
       candidates.push({
         display_name: r.display_name,
-        osm_type: r.osm_type,   // 'relation', 'way', 'node'
+        osm_type: r.osm_type,
         osm_id: r.osm_id,
-        type: r.type,            // e.g. 'route', 'path', 'administrative'
-        class: r.class,          // e.g. 'highway', 'boundary'
+        type: r.type,
+        class: r.class,
         pointCount: coords.length,
         lengthKm: lengthKm,
         coords: coords,
@@ -376,7 +465,7 @@ const ShapeImport = (function () {
       });
     }
 
-    // Sort: relations first, then by descending point count
+    // Relations first (they capture whole trails), then longest
     candidates.sort((a, b) => {
       if (a.osm_type === 'relation' && b.osm_type !== 'relation') return -1;
       if (b.osm_type === 'relation' && a.osm_type !== 'relation') return 1;
@@ -417,7 +506,10 @@ const ShapeImport = (function () {
       throw new Error(`OSM relation ${relationId} has no usable geometry`);
     }
 
-    return { coords, name, type: el.tags && el.tags.type };
+    // Also extract separate groups for multi-polygon support
+    const groups = overpassRelationToGroups(el);
+
+    return { coords, name, type: el.tags && el.tags.type, groups };
   }
 
   /**
@@ -479,6 +571,42 @@ const ShapeImport = (function () {
         .filter(m => m.type === 'way' && m.geometry)
         .map(m => m.geometry.map(n => ({ lat: n.lat, lon: n.lon })));
       return mergeWays(allWays);
+    }
+  }
+
+  /**
+   * Convert an Overpass relation element into separate coordinate groups.
+   * For multipolygons, each closed outer ring becomes its own group.
+   * Returns array of {lat,lon}[] groups.
+   */
+  function overpassRelationToGroups(element) {
+    const members = element.members || [];
+    const relType = element.tags && element.tags.type;
+
+    if (relType === 'multipolygon' || relType === 'boundary') {
+      const outerWays = members
+        .filter(m => m.type === 'way' && (m.role === 'outer' || m.role === ''))
+        .map(m => (m.geometry || []).map(n => ({ lat: n.lat, lon: n.lon })));
+
+      if (outerWays.length === 0) {
+        const anyWays = members
+          .filter(m => m.type === 'way' && m.geometry)
+          .map(m => m.geometry.map(n => ({ lat: n.lat, lon: n.lon })));
+        const merged = mergeWays(anyWays);
+        return merged.length > 0 ? [merged] : [];
+      }
+
+      // Merge ways into separate closed rings
+      const rings = mergeWaysToRings(outerWays);
+      return rings.filter(r => r.length > 0);
+
+    } else {
+      // Route or other — concatenate all ways as a single group
+      const allWays = members
+        .filter(m => m.type === 'way' && m.geometry)
+        .map(m => m.geometry.map(n => ({ lat: n.lat, lon: n.lon })));
+      const merged = mergeWays(allWays);
+      return merged.length > 0 ? [merged] : [];
     }
   }
 
@@ -552,6 +680,102 @@ const ShapeImport = (function () {
   }
 
   /**
+   * Merge way segments into separate closed rings.
+   * Each closed ring becomes its own group.
+   * Unclosed leftover segments become a single merged path.
+   */
+  function mergeWaysToRings(ways) {
+    if (ways.length === 0) return [];
+    if (ways.length === 1) return [ways[0]];
+
+    const EPSILON = 0.000001;
+    function endpointsMatch(a, b) {
+      return Math.abs(a.lat - b.lat) < EPSILON &&
+             Math.abs(a.lon - b.lon) < EPSILON;
+    }
+    function isClosed(ring) {
+      return ring.length >= 3 && endpointsMatch(ring[0], ring[ring.length - 1]);
+    }
+
+    // Deep-copy segments
+    let segments = ways.map(w => [...w]);
+    const rings = [];
+
+    // First pass: any segment that's already a closed ring
+    segments = segments.filter(seg => {
+      if (isClosed(seg)) {
+        rings.push(seg);
+        return false;
+      }
+      return true;
+    });
+
+    // Iteratively merge remaining segments into chains, extract when closed
+    let maxIter = segments.length * segments.length + 10;
+    while (segments.length > 0 && maxIter-- > 0) {
+      // Start a new chain from the first remaining segment
+      let chain = segments.shift();
+
+      let changed = true;
+      while (changed && segments.length > 0) {
+        changed = false;
+
+        // Check if chain is now closed
+        if (isClosed(chain)) {
+          rings.push(chain);
+          chain = null;
+          break;
+        }
+
+        const tail = chain[chain.length - 1];
+        const head = chain[0];
+
+        for (let i = 0; i < segments.length; i++) {
+          const seg = segments[i];
+          if (seg.length === 0) { segments.splice(i, 1); changed = true; break; }
+
+          const segHead = seg[0];
+          const segTail = seg[seg.length - 1];
+
+          if (endpointsMatch(tail, segHead)) {
+            chain.push(...seg.slice(1));
+            segments.splice(i, 1);
+            changed = true;
+            break;
+          } else if (endpointsMatch(tail, segTail)) {
+            chain.push(...seg.reverse().slice(1));
+            segments.splice(i, 1);
+            changed = true;
+            break;
+          } else if (endpointsMatch(head, segTail)) {
+            chain.unshift(...seg.slice(0, -1));
+            segments.splice(i, 1);
+            changed = true;
+            break;
+          } else if (endpointsMatch(head, segHead)) {
+            chain.unshift(...seg.reverse().slice(0, -1));
+            segments.splice(i, 1);
+            changed = true;
+            break;
+          }
+        }
+      }
+
+      if (chain) {
+        // Chain didn't close — add as its own group
+        rings.push(chain);
+      }
+    }
+
+    // Any leftover orphan segments
+    for (const seg of segments) {
+      if (seg.length > 0) rings.push(seg);
+    }
+
+    return rings;
+  }
+
+  /**
    * Fetch GeoJSON from a URL and extract coordinates.
    */
   async function fetchGeoJSON(url) {
@@ -561,8 +785,11 @@ const ShapeImport = (function () {
     const pts = extractFromGeoJSON(geojson);
     if (pts.length === 0) throw new Error('No usable geometry found in GeoJSON');
 
+    // Extract all groups for multi-polygon support
+    const { groups, name: gjName } = extractAllFromGeoJSON(geojson);
+
     // Try to get a name from properties
-    let name = url.split('/').pop().split('?')[0] || 'GeoJSON';
+    let name = gjName || url.split('/').pop().split('?')[0] || 'GeoJSON';
     if (geojson.type === 'Feature' && geojson.properties && geojson.properties.name) {
       name = geojson.properties.name;
     } else if (geojson.type === 'FeatureCollection' && geojson.features) {
@@ -570,7 +797,7 @@ const ShapeImport = (function () {
       if (f) name = f.properties.name;
     }
 
-    return { coords: pts, name };
+    return { coords: pts, name, groups };
   }
 
   /**
@@ -581,11 +808,13 @@ const ShapeImport = (function () {
     const pts = extractFromGeoJSON(geojson);
     if (pts.length === 0) throw new Error('No usable geometry found in GeoJSON');
 
-    let name = 'GeoJSON';
+    const { groups, name: gjName } = extractAllFromGeoJSON(geojson);
+
+    let name = gjName || 'GeoJSON';
     if (geojson.type === 'Feature' && geojson.properties && geojson.properties.name) {
       name = geojson.properties.name;
     }
-    return { coords: pts, name };
+    return { coords: pts, name, groups };
   }
 
   /**
@@ -629,9 +858,11 @@ const ShapeImport = (function () {
     toGpxCoordArray: toGpxCoordArray,
     suggestEpsilon: suggestEpsilon,
     extractFromGeoJSON: extractFromGeoJSON,
+    extractAllFromGeoJSON: extractAllFromGeoJSON,
+    extractAllRings: extractAllRings,
     parseKML: parseKML,
 
-    // API fetchers (all return Promise<{coords, name}> except fetchGPX)
+    // API fetchers (all return Promise<{coords, name, groups?}> except fetchGPX)
     fetchWikidataGeometry: fetchWikidataGeometry,
     fetchPlaceGeometry: fetchPlaceGeometry,
     fetchPlaceCandidates: fetchPlaceCandidates,
@@ -640,7 +871,7 @@ const ShapeImport = (function () {
     fetchKML: fetchKML,
     fetchGPX: fetchGPX,
 
-    // File parsers (synchronous, return {coords, name})
+    // File parsers (synchronous, return {coords, name, groups?})
     parseGeoJSONText: parseGeoJSONText,
     parseKMLText: parseKMLText
   };
