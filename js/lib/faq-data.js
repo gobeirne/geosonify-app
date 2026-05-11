@@ -1,6 +1,6 @@
 /*
-  faq-data.js  —  js/lib/faq-data.js
-  Geosonify FAQ content — translatable data file.
+  faq-data.js  -  js/lib/faq-data.js
+  Geosonify FAQ content - translatable data file.
 
   To translate: copy this file, change GEOSONIFY_FAQ.lang,
   replace all 'q' and 'a' strings, keep the structure identical.
@@ -53,46 +53,56 @@
           {
             id: 'is-it-secure',
             q: 'Is Geosonify cryptographically secure? How can I trust it?',
-            a: `<p>The honest answer is: it depends on which mode you use, and you should understand the difference clearly.</p>
+            a: `<div style="background:var(--ios-light-gray,#f2f2f7);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;">
+  <strong>TL;DR</strong><br>
+  No passphrase → public encoding, anyone can read it.<br>
+  Grid passphrase → cryptographically keyed, protects the coordinate value, not surrounding metadata.<br>
+  AES URL encryption → standard authenticated encryption, recommended for sensitive use.
+</div>
 
-<h4>The three layers — and what each one actually does</h4>
+<p>The honest answer is: it depends on which mode you use, and you should understand the difference clearly.</p>
+
+<h4>The three layers - and what each one actually does</h4>
 
 <p><strong>1. Hierarchical encoding (no passphrase)</strong></p>
-<p>Without a passphrase, Geosonify codes are <em>not</em> secret. They are an open, deterministic mapping from coordinates to symbols. Anyone with the app can decode any code instantly. Think of it like a grid reference — it's a notation system, not a cipher. The code <code>thp9dahrg</code> encodes a location in the same way a postcode or what3words address does: publicly, by convention.</p>
+<p>Without a passphrase, Geosonify codes are <em>not</em> secret. They are an open, deterministic mapping from coordinates to symbols. Anyone with the app can decode any code instantly. Think of it like a grid reference - it's a notation system, not a cipher. The code <code>thp9dahrg</code> encodes a location in the same way a postcode or what3words address does: publicly, by convention.</p>
 <p>Use this when you want a compact, human-readable, grid-type-agnostic location code that you don't mind anyone decoding. The value here is interoperability and readability, not secrecy.</p>
 
 <p><strong>2. Grid passphrase (position-dependent shuffle)</strong></p>
-<p>When you add a passphrase, the encoding becomes genuinely cryptographic. At each encoding iteration, the grid is shuffled using a key derived from your passphrase combined with the sequence of cell indices chosen so far (the "chain"). The shuffle uses <strong>SHA3-512</strong> — a 512-bit output hash from the NIST-standardised Keccak family — to generate a per-cell sort key. Each cell gets its own independent SHA3-512 digest, computed from <code>passphrase | chain | cell_index</code>, and cells are sorted by these digests. This is a Fisher-Yates-style keyed permutation with a cryptographic PRF.</p>
-<p>The chain makes each iteration's shuffle depend on all previous choices, so the permutation at position <em>n</em> is conditioned on positions 0 through <em>n</em>−1. This is similar in structure to a block cipher in CBC mode — each symbol encrypted depends on all preceding symbols. There is no known shortcut to recovering earlier characters without knowing later ones.</p>
-<p>The entropy per iteration is log₂(grid size). For a 6×6 alphanumeric grid that's log₂(36) ≈ 5.17 bits per character. An 8-character code therefore carries roughly 41 bits of location entropy before passphrase-guessing is even considered. With a strong passphrase, brute-forcing the location from the code requires enumerating passphrases, not grid positions.</p>
+<p>When you add a passphrase, the mapping becomes dependent on a cryptographic key. At each encoding iteration, the grid is shuffled using a key derived from your passphrase combined with the sequence of cell indices chosen so far (the "chain"). The shuffle uses <strong>SHA3-512</strong> - a 512-bit output hash from the NIST-standardised Keccak family - to generate a per-cell sort key. Each cell gets its own independent SHA3-512 digest, computed from <code>passphrase | chain | cell_index</code>, and cells are sorted by these digests. This produces a cryptographically keyed permutation by sorting cells according to SHA3-512-derived values.</p>
+<p>The chaining intentionally couples each iteration to previous choices, preventing symbols from being decoded independently in isolation. No practical shortcut is currently known to us, though the scheme has not undergone formal cryptanalysis.</p>
+<p>The entropy per iteration is log₂(grid size). For a 6×6 alphanumeric grid that's log₂(36) ≈ 5.17 bits per character. An 8-character code over a 36-symbol grid corresponds to approximately 41 bits of positional search space before passphrase-guessing is even considered. With a strong passphrase, brute-forcing the location from the code requires enumerating passphrases, not grid positions.</p>
 <p><em>What the grid passphrase does not do:</em> it does not hide metadata. An observer can see the code exists, can see its length (and therefore approximate precision), can see which grid type it's in if they recognise the vocabulary (BIP39 words look like BIP39 words), and can make statistical guesses if they observe many codes from the same passphrase. It is a confidentiality scheme for the coordinate value, not a covert communications channel.</p>
 
 <p><strong>3. Hard URL encryption (AES-256-GCM)</strong></p>
-<p>The URL encryption layer is categorically stronger and hides everything — not just the coordinates but the grid type, number of points, path length, and any other structural metadata. It uses:</p>
+<p>The URL encryption layer provides substantially stronger and more conventional security guarantees, hiding everything - not just the coordinates but the grid type, number of points, path length, and any other structural metadata. It uses:</p>
 <ul>
-  <li><strong>PBKDF2</strong> with SHA-256, 100,000 iterations, and a random 16-byte salt for key derivation. This makes offline dictionary attacks expensive: each passphrase guess requires 100,000 SHA-256 compressions.</li>
-  <li><strong>AES-256-GCM</strong> for authenticated encryption. GCM provides both confidentiality and integrity — a wrong passphrase doesn't just produce garbage, it produces a detectable authentication failure (the 128-bit GCM tag won't verify), so there is no oracle to tell an attacker they're "getting warmer."</li>
+  <li><strong>PBKDF2</strong> with SHA-256, 100,000 iterations, and a random 16-byte salt for key derivation. This makes offline dictionary attacks expensive: each passphrase guess requires 100,000 PBKDF2-SHA256 iterations.</li>
+  <li><strong>AES-256-GCM</strong> for authenticated encryption. GCM provides both confidentiality and integrity - a wrong passphrase doesn't just produce garbage, it produces a detectable authentication failure (the 128-bit GCM tag won't verify), so there is no oracle to tell an attacker they're "getting warmer."</li>
   <li>A random 12-byte IV per encryption, meaning two encryptions of identical plaintexts produce different ciphertexts.</li>
   <li>Payload padding to the nearest 32 bytes, which obscures the exact length of the plaintext and prevents an attacker from inferring the number of waypoints or precision level from ciphertext size alone.</li>
 </ul>
-<p>The output is a single opaque Base64url blob in the URL: <code>?enc=…</code>. Without the passphrase, the URL reveals nothing — not that it's a location, not what app generated it, not how many points it contains.</p>
-<p>AES-256 with a random IV and proper key derivation is the same construction used in Signal, 1Password, and most modern TLS. There are no known practical attacks against it.</p>
+<p>The output is a single opaque Base64url blob in the URL: <code>?enc=…</code>. Without the passphrase, the payload appears as an opaque encrypted blob - it reveals no plaintext location or structural metadata about the encoded content.</p>
+<p>AES-256-GCM with salted PBKDF2-derived keys is a standard modern authenticated-encryption construction widely used across secure web and password-management systems. There are no known practical attacks against correctly implemented AES-256-GCM with proper key derivation.</p>
+<p>For strong security guarantees, the AES URL encryption layer should be preferred. The grid-passphrase mode is best understood as a cryptographically keyed encoding scheme rather than a replacement for standard authenticated encryption.</p>
 
 <h4>The trust question: "how do I verify this?"</h4>
-<p>Geosonify is a client-side web application — all the code that runs is the code you can read in your browser. There is no server involved in encoding or decoding; coordinates never leave your device unless you choose to share the code. You can:</p>
+<p>Geosonify is a client-side web application - all the code that runs is the code you can read in your browser. There is no server involved in encoding or decoding; coordinates never leave your device unless you choose to share the code. You can:</p>
 <ul>
   <li>Open DevTools → Sources and read every function involved in encryption. The key functions are <code>shuffleGridAndOrder</code> in <code>card-renderer.js</code> (grid passphrase) and <code>deriveEncryptionKey</code> / <code>encryptQueryString</code> in <code>index.html</code> (AES layer). They are unminified and commented.</li>
   <li>Verify that no network requests are made during encode/decode by watching the Network tab.</li>
-  <li>Save the page locally and run it offline — it works completely disconnected from the internet.</li>
+  <li>Save the page locally and run it offline - it works completely disconnected from the internet.</li>
   <li>Cross-check the cryptographic primitives: SHA3-512 is from the <code>@noble/hashes</code> library (audited, widely used); AES-GCM uses the browser's native <code>crypto.subtle</code> API (WebCrypto), which is implemented in the browser engine itself, not in JavaScript.</li>
 </ul>
-<p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (standardised by NIST as FIPS 202), AES-256-GCM (NIST FIPS 197 / SP 800-38D), PBKDF2 (NIST SP 800-132), and your browser's WebCrypto implementation — the same primitives that underpin most of the secure web.</p>
+<p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (standardised by NIST as FIPS 202), AES-256-GCM (NIST FIPS 197 / SP 800-38D), PBKDF2 (NIST SP 800-132), and your browser's WebCrypto implementation - the same primitives that underpin most of the secure web.</p>
 
 <h4>Honest limitations</h4>
 <ul>
+  <li><strong>The grid-passphrase scheme is experimental.</strong> The AES-based URL encryption relies on widely trusted standard primitives. The Geosonify grid-passphrase scheme, however, is a bespoke construction and has not undergone formal cryptanalysis or independent security audit. It is thoughtful and nontrivial, but it is not a proven cipher.</li>
+  <li><strong>Intended threat model.</strong> Geosonify is designed primarily to protect against casual observation, unintended disclosure, and offline interception of shared location data - not against nation-state adversaries or compromised devices.</li>
   <li><strong>Passphrase strength is everything.</strong> A weak passphrase makes any of these schemes weak. "hello" is not a passphrase. A 6-word diceware phrase or a random 20-character string is.</li>
   <li>The grid passphrase alone does not hide that a code exists, its approximate length, or potentially its grid vocabulary. If operational security requires hiding that a location is being communicated, use the AES URL encryption layer.</li>
-  <li>Obfuscation mode is explicitly <em>not</em> a security feature — it is cosmetic rearrangement useful for making codes look less obviously geographic. The UI labels it accordingly.</li>
+  <li>Obfuscation mode is explicitly <em>not</em> a security feature - it is cosmetic rearrangement useful for making codes look less obviously geographic. The UI labels it accordingly.</li>
   <li>Key management is your problem. If you share the passphrase over an insecure channel, that's the weakest link. Geosonify cannot protect you from that.</li>
 </ul>
 
@@ -117,16 +127,17 @@
           {
             id: 'how-obfuscation-works',
             q: 'How does obfuscation work?',
-            a: `<p>Obfuscation is a distinct mode from passphrase encryption, and it's important to understand what it does and doesn't do before using it.</p>
-<p><strong>The short version:</strong> obfuscation makes a code look like a different valid code, without a key. It is reversible by anyone with the app. It is <em>not</em> an encryption scheme, and the UI says so explicitly. Its purpose is to remove the hierarchical pattern that makes a plain code visually guessable — without requiring a shared secret.</p>
+            a: `<p><strong>TL;DR:</strong> Obfuscation removes visible locality patterns from codes, but provides no cryptographic security.</p>
+
+<p>Obfuscation is a visual scrambling layer, not a security boundary. It is reversible by anyone with the app. It is <em>not</em> an encryption scheme, and the UI says so explicitly. Its purpose is to remove the hierarchical pattern that makes a plain code visually guessable - without requiring a shared secret.</p>
 
 <h4>What obfuscation actually does</h4>
 <p>A plain hierarchical code like <code>thp9dahrg</code> has a subtle structural property: the first character constrains you to a large region of the world, the second narrows it, and so on. Someone who knows the grid could in principle narrow down a code's location by recognising common prefixes between nearby codes. The structure is also visually regular in a way that might flag a code as a location reference.</p>
 <p>Obfuscation scrambles the characters so that no such structure is visible, while preserving the property that the code can be deterministically reversed to its original. For example: <code>thp9dahrg</code> obfuscates to <code>hw8n0s8wg</code>.</p>
 <p>Here's what happens step by step:</p>
 <ol>
-  <li><strong>The final character is the seed.</strong> The last character — <code>g</code> — is not obfuscated. It stays in place. This is intentional and important: <code>g</code> has a fixed flat index in the grid. That index becomes the seed for everything that follows.</li>
-  <li><strong>A SHA3-512 keyed shuffle is generated from that seed.</strong> The seed string is constructed from the full set of cell indices (0 through N−1) combined with the seed index. This string is hashed with SHA3-512, and if the output is too short for the grid size, the hash is extended by hashing its own output iteratively until enough bytes are available. The resulting hash is divided into N equal chunks, each chunk is parsed as a hex integer, and cells are sorted by those integers — producing a deterministic permutation of the grid's N cells. This is the same family of SHA3-512 keyed permutation used in the passphrase mode, just seeded differently.</li>
+  <li><strong>The final character is the seed.</strong> The last character - <code>g</code> - is not obfuscated. It stays in place. This is intentional and important: <code>g</code> has a fixed flat index in the grid. That index becomes the seed for everything that follows.</li>
+  <li><strong>A deterministic SHA3-512-derived shuffle is generated from that seed.</strong> The hash output is expanded deterministically as needed to generate enough material to permute all N cells of the grid. This uses the same SHA3-512-based deterministic shuffling approach as the passphrase mode, but seeded differently.</li>
   <li><strong>Each non-final character is shifted by its distance from the end.</strong> The first 8 characters (<code>thp9dahr</code>) are looked up in the shuffled grid to get their indices. Then each one is shifted modulo N by its distance from the final character: the second-to-last shifts by 1, the third-to-last by 2, and so on. The character in position 0 (furthest from the end) shifts the most. This position-dependent shifting means the same character in two different positions produces two different output characters, which destroys the hierarchical prefix structure.</li>
   <li><strong>Shifted indices are mapped back through the shuffled grid to output symbols.</strong> The final character is appended unchanged.</li>
 </ol>
@@ -134,19 +145,20 @@
 <p>Reversing it is exactly the same process run backwards: take the final character, regenerate the same shuffle, reverse the position-dependent shifts, and recover <code>thp9dahrg</code>.</p>
 
 <h4>The final character is load-bearing</h4>
-<p>This is the most important operational property of obfuscation: <strong>the final character must be intact for the code to be decodable.</strong> In plain hierarchical mode, you can truncate a code from the right and simply lose precision — <code>thp9dahrg</code> becomes <code>thp9dah</code> which is a valid code for a slightly less precise location. This is useful for sharing approximate locations.</p>
-<p>Obfuscated codes do not have this property. The final character is the seed that the entire decode depends on. Strip it, and the shuffle used to encode the code can no longer be reconstructed. The remaining characters are meaningless — not a less-precise location, but complete noise. The code is simply broken.</p>
+<p>This is the most important operational property of obfuscation: <strong>the final character must be intact for the code to be decodable.</strong> In plain hierarchical mode, you can truncate a code from the right and simply lose precision - <code>thp9dahrg</code> becomes <code>thp9dah</code> which is a valid code for a slightly less precise location. This is useful for sharing approximate locations.</p>
+<p>Obfuscated codes do not have this property. The final character is the seed that the entire decode depends on. Strip it, and the shuffle used to encode the code can no longer be reconstructed. Without the final character, the original code cannot be reconstructed - it is not a less-precise location, but an undecodable one.</p>
 <p>This is a deliberate trade-off: obfuscation buys you pattern-hiding at the cost of the graceful truncation property.</p>
 
 <h4>Obfuscation and delta encoding</h4>
-<p>Obfuscation is fully compatible with delta-encoded paths. The key insight that makes this work is the same property already described: the final character of any obfuscated code is always identical to the final character of its unobfuscated counterpart, because it is never shifted. Delta codes are suffixes — they share the same final character as the full code they belong to. This means each delta can be obfuscated and de-obfuscated independently, using its own last character as the seed, without any knowledge of the full code it was derived from. In practice, delta encoding operates on raw unobfuscated codes internally, and obfuscation is applied to the first code and to each delta segment separately as a final step. The recipient reverses this: de-obfuscate each piece independently, then reconstruct the full codes from the deltas.</p>
+<p>Obfuscation is fully compatible with delta-encoded paths. The key insight that makes this work is the same property already described: the final character of any obfuscated code is always identical to the final character of its unobfuscated counterpart, because it is never shifted. Delta codes are suffixes - they share the same final character as the full code they belong to. This means each delta can be obfuscated and de-obfuscated independently, using its own last character as the seed, without any knowledge of the full code it was derived from. In practice, delta encoding operates on raw unobfuscated codes internally, and obfuscation is applied to the first code and to each delta segment separately as a final step. The recipient reverses this: de-obfuscate each piece independently, then reconstruct the full codes from the deltas.</p>
 
-<h4>What obfuscation doesn't do</h4>
+<h4>What obfuscation is and isn't</h4>
+<p>Obfuscation is fully reversible and one-to-one: every valid unobfuscated code maps deterministically to exactly one obfuscated form and back again. It is a permutation, not a lossy encoding or a hash.</p>
 <ul>
-  <li>It doesn't require a shared key — anyone with Geosonify can decode any obfuscated code immediately.</li>
+  <li>It doesn't require a shared key - anyone with Geosonify can decode any obfuscated code immediately.</li>
   <li>It doesn't hide the fact that a code is a Geosonify code. The length, character set, and structure are all the same.</li>
   <li>It doesn't add any bits of security. Think of it like pig latin: it's not a cipher, it's a reversible cosmetic transform. Useful for making something look less immediately readable to a casual glance, not useful against anyone who knows what they're looking at.</li>
-  <li>It doesn't protect against an observer who records the code and later obtains Geosonify — obfuscation provides no forward secrecy.</li>
+  <li>It doesn't protect against an observer who records the code and later obtains Geosonify - obfuscation provides no forward secrecy.</li>
 </ul>
 
 <h4>When obfuscation is and isn't appropriate</h4>
@@ -176,32 +188,32 @@
           {
             id: 'what-is-delta',
             q: 'What is delta encoding?',
-            a: `<p>When you share a single location, the code is self-contained. But when you share a path or polygon — a route, a perimeter, a patrol area — you could have dozens or hundreds of points, each requiring a full code. Delta encoding is the compression scheme Geosonify uses to make multi-point shapes dramatically more compact.</p>
+            a: `<p>When you share a single location, the code is self-contained. But when you share a path or polygon - a route, a perimeter, a patrol area - you could have dozens or hundreds of points, each requiring a full code. Delta encoding is the compression scheme Geosonify uses to make multi-point shapes dramatically more compact.</p>
 
 <h4>The core idea</h4>
-<p>A full 9-character alphanumeric code like <code>91v91qsxr</code> encodes a location to roughly 2-metre precision. A nearby point — say, 66 metres away — might encode to <code>91v91qz8d</code>. These two codes share a long common prefix: <code>91v91q</code>. The only difference is the final three characters. Delta encoding exploits this: instead of transmitting the full second code, you only transmit what changed — <code>z8d</code>. The receiver, who already has the first code, can reconstruct the second by replacing the last 3 characters of <code>91v91qsxr</code> with <code>z8d</code>.</p>
+<p>Delta encoding works because geographically nearby points tend to share long hierarchical prefixes. A full 9-character alphanumeric code like <code>91v91qsxr</code> encodes a location to roughly 2-metre precision. A nearby point - say, 66 metres away - might encode to <code>91v91qz8d</code>. These two codes share a long common prefix: <code>91v91q</code>. The only difference is the final three characters. Delta encoding exploits this: instead of transmitting the full second code, you only transmit what changed - <code>z8d</code>. The receiver, who already has the first code, can reconstruct the second by replacing the last 3 characters of <code>91v91qsxr</code> with <code>z8d</code>.</p>
 <p>The format looks like this:</p>
 <pre>91v91qsxr~z8d~trv~ropf~1x1a2~…</pre>
-<p>The first code is transmitted in full. Each subsequent tilde-separated segment is a suffix delta — just the characters that differ from the previous code, always from the right. The receiver reconstructs each full code by taking the appropriate prefix from the previous code and appending the delta.</p>
+<p>The first code is transmitted in full. Each subsequent tilde-separated segment is a suffix delta - just the characters that differ from the previous code, always from the right. The receiver reconstructs each full code by taking the appropriate prefix from the previous code and appending the delta.</p>
 
 <h4>Gear changes</h4>
-<p>The number of characters that need to change between consecutive points is not fixed. Points very close together might differ by only 1 character (a "high gear" — many points sharing a long prefix). Points further apart might differ by 4 or 5 characters (a "low gear"). If all your waypoints are clustered in a small area, almost every point shares the same long prefix and deltas are tiny. If you have a transcontinental route, gear may change frequently.</p>
+<p>The number of characters that need to change between consecutive points is not fixed. Points very close together might differ by only 1 character (a "high gear" - many points sharing a long prefix). Points further apart might differ by 4 or 5 characters (a "low gear"). If all your waypoints are clustered in a small area, almost every point shares the same long prefix and deltas are tiny. If you have a transcontinental route, gear may change frequently.</p>
 <p>Geosonify handles this with a self-describing gear header in the delta stream. Rather than assuming a fixed delta width, each gear run is prefixed with a header indicating how many characters each delta in that run occupies. A <code>d</code> followed by a single hex digit means the deltas in this segment are each that many characters wide: <code>d3</code> = 3 characters each, <code>d4</code> = 4. If the gear value requires two hex digits (16 or above), two <code>d</code>s precede two hex digits: <code>dd10</code> = gear 16. The number of <code>d</code>s always equals the number of hex digits that follow, so the decoder always knows exactly where the header ends and the payload begins.</p>
-<p>A real example — 54 full codes compresses to a gear-change stream:</p>
+<p>A real example - 54 full codes compresses to a gear-change stream:</p>
 <pre style="font-size:0.8em;word-break:break-all;">91v91qsxr~d4qz8dqtrvropfx1a2x2tzx3qprybix5e9y07dx5lkrziesipt~d3j1ojrsk7rkf4kt1qfyq8zr86m7rhrp~d4t6si~d3d1b8jkksglr7m2obn05yz~d52iuux1nyb9~d3tousmzklmk02edd~d4hm2mhgu8~d2wnm8~d526opn~d3odnkz4fljabi~d40y420snd0myw0hi00s4i6ah06aoh6fr0</pre>
-<p>Reading this: the first code is <code>91v91qsxr</code>. Then <code>d4</code> announces a run of 4-character deltas — <code>qz8d</code>, <code>qtrv</code>, <code>ropf</code>, <code>x1a2</code>, <code>x2tz</code>, <code>x3qp</code>, <code>rybi</code>, <code>x5e9</code>, <code>y07d</code>, <code>x5lk</code>, <code>rzie</code>, <code>sipt</code> — 12 points from a single gear-4 run. Then <code>d3</code> announces 3-character deltas for the next cluster, and so on. Each gear change is introduced by a new <code>d</code>-prefixed header; everything between headers is concatenated payload at a fixed width.</p>
-<p>54 full codes × 9 characters = 486 characters. The delta-encoded form is around 160 characters — roughly 67% compression, achieved entirely from the prefix-sharing structure of geographically clustered points.</p>
+<p>Reading this: the first code is <code>91v91qsxr</code>. Then <code>d4</code> announces a run of 4-character deltas - <code>qz8d</code>, <code>qtrv</code>, <code>ropf</code>, <code>x1a2</code>, <code>x2tz</code>, <code>x3qp</code>, <code>rybi</code>, <code>x5e9</code>, <code>y07d</code>, <code>x5lk</code>, <code>rzie</code>, <code>sipt</code> - 12 points from a single gear-4 run. Then <code>d3</code> announces 3-character deltas for the next cluster, and so on. Each gear change is introduced by a new <code>d</code>-prefixed header; everything between headers is concatenated payload at a fixed width.</p>
+<p>54 full codes × 9 characters = 486 characters. The delta-encoded form is around 160 characters - roughly 67% compression, achieved entirely from the prefix-sharing structure of geographically clustered points.</p>
 
 <h4>How gear is chosen</h4>
-<p>The encoder uses dynamic programming across the whole path to find the gear-run partition that minimises total encoded length, including the overhead of each gear-change header. A header costs characters, so the DP weighs whether breaking a run and changing gear saves more than the header costs. The decoder doesn't need to know any of this — it just reads whatever headers appear.</p>
-<p>The encoder always tries all three formats — fixed-width, variable-width tilde-separated, and gear-change — and picks whichever produces the shortest output. For short paths or paths with inconsistent prefix lengths, simple tilde-separated variable-width deltas sometimes win over gear-change.</p>
+<p>The encoder uses dynamic programming across the whole path to find the gear-run partition that minimises total encoded length, including the overhead of each gear-change header. Each gear-change header introduces overhead, so the DP weighs whether breaking a run and changing gear saves more than the header costs. The decoder doesn't need to know any of this - it just reads whatever headers appear.</p>
+<p>The encoder always tries all three formats - fixed-width, variable-width tilde-separated, and gear-change - and picks whichever produces the shortest output. For short paths or paths with inconsistent prefix lengths, simple tilde-separated variable-width deltas sometimes win over gear-change.</p>
 
 <h4>What delta encoding doesn't do</h4>
-<p>Delta encoding is <strong>lossless</strong>. Every point in the path is encoded to full precision — nothing is approximated or averaged. The first code carries the full location, and every delta reconstructs the full code for its point. Truncating a delta stream loses the trailing points but leaves the earlier ones intact and fully decodable.</p>
-<p>Delta encoding is also <strong>grid-agnostic</strong>. The same gear-change mechanism works identically for alphanumeric, NATO, emoji, BIP39, or any other grid — it operates on the token-level suffix of each code, whatever those tokens happen to be. A NATO delta stream compresses by the same logic as an alphanumeric one; the tokens are longer words but the prefix-sharing property is identical.</p>
+<p>Delta encoding is <strong>lossless</strong>. Every point in the path is encoded to full precision - nothing is approximated or averaged. The first code carries the full location, and every delta reconstructs the full code for its point. Truncating a delta stream loses the trailing points but leaves the earlier ones intact and fully decodable.</p>
+<p>Delta encoding is also <strong>grid-agnostic</strong>. The same gear-change mechanism works identically for alphanumeric, NATO, emoji, BIP39, or any other grid - it operates on the token-level suffix of each code, whatever those tokens happen to be. A NATO delta stream compresses by the same logic as an alphanumeric one; the tokens are longer words but the prefix-sharing property is identical.</p>
 
 <h4>Obfuscation and delta encoding</h4>
-<p>The two are fully compatible. Because each delta's final character is always identical to the final character of the full code it represents — the one character obfuscation never shifts — each delta carries its own de-obfuscation seed and can be processed independently. In practice, the encoder computes all deltas on raw unobfuscated codes, then obfuscates the first code and each delta segment separately as a final step. The receiver reverses each piece independently before reconstructing the path. The gear-change structure is applied to raw codes before obfuscation, so the gear headers themselves are never obfuscated and the decoder can always parse the stream structure.</p>
+<p>The two are fully compatible. Because each delta's final character is always identical to the final character of the full code it represents - the one character obfuscation never shifts - each delta carries its own de-obfuscation seed and can be processed independently. In practice, the encoder computes all deltas on raw unobfuscated codes, then obfuscates the first code and each delta segment separately as a final step. The receiver reverses each piece independently before reconstructing the path. The gear-change structure is applied to raw codes before obfuscation, so the gear headers themselves are never obfuscated and the decoder can always parse the stream structure.</p>
 
 <table>
   <tr><th>Property</th><th>Value</th></tr>
@@ -209,7 +221,7 @@
   <tr><td>Header format</td><td><code>d</code> × K followed by K hex digits giving delta width</td></tr>
   <tr><td>Gear selection</td><td>Dynamic programming, optimal per path</td></tr>
   <tr><td>Typical saving (dense path)</td><td>60–80% vs full codes</td></tr>
-  <tr><td>Precision loss</td><td>None — fully lossless</td></tr>
+  <tr><td>Precision loss</td><td>None - fully lossless</td></tr>
   <tr><td>Works with obfuscation</td><td>✓ (each delta obfuscated independently)</td></tr>
   <tr><td>Works with passphrase</td><td>✓ (deltas computed on raw codes; passphrase applied at encode/decode)</td></tr>
   <tr><td>Works across grid types</td><td>✓</td></tr>
@@ -296,15 +308,15 @@
     credits: {
       lines: [
         'Created and developed by <a href="https://profiles.canterbury.ac.nz/Greg-O-Beirne" target="_blank">Greg O\'Beirne</a>, <a href="https://gobeirne.github.io/geosonify/b%C2%B2s%C2%B2%20bounding%20box%20shortcut%20scheme.pdf" target="_blank">2012</a>–2026.',
-        '<strong>Map Data</strong> — © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL)',
-        '<strong>Geocoding</strong> — <a href="https://nominatim.org/" target="_blank">Nominatim</a> (OpenStreetMap Foundation)',
-        '<strong>Boundaries</strong> — <a href="https://overpass-api.de/" target="_blank">Overpass API</a> &amp; <a href="https://www.wikidata.org/" target="_blank">Wikidata</a> SPARQL',
-        '<strong>Map Library</strong> — <a href="https://leafletjs.com/" target="_blank">Leaflet</a> (BSD-2-Clause)',
-        '<strong>Geodesic Maths</strong> — <a href="https://geographiclib.sourceforge.io/" target="_blank">GeographicLib</a> by Charles Karney (MIT)',
-        '<strong>Music Notation</strong> — <a href="https://www.vexflow.com/" target="_blank">VexFlow</a> (MIT)',
-        '<strong>SHA3-512</strong> — <a href="https://github.com/paulmillr/noble-hashes" target="_blank">@noble/hashes</a> by Paul Miller',
-        '<strong>Map Tiles</strong> — <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
-        '<strong>Palette</strong> — <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
+        '<strong>Map Data</strong> - © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL)',
+        '<strong>Geocoding</strong> - <a href="https://nominatim.org/" target="_blank">Nominatim</a> (OpenStreetMap Foundation)',
+        '<strong>Boundaries</strong> - <a href="https://overpass-api.de/" target="_blank">Overpass API</a> &amp; <a href="https://www.wikidata.org/" target="_blank">Wikidata</a> SPARQL',
+        '<strong>Map Library</strong> - <a href="https://leafletjs.com/" target="_blank">Leaflet</a> (BSD-2-Clause)',
+        '<strong>Geodesic Maths</strong> - <a href="https://geographiclib.sourceforge.io/" target="_blank">GeographicLib</a> by Charles Karney (MIT)',
+        '<strong>Music Notation</strong> - <a href="https://www.vexflow.com/" target="_blank">VexFlow</a> (MIT)',
+        '<strong>SHA3-512</strong> - <a href="https://github.com/paulmillr/noble-hashes" target="_blank">@noble/hashes</a> by Paul Miller',
+        '<strong>Map Tiles</strong> - <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
+        '<strong>Palette</strong> - <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
         '<strong>NATO phonetic alphabet</strong> per ICAO Annex 10.',
       ]
