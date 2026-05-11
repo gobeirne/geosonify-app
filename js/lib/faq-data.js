@@ -308,6 +308,7 @@
     credits: {
       lines: [
         'Created and developed by <a href="https://profiles.canterbury.ac.nz/Greg-O-Beirne" target="_blank">Greg O\'Beirne</a>, <a href="b%C2%B2s%C2%B2%20bounding%20box%20shortcut%20scheme.pdf" target="_blank">2012</a>–2026.',
+        '© 2026 Greg O\'Beirne. Licensed under the Mozilla Public License 2.0.',
         '<strong>Map Data</strong> - © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL)',
         '<strong>Geocoding</strong> - <a href="https://nominatim.org/" target="_blank">Nominatim</a> (OpenStreetMap Foundation)',
         '<strong>Boundaries</strong> - <a href="https://overpass-api.de/" target="_blank">Overpass API</a> &amp; <a href="https://www.wikidata.org/" target="_blank">Wikidata</a> SPARQL',
