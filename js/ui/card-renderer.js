@@ -135,6 +135,16 @@
       delimiter: '-',  // Hyphen between words
       link: 'https://github.com/bitcoin/bips/blob/master/bip-0039/czech.txt'
     },
+    de2048german: {
+      name: 'DE-2048 DE',
+      grid: typeof DE2048GermanArray !== 'undefined' ? DE2048GermanArray : null,
+      defaultIterations: 4,
+      maxIterations: 9,
+      isEmoji: false,
+      prefixLength: 4,
+      delimiter: '-',  // Hyphen between words
+      link: 'https://github.com/dys2p/wordlists-de/blob/main/de-2048-v1.txt'
+    },
     bip39japanese: { 
       name: 'BIP39 JA', 
       grid: typeof BIP39JapaneseArray !== 'undefined' ? BIP39JapaneseArray : null, 
@@ -255,7 +265,7 @@
   
   let cardState = {
     visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'de2048german', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -448,6 +458,7 @@
       bip39italian: 'BIP39ItalianArray',
       bip39portuguese: 'BIP39PortugueseArray',
       bip39czech: 'BIP39CzechArray',
+      de2048german: 'DE2048GermanArray',
       bip39japanese: 'BIP39JapaneseArray',
       bip39korean: 'BIP39KoreanArray',
       bip39chinesesimplified: 'BIP39ChineseSimplifiedArray',
