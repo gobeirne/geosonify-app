@@ -319,6 +319,7 @@
         '<strong>Map Tiles</strong> - <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
         '<strong>Palette</strong> - <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
+		'<strong>German (DE-2048) word list</strong> - <a href="https://github.com/dys2p/wordlists-de" target="_blank">dys2p/wordlists-de</a> by <a href="https://github.com/dys2p" target="_blank">dys2p</a> (Unlicense / CC0 / BSD-3)',
         '<strong>NATO phonetic alphabet</strong> per ICAO Annex 10.',
       ]
     },
