@@ -59,8 +59,22 @@
           {
             id: 'what-is-geosonify',
             q: 'What is Geosonify?',
-            a: `<p>Geosonify is an open framework for representing locations.</p>
-<p>Most location systems give you one way to describe a place. Geosonify separates the geography from the representation, allowing the same location to be expressed as letters, words, colours, music, QR codes, emoji, custom vocabularies and more.</p>
+            a: `<p>Geosonify is an open framework for representing geographic locations in human-friendly ways.</p>
+
+<p>Most location systems give you one way to describe a place. Geosonify separates the geography from the representation, allowing the same location to be expressed as:</p>
+
+<ul>
+  <li>Letters and numbers</li>
+  <li>Words and phrases</li>
+  <li>Colours and visual patterns</li>
+  <li>Music and musical notation</li>
+  <li>Emoji</li>
+  <li>QR codes and Data Matrix symbols</li>
+  <li>Entirely custom vocabularies</li>
+</ul>
+
+<p>The geography stays the same.</p>
+<p>Only the language changes.</p>
 <p>The project began in 2012 and is released under the Mozilla Public License 2.0. It is free, open source, and intended to remain that way.</p>
 <p>At its heart, Geosonify asks a simple question:</p>
 <p><strong>How many different languages can a place speak?</strong></p>`
@@ -69,7 +83,7 @@
           {
             id: 'how-does-it-work',
             q: 'How does it work?',
-            a: `<p>Imagine dividing the Earth into a 6×6 grid.</p>
+            a: `<p><a href="https://geosonify.org/b%C2%B2s%C2%B2%20bounding%20box%20shortcut%20scheme.pdf">Imagine dividing the Earth into a 6×6 grid.</a></p>
 <p>Each cell gets a label.</p>
 <p>Find the cell containing your location and record its label.</p>
 <p>Then divide that cell into another 6×6 grid and repeat.</p>
@@ -122,13 +136,31 @@
 <p>Humans start recognising patterns.</p>
 <p>If you live in Christchurch, New Zealand, you quickly learn that many local coordinates begin with the same prefixes.</p>
 <p>The same thing happens with word-based coordinates.</p>
-<p>You might discover that one part of a city commonly begins with:</p>
-<p>"science food..."</p>
-<p>while another begins with:</p>
-<p>"science gather..."</p>
+<p>Because both computers and humans benefit from it.</p>
+
+<p>Computers can use the hierarchy for efficient storage, routing and compression.</p>
+
+<p>Humans start recognising patterns.</p>
+
+<p>For example, someone living in Christchurch, New Zealand, might quickly learn that many local coordinates begin with the same prefix.</p>
+
+<p>The same thing happens with word coordinates.</p>
+
+<p>Emergency responders might learn that:</p>
+
+<ul>
+  <li><strong>science food...</strong> refers to the north part of Christchurch</li>
+  <li><strong>science gather...</strong> refers to the south</li>
+</ul>
+
+<p>Instead of remembering four unfamiliar words, only the final one or two may require conscious attention.</p>
+
 <p>After a while those prefixes become familiar.</p>
+
 <p>You no longer need to consciously remember them.</p>
+
 <p>The hierarchy allows humans to compress information in much the same way computers do.</p>
+
 <p>Nearby places feel related because they are related.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
@@ -182,16 +214,20 @@
           {
             id: 'why-bip39',
             q: 'Why BIP39?',
-            a: `<p>Geosonify needed a large collection of words that were:</p>
+            a: `<p>Geosonify could have used a custom word list, but BIP39 already provided something valuable.</p>
+
+<p>It offered vocabularies that were:</p>
 <ul>
   <li>Easy to distinguish when spoken</li>
   <li>Available in multiple languages</li>
   <li>Openly published</li>
   <li>Well tested in real-world use</li>
 </ul>
-<p>Rather than inventing a new vocabulary from scratch, Geosonify starts with the internationally used BIP39 word lists and removes words more likely to cause confusion.</p>
+<p>Geosonify starts with the internationally used BIP39 word lists and removes words more likely to cause confusion.</p>
+
 <p>The remaining words are arranged into a 45×45 grid.</p>
-<p>The result is a multilingual coordinate vocabulary that retains the hierarchical structure of the underlying coordinate system.</p>
+
+<p>The result is a multilingual coordinate vocabulary designed specifically for location sharing while retaining the hierarchical structure of the underlying coordinate system.</p>
 <p>Geosonify currently supports BIP39 vocabularies in multiple languages including English, Spanish, French, Italian, Portuguese, Czech, Japanese, Korean, Simplified Chinese and Traditional Chinese.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
@@ -402,9 +438,18 @@
           {
             id: 'what-is-passphrase-mode',
             q: 'What is passphrase mode?',
-            a: `<p>Passphrase mode creates a private coordinate language.</p>
+            a: `<p>Imagine a geocaching group, archaeological team or field survey crew sharing locations publicly.</p>
+
+<p>Everyone with the passphrase sees the intended locations.</p>
+
+<p>Everyone else sees something entirely different.</p>
+
+<p>Passphrase mode creates a private coordinate language.</p>
+
 <p>A shared passphrase is used to rearrange the coordinate vocabulary.</p>
+
 <p>Everyone using the same passphrase sees the same world.</p>
+
 <p>Everyone else sees a different one.</p>
 <p>This allows groups to publish coordinates openly while restricting their meaning to people who share the passphrase.</p>
 <p>Typical uses include:</p>
@@ -416,7 +461,7 @@
   <li>Field surveys</li>
   <li>Clubs and communities</li>
 </ul>
-<p>The emphasis is on shared access within a group rather than protection against nation-state adversaries.</p>
+<p>The emphasis is on shared access within a group rather than protection against nation-state adversaries. Let's not get ahead of ourselves.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details — how the keyed shuffle works — are here</summary>
@@ -548,9 +593,16 @@
           {
             id: 'why-music',
             q: 'Why does Geosonify make music?',
-            a: `<p>Because someone wanted a soundtrack for a bike ride.</p>
+            a: `<p>Because Greg wanted <a href="https://youtu.be/hPuu4iEMzdA">a soundtrack for a bike ride</a>.</p>
 <p>In 2021, a GoPro timelapse of a bicycle commute inspired the creation of a musical coordinate system.</p>
 <p>The challenge was to convert geographic movement into sound.</p>
+
+<p>To make this possible, Geosonify introduced a dedicated musical grid.</p>
+
+<p>Neighbouring cells were deliberately designed to differ by musically coherent intervals, so small geographic movements tend to produce musically related changes.</p>
+
+<p>The musical grid did not exist beforehand. It was created specifically for sonification.</p>
+
 <p>The result became the Geosonify sonification engine.</p>`
           },
 
@@ -590,16 +642,19 @@
             a: `<p>Yes.</p>
 <p>In fact, this is one of the central ideas behind Geosonify.</p>
 <p>You can upload your own grid as a CSV file.</p>
-<p>The symbols can be almost anything.</p>
-<p>Words.</p>
-<p>Emoji.</p>
-<p>Scientific terminology.</p>
-<p>Star names.</p>
-<p>Minerals.</p>
-<p>Educational vocabulary.</p>
-<p>Fictional locations.</p>
-<p>DNA nucleotides.</p>
-<p>Amino acids.</p>
+<p>The symbols can be almost anything:</p>
+
+<ul>
+  <li>Words</li>
+  <li>Emoji</li>
+  <li>Scientific terminology</li>
+  <li>Star names</li>
+  <li>Minerals</li>
+  <li>Educational vocabulary</li>
+  <li>Fictional locations</li>
+  <li>DNA nucleotides</li>
+  <li>Amino acids</li>
+</ul>
 <p>Or something nobody has thought of yet.</p>
 <p>The geography comes from the grid structure.</p>
 <p>The symbols are yours.</p>`
@@ -641,10 +696,12 @@
             a: `<p>The website is one implementation of the Geosonify framework.</p>
 <p>The larger goal is to create an open, extensible way of representing location.</p>
 <p>Researchers, artists, educators, emergency responders, surveyors, geocachers and developers are encouraged to build on the ideas, create new vocabularies and explore new applications.</p>
-<p>The most interesting use of Geosonify may be something that has not been invented yet.</p>
+<p>The most interesting use of Geosonify may be something nobody has thought of yet.</p>
+
 <p>The framework is open.</p>
 <p>The rules are public.</p>
 <p>The tools are free.</p>
+
 <p>If you can imagine it, you can build it.</p>`
           }
 
