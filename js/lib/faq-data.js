@@ -144,8 +144,6 @@
   <li>Musical grids</li>
   <li>Hexadecimal</li>
   <li>QR and Data Matrix outputs</li>
-  <li>ByteWords</li>
-  <li>ByteEmoji</li>
 </ul>
 <p>All of these represent the same underlying geography. The representation changes; the location does not.</p>`
           }
