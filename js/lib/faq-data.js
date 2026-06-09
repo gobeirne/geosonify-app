@@ -101,7 +101,7 @@
             id: 'vs-pluscodes-w3w',
             q: "Don't Plus Codes and what3words already solve this problem?",
             a: `<p>They solve related problems, and Geosonify shares ground with both. Latitude/longitude, eastings/northings, Plus Codes and what3words are all valid ways to represent locations, and like Plus Codes, Geosonify produces hierarchical coordinates: nearby locations share common prefixes, and truncating a coordinate yields the same location at lower precision rather than a wrong one. (what3words works differently - its three words are deliberately unordered, so neighbouring squares get unrelated words and a coordinate can't be shortened.)</p>
-<p>Where Geosonify differs is what that hierarchy is made of. In Plus Codes the structure lives in a string of digits; in Geosonify the same hierarchical coordinate can be expressed as letters, words, colours, musical notes, QR codes, emoji, or an entirely custom vocabulary. The geography stays fixed while the language changes, which means the prefix patterns that make coordinates memorable can be carried into whichever representation suits the situation - words for radio, colour for a printed tag, music for a journey.</p>`
+<p>Where Geosonify differs is what that hierarchy is made of. In Plus Codes the hierarchy is expressed through a fixed alphanumeric code; in Geosonify the same hierarchical coordinate can be expressed as letters, words, colours, musical notes, QR codes, emoji, or an entirely custom vocabulary. The geography stays fixed while the language changes, allowing the same hierarchical structure to be carried into whichever representation suits the situation - words for radio, colour for a printed tag, music for a journey.</p>`
           },
 
           {
