@@ -236,7 +236,7 @@
 <h4>1. Raw - human-readable</h4>
 <pre>~257deg_70m_31m</pre>
 <p>Reads exactly as written: angle <code>257deg</code>, long side <code>70m</code>, short side <code>31m</code>. In high-precision mode the angle can carry decimals (e.g. <code>257.41deg</code>). It is the most legible form and the longest.</p>
-<p><strong>Units are flexible.</strong> Lengths can be written in millimetres, centimetres, metres or kilometres, and the unit is just a label on the same underlying distance - so the same side can be spelled whichever way reads best. <strong>Singapore</strong>'s rectangle is <strong>256.5°</strong>, a <strong>50,700 m</strong> long side and a <strong>26,100 m</strong> short side, and these two are the identical shape:</p>
+<p>Units are flexible too. Lengths can be written in millimetres, centimetres, metres or kilometres, and the unit is just a label on the same underlying distance - so the same side can be spelled whichever way reads best. <strong>Singapore</strong>'s rectangle is <strong>256.5°</strong>, a <strong>50,700 m</strong> long side and a <strong>26,100 m</strong> short side, and these two are the identical shape:</p>
 <pre>~256.5deg_50700m_26100m
 ~256.5deg_50.7km_26.1km</pre>
 <p>Both parse to exactly the same metre values; <code>50.7km</code> is simply a tidier way of saying <code>50700m</code>. When Geosonify generates a code it picks a sensible unit automatically, but either spelling decodes to the same rectangle. Note that Singapore's sides are both well over 1000 m, so this rectangle has no base64url form (see below) - it lives only in raw and base36.</p>
@@ -244,7 +244,7 @@
 <h4>2. Base36 - compact variable-length</h4>
 <pre>~751Y0V</pre>
 <p>The same three numbers, each written in base-36 (digits <code>0–9</code> then <code>A–Z</code>). For the Parthenon, reading it in pairs: <code>75</code> → <strong>257°</strong>, <code>1Y</code> → <strong>70 m</strong>, <code>0V</code> → <strong>31 m</strong>. The angle is always two characters. Each length is two characters too when it's small enough to count directly in metres (up to 1295 m), which is why the Parthenon's sides need no special markers.</p>
-<p><strong>Longer distances use two kinds of marker.</strong> Counting a continental distance in raw metres would need many digits, so base36 lengths can switch to a coarser unit and can grow extra digits when needed:</p>
+<p>Longer distances use two kinds of marker. Counting a continental distance in raw metres would need many digits, so base36 lengths can switch to a coarser unit and can grow extra digits when needed:</p>
 <ul>
   <li><strong><code>!</code> + one digit - a unit switch.</strong> It means "the number that follows is counted in this unit, not in metres." The digit is a resolution code: <code>!6</code> = kilometres (×1000 m), <code>!5</code> = ×100 m, <code>!4</code> = ×10 m, and finer codes exist for centimetres and millimetres. Without a <code>!</code>, the number is plain metres.</li>
   <li><strong><code>.</code> - a digit-count spill.</strong> A length normally uses two base-36 characters; each leading <code>.</code> adds one more character, so the value can exceed 1295 in its chosen unit.</li>
@@ -257,7 +257,7 @@
 <h4>3. Base64url - smallest fixed-width</h4>
 <pre>~gIjA-</pre>
 <p>The tightest form. All three values are bit-packed into a single 29-bit integer laid out as <code>angle (9 bits) | L (10 bits) | S (10 bits)</code>, then written as exactly <strong>5 characters</strong> from the URL-safe base64 alphabet (<code>A–Z a–z 0–9 - _</code>). Decoding <code>gIjA-</code> recovers angle <strong>257</strong>, L <strong>70</strong>, S <strong>31</strong> - the same Parthenon rectangle.</p>
-<p><strong>Important limit:</strong> because L and S each get only 10 bits, this format only works when <em>both</em> sides are <strong>under 1023 m</strong>. If either side is longer, the base64url form can't represent it and Geosonify falls back to base36 or raw, which have no such ceiling.</p>
+<p>There is one limit worth keeping in mind: because L and S each get only 10 bits, this format only works when <em>both</em> sides are <strong>under 1023 m</strong>. If either side is longer, the base64url form can't represent it and Geosonify falls back to base36 or raw, which have no such ceiling.</p>
 <p><em>(One implementation detail worth noting if you ever decode these by hand: a 29-bit value isn't a whole number of 6-bit base64 characters, so the encoder left-pads it by one bit to reach 30 bits = 5 characters. To unpack, decode the 5 characters to a 30-bit integer and shift right by 1 before reading the angle/L/S fields. Skip that shift and the numbers come out wrong.)</em></p>
 
 <h4>4. Emoji - pictographic</h4>
@@ -400,7 +400,7 @@
   <li><strong><code>obf=1</code></strong> - turns on obfuscation.</li>
   <li><strong><code>enc_pass</code></strong> - a hard-encryption passphrase; the output becomes an encrypted <code>?enc=</code> URL instead of a plain code.</li>
 </ul>
-<p><strong>A note on safety:</strong> because a pipeline link can carry a passphrase, Geosonify strips these parameters out of the browser's address bar and history the instant it reads them, so secrets in a one-time link don't linger in your history. The passphrase still travels in the link you were given, so share such links over a trusted channel.</p>
+<p>One safety consideration: because a pipeline link can carry a passphrase, Geosonify strips these parameters out of the browser's address bar and history the instant it reads them, so secrets in a one-time link don't linger in your history. The passphrase still travels in the link you were given, so share such links over a trusted channel.</p>
 
 <h4>What it does behind the scenes</h4>
 <p>The unglamorous work is what makes the result usable: picking the largest meaningful ring from a multipolygon, merging fragmented ways into continuous paths, sorting ambiguous matches toward the right answer, and scaling simplification to the size of the region. And because every stage is expressible as a URL parameter, the whole "name in, shape code out" pipeline fits in a single shareable link.</p>
@@ -439,16 +439,14 @@
             id: 'what-is-obfuscation',
             q: 'What is obfuscation?',
             a: `<p>Hierarchical coordinates intentionally contain visible structure - that's one of their strengths. Obfuscation is a tool for removing that visible structure when you'd rather nearby locations not look related. Two locations separated by only a few metres may appear completely unrelated after obfuscation, making casual pattern recognition much harder.</p>
-<p>Obfuscation is reversible and requires no secret key. Anyone with Geosonify can decode an obfuscated code immediately. Think of it as camouflage rather than security: it hides patterns, but it does not protect information.</p>
+<p>Obfuscation is reversible and requires no secret key. Anyone with Geosonify can decode an obfuscated code immediately. It is camouflage rather than security: it hides patterns, but it does not protect information.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full details - how obfuscation works - are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p><strong>TL;DR:</strong> Obfuscation removes visible locality patterns from codes, but provides no cryptographic security.</p>
+<p>Obfuscation is a visual scrambling layer, not a security boundary, and it provides no cryptographic protection. It is reversible by anyone with the app, it is <em>not</em> an encryption scheme, and the UI says so explicitly. Its purpose is to remove the hierarchical pattern that makes a plain code visually guessable, without requiring a shared secret.</p>
 
-<p>Obfuscation is a visual scrambling layer, not a security boundary. It is reversible by anyone with the app. It is <em>not</em> an encryption scheme, and the UI says so explicitly. Its purpose is to remove the hierarchical pattern that makes a plain code visually guessable - without requiring a shared secret.</p>
-
-<h4>What obfuscation actually does</h4>
+<h4>What obfuscation does</h4>
 <p>A plain hierarchical code like <code>thp9dahrg</code> has a subtle structural property: the first character constrains you to a large region of the world, the second narrows it, and so on. Someone who knows the grid could in principle narrow down a code's location by recognising common prefixes between nearby codes. The structure is also visually regular in a way that might flag a code as a location reference.</p>
 <p>Obfuscation scrambles the characters so that no such structure is visible, while preserving the property that the code can be deterministically reversed to its original. For example: <code>thp9dahrg</code> obfuscates to <code>hw8n0s8wg</code>.</p>
 <p>Here's what happens step by step:</p>
@@ -548,7 +546,7 @@
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full security breakdown - all three layers - is here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 <div style="background:var(--ios-light-gray,#f2f2f7);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;">
-  <strong>TL;DR</strong><br>
+  <strong>The three modes at a glance</strong><br>
   No passphrase → public encoding, anyone can read it.<br>
   Grid passphrase → cryptographically keyed, protects the coordinate value, not surrounding metadata.<br>
   AES URL encryption → standard authenticated encryption, recommended for sensitive use.
@@ -556,10 +554,10 @@
 
 <p>It depends entirely on which mode you use.</p>
 
-<h4>The three layers - and what each one actually does</h4>
+<h4>The three layers</h4>
 
 <p><strong>1. Hierarchical encoding (no passphrase)</strong></p>
-<p>Without a passphrase, Geosonify codes are <em>not</em> secret. They are an open, deterministic mapping from coordinates to symbols. Anyone with the app can decode any code instantly. Think of it like a grid reference - it's a notation system, not a cipher. The code <code>thp9dahrg</code> encodes a location in the same way a postcode or what3words address does: publicly, by convention.</p>
+<p>Without a passphrase, Geosonify codes are <em>not</em> secret. They are an open, deterministic mapping from coordinates to symbols. Anyone with the app can decode any code instantly. Like a grid reference, it's a notation system rather than a cipher. The code <code>thp9dahrg</code> encodes a location in the same way a postcode or what3words address does: publicly, by convention.</p>
 <p>Use this when you want a compact, human-readable, grid-type-agnostic location code that you don't mind anyone decoding. The value here is interoperability and readability, not secrecy.</p>
 
 <p><strong>2. Grid passphrase (position-dependent shuffle)</strong></p>
@@ -590,7 +588,7 @@
 </ul>
 <p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (standardised by NIST as FIPS 202), AES-256-GCM (NIST FIPS 197 / SP 800-38D), PBKDF2 (NIST SP 800-132), and your browser's WebCrypto implementation.</p>
 
-<h4>Honest limitations</h4>
+<h4>Limitations</h4>
 <ul>
   <li><strong>The grid-passphrase scheme is experimental.</strong> The AES-based URL encryption relies on widely trusted standard primitives. The Geosonify grid-passphrase scheme, however, is a bespoke construction and has not undergone formal cryptanalysis or independent security audit. It is thoughtful and nontrivial, but it is not a proven cipher.</li>
   <li><strong>Intended threat model.</strong> Geosonify is designed primarily to protect against casual observation, unintended disclosure, and offline interception of shared location data - not against nation-state adversaries or compromised devices.</li>
@@ -619,7 +617,7 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The cryptographic details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The URL encryption layer hides everything - not just the coordinates but the grid type, number of points, path length, and any other structural metadata. It uses:</p>
+<p>The URL encryption layer conceals the whole payload: the coordinates, the grid type, the number of points, the path length, and any other structural metadata. It uses:</p>
 <ul>
   <li><strong>PBKDF2</strong> with SHA-256, 100,000 iterations, and a random 16-byte salt for key derivation. This makes offline dictionary attacks expensive: each passphrase guess requires 100,000 PBKDF2-SHA256 iterations.</li>
   <li><strong>AES-256-GCM</strong> for authenticated encryption. GCM provides both confidentiality and integrity - a wrong passphrase doesn't just produce garbage, it produces a detectable authentication failure (the 128-bit GCM tag won't verify), so there is no oracle to tell an attacker they're "getting warmer."</li>
@@ -677,7 +675,7 @@
 <p>Real-time playback uses the track's own recorded timestamps. The journey plays at its true duration - a 30-minute commute takes 30 minutes - so the pacing, the pauses, the fast and slow stretches all sound exactly as they happened on the ground. This mode needs a track that carries time data; a GPX recording from a phone or watch has it, but a bare list of coordinates does not, in which case real-time is unavailable and you use compressed instead.</p>
 
 <h4>Compressed</h4>
-<p>Compressed playback maps the entire journey onto a target <strong>Duration</strong> you set (defaulting to about 30 seconds, adjustable from a few seconds up to several minutes). Every gap in the original is scaled by the same factor, so the shape of the journey is preserved - the relative timing of each leg stays intact - but the whole thing is condensed into a listenable piece. Crucially, compressed mode also works when the track has <em>no</em> timestamps at all: in that case Geosonify paces the playback by distance travelled (or, failing that, evenly across the points), so any path can still be turned into a composition.</p>
+<p>Compressed playback maps the entire journey onto a target <strong>Duration</strong> you set (defaulting to about 30 seconds, adjustable from a few seconds up to several minutes). Every gap in the original is scaled by the same factor, so the shape of the journey is preserved - the relative timing of each leg stays intact - but the whole thing is condensed into a listenable piece. Compressed mode also works when the track has <em>no</em> timestamps at all: in that case Geosonify paces the playback by distance travelled (or, failing that, evenly across the points), so any path can still be turned into a composition.</p>
 
 <h4>Tempo (BPM)</h4>
 <p>By default the playback follows the route's natural timing, but you can give it a <strong>beat</strong>. Set a BPM and Geosonify quantises the journey to that tempo - sampling the position at each beat across the chosen duration - so the movement falls on a regular musical pulse instead of flowing freely. Leave BPM at zero to keep the natural, unmetered timing. A tempo turns a route into a rhythmic, almost danceable sequence; no tempo keeps it as a flowing, rubato line.</p>
