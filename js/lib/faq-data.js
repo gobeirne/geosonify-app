@@ -64,7 +64,7 @@
 <ul>
 <li>Alphanumeric coordinates</li>
 <li>Words and phrases</li>
-<li>Colour patterns</li>
+<li>Blocks of colour</li>
 <li>Musical notation</li>
 <li>Emoji</li>
 <li>QR codes and Data Matrix symbols</li>
@@ -187,7 +187,7 @@
           {
             id: 'chromacoord',
             q: 'What is ChromaCoord?',
-            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters.</p>`
+            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters, but you don't want the result to look like a binary QR-style code.</p>`
           },
 
           {
