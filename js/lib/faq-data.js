@@ -499,25 +499,8 @@
             a: `<p>Passphrase mode creates a private coordinate language shared by a group. A shared passphrase rearranges the coordinate vocabulary so that people using the same passphrase decode coordinates consistently, while people using a different passphrase - or no passphrase - decode them to entirely different locations.</p>
 <p>This lets a group publish coordinates openly while restricting their meaning to members who share the passphrase. Typical uses include geocaching groups, treasure hunts, archaeological projects, field survey crews, and similar teams who need to share locations within a group without broadcasting them to everyone.</p>
 <p>Each coordinate produced this way is valid on its own - it's just that only people with the correct passphrase will arrive at the intended location.</p>
-<p>For example, a random 2 m × 3 m spot inside Boston City Hall encodes as:</p>
-<p><code>7mn810bc2</code></p>
-<p>With obfuscation enabled, this becomes:</p>
-<p><code>f67jogqn2</code></p>
-<p>If someone attempts to decode that obfuscated coordinate as an ordinary hierarchical coordinate, they end up in a dry riverbed in Algeria.</p>
-<p>Move only three metres east and the next coordinate becomes:</p>
-<p><code>7mn810bc3</code></p>
-<p>which obfuscates to:</p>
-<p><code>5kd5a5uv3</code></p>
-<p>Decoding that as an ordinary hierarchical coordinate places you on Bolshoy Lyakhovsky Island in the Siberian Arctic.</p>
-<p>Passphrases create similar effects. Using the passphrase <strong>Cod</strong>, the original Boston location becomes:</p>
-<p><code>alknxyvbc</code></p>
-<p>which would normally place you beside the G552 National Highway in the Gobi Desert.</p>
-<p>Using <strong>Patriots</strong> produces:</p>
-<p><code>7dpi6zqle</code></p>
-<p>which would normally decode to a dirt track in Yellowstone County, Montana.</p>
-<p>Using <strong>Back Bay</strong> produces:</p>
-<p><code>9y1bcaq3m</code></p>
-<p>which would normally place you near the Tharthar Canal outside Tikrit, Iraq.</p>
+<p>For example, a random 2 m × 3 m spot inside Boston City Hall encodes as <code>7mn810bc2</code>. With obfuscation enabled, this becomes <code>f67jogqn2</code>. If someone attempts to decode that obfuscated coordinate as an ordinary hierarchical coordinate, they end up in a dry riverbed in Algeria. Move only three metres west and the next coordinate becomes <code>7mn810bc1</code>, which obfuscates to <code>yu1nxwhf1</code>, ordinarily a few hundred kilometres from the South Pole.</p>
+<p>Passphrases create similar effects. Using the passphrase <strong>Cod</strong>, the original Boston location becomes <code>a3x5ukg8g</code>, which would normally place you in Central Siberia. Using <strong>Patriots</strong> produces <code>75xziubkh</code>, which would normally decode to remote Quebec near the Newfoundland border. Using <strong>Back Bay</strong> produces <code>9flaq8p2i</code>, which would normally place you in southeastern Ukraine.</p>
 <p>People using the same passphrase decode all of these to Boston City Hall. People using a different passphrase decode them to somewhere else entirely.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
