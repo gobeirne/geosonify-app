@@ -461,7 +461,7 @@
 <p>The result is <code>hw8n0s8wg</code>: every character except the last is different, and no prefix relationship between the obfuscated code and any other obfuscated nearby code is preserved.</p>
 <p>Reversing it is exactly the same process run backwards: take the final character, regenerate the same shuffle, reverse the position-dependent shifts, and recover <code>thp9dahrg</code>.</p>
 
-<h4>The final character is load-bearing</h4>
+<h4>The final character is critical</h4>
 <p>This is the most important operational property of obfuscation: <strong>the final character must be intact for the code to be decodable.</strong> In plain hierarchical mode, you can truncate a code from the right and simply lose precision - <code>thp9dahrg</code> becomes <code>thp9dah</code> which is a valid code for a slightly less precise location. This is useful for sharing approximate locations.</p>
 <p>Obfuscated codes do not have this property. The final character is the seed that the entire decode depends on. Strip it, and the shuffle used to encode the code can no longer be reconstructed. Without the final character, the original code cannot be reconstructed - it is not a less-precise location, but an undecodable one.</p>
 <p>This is a deliberate trade-off: obfuscation buys you pattern-hiding at the cost of the graceful truncation property.</p>
