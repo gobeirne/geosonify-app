@@ -192,15 +192,22 @@
   .examples-section .card:nth-child(6) .example-link { background: linear-gradient(135deg, var(--kereru-blue) 0%, var(--kereru-teal) 100%); }
   .examples-section .card:nth-child(7) .example-link { background: linear-gradient(135deg, var(--kereru-pink) 0%, var(--kereru-green) 100%); }
 
-  @media (prefers-color-scheme: dark) {
-    .faq-answer pre,
-    .faq-answer code {
-      background: #2c2c2e;
-    }
-    .faq-answer tr:nth-child(even) td {
-      background: #2c2c2e;
-    }
+@media (prefers-color-scheme: dark) {
+  .faq-answer pre,
+  .faq-answer code {
+    background: #2c2c2e;
   }
+  .faq-answer tr:nth-child(even) td {
+    background: #2c2c2e;
+  }
+  .faq-answer a {
+    color: var(--kereru-blue, #7d9fc2);
+  }
+  .faq-section-heading,
+  .faq-answer h4 {
+    color: var(--kereru-blue, #7d9fc2);
+  }
+}
   `;
 
   function injectCSS() {
