@@ -35,6 +35,9 @@
     --ios-secondary: #EBEBF5;
     --ios-separator: #38383A;
   }
+  .card-body a {
+    color: var(--kereru-blue, #7d9fc2);
+  }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
