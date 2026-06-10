@@ -482,7 +482,7 @@
 <p>Here's what happens step by step:</p>
 <ol>
   <li><strong>The final character is the seed.</strong> The last character - <code>g</code> - is not obfuscated. It stays in place. This is intentional and important: <code>g</code> has a fixed flat index in the grid. That index becomes the seed for everything that follows.</li>
-  <li><strong>A deterministic SHA3-512-derived shuffle is generated from that seed.</strong> The hash output is expanded deterministically as needed to generate enough material to permute all N cells of the grid. This uses the same SHA3-512-based deterministic shuffling approach as the passphrase mode, but seeded differently.</li>
+  <li><strong>A deterministic SHA3-512-derived shuffle is generated from that seed.</strong> The hash output is expanded deterministically as needed to generate enough material to permute all N cells of the grid. This uses the same SHA3-512 shuffle the passphrase mode uses, but with <em>no passphrase</em> — the permutation is seeded only from the final character, so anyone with the app can reproduce it.</li>
   <li><strong>Each non-final character is shifted by its distance from the end.</strong> The first 8 characters (<code>thp9dahr</code>) are looked up in the shuffled grid to get their indices. Then each one is shifted modulo N by its distance from the final character: the second-to-last shifts by 1, the third-to-last by 2, and so on. The character in position 0 (furthest from the end) shifts the most. This position-dependent shifting means the same character in two different positions produces two different output characters, which destroys the hierarchical prefix structure.</li>
   <li><strong>Shifted indices are mapped back through the shuffled grid to output symbols.</strong> The final character is appended unchanged.</li>
 </ol>
@@ -530,16 +530,21 @@
 <p>This lets a group publish coordinates openly while restricting their meaning to members who share the passphrase. Typical uses include geocaching groups, treasure hunts, archaeological projects, field survey crews, and similar teams who need to share locations within a group without broadcasting them to everyone.</p>
 <p>Each coordinate produced this way is valid on its own - it's just that only people with the correct passphrase will arrive at the intended location.</p>
 <p>For example, a random 2 m × 3 m spot inside Boston City Hall encodes as <code>7mn810bc2</code>. With obfuscation enabled, this becomes <code>f67jogqn2</code>. If someone attempts to decode that obfuscated coordinate as an ordinary hierarchical coordinate, they end up in a dry riverbed in Algeria. Move only three metres west and the next coordinate becomes <code>7mn810bc1</code>, which obfuscates to <code>yu1nxwhf1</code>, ordinarily a few hundred kilometres from the South Pole.</p>
-<p>Passphrases create similar effects. Using the passphrase <strong>Cod</strong>, the original Boston location becomes <code>a3x5ukg8g</code>, which would normally place you in Central Siberia. Using <strong>Patriots</strong> produces <code>75xziubkh</code>, which would normally decode to remote Quebec near the Newfoundland border. Using <strong>Back Bay</strong> produces <code>9flaq8p2i</code>, which would normally place you in southeastern Ukraine.</p>
+<p>Passphrases create similar effects. Using the passphrase <strong>Cod</strong>, the original Boston location becomes <code>9prvzapea</code>, which would normally place you off the coast of Malta. Using <strong>Patriots</strong> produces <code>746fqs0cf</code>, which would normally decode to Hudson Bay in Manitoba. Using <strong>Back Bay</strong> produces <code>mctmn7b5j</code>, which would normally place you in the middle of the Indian Ocean.</p>
 <p>People using the same passphrase decode all of these to Boston City Hall. People using a different passphrase decode them to somewhere else entirely.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details - how the keyed shuffle works - are here</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details — how the keyed shuffle works — are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>When you add a passphrase, the mapping becomes dependent on a cryptographic key. At each encoding iteration, the grid is shuffled using a key derived from your passphrase combined with the sequence of cell indices chosen so far (the "chain"). The shuffle uses <strong>SHA3-512</strong> - a 512-bit output hash from the NIST-standardised Keccak family - to generate a per-cell sort key. Each cell gets its own independent SHA3-512 digest, computed from <code>passphrase | chain | cell_index</code>, and cells are sorted by these digests. This produces a cryptographically keyed permutation by sorting cells according to SHA3-512-derived values.</p>
-<p>The chaining intentionally couples each iteration to previous choices, preventing symbols from being decoded independently in isolation. No practical shortcut is currently known to us, though the scheme has not undergone formal cryptanalysis.</p>
-<p>The entropy per iteration is log₂(grid size). For a 6×6 alphanumeric grid that's log₂(36) ≈ 5.17 bits per character. An 8-character code over a 36-symbol grid corresponds to approximately 41 bits of positional search space before passphrase-guessing is even considered. With a strong passphrase, brute-forcing the location from the code requires enumerating passphrases, not grid positions.</p>
-<p><em>What the grid passphrase does not do:</em> it does not hide metadata. An observer can see the code exists, can see its length (and therefore approximate precision), can see which grid type it's in if they recognise the vocabulary (BIP39 words look like BIP39 words), and can make statistical guesses if they observe many codes from the same passphrase. It is a confidentiality scheme for the coordinate value, not a covert communications channel.</p>
+<p>When you add a passphrase, the symbol-to-cell mapping becomes dependent on it. The passphrase is first Unicode-normalised (NFC), so visually identical passphrases — accented text, Māori macrons, CJK input — behave identically on any device or operating system. At each encoding iteration the grid is permuted from a fixed domain-separation prefix, the normalised passphrase, and the sequence of cell indices chosen so far (the "chain"): each cell is assigned an independent <strong>SHA3-512</strong> digest computed over that preimage plus the cell index, and cells are sorted by those digests to give a keyed permutation. The chaining couples each iteration to previous choices, so symbols can't be peeled off and decoded one at a time.</p>
+<p>This is intentionally simple — a keyed <em>coordinate language</em>, not an encryption scheme:</p>
+<ul>
+  <li>People with the passphrase decode consistently; everyone else decodes elsewhere. It protects the coordinate value from casual observers and from people outside the passphrase group.</li>
+  <li>It does not hide metadata. An observer can see a code exists, see its length (hence approximate precision), often recognise its grid vocabulary, and — because the mapping is deterministic — tell when two codes point to the same place.</li>
+  <li>There is no key-stretching, by design. A strong passphrase is what protects the location; a guessable one offers little protection, and no internal machinery could fix that in a format that must stay decodable for decades. Use a high-entropy passphrase (a multi-word diceware phrase).</li>
+  <li>For confidentiality beyond "a casual observer can't read it" — or to hide that a location is being communicated at all — use AES URL encryption.</li>
+</ul>
+<p>The "information per character" figures (~5.17 bits for a 36-cell grid, ~41 bits for an 8-character code) describe how precisely the <em>coordinate</em> is pinned down, not an attacker's workload. The scheme is bespoke and has not had formal cryptanalysis; its derivation is frozen permanently so that codes made today remain decodable far into the future, and anything needing real confidentiality should use AES mode.</p>
 </div>
 </details>`
           },
@@ -556,68 +561,58 @@
 <p>Encrypts the entire coordinate payload using AES-256-GCM. Routes, shapes, metadata and coordinates are all protected. This hides not only the location values but the structure of what is being communicated - the number of waypoints, the path length, the grid type.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full security breakdown - all three layers - is here</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full security breakdown — all three layers — is here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 <div style="background:var(--ios-light-gray,#f2f2f7);border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.5;">
-  <strong>The three modes at a glance</strong><br>
-  No passphrase → public encoding, anyone can read it.<br>
-  Grid passphrase → cryptographically keyed, protects the coordinate value, not surrounding metadata.<br>
-  AES URL encryption → standard authenticated encryption, recommended for sensitive use.
+<strong>TL;DR</strong><br>
+No passphrase → public encoding, anyone can read it.<br>
+Grid passphrase → a keyed private coordinate language; protects the coordinate value, not metadata; strength = passphrase strength.<br>
+AES URL encryption → standard authenticated encryption, recommended for sensitive use.
 </div>
-
 <p>It depends entirely on which mode you use.</p>
-
-<h4>The three layers</h4>
-
+<h4>The three layers — and what each one actually does</h4>
 <p><strong>1. Hierarchical encoding (no passphrase)</strong></p>
-<p>Without a passphrase, Geosonify codes are <em>not</em> secret. They are an open, deterministic mapping from coordinates to symbols. Anyone with the app can decode any code instantly. Like a grid reference, it's a notation system rather than a cipher. The code <code>thp9dahrg</code> encodes a location in the same way a postcode or what3words address does: publicly, by convention.</p>
-<p>Use this when you want a compact, human-readable, grid-type-agnostic location code that you don't mind anyone decoding. The value here is interoperability and readability, not secrecy.</p>
-
-<p><strong>2. Grid passphrase (position-dependent shuffle)</strong></p>
-<p>When you add a passphrase, the mapping becomes dependent on a cryptographic key. At each encoding iteration, the grid is shuffled using a key derived from your passphrase combined with the sequence of cell indices chosen so far (the "chain"). The shuffle uses <strong>SHA3-512</strong> - a 512-bit output hash from the NIST-standardised Keccak family - to generate a per-cell sort key. Each cell gets its own independent SHA3-512 digest, computed from <code>passphrase | chain | cell_index</code>, and cells are sorted by these digests. This produces a cryptographically keyed permutation by sorting cells according to SHA3-512-derived values.</p>
-<p>The chaining intentionally couples each iteration to previous choices, preventing symbols from being decoded independently in isolation. No practical shortcut is currently known to us, though the scheme has not undergone formal cryptanalysis.</p>
-<p>The entropy per iteration is log₂(grid size). For a 6×6 alphanumeric grid that's log₂(36) ≈ 5.17 bits per character. An 8-character code over a 36-symbol grid corresponds to approximately 41 bits of positional search space before passphrase-guessing is even considered. With a strong passphrase, brute-forcing the location from the code requires enumerating passphrases, not grid positions.</p>
-<p><em>What the grid passphrase does not do:</em> it does not hide metadata. An observer can see the code exists, can see its length (and therefore approximate precision), can see which grid type it's in if they recognise the vocabulary (BIP39 words look like BIP39 words), and can make statistical guesses if they observe many codes from the same passphrase. It is a confidentiality scheme for the coordinate value, not a covert communications channel.</p>
-
+<p>Without a passphrase, Geosonify codes are <em>not</em> secret — an open, deterministic mapping from coordinates to symbols that anyone with the app can decode. Think of it like a grid reference: a notation system, not a cipher. Use it for compact, readable, grid-agnostic codes you don't mind anyone decoding.</p>
+<p><strong>2. Grid passphrase (a keyed coordinate language)</strong></p>
+<p>Adding a passphrase makes the mapping depend on it. The passphrase is Unicode-normalised (NFC) so it behaves identically across devices, then combined with a fixed domain-separation prefix and the chain of cell indices chosen so far; each cell gets an independent <strong>SHA3-512</strong> digest over that preimage plus the cell index, and cells are sorted by those digests to form a keyed permutation. The chaining stops symbols being decoded independently. It is deliberately simple — no stretching, salt, or authentication — because the format must stay byte-reproducible for decades.</p>
+<p><em>What it does not do:</em> it does not hide metadata (a code's existence, length and therefore approximate precision, and often its grid vocabulary remain visible, and identical locations produce identical codes); it is not authenticated; and it cannot protect a weak passphrase. A strong, high-entropy passphrase is the whole of its security. It protects the coordinate value from people outside the passphrase group — not the fact that a location is being communicated.</p>
 <p><strong>3. Hard URL encryption (AES-256-GCM)</strong></p>
-<p>The URL encryption layer provides substantially stronger and more conventional security guarantees, hiding everything - not just the coordinates but the grid type, number of points, path length, and any other structural metadata. It uses:</p>
+<p>The URL encryption layer hides everything — coordinates, grid type, number of points, path length, other structure. It uses:</p>
 <ul>
-  <li><strong>PBKDF2</strong> with SHA-256, 100,000 iterations, and a random 16-byte salt for key derivation. This makes offline dictionary attacks expensive: each passphrase guess requires 100,000 PBKDF2-SHA256 iterations.</li>
-  <li><strong>AES-256-GCM</strong> for authenticated encryption. GCM provides both confidentiality and integrity - a wrong passphrase doesn't just produce garbage, it produces a detectable authentication failure (the 128-bit GCM tag won't verify), so there is no oracle to tell an attacker they're "getting warmer."</li>
-  <li>A random 12-byte IV per encryption, meaning two encryptions of identical plaintexts produce different ciphertexts.</li>
-  <li>Payload padding to the nearest 32 bytes, which obscures the exact length of the plaintext and prevents an attacker from inferring the number of waypoints or precision level from ciphertext size alone.</li>
+  <li><strong>PBKDF2</strong> with HMAC-SHA-256, <strong>600,000</strong> iterations, and a fresh random 16-byte salt per encryption, so each guess costs 600,000 iterations and an attacker must repeat that work for every blob.</li>
+  <li><strong>AES-256-GCM</strong> authenticated encryption: a wrong passphrase yields a detectable authentication failure (the 128-bit tag won't verify), not plausible garbage — no "getting warmer" oracle.</li>
+  <li>A random 12-byte IV per encryption, so identical plaintexts differ.</li>
+  <li>A <strong>self-describing, versioned blob</strong>: a format-version byte and the iteration count travel inside the blob, and the whole header (version, iterations, salt, IV) is bound as GCM additional authenticated data — tamper-evident, and the iteration count can be raised later without breaking existing links.</li>
+  <li>Payload padding up to a 32-byte multiple, which blurs plaintext length to a 32-byte band (it removes fine-grained length detail but a long route still yields a larger blob than a point).</li>
 </ul>
-<p>The output is a single opaque Base64url blob in the URL: <code>?enc=…</code>. Without the passphrase, the payload appears as an opaque encrypted blob - it reveals no plaintext location or structural metadata about the encoded content.</p>
-<p>AES-256-GCM with salted PBKDF2-derived keys is a standard modern authenticated-encryption construction widely used across secure web and password-management systems. There are no known practical attacks against correctly implemented AES-256-GCM with proper key derivation.</p>
-<p>For strong security guarantees, the AES URL encryption layer should be preferred. The grid-passphrase mode is best understood as a cryptographically keyed encoding scheme rather than a replacement for standard authenticated encryption.</p>
-
+<p>Blob layout: <code>BASE64URL( version[1] | iterations[3] | salt[16] | iv[12] | ciphertext+tag )</code>, emitted as <code>?enc=…</code>. Without the passphrase it is an opaque blob revealing no plaintext or structure. AES-256-GCM with a salted PBKDF2-derived key is a standard authenticated-encryption construction with no known practical attacks when correctly implemented.</p>
 <h4>The trust question: "how do I verify this?"</h4>
-<p>Geosonify is a client-side web application - all the code that runs is the code you can read in your browser. There is no server involved in encoding or decoding; coordinates never leave your device unless you choose to share the code. You can:</p>
+<p>Geosonify is a client-side web app — the code that runs is the code you can read. No server is involved in encoding or decoding; coordinates never leave your device unless you share a code. You can:</p>
 <ul>
-  <li>Open DevTools → Sources and read every function involved in encryption. The key functions are <code>shuffleGridAndOrder</code> in <code>card-renderer.js</code> (grid passphrase) and <code>deriveEncryptionKey</code> / <code>encryptQueryString</code> in <code>index.html</code> (AES layer). They are unminified and commented.</li>
-  <li>Verify that no network requests are made during encode/decode by watching the Network tab.</li>
-  <li>Save the page locally and run it offline - it works completely disconnected from the internet.</li>
-  <li>Cross-check the cryptographic primitives: SHA3-512 is from the <code>@noble/hashes</code> library (audited, widely used); AES-GCM uses the browser's native <code>crypto.subtle</code> API (WebCrypto), which is implemented in the browser engine itself, not in JavaScript.</li>
+  <li>Open DevTools → Sources and read every function. The key ones are <code>shuffleGridAndOrder</code> in <code>card-renderer.js</code> (grid passphrase) and <code>deriveEncryptionKey</code> / <code>encryptQueryString</code> in <code>index.html</code> (AES). They are unminified and commented.</li>
+  <li>Watch the Network tab to confirm no requests during encode/decode.</li>
+  <li>Save the page and run it offline — it works fully disconnected.</li>
+  <li>Cross-check the primitives: SHA3-512 is provided by the <code>js-sha3</code> library and the grid-passphrase shuffle uses it directly; AES-256-GCM and the AES-layer PBKDF2 use the browser's native <code>crypto.subtle</code> (WebCrypto), implemented in the browser engine rather than in JavaScript.</li>
 </ul>
-<p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (standardised by NIST as FIPS 202), AES-256-GCM (NIST FIPS 197 / SP 800-38D), PBKDF2 (NIST SP 800-132), and your browser's WebCrypto implementation.</p>
-
+<p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (NIST FIPS 202), AES-256-GCM (FIPS 197 / SP 800-38D), PBKDF2 (SP 800-132), and your browser's WebCrypto.</p>
 <h4>Limitations</h4>
 <ul>
-  <li><strong>The grid-passphrase scheme is experimental.</strong> The AES-based URL encryption relies on widely trusted standard primitives. The Geosonify grid-passphrase scheme, however, is a bespoke construction and has not undergone formal cryptanalysis or independent security audit. It is thoughtful and nontrivial, but it is not a proven cipher.</li>
-  <li><strong>Intended threat model.</strong> Geosonify is designed primarily to protect against casual observation, unintended disclosure, and offline interception of shared location data - not against nation-state adversaries or compromised devices.</li>
-  <li><strong>Passphrase strength is everything.</strong> A weak passphrase makes any of these schemes weak. "hello" is not a passphrase. A 6-word diceware phrase or a random 20-character string is.</li>
-  <li>The grid passphrase alone does not hide that a code exists, its approximate length, or potentially its grid vocabulary. If operational security requires hiding that a location is being communicated, use the AES URL encryption layer.</li>
-  <li>Obfuscation mode is explicitly <em>not</em> a security feature - it is cosmetic rearrangement useful for making codes look less obviously geographic. The UI labels it accordingly.</li>
-  <li>Key management is your problem. If you share the passphrase over an insecure channel, that's the weakest link. Geosonify cannot protect you from that.</li>
+  <li><strong>Grid-passphrase mode is a coordinate language, not a cipher.</strong> It is a bespoke keyed encoding, not independently audited or formally cryptanalysed. The AES layer, by contrast, relies on widely trusted standard primitives.</li>
+  <li><strong>Intended threat model.</strong> Geosonify protects against casual observation, accidental disclosure, and offline interception of shared codes — not nation-state adversaries or compromised devices.</li>
+  <li><strong>Passphrase strength is everything in grid mode.</strong> There is no stretching to slow a guessing attack, so a weak passphrase is weak. "hello" is not a passphrase; a 6-word diceware phrase or a random 20-character string is.</li>
+  <li><strong>Determinism.</strong> The same passphrase and location always produce the same code, so identical locations are detectable as identical codes.</li>
+  <li>Grid mode does not hide that a code exists, its approximate length, or its likely grid vocabulary. To hide that a location is being communicated at all, use AES URL encryption.</li>
+  <li>Obfuscation is explicitly <em>not</em> a security feature — cosmetic, reversible by anyone with the app.</li>
+  <li>Key management is your responsibility; sharing a passphrase over an insecure channel is the weakest link.</li>
+  <li><strong>Long-term decodability</strong> is guaranteed by freezing the grid-passphrase derivation and the base grids permanently; see the frozen-format specification.</li>
 </ul>
-
 <table>
   <tr><th>Mode</th><th>Hides coordinates</th><th>Hides structure</th><th>Cryptographic primitive</th></tr>
   <tr><td>No passphrase</td><td>✗</td><td>✗</td><td>None (public encoding)</td></tr>
-  <tr><td>Grid passphrase</td><td>✓</td><td>✗</td><td>SHA3-512 keyed permutation</td></tr>
-  <tr><td>AES URL encryption</td><td>✓</td><td>✓</td><td>PBKDF2 + AES-256-GCM</td></tr>
+  <tr><td>Grid passphrase</td><td>✓</td><td>✗</td><td>SHA3-512 keyed permutation (NFC + domain-separated)</td></tr>
+  <tr><td>AES URL encryption</td><td>✓</td><td>✓</td><td>PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM</td></tr>
 </table>
-<p>For most operational use cases where you simply don't want a casual observer to read the location, the grid passphrase is sufficient. For high-stakes use where even the existence of structured location data should be hidden, use AES URL encryption with a strong passphrase. For public, shareable, no-secrets location codes, use no passphrase and enjoy the full interoperability between grid types.</p>
+<p>For most cases where you just don't want a casual observer to read the location, the grid passphrase is sufficient. For high-stakes use where even the existence of structured location data should be hidden, use AES URL encryption with a strong passphrase. For public, shareable codes, use no passphrase.</p>
 </div>
 </details>`
           },
@@ -630,15 +625,15 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The cryptographic details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The URL encryption layer conceals the whole payload: the coordinates, the grid type, the number of points, the path length, and any other structural metadata. It uses:</p>
+<p>The URL encryption layer hides everything — coordinates, grid type, number of points, path length, other structure. It uses:</p>
 <ul>
-  <li><strong>PBKDF2</strong> with SHA-256, 100,000 iterations, and a random 16-byte salt for key derivation. This makes offline dictionary attacks expensive: each passphrase guess requires 100,000 PBKDF2-SHA256 iterations.</li>
-  <li><strong>AES-256-GCM</strong> for authenticated encryption. GCM provides both confidentiality and integrity - a wrong passphrase doesn't just produce garbage, it produces a detectable authentication failure (the 128-bit GCM tag won't verify), so there is no oracle to tell an attacker they're "getting warmer."</li>
-  <li>A random 12-byte IV per encryption, meaning two encryptions of identical plaintexts produce different ciphertexts.</li>
-  <li>Payload padding to the nearest 32 bytes, which obscures the exact length of the plaintext and prevents an attacker from inferring the number of waypoints or precision level from ciphertext size alone.</li>
+  <li><strong>PBKDF2</strong> with HMAC-SHA-256, <strong>600,000</strong> iterations, and a fresh random 16-byte salt per encryption. Each guess costs 600,000 iterations, and the per-message salt forces an attacker to repeat that work for every blob.</li>
+  <li><strong>AES-256-GCM</strong> authenticated encryption: a wrong passphrase produces a detectable authentication failure rather than plausible garbage, so there is no "getting warmer" oracle.</li>
+  <li>A random 12-byte IV per encryption, so identical plaintexts encrypt differently.</li>
+  <li>A <strong>self-describing, versioned blob</strong>: a format-version byte and the iteration count are stored inside the blob, and the whole header (version, iterations, salt, IV) is bound as GCM additional authenticated data — tamper-evident, and the iteration count can be raised later without breaking existing links.</li>
+  <li>Payload padding up to a 32-byte multiple, which blurs plaintext length to a 32-byte band.</li>
 </ul>
-<p>The output is a single opaque Base64url blob in the URL: <code>?enc=…</code>. Without the passphrase, the payload appears as an opaque encrypted blob - it reveals no plaintext location or structural metadata about the encoded content.</p>
-<p>AES-256-GCM with salted PBKDF2-derived keys is a standard modern authenticated-encryption construction widely used across secure web and password-management systems. There are no known practical attacks against correctly implemented AES-256-GCM with proper key derivation. The key derivation function is <code>deriveEncryptionKey</code> and the encryption entry point is <code>encryptQueryString</code>, both in <code>index.html</code>, and AES-GCM uses the browser's native <code>crypto.subtle</code> (WebCrypto) API rather than a JavaScript implementation.</p>
+<p>Blob layout: <code>BASE64URL( version[1] | iterations[3] | salt[16] | iv[12] | ciphertext+tag )</code>, emitted as <code>?enc=…</code>. AES-256-GCM with a salted PBKDF2-derived key is a standard construction with no known practical attacks when correctly implemented. The key-derivation function is <code>deriveEncryptionKey</code> and the entry point is <code>encryptQueryString</code>, both in <code>index.html</code>; AES-GCM and PBKDF2 use the browser's native <code>crypto.subtle</code> (WebCrypto) rather than a JavaScript implementation.</p>
 </div>
 </details>`
           }
@@ -835,7 +830,7 @@
         '<strong>Map Library</strong> - <a href="https://leafletjs.com/" target="_blank">Leaflet</a> (BSD-2-Clause)',
         '<strong>Geodesic Maths</strong> - <a href="https://geographiclib.sourceforge.io/" target="_blank">GeographicLib</a> by Charles Karney (MIT)',
         '<strong>Music Notation</strong> - <a href="https://www.vexflow.com/" target="_blank">VexFlow</a> (MIT)',
-        '<strong>SHA3-512</strong> - <a href="https://github.com/paulmillr/noble-hashes" target="_blank">@noble/hashes</a> by Paul Miller',
+        '<strong>SHA3-512</strong> - <a href="https://github.com/emn178/js-sha3" target="_blank">js-sha3</a> by Yi-Cyuan Chen',
         '<strong>Map Tiles</strong> - <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
         '<strong>Palette</strong> - <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
