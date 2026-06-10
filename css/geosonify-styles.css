@@ -35,7 +35,7 @@
     --ios-secondary: #EBEBF5;
     --ios-separator: #38383A;
   }
-  .card-body a {
+    .card-body a:not(.example-link) {
     color: var(--kereru-blue, #7d9fc2);
   }
 }
