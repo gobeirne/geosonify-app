@@ -135,16 +135,6 @@
       delimiter: '-',  // Hyphen between words
       link: 'https://github.com/bitcoin/bips/blob/master/bip-0039/czech.txt'
     },
-    de2048german: {
-      name: 'DE-2048 DE',
-      grid: typeof DE2048GermanArray !== 'undefined' ? DE2048GermanArray : null,
-      defaultIterations: 4,
-      maxIterations: 9,
-      isEmoji: false,
-      prefixLength: 4,
-      delimiter: '-',  // Hyphen between words
-      link: 'https://github.com/dys2p/wordlists-de/blob/main/de-2048-v1.txt'
-    },
     bip39japanese: { 
       name: 'BIP39 JA', 
       grid: typeof BIP39JapaneseArray !== 'undefined' ? BIP39JapaneseArray : null, 
@@ -265,7 +255,7 @@
   
   let cardState = {
     visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'de2048german', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -458,7 +448,6 @@
       bip39italian: 'BIP39ItalianArray',
       bip39portuguese: 'BIP39PortugueseArray',
       bip39czech: 'BIP39CzechArray',
-      de2048german: 'DE2048GermanArray',
       bip39japanese: 'BIP39JapaneseArray',
       bip39korean: 'BIP39KoreanArray',
       bip39chinesesimplified: 'BIP39ChineseSimplifiedArray',
@@ -608,16 +597,30 @@
     }
   }
 
-  // ============== GRID SHUFFLING (PASSPHRASE) ==============
-  
+  // ============== GRID SHUFFLING (PASSPHRASE) — FROZEN FORMAT v1 ==============
+  //
+  // ⚠ FROZEN — DO NOT CHANGE, EVER. A passphrase code generated today must still
+  // decode decades from now, and a bare code carries no version field, so a wrong
+  // derivation yields a different valid-looking location rather than an error.
+  // Permanently immutable: this prefix string (exact spelling/case/hyphens/trailing
+  // pipe), NFC normalisation, the "|chain:" join, the comma-joined chain indices,
+  // SHA3-512 as the hash, the little-endian u32 index, the sort + tie-break, and the
+  // base grids in geosonify-grids-data.js. To strengthen privacy, use AES URL mode
+  // (which carries its own version + parameters); never mutate this. See
+  // grid-passphrase-v1-reference.js and FROZEN-FORMAT-SPEC.md.
+  const GRID_V1_PREFIX = 'geosonify-grid-pass-v1|';
+
   function shuffleGridAndOrder(grid, pass, chainPrefix = '') {
     if (!pass || pass.length === 0) {
       return { grid, order: grid.flat().map((_, i) => i) };
     }
     
     const enc = new TextEncoder();
-    // KEY CHANGE: Include chainPrefix in the hash seed for position-dependent shuffling
-    const seedString = chainPrefix ? (pass + '|chain:' + chainPrefix) : pass;
+    // Frozen v1 preimage: prefix + NFC(passphrase) + "|chain:" + chain.
+    // NFC makes visually identical passphrases (accents, Māori macrons, CJC) decode
+    // the same on any device/OS; the prefix domain-separates this SHA3 use from any
+    // other. The "|chain:" marker is always present (even for the empty first chain).
+    const seedString = GRID_V1_PREFIX + pass.normalize('NFC') + '|chain:' + chainPrefix;
     const passBytes = enc.encode(seedString);
     
     function u32le(n) { 
