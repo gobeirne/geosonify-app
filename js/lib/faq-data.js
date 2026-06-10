@@ -64,7 +64,7 @@
 <ul>
 <li>Alphanumeric coordinates</li>
 <li>Words and phrases</li>
-<li>Blocks of colour</li>
+<li>Colour patterns</li>
 <li>Musical notation</li>
 <li>Emoji</li>
 <li>QR codes and Data Matrix symbols</li>
@@ -81,11 +81,43 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The precise encoding details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary, a 28x28 (784-cell) grid for emoji, and a 45×45 (2025-cell) grid for the BIP39 word vocabularies. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
+<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary, and a 45×45 (2025-cell) grid for the BIP39 word vocabularies. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
 <p>Because each character selects one cell and the next character subdivides only that cell, codes are strict prefixes of one another. <code>thp9dahrg</code> and <code>thp9dah</code> describe the same point at different precisions - the shorter code is the larger enclosing cell. Truncating a code from the right never moves the location; it only enlarges the cell.</p>
 <p>The encoding is purely client-side and deterministic: the same coordinate always produces the same code for a given grid, with no server lookup and no randomness, so coordinates never leave your device unless you choose to share the resulting code.</p>
 </div>
 </details>`
+          }
+
+        ]
+      },
+
+      // ================================================================
+      {
+        id: 'using',
+        title: 'Using the App',
+        items: [
+
+          {
+            id: 'the-tabs',
+            q: 'How is the app laid out?',
+            a: `<p>There are four tabs. <strong>geosonify!</strong> is the main map view: tap anywhere on the map to drop a point, and the coordinate is encoded straight away in the vocabularies you have chosen. From here you can also click the star on a card to switch which grid is displayed (alphanumeric, words, colours, music, and so on), turn on obfuscation, set a passphrase, or start GPS tracking. It is meant to be self-explanatory, so just tap the map and watch the codes appear.</p>
+<p>The other three tabs are <strong>Shape</strong> (for building rectangles, paths, polygons, and for importing real-world boundaries), <strong>Output</strong> (for choosing how a code is written and shared), and <strong>FAQ</strong> (this page). The two below explain the Shape and Output tabs in more detail.</p>`
+          },
+
+          {
+            id: 'shape-tab',
+            q: 'The Shape tab',
+            a: `<p>The Shape tab is where you build anything more than a single point: a rectangle, a graticule, a path, a polygon, or a set of separate points. It is also where you bring real-world boundaries and routes into Geosonify.</p>
+<p>At the top is a row of shape modes: <strong>Rectangle</strong>, <strong>Graticule</strong>, <strong>Path</strong>, and <strong>Points</strong>. Choose one, then click on the map to add corners or waypoints. A rectangle needs three corners and completes the fourth for you; a path or polygon takes as many points as you like, and a path becomes a polygon when you close it by returning to the first point. You can choose whether path segments follow <strong>geodesic</strong> lines (the shortest path on the globe) or <strong>rhumb</strong> lines (a constant bearing, straight on a Mercator map). When you are happy, press <strong>Calculate</strong> to encode the shape, or <strong>Clear</strong> to start again.</p>
+<p>If you would rather not draw by hand, the same tab can import shapes. As described in detail below, you can search for a place by name, or use the File, URL, Wikidata, and OSM ID options to pull in a GeoJSON, KML, or GPX file, a Wikidata entity, or an OpenStreetMap relation. Imported routes can be played back as sound from here too (see the route-playback entry under Music &amp; Sonification). There are also boxes for pasting coordinates directly (one latitude, longitude pair per line) and for pasting a compact code to decode and redraw it.</p>`
+          },
+
+          {
+            id: 'output-tab',
+            q: 'The Output tab',
+            a: `<p>The Output tab controls how the current location or shape is written down and shared. The encoding on the map does not change; only its presentation does.</p>
+<p>Pick a representation from the codec selector: <strong>Raw</strong> (human-readable), <strong>Base36</strong>, <strong>Base64url</strong>, or <strong>Emoji</strong>. For a path or polygon you can switch on <strong>delta compression</strong> to shorten the code while keeping full precision. A <strong>checksum</strong> option adds a verification character so a recipient can tell whether the code was copied correctly, and a <strong>rounded</strong> option produces tidier values.</p>
+<p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>`
           }
 
         ]
@@ -187,7 +219,7 @@
           {
             id: 'chromacoord',
             q: 'What is ChromaCoord?',
-            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters, but you don't want the result to look like a binary QR-style code.</p>`
+            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters.</p>`
           },
 
           {
@@ -204,6 +236,12 @@
         id: 'routes',
         title: 'Routes, Shapes & Compression',
         items: [
+
+          {
+            id: 'draw-a-shape',
+            q: 'How do I draw a rectangle or path by hand?',
+            a: `<p>Open the <strong>Shape</strong> tab, choose a mode (Rectangle, Graticule, Path, or Points), then click on the map to add points. For a rectangle, click three corners and Geosonify completes the fourth automatically. For a path or polygon, keep clicking to add waypoints; close the loop by returning to your first point and the shape is treated as an area rather than a line. Press <strong>Calculate</strong> to encode it, or <strong>Clear</strong> to start over. (See the rectangle entry below for the three-corner shortcut, and the Shape tab guide under Using the App for everything else that tab can do.)</p>`
+          },
 
           {
             id: 'routes-polygons',
