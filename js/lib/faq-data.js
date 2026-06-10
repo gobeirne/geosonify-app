@@ -59,7 +59,7 @@
           {
             id: 'what-is-geosonify',
             q: 'What is Geosonify?',
-            a: `<p>Geosonify is an open framework for representing geographic locations in human-friendly ways. It began in 2012 and is released under the Mozilla Public License 2.0.</p>
+            a: `<p>Geosonify is an open framework for representing geographic locations in human-friendly ways. First developed by Greg O'Beirne in 2012, it is released under the Mozilla Public License 2.0.</p>
 <p>Most location systems give you one way to describe a place. Geosonify separates the geography from the representation. The same location can be expressed as letters and numbers, words and phrases, colours and visual patterns, musical notation, emoji, QR codes, or entirely custom vocabularies. The geography stays the same; only the representation changes.</p>
 <ul>
 <li>Alphanumeric coordinates</li>
