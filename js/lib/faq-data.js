@@ -75,7 +75,7 @@
           {
             id: 'how-does-it-work',
             q: 'How does it work?',
-            a: `<p><a href="https://geosonify.org/b%C2%B2s%C2%B2%20bounding%20box%20shortcut%20scheme.pdf">Imagine dividing the Earth into a 6×6 grid.</a> Each cell gets a label. Find the cell containing your location and record its label. Then divide that cell into another 6×6 grid and repeat. Every additional character narrows the location further. After enough iterations, any location on Earth can be represented to metre-level precision or better.</p>
+            a: `<p><a href="https://geosonify.org/b%C2%B2s%C2%B2%20bounding%20box%20shortcut%20scheme.pdf">Imagine dividing the Earth into a 6×6 grid.</a> Each cell gets a label. Find the cell containing your location and record its label. Then divide that cell into another 6×6 grid and repeat. Every additional character narrows the location further. After enough iterations, any location on Earth can be represented to any level of precision.</p>
 <p>The resulting coordinate is hierarchical. The first character identifies a broad region; each successive character narrows it further. Remove characters from the right and you don't get the wrong location - you get the same location at lower precision. This graceful truncation turns out to be useful in a number of practical ways.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
