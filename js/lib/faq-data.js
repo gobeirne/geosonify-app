@@ -64,7 +64,7 @@
 <ul>
 <li>Alphanumeric coordinates</li>
 <li>Words and phrases</li>
-<li>Colour patterns</li>
+<li>Blocks of colour</li>
 <li>Musical notation</li>
 <li>Emoji</li>
 <li>QR codes and Data Matrix symbols</li>
@@ -81,7 +81,7 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The precise encoding details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary, and a 45×45 (2025-cell) grid for the BIP39 word vocabularies. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
+<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary, a 28x28 (784-cell) grid for emoji, and a 45×45 (2025-cell) grid for the BIP39 word vocabularies. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
 <p>Because each character selects one cell and the next character subdivides only that cell, codes are strict prefixes of one another. <code>thp9dahrg</code> and <code>thp9dah</code> describe the same point at different precisions - the shorter code is the larger enclosing cell. Truncating a code from the right never moves the location; it only enlarges the cell.</p>
 <p>The encoding is purely client-side and deterministic: the same coordinate always produces the same code for a given grid, with no server lookup and no randomness, so coordinates never leave your device unless you choose to share the resulting code.</p>
 </div>
@@ -122,7 +122,6 @@
 
         ]
       },
-
       // ================================================================
       {
         id: 'comparisons',
@@ -219,7 +218,7 @@
           {
             id: 'chromacoord',
             q: 'What is ChromaCoord?',
-            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters.</p>`
+            a: `<p>ChromaCoord is a visual coordinate system. A location is encoded as hexadecimal values and rendered as a colour pattern. The result resembles abstract artwork rather than a traditional coordinate, but it remains machine-readable: a Geosonify-compatible decoder can recover the original location from the image. Every location produces a distinct visual fingerprint, making ChromaCoord useful in contexts where a scannable image is more convenient than a string of characters, but you don't want the result to look like a binary QR-style code.</p>`
           },
 
           {
@@ -236,12 +235,6 @@
         id: 'routes',
         title: 'Routes, Shapes & Compression',
         items: [
-
-          {
-            id: 'draw-a-shape',
-            q: 'How do I draw a rectangle or path by hand?',
-            a: `<p>Open the <strong>Shape</strong> tab, choose a mode (Rectangle, Graticule, Path, or Points), then click on the map to add points. For a rectangle, click three corners and Geosonify completes the fourth automatically. For a path or polygon, keep clicking to add waypoints; close the loop by returning to your first point and the shape is treated as an area rather than a line. Press <strong>Calculate</strong> to encode it, or <strong>Clear</strong> to start over. (See the rectangle entry below for the three-corner shortcut, and the Shape tab guide under Using the App for everything else that tab can do.)</p>`
-          },
 
           {
             id: 'routes-polygons',
