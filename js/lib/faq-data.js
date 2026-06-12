@@ -86,6 +86,16 @@
 <p>The encoding is purely client-side and deterministic: the same coordinate always produces the same code for a given grid, with no server lookup and no randomness, so coordinates never leave your device unless you choose to share the resulting code.</p>
 </div>
 </details>`
+          },
+
+			
+          {
+            id: 'parcel-import',
+            q: 'Can I import the legal boundary of a property from its address?',
+            a: `<p>Yes. The <strong>🏠 Parcel</strong> source in Shape Import takes a street address (or a raw <code>lat, lon</code> pair) and fetches the legal cadastral parcel polygon at that location - the actual surveyed property boundary, not a guess. It becomes an ordinary Geosonify shape: simplify it, encode it in any vocabulary, share it as a link.</p>
+<p>It works in two steps: the address is geocoded to a point (using the same OpenStreetMap geocoder as place search), then the official cadastral service for that country is asked <em>"which parcel contains this point?"</em>. If several parcels sit at that point - cross-leases, unit titles, an ambiguous address - a picker lets you choose. You can also share the whole thing as a single link with <code>?address=...</code>, including the full automatic pipeline (<code>&amp;auto=1&amp;grid=a&amp;result=s</code> and friends, exactly as for <code>?place=</code>).</p>
+<p>Only <strong>free, open</strong> cadastral sources are used - nothing in Geosonify can ever cost you money. Most sources need no key at all; New Zealand's LINZ needs a free API key (no payment details involved), which you paste once and which is stored only on your device, never in shared links. Coverage so far: New Zealand (LINZ), the Netherlands (Kadaster/PDOK), France (IGN cadastre), New South Wales (Spatial Services), Massachusetts (MassGIS) and North Carolina (NC OneMap) - with more one-registry-entry-each to come. Anywhere else, the Advanced field accepts any public ArcGIS parcel layer URL, which covers thousands of councils and US counties.</p>
+<p>One honest caveat, straight from the cadastral agencies themselves: these polygons are <em>indicative</em> records of where the boundaries lie, not survey-accurate legal definitions. Perfect for mapping, art and sound; not a substitute for a surveyor.</p>`
           }
 
         ]
@@ -828,6 +838,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
         '<strong>Map Data</strong> - © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors (ODbL)',
         '<strong>Geocoding</strong> - <a href="https://nominatim.org/" target="_blank">Nominatim</a> (OpenStreetMap Foundation)',
         '<strong>Boundaries</strong> - <a href="https://overpass-api.de/" target="_blank">Overpass API</a> &amp; <a href="https://www.wikidata.org/" target="_blank">Wikidata</a> SPARQL',
+		'<strong>Property parcels</strong> - <a href="https://data.linz.govt.nz/" target="_blank">LINZ Data Service</a> (CC&nbsp;BY&nbsp;4.0), <a href="https://www.pdok.nl/" target="_blank">Kadaster via PDOK</a>, <a href="https://apicarto.ign.fr/" target="_blank">IGN API Carto</a> / DGFiP (Licence Ouverte), <a href="https://www.spatial.nsw.gov.au/" target="_blank">NSW Spatial Services</a> (CC&nbsp;BY&nbsp;3.0&nbsp;AU), <a href="https://www.mass.gov/orgs/massgis-bureau-of-geographic-information" target="_blank">MassGIS</a>, <a href="https://www.nconemap.gov/" target="_blank">NC OneMap</a>',
         '<strong>Map Library</strong> - <a href="https://leafletjs.com/" target="_blank">Leaflet</a> (BSD-2-Clause)',
         '<strong>Geodesic Maths</strong> - <a href="https://geographiclib.sourceforge.io/" target="_blank">GeographicLib</a> by Charles Karney (MIT)',
         '<strong>Music Notation</strong> - <a href="https://www.vexflow.com/" target="_blank">VexFlow</a> (MIT)',
