@@ -184,6 +184,7 @@
             <button class="btn btn-secondary import-pill" data-source="url" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🔗 URL</button>
             <button class="btn btn-secondary import-pill" data-source="wikidata" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🌐 Wikidata</button>
             <button class="btn btn-secondary import-pill" data-source="osmrelation" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🗺️ OSM ID</button>
+            <button class="btn btn-secondary import-pill" data-source="parcel" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🏠 Parcel</button>
           </div>
           
           <!-- File upload panel (hidden by default) -->
@@ -214,6 +215,28 @@
               <input type="text" id="osmRelationInput" placeholder="e.g. 54391" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" />
               <button id="osmRelationLoad" class="btn btn-secondary" style="padding:6px 12px; font-size:13px; white-space:nowrap;">Load</button>
             </div>
+          </div>
+
+          <!-- Parcel / property boundary panel (hidden by default) -->
+          <div id="importPanel_parcel" style="display:none;">
+            <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+              <input type="text" id="parcelAddressInput" placeholder="Street address — or lat, lon" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" />
+              <button id="parcelAddressLoad" class="btn btn-secondary" style="padding:6px 12px; font-size:13px; white-space:nowrap;">Find Parcel</button>
+            </div>
+            <div style="font-size:11px; color:#888; margin-bottom:6px;">
+              Looks up the legal property boundary at an address using free, open cadastral services.
+              Boundaries are indicative cadastral outlines, not survey-accurate legal definitions.
+            </div>
+            <div id="parcelKeyRow" style="display:none; margin-bottom:6px;">
+              <input type="password" id="parcelKeyInput" placeholder="API key" autocomplete="off" style="width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:12px;" />
+              <div style="font-size:11px; color:#888; margin-top:2px;" id="parcelKeyHint"></div>
+            </div>
+            <details style="margin-bottom:6px;">
+              <summary style="font-size:11px; color:#888; cursor:pointer;">Advanced: custom ArcGIS parcel layer</summary>
+              <input type="text" id="parcelCustomArcgis" placeholder="https://…/FeatureServer/0 or …/MapServer/9" style="width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:12px; margin-top:4px;" />
+              <div style="font-size:11px; color:#888; margin-top:2px;">Many councils and US counties publish open ArcGIS parcel layers — paste a layer URL to use one anywhere.</div>
+            </details>
+            <div id="parcelAttribution" style="display:none; font-size:11px; color:#888; margin-bottom:6px;"></div>
           </div>
 
           <!-- Loading indicator (shared) -->
@@ -496,6 +519,7 @@
 <script src="js/features/map-manager.js?v=20260109"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
+<script src="js/features/property-import.js?v=20260613"></script>
 <script src="js/pocket-mode.js"></script>
 
 <!-- UIs (after their services) -->
@@ -1701,7 +1725,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       }
       
       // ── Shape Import URL params ─────────────────────────────
-      // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391,
+      // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391, ?address=...,
       // ?geojson=https://..., ?kml=https://..., ?gpx=https://...
       // Pipeline params: &auto=1|2, &epsilon=0.001, &grid=a, &pass=secret,
       //   &obf=1, &enc_pass=secret, &result=r|s|c
@@ -1711,7 +1735,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         osmrelation: urlParams.get('osmrelation'),
         geojson:     urlParams.get('geojson'),
         kml:         urlParams.get('kml'),
-        gpx:         urlParams.get('gpx')
+        gpx:         urlParams.get('gpx'),
+        address:     urlParams.get('address')
       };
       
       const activeImport = Object.entries(shapeImportParams).find(([k, v]) => v);
@@ -6610,7 +6635,7 @@ function encodeRaw(sol) {
     document.querySelectorAll('.import-pill').forEach(pill => {
       pill.addEventListener('click', function() {
         const source = this.dataset.source;
-        const panels = ['file', 'url', 'wikidata', 'osmrelation'];
+        const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel'];
         const isActive = this.classList.contains('pill-active');
         
         // Deactivate all pills and hide all panels
@@ -6761,10 +6786,10 @@ function encodeRaw(sol) {
       const selected = checked.map(cb => _placeSearchCandidates[parseInt(cb.value)]).filter(Boolean);
 
       if (selected.length === 1) {
-        // Single selection — import directly
+        // Single selection — import directly (groups present for multi-part parcels)
         const c = selected[0];
         _hidePlaceSearchResults();
-        processLoadedShape(c.coords, c.display_name);
+        processLoadedShape(c.coords, c.display_name, c.groups || undefined);
       } else {
         // Multiple selections — merge as multi-path groups
         const groups = selected.map(c => c.coords.map(pt => [pt.lat, pt.lon]));
@@ -6866,7 +6891,89 @@ function encodeRaw(sol) {
     document.getElementById('osmRelationInput').addEventListener('keydown', function(e) {
       if (e.key === 'Enter') document.getElementById('osmRelationLoad').click();
     });
-    
+
+    // ── Shape Import: Property parcel by address ──────────────
+    // Free cadastral sources only (see PropertyImport.PROVIDERS).
+    // Flow: address → Nominatim point → "which parcel contains this
+    // point?" against the matching provider → candidate picker.
+    let _parcelKeyProviderId = null;   // provider currently asking for a key
+
+    function _showParcelAttribution(text) {
+      const el = document.getElementById('parcelAttribution');
+      if (!text) { el.style.display = 'none'; return; }
+      el.textContent = 'Parcel data: ' + text;
+      el.style.display = 'block';
+    }
+
+    function _showParcelKeyRow(provider) {
+      _parcelKeyProviderId = provider.id;
+      const row  = document.getElementById('parcelKeyRow');
+      const inp  = document.getElementById('parcelKeyInput');
+      const hint = document.getElementById('parcelKeyHint');
+      inp.placeholder = provider.keyName || 'API key';
+      inp.value = PropertyImport.getStoredKey(provider.id);
+      hint.innerHTML = `${provider.name} needs a free API key (no payment details required). ` +
+        (provider.keyHelpUrl ? `<a href="${provider.keyHelpUrl}" target="_blank" rel="noopener">Get one here</a>, ` : '') +
+        `paste it above, then search again. It's stored only on this device.`;
+      row.style.display = 'block';
+    }
+
+    document.getElementById('parcelAddressLoad').addEventListener('click', async function() {
+      const input = document.getElementById('parcelAddressInput');
+      const query = input.value.trim();
+      if (!query) { showToast('Please enter an address (or lat, lon)', 'error'); return; }
+
+      // Persist any key the user has just entered
+      const keyInput = document.getElementById('parcelKeyInput');
+      if (_parcelKeyProviderId && keyInput.value.trim()) {
+        PropertyImport.storeKey(_parcelKeyProviderId, keyInput.value);
+      }
+
+      _hidePlaceSearchResults();
+      _showParcelAttribution(null);
+
+      const btn = this;
+      btn.disabled = true; btn.textContent = 'Searching...';
+      const loadingEl = document.getElementById('shapeImportLoading');
+      const loadingText = document.getElementById('shapeImportLoadingText');
+      loadingText.textContent = 'Geocoding address...';
+      loadingEl.style.display = 'block';
+
+      try {
+        const result = await PropertyImport.lookupAddress(query, {
+          customArcgisUrl: document.getElementById('parcelCustomArcgis').value,
+          onStatus: t => { loadingText.textContent = t; }
+        });
+
+        loadingEl.style.display = 'none';
+        _showParcelAttribution(result.provider.attribution);
+
+        const cands = result.candidates;
+        if (cands.length === 1) {
+          const c = cands[0];
+          processLoadedShape(c.coords, c.display_name, c.groups || undefined);
+        } else {
+          // Reuse the place-search picker — candidate objects are compatible
+          _renderPlaceSearchResults(cands, query);
+          document.getElementById('placeSearchResultsHint').textContent =
+            `${cands.length} parcels at "${result.geocode.display_name.split(',').slice(0,2).join(',')}" — tick one or more to import`;
+        }
+      } catch (err) {
+        loadingEl.style.display = 'none';
+        if (err.needsKeyFor) {
+          _showParcelKeyRow(err.needsKeyFor);
+          showToast(err.message, 'error');
+        } else {
+          showToast(err.message, 'error');
+        }
+      } finally {
+        btn.disabled = false; btn.textContent = 'Find Parcel';
+      }
+    });
+    document.getElementById('parcelAddressInput').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') document.getElementById('parcelAddressLoad').click();
+    });
+
     // ── Shape Import: trigger from URL params ────────────────
     function activateImportPill(source) {
       // Deactivate all pills and hide all panels
@@ -6875,7 +6982,7 @@ function encodeRaw(sol) {
         p.style.background = '';
         p.style.color = '';
       });
-      const panels = ['file', 'url', 'wikidata', 'osmrelation'];
+      const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel'];
       for (const p of panels) {
         document.getElementById('importPanel_' + p).style.display = 'none';
       }
@@ -6937,6 +7044,17 @@ function encodeRaw(sol) {
             processLoadedShape(kmlResult.coords, kmlResult.name || 'KML');
             break;
             
+          case 'address':
+            activateImportPill('parcel');
+            document.getElementById('parcelAddressInput').value = value;
+            document.getElementById('shapeImportLoadingText').textContent = `Finding parcel at \"${value}\"...`;
+            const pcResult = await PropertyImport.lookupAddressAuto(value, {
+              onStatus: t => { document.getElementById('shapeImportLoadingText').textContent = t; }
+            });
+            _showParcelAttribution(pcResult.attribution);
+            processLoadedShape(pcResult.coords, pcResult.name, pcResult.groups || undefined);
+            break;
+
           case 'gpx':
             activateImportPill('url');
             document.getElementById('gpxUrl').value = value;
