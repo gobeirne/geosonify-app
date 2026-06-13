@@ -4553,6 +4553,22 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      * Re-render all cards
      */
     render: renderCards,
+
+    /**
+     * Set a card's iteration count, persist it, and re-render. Used by
+     * the import-accuracy readout to flow an accepted resolution through
+     * to the active card and the front panel.
+     */
+    setIterations(gridKey, n) {
+      if (!CARD_GRIDS[gridKey]) return;
+      cardState.iterations[gridKey] = n;
+      saveCardState();
+      if (gridKey === cardState.active &&
+          typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
+        MapManager.refreshHierarchicalGrid();
+      }
+      renderCards();
+    },
     
     /**
      * Lightweight code-only update (no DOM rebuild).
