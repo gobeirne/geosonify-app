@@ -23,8 +23,20 @@
 
 (function(global){
   'use strict';
-  const __URL_CODEC_VER__ = 'v1.0';
+  const __URL_CODEC_VER__ = 'v1.1';
   try { console.log('[geosonify] url-codec ' + __URL_CODEC_VER__ + ' loaded'); } catch(e){}
+
+  // tokenizeCode is used throughout this module with a 2D grid argument,
+  // but GeoCodec.tokenizeCode expects a FLAT token array. This local
+  // wrapper adapts the signature (flattening a 2D grid if given one) and
+  // delegates, so the many bare tokenizeCode(code, grid2D) calls below
+  // resolve correctly. Without it the module throws ReferenceError at load.
+  function tokenizeCode(code, gridOrFlat) {
+    if (typeof GeoCodec === 'undefined' || !GeoCodec.tokenizeCode) return null;
+    if (!gridOrFlat) return null;
+    const flat = Array.isArray(gridOrFlat[0]) ? gridOrFlat.flat() : gridOrFlat;
+    return GeoCodec.tokenizeCode(code, flat);
+  }
 
   // ============== URL PARAMETER DEFINITIONS ==============
   // Query parameter prefixes and their meanings:
