@@ -299,6 +299,7 @@
               <div style="font-weight:600; margin-bottom:2px;">Round-trip accuracy <span id="importAccuracyEncoding" style="font-weight:400; color:#888;"></span></div>
               <div id="importAccuracyFigures"></div>
               <div id="importAccuracySuggestion" style="margin-top:4px;"></div>
+              <div id="importAccuracyStepper" style="margin-top:6px;"></div>
             </div>
             <div style="display:flex; gap:8px; margin-top:8px;">
               <label style="display:flex; align-items:center; gap:4px; font-size:14px;">
@@ -6414,6 +6415,17 @@ function encodeRaw(sol) {
       return out;
     }
 
+    // Set the active card's iterations from the import view and refresh the
+    // readout in place — no need to switch to the geosonify tab.
+    function _setImportIterations(gridKey, iter) {
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.setIterations) {
+        CardRenderer.setIterations(gridKey, iter);
+      } else {
+        cardState.iterations[gridKey] = iter;
+      }
+      updateImportAccuracy();
+    }
+
     function updateImportAccuracy() {
       const box = document.getElementById('importAccuracyBox');
       if (!box) return;
@@ -6457,18 +6469,28 @@ function encodeRaw(sol) {
           `Increase to ${result.suggested.iter} iterations</button> ` +
           `<span style="color:#888;">→ worst ${ImportAccuracy.fmtError(result.suggested.max)}</span>`;
         const btn = document.getElementById('accuracyBumpBtn');
-        if (btn) btn.onclick = () => {
-          if (typeof CardRenderer !== 'undefined' && CardRenderer.setIterations) {
-            CardRenderer.setIterations(_lastAccuracySuggestion.gridKey, _lastAccuracySuggestion.iter);
-          } else {
-            cardState.iterations[_lastAccuracySuggestion.gridKey] = _lastAccuracySuggestion.iter;
-          }
-          updateImportAccuracy();
-        };
+        if (btn) btn.onclick = () => _setImportIterations(gridKey, _lastAccuracySuggestion.iter);
       } else if (result.suggested) {
         suggEl.innerHTML = `<span style="color:#888;">Already at the resolution that meets source precision.</span>`;
       } else {
         suggEl.innerHTML = `<span style="color:#b8860b;">Even max iterations don't reach source precision — the source may be very high-precision, or try a finer grid.</span>`;
+      }
+
+      // Live in-place iteration stepper — tune without leaving the import view.
+      const minI = gridDef.minIterations || 1;
+      const maxI = gridDef.maxIterations || 21;
+      const cur = result.current.iter;
+      const stepEl = document.getElementById('importAccuracyStepper');
+      if (stepEl) {
+        stepEl.innerHTML =
+          `<span style="color:#888;">Iterations:</span> ` +
+          `<button id="accIterMinus" class="btn btn-secondary" style="font-size:13px; padding:2px 9px;" ${cur <= minI ? 'disabled' : ''}>−</button> ` +
+          `<strong style="min-width:1.5em; display:inline-block; text-align:center;">${cur}</strong> ` +
+          `<button id="accIterPlus" class="btn btn-secondary" style="font-size:13px; padding:2px 9px;" ${cur >= maxI ? 'disabled' : ''}>+</button>`;
+        const minus = document.getElementById('accIterMinus');
+        const plus = document.getElementById('accIterPlus');
+        if (minus) minus.onclick = () => { if (cur > minI) _setImportIterations(gridKey, cur - 1); };
+        if (plus) plus.onclick = () => { if (cur < maxI) _setImportIterations(gridKey, cur + 1); };
       }
 
       box.style.display = 'block';
