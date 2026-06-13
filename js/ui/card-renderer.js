@@ -1172,6 +1172,12 @@
     }
     
     const gridDef = CARD_GRIDS[gridKey];
+    // GIS reference cards can't be privacy-transformed. If a privacy mode is on,
+    // never emit a real standard code AND never fall back to raw lat/lon (that
+    // would leak the exact location). Emit a redaction placeholder instead.
+    if (gridDef.gis && (passphrase || obfuscated)) {
+      return '████████';
+    }
     const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
     const iterations = isBarcodeCard ? getBarcodeIterations(gridKey)
       : (gridDef.fixedIterations !== undefined ? gridDef.fixedIterations 
@@ -1927,6 +1933,8 @@
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef || (!gridDef.grid && !gridDef.gis)) return;
+      // Redacted GIS card under privacy mode: leave the blurred block alone
+      if (gridDef.gis && (passphrase || obfuscated)) return;
       
       const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
       const isFixed = gridDef.fixedIterations !== undefined;
@@ -2036,6 +2044,15 @@
       const iterations = isBarcodeCard ? getBarcodeIterations(gridKey)
         : (gridDef.fixedIterations !== undefined ? gridDef.fixedIterations : (cardState.iterations[gridKey] || gridDef.defaultIterations));
       let code = encodeCardCoordinate(gridKey, currentCardCoord.lat, currentCardCoord.lon, iterations);
+      // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …).
+      // Geosonify's privacy modes can't meaningfully transform them, so when
+      // passphrase or obfuscation is active we must REDACT them — otherwise a
+      // user in privacy mode would see (and could copy) a genuine, unprotected
+      // location. Redact before the code reaches display, copy, share, or map.
+      const gisRedacted = !!(gridDef.gis && (passphrase || obfuscated));
+      if (gisRedacted) {
+        code = '████████';
+      }
       const isActive = cardState.active === gridKey;
       const isChroma = gridDef.display === 'chroma';
       const supportsChecksum = !!gridDef.prefixLength;  // BIP39 grids have prefixLength
@@ -2082,6 +2099,9 @@
       } else if (isWordBased) {
         // Wrap in span so flex treats code+checksum as single item, not separate columns
         bodyContent = `<div class="code-display" data-editable="true" title="Click to edit"><span>${formattedCode}</span></div>`;
+      } else if (gisRedacted) {
+        // Redacted GIS card: show blurred block, not editable, not copyable
+        bodyContent = `<div class="code-display gis-redacted" title="Hidden while privacy mode is active" style="filter:blur(4px);user-select:none;opacity:0.55;letter-spacing:2px;cursor:not-allowed;">████████</div>`;
       } else {
         bodyContent = `<div class="code-display" data-editable="true" title="Click to edit">${formattedCode}</div>`;
       }
@@ -2166,6 +2186,10 @@
       };
       
       card.querySelector('.copy-btn').onclick = async () => {
+        if (gisRedacted) {
+          showToast('Hidden while privacy mode is active', 'error');
+          return;
+        }
         if (gridDef?.display === 'chroma' && typeof RGB111Lib !== 'undefined') {
           const canvas = RGB111Lib.generateCanvas(code, { size: 400, borderWidth: 0.5, notchSize: 0.5 });
           const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -2268,7 +2292,13 @@
         showToast('Copied!');
       };
       
-      card.querySelector('.share-btn').onclick = () => shareCard(gridKey, plainCodeWithChecksum);
+      card.querySelector('.share-btn').onclick = () => {
+        if (gisRedacted) {
+          showToast('Hidden while privacy mode is active', 'error');
+          return;
+        }
+        shareCard(gridKey, plainCodeWithChecksum);
+      };
       
       // Checksum toggle button (BIP39 only)
       const checksumBtnEl = card.querySelector('.checksum-btn');
@@ -2287,10 +2317,20 @@
         renderCards();
       };
       
-      card.querySelector('.fullscreen-btn').onclick = () => showCardFullscreen(gridKey, code);
+      card.querySelector('.fullscreen-btn').onclick = () => {
+        if (gisRedacted) {
+          showToast('Hidden while privacy mode is active', 'error');
+          return;
+        }
+        showCardFullscreen(gridKey, code);
+      };
       const g3 = card.querySelector('.grid3x3-btn');
       if (g3) g3.onclick = () => show3x3Grid(gridKey, code);
       card.querySelector('.info-btn').onclick = () => {
+        if (gisRedacted) {
+          showToast('Hidden while privacy mode is active', 'error');
+          return;
+        }
         if (gridDef.gis && typeof GISGrids !== 'undefined') {
           // Build a comparison line from the currently-active Geosonify card
           let compareLine = null;
