@@ -6328,7 +6328,8 @@ function encodeRaw(sol) {
     function updateGpxPreview(fitBounds = false) {
       if (!gpxPreviewMap || gpxOriginalCoords.length === 0) return;
       
-      const epsilon = parseFloat(document.getElementById('epsilonValue').value) || 0.0001;
+      const _epsRaw = parseFloat(document.getElementById('epsilonValue').value);
+      const epsilon = isNaN(_epsRaw) ? 0.0001 : _epsRaw;
       gpxSimplifiedCoords = rdpSimplify(gpxOriginalCoords, epsilon);
       
       // Update info
@@ -6391,7 +6392,12 @@ function encodeRaw(sol) {
 
     function updateImportAccuracy() {
       const box = document.getElementById('importAccuracyBox');
-      if (!box || typeof ImportAccuracy === 'undefined') return;
+      if (!box) return;
+      if (typeof ImportAccuracy === 'undefined') {
+        console.warn('[geosonify] import-accuracy.js not loaded — accuracy readout unavailable. Check that js/lib/import-accuracy.js is deployed.');
+        box.style.display = 'none';
+        return;
+      }
       if (!gpxOriginalCoords || gpxOriginalCoords.length === 0) { box.style.display = 'none'; return; }
 
       const gridKey = (typeof getActiveGridKey === 'function' && getActiveGridKey()) || cardState.active;
@@ -7479,7 +7485,8 @@ function encodeRaw(sol) {
       
       // For multi-polygon, apply simplification per group
       if (_pendingImportGroups && _pendingImportGroups.length > 1) {
-        const epsilon = parseFloat(document.getElementById('epsilonValue').value) || 0.0001;
+        const _epsRaw = parseFloat(document.getElementById('epsilonValue').value);
+      const epsilon = isNaN(_epsRaw) ? 0.0001 : _epsRaw;
         const coordGroups = _pendingImportGroups.map(g => {
           const simplified = rdpSimplify(g, epsilon);
           return simplified.map(c => [c.lat, c.lon]);
