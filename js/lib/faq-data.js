@@ -136,6 +136,16 @@
           },
 
           {
+            id: 'gis-reference-grids',
+            q: 'Can I see my location as a Plus Code, MGRS, UTM or national grid reference?',
+            a: `<p>Yes - and they sit right alongside Geosonify's own codes as cards, so you can compare them directly. Add them from <strong>+ Add Mode</strong> on the Output tab (Plus Code is shown by default). Each is a real, standards-compliant reference you can paste into other GIS tools, read over the radio, or type back in to jump to that spot.</p>
+<p>The global ones work anywhere: <strong>Plus Codes</strong> (Open Location Code), <strong>MGRS</strong> (the NATO military grid), <strong>Geohash</strong>, and <strong>UTM</strong> eastings/northings. The national ones appear where they apply: <strong>NZTM2000</strong> in New Zealand, <strong>OS grid references</strong> in Great Britain, and <strong>MGA2020</strong> in Australia. There's also a <strong>Local Grid</strong> card that automatically shows whichever national grid fits your current location, falling back to UTM elsewhere.</p>
+<p>Two of these are close cousins of Geosonify codes. A Plus Code is base-20 and hierarchical - every two characters refine the location 20x, exactly the principle Geosonify uses. An OS grid reference works the same way: the letters name a 100 km square and each pair of figures zooms in 10x. So the +/- buttons on those cards do the same job as Geosonify's iteration stepper - more characters, finer cell. On the plain easting/northing cards (UTM, NZTM, MGA) the +/- buttons change the rounding instead, from 10 km down to the millimetre.</p>
+<p>The information button on any of these cards is the interesting one: it shows the cell size at every precision level for that scheme <em>and</em> the cell size of your currently-active Geosonify card, side by side - so you can see exactly how, say, an 8-digit Plus Code (around 14 m) compares to your alphanumeric code at a given number of iterations.</p>
+<p>A note on accuracy: the projections are computed in-app and match the official EPSG definitions to the centimetre. British grid references use a standard datum transformation that's accurate to roughly 3 metres against the definitive Ordnance Survey model - perfect for mapping and navigation, but not a substitute for survey-grade tools.</p>`
+          },
+
+          {
             id: 'why-hierarchy',
             q: 'Why is hierarchy useful?',
             a: `<p>Because both computers and humans benefit from it, though in different ways.</p>
@@ -166,6 +176,7 @@
 <li>Hexadecimal</li>
 <li>QR and Data Matrix outputs</li>
 </ul>
+<p>Alongside these, Geosonify can display established GIS reference grids - Plus Codes, MGRS, Geohash, UTM, and national grids like NZTM2000, OS grid references and MGA2020 - as cards next to its own, for comparison and interoperability with other mapping tools.</p>
 <p>All of these represent the same underlying geography. The representation changes; the location does not.</p>`
           }
 
