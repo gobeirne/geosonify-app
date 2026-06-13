@@ -6530,7 +6530,7 @@ function encodeRaw(sol) {
     function _applyRectangleImport() {
       if (!_lastRectOffer) return;
       const fit = _lastRectOffer.fit;
-      // Switch shape mode to rectangle and set the solution directly.
+      // Switch shape mode to rectangle and set the solution.
       const rectRadio = document.querySelector('input[name="shapeMode"][value="rect"]');
       if (rectRadio) rectRadio.checked = true;
       lastSolution = {
@@ -6540,15 +6540,26 @@ function encodeRaw(sol) {
         L: fit.L,
         S: fit.S
       };
+      // Build the rectangle corners and draw them on the shared map, exactly
+      // as the normal rectangle calculation does (drawRectangleOnMap), then
+      // refresh the encoded output and surface result text.
+      try {
+        const corners = buildRectangle(fit.L, fit.S, deg2rad(fit.thetaDeg), fit.centroid);
+        if (typeof autoAdjustPrecision === 'function') autoAdjustPrecision(fit.L, fit.S);
+        const resultsEl = document.getElementById('results');
+        const finalEl = document.getElementById('finalCoords');
+        if (resultsEl) resultsEl.textContent =
+          `Imported as rectangle\nCentroid: ${fit.centroid[0].toFixed(6)}, ${fit.centroid[1].toFixed(6)}\n` +
+          `Long side: ${fit.L.toFixed(3)} m\nShort side: ${fit.S.toFixed(3)} m\nBearing: ${fit.thetaDeg.toFixed(2)}°`;
+        if (finalEl) finalEl.textContent = corners.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join('\n');
+        if (typeof drawRectangleOnMap === 'function') drawRectangleOnMap(corners, fit.centroid);
+      } catch (e) { console.warn('[geosonify] rectangle draw failed:', e); }
       if (typeof updateCompactOutputs === 'function') updateCompactOutputs();
-      // Redraw the rectangle on the preview/main map if a renderer exists.
-      if (typeof renderSolutionOnMap === 'function') {
-        try { renderSolutionOnMap(); } catch (e) {}
-      }
-      showToast('Imported as rectangle — ' + Math.round(fit.L) + 'm × ' + Math.round(fit.S) + 'm');
-      // Collapse the offer now it's applied.
+      // Collapse the offer and navigate to Output, matching every other import.
       const offerEl = document.getElementById('importAccuracyRectOffer');
       if (offerEl) offerEl.innerHTML = '<span style="color:#1a7c4c;">✓ Imported as rectangle.</span>';
+      showToast('Imported as rectangle — ' + Math.round(fit.L) + 'm × ' + Math.round(fit.S) + 'm');
+      if (typeof switchToTab === 'function') switchToTab('output');
     }
 
     function updateImportAccuracy() {
