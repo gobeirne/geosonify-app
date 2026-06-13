@@ -683,6 +683,29 @@ const GISGrids = (function () {
     } catch (e) { return null; }
   }
 
+  /**
+   * True geographic cell for a scheme at a given iteration, as a closed
+   * ring of [lat,lon] corners (NW→NE→SE→SW→NW). Derived from the cell's
+   * actual size and the encoded cell's center, so it matches the scheme's
+   * real footprint rather than any uniform grid subdivision. Returns null
+   * if the point isn't representable in that scheme.
+   */
+  function cellCorners(schemeKey, lat, lon, iterations) {
+    const s = SCHEMES[schemeKey];
+    if (!s) return null;
+    const code = encode(schemeKey, lat, lon, iterations);
+    if (!code || /outside|—/.test(code)) return null;
+    const center = decode(schemeKey, code);
+    if (!center) return null;
+    const dims = s.cellMetres(iterations, center[0], center[1]); // {w,h} metres
+    const halfLat = (dims.h / 2) / 111319.9;
+    const cosLat = Math.cos(center[0] * D2R) || 1e-6;
+    const halfLon = (dims.w / 2) / (111319.9 * cosLat);
+    const n = center[0] + halfLat, sLat = center[0] - halfLat;
+    const w = center[1] - halfLon, e = center[1] + halfLon;
+    return [[n, w], [n, e], [sLat, e], [sLat, w], [n, w]];
+  }
+
   function precisionText(schemeKey, iterations, coord) {
     const s = SCHEMES[schemeKey];
     if (!s) return '';
@@ -771,7 +794,7 @@ const GISGrids = (function () {
   }
 
   return {
-    SCHEMES, encode, decode, precisionText, showInfo, cardDefs, localScheme,
+    SCHEMES, encode, decode, precisionText, cellCorners, showInfo, cardDefs, localScheme,
     // exposed for tests
     _tm: { NZTM, BNG_TM, utmTM, wgs84ToUTM },
     _datum: { wgs84ToOSGB36, osgb36ToWGS84 },
