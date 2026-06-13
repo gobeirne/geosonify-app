@@ -46,6 +46,9 @@ const ShapeImport = (function () {
    */
   function suggestEpsilon(coords) {
     if (!coords || coords.length < 2) return 0.0001;
+    // Closed rings (property boundaries, parcels) must keep every vertex —
+    // simplification trades away the exact corners that are the whole point.
+    if (isClosedRing(coords) && coords.length <= 60) return 0;
     let minLat = Infinity, maxLat = -Infinity;
     let minLon = Infinity, maxLon = -Infinity;
     for (const c of coords) {
@@ -60,6 +63,22 @@ const ShapeImport = (function () {
     // Heuristic: epsilon ≈ diagonal / 2000, clamped to slider range
     const eps = Math.max(0.00001, Math.min(0.01, diagDeg / 2000));
     return parseFloat(eps.toPrecision(2));
+  }
+
+  /**
+   * Is this coordinate list a closed ring (first ≈ last)? Used to treat
+   * property boundaries differently from open tracks: rings keep all
+   * vertices (epsilon 0), tracks may be simplified.
+   * Accepts [{lat,lon}] or [[lat,lon]].
+   */
+  function isClosedRing(coords) {
+    if (!coords || coords.length < 4) return false;
+    const a = coords[0], b = coords[coords.length - 1];
+    const aLat = a.lat != null ? a.lat : a[0];
+    const aLon = a.lon != null ? a.lon : a[1];
+    const bLat = b.lat != null ? b.lat : b[0];
+    const bLon = b.lon != null ? b.lon : b[1];
+    return Math.abs(aLat - bLat) < 1e-5 && Math.abs(aLon - bLon) < 1e-5;
   }
 
   /**
@@ -857,6 +876,7 @@ const ShapeImport = (function () {
     // Core utilities
     toGpxCoordArray: toGpxCoordArray,
     suggestEpsilon: suggestEpsilon,
+    isClosedRing: isClosedRing,
     extractFromGeoJSON: extractFromGeoJSON,
     extractAllFromGeoJSON: extractAllFromGeoJSON,
     extractAllRings: extractAllRings,
