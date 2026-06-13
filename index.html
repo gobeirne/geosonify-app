@@ -6380,10 +6380,33 @@ function encodeRaw(sol) {
     let _lastAccuracySuggestion = null;
 
     function _roundTripAt(coords, gridKey, iterations) {
+      const gridDef = CARD_GRIDS[gridKey];
+      // GIS schemes (Plus Code, MGRS, …) have no passphrase concept — use
+      // their own faithful encode/decode.
+      if (gridDef && gridDef.gis) {
+        const out = [];
+        for (const c of coords) {
+          const code = encodeCardCoordinate(gridKey, c.lat, c.lon, iterations);
+          const ll = decodeCardCoordinate(gridKey, code, iterations);
+          if (!ll) return null;
+          out.push([ll[0], ll[1]]);
+        }
+        return out;
+      }
+      // geosonify grids: measure quantisation on the BASE grid directly.
+      // Quantisation error depends only on the cell boundaries (grid shape ×
+      // iterations), NOT on how cells are labelled — so shuffle, obfuscation
+      // and passphrase are irrelevant to the geometric error and would only
+      // add fragility (esp. the position-dependent passphrase path). This
+      // makes the readout correct and identical whether or not an org has a
+      // passphrase permanently active.
+      const baseGrid = gridDef && gridDef.grid;
+      if (!baseGrid || typeof GeoCodec === 'undefined' ||
+          !GeoCodec.encodeHierarchical || !GeoCodec.decodeHierarchical) return null;
       const out = [];
       for (const c of coords) {
-        const code = encodeCardCoordinate(gridKey, c.lat, c.lon, iterations);
-        const ll = decodeCardCoordinate(gridKey, code, iterations);
+        const code = GeoCodec.encodeHierarchical(c.lat, c.lon, baseGrid, iterations);
+        const ll = GeoCodec.decodeHierarchical(code, baseGrid, iterations);
         if (!ll) return null;
         out.push([ll[0], ll[1]]);
       }
