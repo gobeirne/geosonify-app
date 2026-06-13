@@ -2183,6 +2183,11 @@
         saveCardState();
         renderCards();
         if (callbacks.onCompactUpdate) callbacks.onCompactUpdate();
+        // Active card changed but the pin didn't move, so the map's grid box
+        // won't refresh on its own — nudge it directly.
+        if (typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
+          MapManager.refreshHierarchicalGrid();
+        }
       };
       
       card.querySelector('.copy-btn').onclick = async () => {
@@ -2507,6 +2512,9 @@
             CustomGridLoader.updateStoredIterations(gridKey, cardState.iterations[gridKey]);
           }
           renderCards();
+          if (cardState.active === gridKey && typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
+            MapManager.refreshHierarchicalGrid();
+          }
         });
         card.querySelector('.plus-btn')?.addEventListener('click', () => {
           const newIter = (cardState.iterations[gridKey] || gridDef.defaultIterations) + 1;
@@ -2518,6 +2526,9 @@
             CustomGridLoader.updateStoredIterations(gridKey, cardState.iterations[gridKey]);
           }
           renderCards();
+          if (cardState.active === gridKey && typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
+            MapManager.refreshHierarchicalGrid();
+          }
         });
       }
       
