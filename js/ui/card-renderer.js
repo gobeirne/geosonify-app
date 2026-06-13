@@ -500,8 +500,32 @@
   /**
    * Auto-add BIP39 card based on device language (first load only)
    */
-  function autoAddBIP39ByLanguage() {
-    const STORAGE_KEY = 'geosonify_bip39_lang_checked';
+  // Register GIS reference grids into CARD_GRIDS. Plus Code is surfaced
+  // by default (once) so every user sees Geosonify codes alongside a
+  // familiar global standard; the rest are available via "+ Add Mode".
+  function registerGISCards() {
+    if (typeof GISGrids === 'undefined') return;
+    const defs = GISGrids.cardDefs();
+    const order = ['pluscode', 'mgrs', 'geohash', 'utm', 'nztm', 'bng', 'mga', 'localgrid'];
+    for (const key of order) {
+      if (!defs[key]) continue;
+      CARD_GRIDS[key] = defs[key];
+      if (cardState.iterations[key] === undefined) {
+        cardState.iterations[key] = defs[key].defaultIterations;
+      }
+      if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+    // One-time: make Plus Code visible by default
+    try {
+      if (!localStorage.getItem('geosonify_pluscode_default_added')) {
+        if (!cardState.visible.includes('pluscode')) cardState.visible.push('pluscode');
+        localStorage.setItem('geosonify_pluscode_default_added', '1');
+        saveCardState();
+      }
+    } catch (e) { /* private mode */ }
+  }
+
+  function autoAddBIP39ByLanguage() {    const STORAGE_KEY = 'geosonify_bip39_lang_checked';
     
     // Only run once per device
     if (localStorage.getItem(STORAGE_KEY)) {
@@ -680,6 +704,10 @@
   
   function _encodeCardCoordinateInternal(gridKey, lat, lon, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    // GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …) — own engine, no shuffle/obfuscation
+    if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
+      return GISGrids.encode(gridDef.gis, lat, lon, iterations);
+    }
     const baseGrid = gridDef?.grid;
     if (!baseGrid) return '';
     
@@ -775,6 +803,9 @@
   
   function decodeCardCoordinate(gridKey, code, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
+      return GISGrids.decode(gridDef.gis, code);
+    }
     const baseGrid = gridDef?.grid;
     if (!baseGrid || !code) return null;
     
@@ -857,6 +888,9 @@
   
   function decodeCardCode(gridKey, code, deobfuscate) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
+      return GISGrids.decode(gridDef.gis, code);
+    }
     if (!gridDef || !gridDef.grid) return null;
     
     const baseGrid = gridDef.grid;
@@ -1104,6 +1138,10 @@
   }
   
   function getPrecisionText(gridKey, iterations) {
+    const gd = CARD_GRIDS[gridKey];
+    if (gd && gd.gis && typeof GISGrids !== 'undefined') {
+      return GISGrids.precisionText(gd.gis, iterations, currentCardCoord);
+    }
     const grid = CARD_GRIDS[gridKey]?.grid;
     if (!grid) return '';
     const rows = grid.length, cols = grid[0].length;
@@ -1888,7 +1926,7 @@
       const gridKey = card.dataset.gridKey;
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef || !gridDef.grid) return;
+      if (!gridDef || (!gridDef.grid && !gridDef.gis)) return;
       
       const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
       const isFixed = gridDef.fixedIterations !== undefined;
@@ -1986,7 +2024,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && CARD_GRIDS[k].grid
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis)
     );
     
     container.innerHTML = '';
@@ -2094,7 +2132,7 @@
           </div>
           <div class="footer-buttons">
             <button class="action-btn info-btn" title="Cell info">ℹ️</button>
-            <button class="action-btn grid3x3 grid3x3-btn">3×3</button>
+            ${gridDef.gis ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
           </div>
         </div>
@@ -2250,8 +2288,26 @@
       };
       
       card.querySelector('.fullscreen-btn').onclick = () => showCardFullscreen(gridKey, code);
-      card.querySelector('.grid3x3-btn').onclick = () => show3x3Grid(gridKey, code);
-      card.querySelector('.info-btn').onclick = () => showCellInfo(gridKey, code, iterations);
+      const g3 = card.querySelector('.grid3x3-btn');
+      if (g3) g3.onclick = () => show3x3Grid(gridKey, code);
+      card.querySelector('.info-btn').onclick = () => {
+        if (gridDef.gis && typeof GISGrids !== 'undefined') {
+          // Build a comparison line from the currently-active Geosonify card
+          let compareLine = null;
+          const activeKey = cardState.active;
+          const activeDef = CARD_GRIDS[activeKey];
+          if (activeDef && activeDef.grid && currentCardCoord) {
+            const aIter = activeDef.fixedIterations !== undefined
+              ? activeDef.fixedIterations
+              : (cardState.iterations[activeKey] || activeDef.defaultIterations);
+            const aPrec = getPrecisionText(activeKey, aIter);
+            compareLine = `Your active ${activeDef.name} card at ${aIter} iterations: ${aPrec} cell`;
+          }
+          GISGrids.showInfo(gridDef.gis, iterations, currentCardCoord, { compareLine });
+        } else {
+          showCellInfo(gridKey, code, iterations);
+        }
+      };
       
       // Move up/down buttons
       const moveUpBtn = card.querySelector('.move-up-btn');
@@ -3363,6 +3419,19 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   }
   
   function shareCard(gridKey, code) {
+    // GIS reference cards: the code is itself a portable, universal location
+    // reference (that's the point of these standards), so share/copy the code.
+    const gd = CARD_GRIDS[gridKey];
+    if (gd && gd.gis) {
+      const label = `${gd.name}: ${code}`;
+      if (navigator.share) {
+        navigator.share({ title: 'Geosonify Location', text: label })
+          .catch(() => navigator.clipboard.writeText(code).then(() => showToast('Code copied!')).catch(() => showToast('Copy failed')));
+      } else {
+        navigator.clipboard.writeText(code).then(() => showToast('Code copied!')).catch(() => showToast('Copy failed'));
+      }
+      return;
+    }
     // QR-URL card: share the actual Geosonify URL (the whole point of this card)
     if (gridKey === 'qrurl' && typeof BarcodeLib !== 'undefined') {
       const shareURL = BarcodeLib.buildGeosonifyURL(code, null, obfuscated);
@@ -3687,10 +3756,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
     
     Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      if (!def.grid || def.deprecated) return;
+      if ((!def.grid && !def.gis) || def.deprecated) return;
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
-      const label = isCustom ? `${def.name} <span style="font-size:11px;opacity:0.5;">(custom)</span>` : def.name;
+      const isGis = !!def.gis;
+      const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
+                : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>' : '';
+      const label = def.name + tag;
       html += `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
           <span style="color:white;">${label}</span>
@@ -4436,6 +4508,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       
       // Auto-add BIP39 card based on device language (first load only)
       autoAddBIP39ByLanguage();
+      
+      // Register GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …)
+      registerGISCards();
       
       // Initialize UI elements
       initCardUIHandlers();
