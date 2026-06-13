@@ -725,55 +725,226 @@ const GISGrids = (function () {
    * caller (card-renderer) append the active Geosonify card's cell
    * size for direct comparison.
    */
+  // Per-scheme descriptive note for the popup header.
+  const SCHEME_NOTES = {
+    pluscode: 'Open Location Code: base-20 and hierarchical — every 2 digits is a 20×20 refinement, the same principle as geosonify grids.',
+    mgrs: 'NATO grid. The letters name a 100 km square; each digit pair adds 10× precision per axis. Standard stops at 1 m.',
+    geohash: 'Hierarchical base-32 over interleaved lat/lon bits. Cells are rectangles ~2:1 at most lengths.',
+    utm: 'Plain easting/northing in metres within a 6° zone. The stepper changes rounding.',
+    nztm: 'EPSG:2193 — the standard NZ projection (Topo50 maps, LINZ data). The stepper changes rounding.',
+    bng: 'OS National Grid. Letters name a 100 km square; figures refine 10× per pair — hierarchical, like a geosonify code in disguise. Datum shift here is Helmert (±~3 m vs OSTN15).',
+    mga: 'GDA2020 / UTM for Australia. The stepper changes rounding.',
+    localgrid: 'Automatically shows the national grid for wherever the pin is: NZTM in NZ, OS grid in Britain, MGA in Australia, UTM elsewhere.'
+  };
+
+  // Which schemes enumerate a finite, countable set of cells (so a
+  // "1 of N locations" coverage figure is meaningful). Continuous
+  // easting/northing schemes are just rounded coordinates — no count.
+  const ENUMERABLE = { pluscode: true, geohash: true, mgrs: true, bng: true };
+
+  function fmtMetricFull(m) {
+    if (m >= 1000) return (m / 1000).toFixed(m >= 10000 ? 0 : 2) + ' km';
+    if (m >= 1) return m.toFixed(2) + ' m';
+    if (m >= 0.01) return (m * 100).toFixed(1) + ' cm';
+    if (m >= 0.001) return (m * 1000).toFixed(1) + ' mm';
+    return (m * 1e6).toFixed(1) + ' µm';
+  }
+
+  /**
+   * THE shared resolution popup, used by both GIS cards and geosonify
+   * grid cards so every ℹ️ looks and behaves identically.
+   *
+   * data = {
+   *   title,            // e.g. "Plus Code" or "Alphanumeric"
+   *   note,             // one-line description under the title
+   *   levels: [ { label, code, dims, here } ],   // the ladder rows
+   *   detail: {         // the current level, expandable section
+   *     corners: [[lat,lon] ×4],   // NW,NE,SE,SW  (optional)
+   *     widthM, heightM,           // cell dimensions in metres
+   *     centroid: [lat,lon],
+   *     errorM,                    // pin → centroid distance (optional)
+   *     coverage: <number|null>,   // total cells, or null to hide
+   *     coverageLabel              // e.g. "9 iterations" / "11 digits"
+   *   }
+   * }
+   */
+  // Exact count of globally-distinct cells at a given level, for schemes
+  // that enumerate cleanly. Returns null where a clean global count isn't
+  // meaningful (MGRS zones, BNG letters, continuous E/N).
+  function cellCount(schemeKey, iterations) {
+    if (schemeKey === 'pluscode') {
+      // OLC: pair digits subdivide 20×20; grid digits (11th+) subdivide 4×5.
+      const len = OLC_LENGTHS[Math.min(10, Math.max(1, iterations)) - 1];
+      const pairs = Math.min(len, 10) / 2;          // number of 20×20 steps
+      let cells = Math.pow(20 * 20, pairs);
+      if (len > 10) cells *= Math.pow(4 * 5, len - 10);
+      return cells;
+    }
+    if (schemeKey === 'geohash') {
+      return Math.pow(2, iterations * 5);           // 5 bits per char
+    }
+    return null;
+  }
+
+  function renderResolutionPopup(data) {
+    const fmtBigNum = n => {
+      if (!isFinite(n)) return '—';
+      // Beyond safe-integer range the digit-grouping below is unreliable;
+      // fall back to a compact "≈ N.N × 10ⁿ" form.
+      if (n > Number.MAX_SAFE_INTEGER) {
+        const exp = Math.floor(Math.log10(n));
+        const mant = (n / Math.pow(10, exp)).toFixed(1);
+        return `≈ ${mant} × 10^${exp}`;
+      }
+      const names = ['', 'thousand', 'million', 'billion', 'trillion', 'quadrillion'];
+      const parts = []; let rem = Math.round(n), idx = 0;
+      while (rem > 0 && idx < names.length) {
+        const chunk = rem % 1000; rem = Math.floor(rem / 1000);
+        if (chunk > 0) parts.unshift(chunk.toLocaleString() + (names[idx] ? ' ' + names[idx] : ''));
+        idx++;
+      }
+      return parts.join(' ') || '0';
+    };
+
+    const ladderRows = data.levels.map(l => `
+      <tr style="${l.here ? 'background:rgba(0,188,212,0.18);' : ''}">
+        <td style="padding:5px 8px;color:${l.here ? '#4fc3f7' : '#aaa'};white-space:nowrap;">${l.label}</td>
+        <td style="padding:5px 8px;font-family:'SF Mono',Menlo,monospace;font-size:12px;word-break:break-all;color:${l.here ? '#4fc3f7' : '#ddd'};">${l.code != null ? l.code : ''}</td>
+        <td style="padding:5px 8px;color:${l.here ? '#4fc3f7' : '#888'};white-space:nowrap;text-align:right;">${l.dims}</td>
+      </tr>`).join('');
+
+    const d = data.detail || {};
+    const detailRows = [];
+    if (d.corners) {
+      detailRows.push(`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:#888;margin-bottom:4px;">Cell corners (NW→NE→SE→SW)</div>
+          <div style="font-family:'SF Mono',Menlo,monospace;font-size:12px;line-height:1.5;background:#2c2c2e;padding:9px;border-radius:8px;">
+            ${d.corners.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join('<br>')}
+          </div>
+        </div>`);
+    }
+    if (d.widthM != null && d.heightM != null) {
+      detailRows.push(`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:#888;margin-bottom:4px;">Cell dimensions</div>
+          <div style="font-size:14px;">
+            <span style="color:#4fc3f7;">↔ ${fmtMetricFull(d.widthM)}</span> east-west<br>
+            <span style="color:#4fc3f7;">↕ ${fmtMetricFull(d.heightM)}</span> north-south
+          </div>
+        </div>`);
+    }
+    if (d.coverage != null) {
+      detailRows.push(`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:#888;margin-bottom:4px;">Coverage${d.coverageLabel ? ' (' + d.coverageLabel + ')' : ''}</div>
+          <div style="font-size:14px;">One of <span style="color:#4fc3f7;">${fmtBigNum(d.coverage)}</span> unique locations</div>
+        </div>`);
+    }
+    if (d.centroid) {
+      detailRows.push(`
+        <div style="margin-bottom:12px;">
+          <div style="font-size:12px;color:#888;margin-bottom:4px;">Cell centroid</div>
+          <div style="font-family:'SF Mono',Menlo,monospace;font-size:12px;background:#2c2c2e;padding:8px;border-radius:8px;">
+            ${d.centroid[0].toFixed(6)}, ${d.centroid[1].toFixed(6)}
+          </div>
+        </div>`);
+    }
+    if (d.errorM != null) {
+      detailRows.push(`
+        <div style="margin-bottom:4px;">
+          <div style="font-size:12px;color:#888;margin-bottom:4px;">Error (pin to centroid)</div>
+          <div style="font-size:14px;color:#ff9800;">± ${fmtMetricFull(d.errorM)}</div>
+        </div>`);
+    }
+
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    const dialog = document.createElement('div');
+    dialog.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:92vw;width:440px;max-height:82vh;overflow-y:auto;color:white;';
+    dialog.innerHTML = `
+      <h3 style="margin:0 0 6px;font-size:18px;color:#00bcd4;">${data.title} — resolution levels</h3>
+      ${data.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px;line-height:1.5;">${data.note}</div>` : ''}
+      <table style="width:100%;border-collapse:collapse;font-size:13px;background:#2c2c2e;border-radius:8px;overflow:hidden;">
+        <tr style="color:#888;font-size:11px;text-align:left;">
+          <th style="padding:6px 8px;font-weight:normal;">Level</th><th style="padding:6px 8px;font-weight:normal;">Here</th><th style="padding:6px 8px;font-weight:normal;text-align:right;">Cell size</th>
+        </tr>
+        ${ladderRows}
+      </table>
+      ${data.compareLine ? `<div style="margin-top:12px;padding:10px;background:rgba(0,188,212,0.08);border:1px solid rgba(0,188,212,0.25);border-radius:8px;font-size:12px;color:#bbb;">↔ ${data.compareLine}</div>` : ''}
+      ${detailRows.length ? `
+        <div id="detailToggle" style="margin-top:12px;padding:9px 12px;border:1px solid #3a3a3c;border-radius:8px;font-size:13px;color:#bbb;cursor:pointer;user-select:none;">
+          <span id="detailChevron">▸</span> This level in detail
+        </div>
+        <div id="detailBody" style="display:none;margin-top:10px;">${detailRows.join('')}</div>
+      ` : ''}
+      <button id="resPopupClose" style="width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#333;color:white;font-size:15px;cursor:pointer;">Close</button>
+    `;
+    const toggle = dialog.querySelector('#detailToggle');
+    if (toggle) {
+      toggle.onclick = () => {
+        const body = dialog.querySelector('#detailBody');
+        const chev = dialog.querySelector('#detailChevron');
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        chev.textContent = open ? '▸' : '▾';
+      };
+    }
+    dialog.querySelector('#resPopupClose').onclick = () => modal.remove();
+    modal.onclick = e => { if (e.target === modal) modal.remove(); };
+    modal.appendChild(dialog);
+    document.body.appendChild(modal);
+  }
+
+  // GIS-side adapter: builds the popup data object for a scheme, then
+  // hands off to the shared renderer.
   function showInfo(schemeKey, currentIterations, coord, options) {
     options = options || {};
     const s = SCHEMES[schemeKey];
     if (!s || !coord) return;
 
-    let rows = '';
+    const levels = [];
     for (let it = s.minIterations; it <= s.maxIterations; it++) {
-      const sample = encode(schemeKey, coord.lat, coord.lon, it);
-      const dims = precisionText(schemeKey, it, coord);
-      const here = it === currentIterations;
-      rows += `<tr style="${here ? 'background:rgba(0,188,212,0.18);' : ''}">
-        <td style="padding:5px 8px;color:#aaa;white-space:nowrap;">${s.iterLabel(it)}</td>
-        <td style="padding:5px 8px;font-family:'SF Mono',Menlo,monospace;font-size:12px;word-break:break-all;">${sample}</td>
-        <td style="padding:5px 8px;color:#888;white-space:nowrap;text-align:right;">${dims}</td>
-      </tr>`;
+      levels.push({
+        label: s.iterLabel(it),
+        code: encode(schemeKey, coord.lat, coord.lon, it),
+        dims: precisionText(schemeKey, it, coord),
+        here: it === currentIterations
+      });
     }
 
-    const notes = {
-      pluscode: 'Open Location Code: base-20 and hierarchical — every 2 digits is a 20×20 refinement, the same principle as Geosonify grids.',
-      mgrs: 'NATO grid. The letters name a 100 km square; each digit pair adds 10× precision per axis. Standard stops at 1 m.',
-      geohash: 'Hierarchical base-32 over interleaved lat/lon bits. Cells are rectangles ~2:1 at most lengths.',
-      utm: 'Plain easting/northing in metres within a 6° zone. Stepper changes rounding.',
-      nztm: 'EPSG:2193 — the standard NZ projection (Topo50 maps, LINZ data). Stepper changes rounding.',
-      bng: 'OS National Grid. Letters name a 100 km square; figures refine 10× per pair — hierarchical, like a Geosonify code in disguise. Datum shift here is Helmert (±~3 m vs OSTN15).',
-      mga: 'GDA2020 / UTM for Australia. Stepper changes rounding.',
-      localgrid: 'Automatically shows the national grid for wherever the pin is: NZTM in NZ, OS grid in Britain, MGA in Australia, UTM elsewhere.'
-    };
+    // Detail block for the current level
+    const corners = cellCorners(schemeKey, coord.lat, coord.lon, currentIterations);
+    let detail = null;
+    if (corners) {
+      const lats = corners.map(c => c[0]), lons = corners.map(c => c[1]);
+      const cLat = (Math.min(...lats) + Math.max(...lats)) / 2;
+      const cLon = (Math.min(...lons) + Math.max(...lons)) / 2;
+      const dims = s.cellMetres(currentIterations, cLat, cLon);
+      // pin→centroid distance (simple equirectangular metres; popup is informational)
+      const dLat = (cLat - coord.lat) * 111319.9;
+      const dLon = (cLon - coord.lon) * 111319.9 * Math.cos(coord.lat * D2R);
+      const errorM = Math.sqrt(dLat * dLat + dLon * dLon);
+      // corners ring is NW,NE,SE,SW,NW — drop the closing point for display
+      detail = {
+        corners: corners.slice(0, 4),
+        widthM: dims.w, heightM: dims.h,
+        centroid: [cLat, cLon],
+        errorM,
+        coverage: cellCount(schemeKey, currentIterations),
+        coverageLabel: s.iterLabel(currentIterations)
+      };
+    }
 
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
-    const dialog = document.createElement('div');
-    dialog.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:92vw;width:440px;max-height:80vh;overflow-y:auto;color:white;';
-    dialog.innerHTML = `
-      <h3 style="margin:0 0 6px;font-size:18px;color:#00bcd4;">${s.name} — resolution levels</h3>
-      <div style="font-size:12px;color:#888;margin-bottom:12px;">${notes[schemeKey] || ''}</div>
-      <table style="width:100%;border-collapse:collapse;font-size:13px;background:#2c2c2e;border-radius:8px;overflow:hidden;">
-        <tr style="color:#888;font-size:11px;text-align:left;">
-          <th style="padding:6px 8px;">Level</th><th style="padding:6px 8px;">Here</th><th style="padding:6px 8px;text-align:right;">Cell size</th>
-        </tr>
-        ${rows}
-      </table>
-      ${options.compareLine ? `<div style="margin-top:12px;padding:10px;background:rgba(0,188,212,0.08);border:1px solid rgba(0,188,212,0.25);border-radius:8px;font-size:12px;color:#bbb;">↔ ${options.compareLine}</div>` : ''}
-      <button style="width:100%;margin-top:14px;padding:11px;border-radius:8px;border:none;background:#333;color:white;font-size:15px;cursor:pointer;">Close</button>
-    `;
-    dialog.querySelector('button').onclick = () => modal.remove();
-    modal.onclick = e => { if (e.target === modal) modal.remove(); };
-    modal.appendChild(dialog);
-    document.body.appendChild(modal);
+    renderResolutionPopup({
+      title: s.name,
+      note: SCHEME_NOTES[schemeKey] || '',
+      levels,
+      detail,
+      compareLine: options.compareLine || null
+    });
   }
+
 
   // Card definitions ready for CardRenderer.registerGrid
   function cardDefs() {
@@ -794,7 +965,7 @@ const GISGrids = (function () {
   }
 
   return {
-    SCHEMES, encode, decode, precisionText, cellCorners, showInfo, cardDefs, localScheme,
+    SCHEMES, encode, decode, precisionText, cellCorners, showInfo, renderResolutionPopup, cardDefs, localScheme,
     // exposed for tests
     _tm: { NZTM, BNG_TM, utmTM, wgs84ToUTM },
     _datum: { wgs84ToOSGB36, osgb36ToWGS84 },
