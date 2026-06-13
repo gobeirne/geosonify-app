@@ -300,6 +300,7 @@
               <div id="importAccuracyFigures"></div>
               <div id="importAccuracySuggestion" style="margin-top:4px;"></div>
               <div id="importAccuracyStepper" style="margin-top:6px;"></div>
+              <div id="importAccuracyRectOffer"></div>
             </div>
             <div style="display:flex; gap:8px; margin-top:8px;">
               <label style="display:flex; align-items:center; gap:4px; font-size:14px;">
@@ -6426,6 +6427,130 @@ function encodeRaw(sol) {
       updateImportAccuracy();
     }
 
+    // ── Rectangle representation offer ───────────────────────
+    // For any closed shape, fit an oriented rectangle and compare it against
+    // the path/polygon representation on BOTH error and encoded length, so
+    // the user can choose. A rectangle stores as {anchor}~{theta}deg_{L}_{S}
+    // — a handful of characters regardless of orientation — so when a shape
+    // really is a rectangle it's both shorter AND (corners derived from clean
+    // params) often more faithful than independently-quantised vertices.
+    // Nothing is altered silently; "Import as rectangle" is an explicit click.
+    let _lastRectOffer = null;
+
+    function _fitRectangle(coords) {
+      // coords: [[lat,lon],…] closed ring. Returns {centroid,thetaDeg,L,S,corners}
+      // using the same ENU + min-area-rect path as calculateOBBRectangle.
+      try {
+        const origin = calculateCentroid(coords);
+        const enuPoints = coords.map(p => toLocalENU(origin, [p[0], p[1]]));
+        const hull = convexHull2D(enuPoints);
+        if (!hull || hull.length < 3) return null;
+        const rectENU = minimumAreaRectangle2D(hull);
+        if (!rectENU) return null;
+        const cornersLatLon = rectENU.map(p => fromLocalENU(origin, p));
+        let L = geodesicDistance(cornersLatLon[0], cornersLatLon[1]);
+        let S = geodesicDistance(cornersLatLon[1], cornersLatLon[2]);
+        let theta = initialBearing(cornersLatLon[0], cornersLatLon[1]);
+        if (S > L) { const t = L; L = S; S = t; theta = initialBearing(cornersLatLon[1], cornersLatLon[2]); }
+        const rectCentroid = calculateCentroid(cornersLatLon);
+        const corners = buildRectangle(L, S, deg2rad(theta), rectCentroid);
+        return { centroid: rectCentroid, thetaDeg: theta, L, S, corners, enuPoints, rectENU, origin };
+      } catch (e) { return null; }
+    }
+
+    // Encoded length of the path/poly representation at current settings.
+    function _pathEncodedLength(coords) {
+      try {
+        const pts = coords.map(c => [c[0], c[1]]);
+        const anchor = getActiveEncoding(pts[0][0], pts[0][1]);
+        const deltas = (typeof encodeDeltaPath === 'function') ? encodeDeltaPath(pts) : '';
+        return (anchor + '~' + deltas).length;
+      } catch (e) { return null; }
+    }
+
+    // Encoded length of the rectangle representation: anchor~{theta}deg_{L}_{S}
+    function _rectEncodedLength(fit) {
+      try {
+        const anchor = getActiveEncoding(fit.centroid[0], fit.centroid[1]);
+        const a = (typeof formatAngleCompact === 'function')
+          ? formatAngleCompact(fit.thetaDeg).replace('deg', '') : Math.round(fit.thetaDeg);
+        const Ls = (typeof formatLengthCompact === 'function') ? formatLengthCompact(fit.L) : Math.round(fit.L) + 'm';
+        const Ss = (typeof formatLengthCompact === 'function') ? formatLengthCompact(fit.S) : Math.round(fit.S) + 'm';
+        return (anchor + '~' + a + 'deg_' + Ls + '_' + Ss).length;
+      } catch (e) { return null; }
+    }
+
+    // Build the offer data (or null if no sensible rectangle). originalCoords
+    // is [[lat,lon],…]; pathErrM is the path's worst vertex error (metres).
+    function _computeRectangleOffer(originalCoords, pathErrM, pathLen) {
+      if (typeof ImportAccuracy === 'undefined' || originalCoords.length < 4) return null;
+      const fit = _fitRectangle(originalCoords);
+      if (!fit) return null;
+      // Measure how far the real vertices sit from the fitted rectangle outline
+      const rectCornersENU = fit.rectENU;
+      const rfit = ImportAccuracy.rectangleFit(fit.enuPoints, rectCornersENU, 0.5);
+      const rectLen = _rectEncodedLength(fit);
+      return {
+        fit,
+        rectErrM: rfit.maxDevM,
+        rectMeanM: rfit.meanDevM,
+        rectLen,
+        pathErrM,
+        pathLen,
+        // "plausible rectangle" = rect error within ~1.5× the path's own error
+        // (relative threshold scales with the shape's inherent precision)
+        plausible: rfit.maxDevM <= Math.max(pathErrM * 1.5, 1.0)
+      };
+    }
+
+    // Tiny SVG: original vertices (dots + outline) over the fitted rectangle.
+    function _rectOfferSVG(originalCoords, fit) {
+      const W = 120, H = 90, pad = 8;
+      // Project to ENU then to SVG space, fitting all points + rect corners.
+      const pts = fit.enuPoints;
+      const rect = fit.rectENU;
+      const all = pts.concat(rect);
+      const xs = all.map(p => p.x), ys = all.map(p => p.y);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minY = Math.min(...ys), maxY = Math.max(...ys);
+      const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+      const sc = Math.min((W - 2 * pad) / spanX, (H - 2 * pad) / spanY);
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const tx = x => W / 2 + (x - cx) * sc;
+      const ty = y => H / 2 - (y - cy) * sc; // flip Y (north up)
+      const rectPath = rect.map((p, i) => `${i ? 'L' : 'M'}${tx(p.x).toFixed(1)},${ty(p.y).toFixed(1)}`).join(' ') + ' Z';
+      const shapePath = pts.map((p, i) => `${i ? 'L' : 'M'}${tx(p.x).toFixed(1)},${ty(p.y).toFixed(1)}`).join(' ') + ' Z';
+      const dots = pts.map(p => `<circle cx="${tx(p.x).toFixed(1)}" cy="${ty(p.y).toFixed(1)}" r="1.8" fill="#00bcd4"/>`).join('');
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="background:#1c1c1e; border-radius:6px;">` +
+        `<path d="${rectPath}" fill="rgba(255,152,0,0.12)" stroke="#ff9800" stroke-width="1.5"/>` +
+        `<path d="${shapePath}" fill="none" stroke="#00bcd4" stroke-width="1" stroke-dasharray="2,2"/>` +
+        dots + `</svg>`;
+    }
+
+    function _applyRectangleImport() {
+      if (!_lastRectOffer) return;
+      const fit = _lastRectOffer.fit;
+      // Switch shape mode to rectangle and set the solution directly.
+      const rectRadio = document.querySelector('input[name="shapeMode"][value="rect"]');
+      if (rectRadio) rectRadio.checked = true;
+      lastSolution = {
+        type: 'rect',
+        centroid: fit.centroid,
+        thetaDeg: fit.thetaDeg,
+        L: fit.L,
+        S: fit.S
+      };
+      if (typeof updateCompactOutputs === 'function') updateCompactOutputs();
+      // Redraw the rectangle on the preview/main map if a renderer exists.
+      if (typeof renderSolutionOnMap === 'function') {
+        try { renderSolutionOnMap(); } catch (e) {}
+      }
+      showToast('Imported as rectangle — ' + Math.round(fit.L) + 'm × ' + Math.round(fit.S) + 'm');
+      // Collapse the offer now it's applied.
+      const offerEl = document.getElementById('importAccuracyRectOffer');
+      if (offerEl) offerEl.innerHTML = '<span style="color:#1a7c4c;">✓ Imported as rectangle.</span>';
+    }
+
     function updateImportAccuracy() {
       const box = document.getElementById('importAccuracyBox');
       if (!box) return;
@@ -6465,8 +6590,8 @@ function encodeRaw(sol) {
       } else if (result.suggested && result.suggested.iter > result.current.iter) {
         _lastAccuracySuggestion = { gridKey, iter: result.suggested.iter };
         suggEl.innerHTML =
-          `<button id="accuracyBumpBtn" class="btn btn-secondary" style="font-size:12px; padding:4px 10px;">` +
-          `Increase to ${result.suggested.iter} iterations</button> ` +
+          `<button id="accuracyBumpBtn" class="btn btn-primary" style="font-size:12px; padding:5px 12px; font-weight:600;">` +
+          `↑ Increase to ${result.suggested.iter} iterations</button> ` +
           `<span style="color:#888;">→ worst ${ImportAccuracy.fmtError(result.suggested.max)}</span>`;
         const btn = document.getElementById('accuracyBumpBtn');
         if (btn) btn.onclick = () => _setImportIterations(gridKey, _lastAccuracySuggestion.iter);
@@ -6491,6 +6616,42 @@ function encodeRaw(sol) {
         const plus = document.getElementById('accIterPlus');
         if (minus) minus.onclick = () => { if (cur > minI) _setImportIterations(gridKey, cur - 1); };
         if (plus) plus.onclick = () => { if (cur < maxI) _setImportIterations(gridKey, cur + 1); };
+      }
+
+      // Rectangle representation offer (closed shapes only)
+      const rectOfferEl = document.getElementById('importAccuracyRectOffer');
+      if (rectOfferEl) {
+        _lastRectOffer = null;
+        rectOfferEl.innerHTML = '';
+        const isClosed = original.length >= 4 &&
+          Math.abs(original[0][0] - original[original.length - 1][0]) < 1e-5 &&
+          Math.abs(original[0][1] - original[original.length - 1][1]) < 1e-5;
+        if (isClosed && !(gridDef && gridDef.gis)) {
+          const pathLen = _pathEncodedLength(original);
+          const offer = _computeRectangleOffer(original, result.current.max, pathLen);
+          if (offer && offer.plausible) {
+            _lastRectOffer = offer;
+            const fmt = ImportAccuracy.fmtError;
+            const shorter = offer.rectLen != null && pathLen != null && offer.rectLen < pathLen;
+            rectOfferEl.innerHTML =
+              `<div style="border-top:0.5px solid #3a3a3c; margin-top:8px; padding-top:8px;">` +
+                `<div style="font-weight:600; margin-bottom:6px;">This is close to a rectangle</div>` +
+                `<div style="display:flex; gap:10px; align-items:flex-start;">` +
+                  `<div style="flex-shrink:0;">${_rectOfferSVG(original, offer.fit)}</div>` +
+                  `<div style="font-size:12px; line-height:1.7;">` +
+                    `<div><span style="color:#ff9800;">▬ Rectangle</span>: worst ${fmt(offer.rectErrM)}` +
+                      (offer.rectLen != null ? `, ${offer.rectLen} chars` : '') + `</div>` +
+                    `<div><span style="color:#00bcd4;">⋯ Path</span>: worst ${fmt(offer.pathErrM)}` +
+                      (pathLen != null ? `, ${pathLen} chars` : '') + `</div>` +
+                    (shorter ? `<div style="color:#1a7c4c; margin-top:2px;">Rectangle is ${pathLen - offer.rectLen} chars shorter</div>` : '') +
+                  `</div>` +
+                `</div>` +
+                `<button id="rectImportBtn" class="btn btn-primary" style="font-size:12px; padding:5px 12px; font-weight:600; margin-top:8px;">Import as rectangle</button>` +
+              `</div>`;
+            const rbtn = document.getElementById('rectImportBtn');
+            if (rbtn) rbtn.onclick = _applyRectangleImport;
+          }
+        }
       }
 
       box.style.display = 'block';
