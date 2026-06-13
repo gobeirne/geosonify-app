@@ -3350,123 +3350,88 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   function showCellInfo(gridKey, code, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
     if (!gridDef || !gridDef.grid || !currentCardCoord) return;
-    
+
     const shuffled = getShuffledGrid(gridKey);
     const grid2D = shuffled.grid;
-    const d = GeoCodec.gridDims(grid2D);
-    const rows = d.rows, cols = d.cols;
-    
-    let latMin = -90, latMax = 90, lonMin = -180, lonMax = 180;
-    
-    let workingCode = code;
-    if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
-      const flat = grid2D.flat();
-      workingCode = GeoCodec.applyObfuscation('decode', code, flat);
-    }
-    
-    const tokens = GeoCodec.tokenizeCode(workingCode, grid2D.flat());
-    if (tokens) {
-      const flat = grid2D.flat();
-      for (let i = 0; i < tokens.length; i++) {
-        const idx = flat.indexOf(tokens[i]);
-        if (idx < 0) break;
-        const r = Math.floor(idx / cols), c = idx % cols;
-        const b = GeoCodec.boundsForCell(rows, cols, r, c, latMin, latMax, lonMin, lonMax);
-        latMin = b.latMin; latMax = b.latMax;
-        lonMin = b.lonMin; lonMax = b.lonMax;
+    const dms = GeoCodec.gridDims(grid2D);
+    const rows = dms.rows, cols = dms.cols;
+    const flat = grid2D.flat();
+
+    // Cell bounds for an arbitrary iteration count, walking from the code's tokens.
+    // For levels beyond the current code length we extend by re-encoding the pin.
+    function boundsAtLevel(nIter) {
+      let latMin = -90, latMax = 90, lonMin = -180, lonMax = 180;
+      // Encode the pin to nIter to get the cell path (raw, obfuscation-independent)
+      let raw = '';
+      if (typeof GeoCodec !== 'undefined' && GeoCodec.encodeHierarchical) {
+        raw = GeoCodec.encodeHierarchical(currentCardCoord.lat, currentCardCoord.lon, grid2D, nIter);
       }
-    }
-    
-    const centerLat = (latMin + latMax) / 2;
-    const latHeight = latMax - latMin;
-    const lonWidth = lonMax - lonMin;
-    
-    const metersPerDegLat = 111319.9;
-    const metersPerDegLon = 111319.9 * Math.cos(centerLat * Math.PI / 180);
-    
-    const heightM = latHeight * metersPerDegLat;
-    const widthM = lonWidth * metersPerDegLon;
-    
-    const formatDim = formatMetric; // reuse full-range formatter (goes to nm)
-    
-    const totalCells = Math.pow(rows * cols, iterations);
-    const cellCentroidLat = (latMin + latMax) / 2;
-    const cellCentroidLon = (lonMin + lonMax) / 2;
-    
-    const geod = geodesic.Geodesic.WGS84;
-    const inv = geod.Inverse(currentCardCoord.lat, currentCardCoord.lon, cellCentroidLat, cellCentroidLon);
-    const errorM = inv.s12;
-    
-    const formatError = formatMetric; // reuse full-range formatter
-    
-    const formatBigNum = (n) => {
-      const names = ['', 'thousand', 'million', 'billion', 'trillion', 'quadrillion'];
-      const parts = [];
-      let remaining = n;
-      let idx = 0;
-      while (remaining > 0 && idx < names.length) {
-        const chunk = remaining % 1000;
-        remaining = Math.floor(remaining / 1000);
-        if (chunk > 0) {
-          parts.unshift(chunk.toLocaleString() + (names[idx] ? ' ' + names[idx] : ''));
+      const toks = GeoCodec.tokenizeCode(raw, flat);
+      if (toks) {
+        for (let i = 0; i < toks.length && i < nIter; i++) {
+          const idx = flat.indexOf(toks[i]);
+          if (idx < 0) break;
+          const r = Math.floor(idx / cols), c = idx % cols;
+          const b = GeoCodec.boundsForCell(rows, cols, r, c, latMin, latMax, lonMin, lonMax);
+          latMin = b.latMin; latMax = b.latMax; lonMin = b.lonMin; lonMax = b.lonMax;
         }
-        idx++;
       }
-      return parts.join(' ') || '0';
+      return { latMin, latMax, lonMin, lonMax };
+    }
+
+    function dimsText(b) {
+      const cLat = (b.latMin + b.latMax) / 2;
+      const h = (b.latMax - b.latMin) * 111319.9;
+      const w = (b.lonMax - b.lonMin) * 111319.9 * Math.cos(cLat * Math.PI / 180);
+      return `${formatMetric(w)} × ${formatMetric(h)}`;
+    }
+
+    // Build the ladder: a window of levels around the current one
+    const maxIter = gridDef.maxIterations || (iterations + 2);
+    const minIter = gridDef.minIterations || 1;
+    const loadStart = Math.max(minIter, iterations - 3);
+    const loadEnd = Math.min(maxIter, iterations + 2);
+    const levels = [];
+    for (let it = loadStart; it <= loadEnd; it++) {
+      const b = boundsAtLevel(it);
+      // Sample code at this level (display form, honouring current obfuscation)
+      let sample = encodeCardCoordinate(gridKey, currentCardCoord.lat, currentCardCoord.lon, it);
+      levels.push({
+        label: `${it} char${it === 1 ? '' : 's'}`,
+        code: sample,
+        dims: dimsText(b),
+        here: it === iterations
+      });
+    }
+
+    // Detail for the current level
+    const cur = boundsAtLevel(iterations);
+    const cLat = (cur.latMin + cur.latMax) / 2, cLon = (cur.lonMin + cur.lonMax) / 2;
+    const heightM = (cur.latMax - cur.latMin) * 111319.9;
+    const widthM = (cur.lonMax - cur.lonMin) * 111319.9 * Math.cos(cLat * Math.PI / 180);
+    let errorM = null;
+    if (typeof geodesic !== 'undefined' && geodesic.Geodesic) {
+      errorM = geodesic.Geodesic.WGS84.Inverse(currentCardCoord.lat, currentCardCoord.lon, cLat, cLon).s12;
+    }
+    const totalCells = Math.pow(rows * cols, iterations);
+
+    const detail = {
+      corners: [[cur.latMax, cur.lonMin], [cur.latMax, cur.lonMax], [cur.latMin, cur.lonMax], [cur.latMin, cur.lonMin]],
+      widthM, heightM,
+      centroid: [cLat, cLon],
+      errorM,
+      coverage: isFinite(totalCells) ? totalCells : null,
+      coverageLabel: `${iterations} iteration${iterations === 1 ? '' : 's'}`
     };
-    
-    const corners = [
-      [latMax, lonMin], [latMax, lonMax], [latMin, lonMax], [latMin, lonMin]
-    ];
-    
-    const modal = document.createElement('div');
-    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
-    
-    const dialog = document.createElement('div');
-    dialog.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:90vw;width:400px;color:white;';
-    dialog.innerHTML = `
-      <h3 style="margin:0 0 16px;font-size:18px;color:#00bcd4;">Cell Information</h3>
-      
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:#888;margin-bottom:4px;">Rectangle Corners (NW→NE→SE→SW)</div>
-        <div style="font-family:monospace;font-size:13px;line-height:1.5;background:#2c2c2e;padding:10px;border-radius:8px;">
-          ${corners.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join('<br>')}
-        </div>
-      </div>
-      
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cell Dimensions</div>
-        <div style="font-size:15px;">
-          <span style="color:#4fc3f7;">↔ ${formatDim(widthM)}</span> east-west<br>
-          <span style="color:#4fc3f7;">↕ ${formatDim(heightM)}</span> north-south
-        </div>
-      </div>
-      
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:#888;margin-bottom:4px;">Grid Coverage (${iterations} iterations)</div>
-        <div style="font-size:14px;">One of <span style="color:#4fc3f7;">${formatBigNum(totalCells)}</span> unique locations</div>
-      </div>
-      
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cell Centroid</div>
-        <div style="font-family:monospace;font-size:13px;background:#2c2c2e;padding:8px;border-radius:8px;">
-          ${cellCentroidLat.toFixed(6)}, ${cellCentroidLon.toFixed(6)}
-        </div>
-      </div>
-      
-      <div style="margin-bottom:16px;">
-        <div style="font-size:12px;color:#888;margin-bottom:4px;">Error (pin to centroid)</div>
-        <div style="font-size:15px;color:#ff9800;">± ${formatError(errorM)}</div>
-      </div>
-      
-      <button id="closeInfoBtn" style="width:100%;padding:12px;border-radius:8px;border:none;background:#333;color:white;font-size:15px;cursor:pointer;">Close</button>
-    `;
-    
-    modal.appendChild(dialog);
-    document.body.appendChild(modal);
-    
-    dialog.querySelector('#closeInfoBtn').onclick = () => modal.remove();
-    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+    if (typeof GISGrids !== 'undefined' && GISGrids.renderResolutionPopup) {
+      GISGrids.renderResolutionPopup({
+        title: gridDef.name,
+        note: 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split), the same principle as Plus Codes.',
+        levels,
+        detail
+      });
+    }
   }
   
   function shareCard(gridKey, code) {
