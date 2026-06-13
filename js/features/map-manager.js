@@ -322,6 +322,27 @@
     if (!CARD_GRIDS || !CARD_GRIDS[gridKey]) return;
     
     const gridConfig = CARD_GRIDS[gridKey];
+
+    // GIS reference cards (Plus Code, MGRS, UTM, NZTM, …) don't subdivide
+    // the world uniformly, so the generic row/col model below would draw a
+    // wrongly-sized box. Use the scheme's true cell footprint instead.
+    if (gridConfig && gridConfig.gis && typeof GISGrids !== 'undefined') {
+      const corners = GISGrids.cellCorners(gridConfig.gis, lat, lon, iterations);
+      if (corners) {
+        const ring = corners.slice(0, 4); // drop the repeated closing point for L.polygon
+        const layer = L.polygon(ring, {
+          color: '#ff4444',
+          fillColor: '#ff4444',
+          weight: 2,
+          opacity: 0.8,
+          fillOpacity: 0.15,
+          interactive: false
+        }).addTo(map);
+        gridLayers.push(layer);
+      }
+      return;
+    }
+
     const gridRows = gridConfig.grid ? gridConfig.grid.length : 6;
     const gridCols = gridConfig.grid && gridConfig.grid[0] ? gridConfig.grid[0].length : 6;
     
