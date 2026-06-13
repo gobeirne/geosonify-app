@@ -408,21 +408,30 @@
   }
 
   /**
+   * Redraw the hierarchical grid box from the current coordinate + active card.
+   * Call after the active card changes or its iteration count changes (neither
+   * moves the pin, so updatePin won't fire). No-op if the grid is hidden.
+   */
+  function refreshHierarchicalGrid() {
+    if (!gridLayersVisible) return;
+    if (!callbacks.getCurrentCoord || !callbacks.getCardState || !callbacks.getGridDefinitions) return;
+    const coord = callbacks.getCurrentCoord();
+    const cardState = callbacks.getCardState();
+    const CARD_GRIDS = callbacks.getGridDefinitions();
+    if (!coord) return;
+    const gridKey = cardState.active;
+    const iterations = cardState.iterations[gridKey] || CARD_GRIDS[gridKey]?.defaultIterations || 9;
+    updateHierarchicalGrid(coord.lat, coord.lon, gridKey, iterations);
+  }
+
+  /**
    * Toggle hierarchical grid visibility
    */
   function toggleHierarchicalGrid() {
     gridLayersVisible = !gridLayersVisible;
     
-    if (gridLayersVisible && callbacks.getCurrentCoord && callbacks.getCardState && callbacks.getGridDefinitions) {
-      const coord = callbacks.getCurrentCoord();
-      const cardState = callbacks.getCardState();
-      const CARD_GRIDS = callbacks.getGridDefinitions();
-      
-      if (coord) {
-        const gridKey = cardState.active;
-        const iterations = cardState.iterations[gridKey] || CARD_GRIDS[gridKey]?.defaultIterations || 9;
-        updateHierarchicalGrid(coord.lat, coord.lon, gridKey, iterations);
-      }
+    if (gridLayersVisible) {
+      refreshHierarchicalGrid();
     } else {
       gridLayers.forEach(layer => {
         if (layer && map.hasLayer(layer)) map.removeLayer(layer);
@@ -886,6 +895,7 @@
     
     // Hierarchical grid
     updateHierarchicalGrid,
+    refreshHierarchicalGrid,
     toggleHierarchicalGrid,
     isGridVisible: () => gridLayersVisible,
     
