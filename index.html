@@ -223,6 +223,10 @@
               <input type="text" id="parcelAddressInput" placeholder="Street address — or lat, lon" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" />
               <button id="parcelAddressLoad" class="btn btn-secondary" style="padding:6px 12px; font-size:13px; white-space:nowrap;">Find Parcel</button>
             </div>
+            <div style="margin-bottom:8px;">
+              <button id="parcelUsePin" class="btn btn-secondary" style="padding:6px 12px; font-size:12px; white-space:nowrap;">📍 Use map pin location</button>
+              <span style="font-size:11px; color:#888; margin-left:6px;">Most reliable — click the map to drop a pin, then use it.</span>
+            </div>
             <div style="font-size:11px; color:#888; margin-bottom:6px;">
               Looks up the legal property boundary at an address using free, open cadastral services.
               Boundaries are indicative cadastral outlines, not survey-accurate legal definitions.
@@ -6458,26 +6462,54 @@ function encodeRaw(sol) {
       } catch (e) { return null; }
     }
 
-    // Encoded length of the path/poly representation at current settings.
-    function _pathEncodedLength(coords) {
+    // Encode an arbitrary solution into the FULL shareable URL using the
+    // CURRENTLY-SELECTED codec — so rectangle and path are compared like-for-
+    // like on exactly what you'd export now (True Option A). Returns the URL
+    // string, or null on failure.
+    function _encodeSolutionURL(sol) {
       try {
-        const pts = coords.map(c => [c[0], c[1]]);
-        const anchor = getActiveEncoding(pts[0][0], pts[0][1]);
-        const deltas = (typeof encodeDeltaPath === 'function') ? encodeDeltaPath(pts) : '';
-        return (anchor + '~' + deltas).length;
+        const codec = (document.getElementById('codec') || {}).value || 'raw';
+        const sep = getSeparator(sol.type);
+        const anchorLL = (sol.type === 'rect' || sol.type === 'graticule')
+          ? sol.centroid
+          : (sol.points && sol.points[0]) || sol.centroid;
+        const encodedAnchor = getActiveEncoding(anchorLL[0], anchorLL[1]);
+        const isPoints = sol.type === 'points';
+        const isPathOrPoly = sol.type === 'path' || sol.type === 'poly';
+
+        let payload = '';
+        if (codec === 'b36') payload = encodeBase36Payload(sol);
+        else if (codec === 'b64') payload = encodeBase64urlPayload(sol);
+        else if (codec === 'emo3') {
+          const opt = { ultraAngle: !!document.getElementById('emoUltraAngle')?.checked,
+                        lenExt: !!document.getElementById('emoLenExt')?.checked };
+          payload = encodeEmoji3Payload(sol, opt);
+        } else payload = encodeRawPayload(sol);
+
+        let s;
+        if (sol.type === 'point') s = encodedAnchor;
+        else if (isPoints) s = payload ? `${encodedAnchor}~~~${payload}` : encodedAnchor;
+        else s = `${encodedAnchor}${sep}${payload}`;
+
+        const useDelta = document.getElementById('useDeltaCompression')?.checked ?? true;
+        const isDelta = isPathOrPoly && useDelta && !rawModeActive;
+        const param = getURLParamForActiveCard(isDelta);
+        return `${window.location.origin}${window.location.pathname}?${param}=${s}`;
       } catch (e) { return null; }
     }
 
-    // Encoded length of the rectangle representation: anchor~{theta}deg_{L}_{S}
-    function _rectEncodedLength(fit) {
-      try {
-        const anchor = getActiveEncoding(fit.centroid[0], fit.centroid[1]);
-        const a = (typeof formatAngleCompact === 'function')
-          ? formatAngleCompact(fit.thetaDeg).replace('deg', '') : Math.round(fit.thetaDeg);
-        const Ls = (typeof formatLengthCompact === 'function') ? formatLengthCompact(fit.L) : Math.round(fit.L) + 'm';
-        const Ss = (typeof formatLengthCompact === 'function') ? formatLengthCompact(fit.S) : Math.round(fit.S) + 'm';
-        return (anchor + '~' + a + 'deg_' + Ls + '_' + Ss).length;
-      } catch (e) { return null; }
+    function _pathEncodedLength(coords) {
+      // Build a path solution from the coords and measure its full URL.
+      const sol = { type: 'path', points: coords.map(c => [c[0], c[1]]),
+                    centroid: calculateCentroid(coords) };
+      const url = _encodeSolutionURL(sol);
+      return url ? url.length : null;
+    }
+
+    function _rectEncodedURLLength(fit) {
+      const sol = { type: 'rect', centroid: fit.centroid, thetaDeg: fit.thetaDeg, L: fit.L, S: fit.S };
+      const url = _encodeSolutionURL(sol);
+      return url ? url.length : null;
     }
 
     // Build the offer data (or null if no sensible rectangle). originalCoords
@@ -6489,7 +6521,7 @@ function encodeRaw(sol) {
       // Measure how far the real vertices sit from the fitted rectangle outline
       const rectCornersENU = fit.rectENU;
       const rfit = ImportAccuracy.rectangleFit(fit.enuPoints, rectCornersENU, 0.5);
-      const rectLen = _rectEncodedLength(fit);
+      const rectLen = _rectEncodedURLLength(fit);
       return {
         fit,
         rectErrM: rfit.maxDevM,
@@ -6644,6 +6676,7 @@ function encodeRaw(sol) {
             _lastRectOffer = offer;
             const fmt = ImportAccuracy.fmtError;
             const shorter = offer.rectLen != null && pathLen != null && offer.rectLen < pathLen;
+            const codecName = ((document.getElementById('codec') || {}).value || 'raw');
             rectOfferEl.innerHTML =
               `<div style="border-top:0.5px solid #3a3a3c; margin-top:8px; padding-top:8px;">` +
                 `<div style="font-weight:600; margin-bottom:6px;">This is close to a rectangle</div>` +
@@ -6651,10 +6684,11 @@ function encodeRaw(sol) {
                   `<div style="flex-shrink:0;">${_rectOfferSVG(original, offer.fit)}</div>` +
                   `<div style="font-size:12px; line-height:1.7;">` +
                     `<div><span style="color:#ff9800;">▬ Rectangle</span>: worst ${fmt(offer.rectErrM)}` +
-                      (offer.rectLen != null ? `, ${offer.rectLen} chars` : '') + `</div>` +
+                      (offer.rectLen != null ? `, ${offer.rectLen}-char URL` : '') + `</div>` +
                     `<div><span style="color:#00bcd4;">⋯ Path</span>: worst ${fmt(offer.pathErrM)}` +
-                      (pathLen != null ? `, ${pathLen} chars` : '') + `</div>` +
-                    (shorter ? `<div style="color:#1a7c4c; margin-top:2px;">Rectangle is ${pathLen - offer.rectLen} chars shorter</div>` : '') +
+                      (pathLen != null ? `, ${pathLen}-char URL` : '') + `</div>` +
+                    (shorter ? `<div style="color:#1a7c4c; margin-top:2px;">Rectangle URL is ${pathLen - offer.rectLen} chars shorter</div>` : '') +
+                    `<div style="color:#888; margin-top:2px; font-size:11px;">Full URLs · ${codecName} codec</div>` +
                   `</div>` +
                 `</div>` +
                 `<button id="rectImportBtn" class="btn btn-primary" style="font-size:12px; padding:5px 12px; font-weight:600; margin-top:8px;">Import as rectangle</button>` +
@@ -7254,18 +7288,7 @@ function encodeRaw(sol) {
           });
 
           loadingEl.style.display = 'none';
-          _showParcelAttribution(result.provider.attribution);
-
-          const cands = result.candidates;
-          if (cands.length === 1) {
-            const c = cands[0];
-            processLoadedShape(c.coords, c.display_name, c.groups || undefined);
-          } else {
-            _renderPlaceSearchResults(cands, query);
-            const hintEl = document.getElementById('placeSearchResultsHint');
-            if (hintEl) hintEl.textContent =
-              `${cands.length} parcels at "${result.geocode.display_name.split(',').slice(0,2).join(',')}" — tick one or more to import`;
-          }
+          _handleParcelResult(result, `"${result.geocode.display_name.split(',').slice(0,2).join(',')}"`);
         } catch (err) {
           loadingEl.style.display = 'none';
           if (err.needsKeyFor) {
@@ -7281,6 +7304,62 @@ function encodeRaw(sol) {
     if (_parcelAddrInput) {
       _parcelAddrInput.addEventListener('keydown', function(e) {
         if (e.key === 'Enter') document.getElementById('parcelAddressLoad').click();
+      });
+    }
+
+    // Shared handler for a parcel lookup result (from address OR pin).
+    function _handleParcelResult(result, contextLabel) {
+      _showParcelAttribution(result.provider.attribution);
+      const cands = result.candidates;
+      if (cands.length === 1) {
+        const c = cands[0];
+        processLoadedShape(c.coords, c.display_name, c.groups || undefined);
+      } else {
+        _renderPlaceSearchResults(cands, contextLabel);
+        const hintEl = document.getElementById('placeSearchResultsHint');
+        if (hintEl) hintEl.textContent =
+          `${cands.length} parcels at ${contextLabel} — tick one or more to import`;
+      }
+    }
+
+    // Use the dropped map pin's coordinates for a point-in-parcel lookup —
+    // the reliable path that sidesteps address geocoding landing on the road.
+    const _parcelPinBtn = document.getElementById('parcelUsePin');
+    if (_parcelPinBtn) {
+      _parcelPinBtn.addEventListener('click', async function() {
+        if (!currentCardCoord) {
+          showToast('Click the map first to drop a pin, then try again', 'error');
+          return;
+        }
+        const keyInput = document.getElementById('parcelKeyInput');
+        if (_parcelKeyProviderId && keyInput.value.trim()) {
+          PropertyImport.storeKey(_parcelKeyProviderId, keyInput.value);
+        }
+        _hidePlaceSearchResults();
+        _showParcelAttribution(null);
+
+        const btn = this;
+        btn.disabled = true;
+        const loadingEl = document.getElementById('shapeImportLoading');
+        const loadingText = document.getElementById('shapeImportLoadingText');
+        loadingText.textContent = 'Looking up parcel at pin...';
+        loadingEl.style.display = 'block';
+
+        const lat = currentCardCoord.lat, lon = currentCardCoord.lon;
+        try {
+          const result = await PropertyImport.lookupPoint(lat, lon, {
+            customArcgisUrl: document.getElementById('parcelCustomArcgis').value,
+            onStatus: t => { loadingText.textContent = t; }
+          });
+          loadingEl.style.display = 'none';
+          _handleParcelResult(result, `pin (${lat.toFixed(5)}, ${lon.toFixed(5)})`);
+        } catch (err) {
+          loadingEl.style.display = 'none';
+          if (err.needsKeyFor) _showParcelKeyRow(err.needsKeyFor);
+          showToast(err.message, 'error');
+        } finally {
+          btn.disabled = false;
+        }
       });
     }
 
