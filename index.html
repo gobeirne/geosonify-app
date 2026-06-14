@@ -241,6 +241,14 @@
               <div style="font-size:11px; color:#888; margin-top:2px;">Many councils and US counties publish open ArcGIS parcel layers — paste a layer URL to use one anywhere.</div>
             </details>
             <div id="parcelAttribution" style="display:none; font-size:11px; color:#888; margin-bottom:6px;"></div>
+
+            <div style="border-top:0.5px solid #ddd; margin-top:8px; padding-top:8px;">
+              <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                <input type="checkbox" id="parcelAccumulate" />
+                <span>Combine multiple parcels (for properties split across titles)</span>
+              </label>
+              <div id="parcelAccumList" style="display:none; margin-top:6px;"></div>
+            </div>
           </div>
 
           <!-- Loading indicator (shared) -->
@@ -1740,8 +1748,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // ── Shape Import URL params ─────────────────────────────
       // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391,
       // ?geojson=https://..., ?kml=https://..., ?gpx=https://...
-      // Pipeline params: &auto=1|2, &epsilon=0.001, &grid=a, &pass=secret,
-      //   &obf=1, &enc_pass=secret, &result=r|s|c
+      // Pipeline params: &auto=1|2, &epsilon=0.001, &grid=a, &iters=auto|N,
+      //   &pass=secret, &obf=1, &enc_pass=secret, &result=r|s|c
       const shapeImportParams = {
         wikidata:    urlParams.get('wikidata'),
         place:       urlParams.get('place'),
@@ -1761,6 +1769,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           auto:     parseInt(urlParams.get('auto')) || 0,    // 0=manual, 1=skip preview, 2=brief preview
           epsilon:  urlParams.has('epsilon') ? parseFloat(urlParams.get('epsilon')) : null,
           grid:     urlParams.get('grid') || null,           // short code: a, e, bip, n, etc.
+          iters:    urlParams.get('iters') || null,          // 'auto' = best for source precision, or a number
           pass:     urlParams.get('pass') || null,           // grid passphrase
           obf:      urlParams.get('obf') === '1',            // obfuscation
           enc_pass: urlParams.get('enc_pass') || null,       // hard encryption passphrase
@@ -6466,10 +6475,22 @@ function encodeRaw(sol) {
     // CURRENTLY-SELECTED codec — so rectangle and path are compared like-for-
     // like on exactly what you'd export now (True Option A). Returns the URL
     // string, or null on failure.
+    // Module-scope separator (the one inside updateCompactOutputs is nested
+    // and not visible here). Mirrors its logic; reads the emoji-sep condition
+    // from current state rather than a closure variable.
+    function _separatorFor(type, codecVal) {
+      const useEmojiSep = (typeof isActiveCardEmoji === 'function' && isActiveCardEmoji()) && codecVal === 'emo3';
+      if (useEmojiSep) {
+        if (type === 'point') return '📍';
+        return '🗺️';
+      }
+      return type === 'graticule' ? '~~' : '~';
+    }
+
     function _encodeSolutionURL(sol) {
       try {
         const codec = (document.getElementById('codec') || {}).value || 'raw';
-        const sep = getSeparator(sol.type);
+        const sep = _separatorFor(sol.type, codec);
         const anchorLL = (sol.type === 'rect' || sol.type === 'graticule')
           ? sol.centroid
           : (sol.points && sol.points[0]) || sol.centroid;
@@ -7196,6 +7217,14 @@ function encodeRaw(sol) {
 
       const selected = checked.map(cb => _placeSearchCandidates[parseInt(cb.value)]).filter(Boolean);
 
+      // If accumulating, add each selected parcel to the collection instead
+      // of importing now.
+      if (document.getElementById('parcelAccumulate')?.checked) {
+        selected.forEach(c => _addParcelToAccum(c));
+        _hidePlaceSearchResults();
+        return;
+      }
+
       if (selected.length === 1) {
         // Single selection — import directly (groups present for multi-part parcels)
         const c = selected[0];
@@ -7379,22 +7408,98 @@ function encodeRaw(sol) {
     }
 
     // Shared handler for a parcel lookup result (from address OR pin).
+    // Accumulated parcels (for properties spread across multiple titles).
+    // Each entry: { name, rings: [[ [lat,lon],… ], … ] }. A parcel may itself
+    // be a multipolygon, so we keep its rings and flatten all into one groups
+    // array at combine time.
+    let _accumParcels = [];
+
+    function _renderAccumList() {
+      const listEl = document.getElementById('parcelAccumList');
+      if (!listEl) return;
+      const on = document.getElementById('parcelAccumulate')?.checked;
+      if (!on) { listEl.style.display = 'none'; return; }
+      listEl.style.display = 'block';
+      if (_accumParcels.length === 0) {
+        listEl.innerHTML = `<div style="font-size:11px; color:#888;">No parcels added yet. Each lookup adds a parcel; combine when ready.</div>`;
+        return;
+      }
+      const rows = _accumParcels.map((p, i) =>
+        `<div style="display:flex; align-items:center; gap:6px; font-size:12px; padding:2px 0;">` +
+          `<span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${i + 1}. ${p.name}</span>` +
+          `<button data-rm="${i}" class="btn btn-secondary parcelAccumRm" style="padding:1px 7px; font-size:12px;">✕</button>` +
+        `</div>`).join('');
+      const totalRings = _accumParcels.reduce((n, p) => n + p.rings.length, 0);
+      listEl.innerHTML = rows +
+        `<div style="display:flex; gap:6px; margin-top:6px;">` +
+          `<button id="parcelCombineBtn" class="btn btn-primary" style="flex:1; padding:6px; font-size:12px; font-weight:600;">Combine &amp; import ${_accumParcels.length} parcels</button>` +
+          `<button id="parcelClearBtn" class="btn btn-secondary" style="padding:6px 10px; font-size:12px;">Clear</button>` +
+        `</div>` +
+        (totalRings > _accumParcels.length ? `<div style="font-size:11px; color:#888; margin-top:3px;">${totalRings} rings total (some parcels are multipart)</div>` : '');
+      listEl.querySelectorAll('.parcelAccumRm').forEach(b => {
+        b.onclick = () => { _accumParcels.splice(parseInt(b.dataset.rm, 10), 1); _renderAccumList(); };
+      });
+      const combineBtn = document.getElementById('parcelCombineBtn');
+      if (combineBtn) combineBtn.onclick = _combineAccumParcels;
+      const clearBtn = document.getElementById('parcelClearBtn');
+      if (clearBtn) clearBtn.onclick = () => { _accumParcels = []; _renderAccumList(); };
+    }
+
+    // Extract the ring(s) from a candidate: a parcel may be a single ring or
+    // a multipolygon (candidate.groups). Returns array of [[lat,lon],…] rings.
+    function _candidateRings(c) {
+      const toObj = pt => Array.isArray(pt) ? { lat: pt[0], lon: pt[1] } : { lat: pt.lat, lon: pt.lon };
+      if (c.groups && c.groups.length > 0) return c.groups.map(g => g.map(toObj));
+      return [c.coords.map(toObj)];
+    }
+
+    function _addParcelToAccum(c) {
+      _accumParcels.push({ name: c.display_name || `Parcel ${_accumParcels.length + 1}`, rings: _candidateRings(c) });
+      _renderAccumList();
+      showToast(`Added — ${_accumParcels.length} parcel${_accumParcels.length === 1 ? '' : 's'} collected`, 'success');
+    }
+
+    function _combineAccumParcels() {
+      if (_accumParcels.length === 0) return;
+      // Flatten every parcel's rings into one groups array; each ring is its
+      // own disjoint group (joined by ~~~, no connecting lines).
+      const groups = [];
+      for (const p of _accumParcels) for (const ring of p.rings) groups.push(ring);
+      const allCoords = groups.flat();
+      const name = `${_accumParcels.length} combined parcels`;
+      processLoadedShape(allCoords, name, groups);
+      // Reset the collection now it's imported.
+      _accumParcels = [];
+      _renderAccumList();
+    }
+
     function _handleParcelResult(result, contextLabel) {
       _showParcelAttribution(result.provider.attribution);
       const cands = result.candidates;
+      const accumOn = document.getElementById('parcelAccumulate')?.checked;
       if (cands.length === 1) {
+        if (accumOn) { _addParcelToAccum(cands[0]); return; }
         const c = cands[0];
         processLoadedShape(c.coords, c.display_name, c.groups || undefined);
       } else {
+        // Multiple candidates at this point: let the user pick. When
+        // accumulating, picking adds to the collection (handled by the
+        // picker's import path checking the toggle).
         _renderPlaceSearchResults(cands, contextLabel);
         const hintEl = document.getElementById('placeSearchResultsHint');
         if (hintEl) hintEl.textContent =
-          `${cands.length} parcels at ${contextLabel} — tick one or more to import`;
+          `${cands.length} parcels at ${contextLabel} — tick one or more` +
+          (accumOn ? ' to add to the combination' : ' to import');
       }
     }
 
     // Use the dropped map pin's coordinates for a point-in-parcel lookup —
     // the reliable path that sidesteps address geocoding landing on the road.
+    const _parcelAccumToggle = document.getElementById('parcelAccumulate');
+    if (_parcelAccumToggle) {
+      _parcelAccumToggle.addEventListener('change', _renderAccumList);
+    }
+
     const _parcelPinBtn = document.getElementById('parcelUsePin');
     if (_parcelPinBtn) {
       _parcelPinBtn.addEventListener('click', async function() {
@@ -7611,6 +7716,42 @@ function encodeRaw(sol) {
             }
             saveCardState();
             renderCards();
+          }
+        }
+
+        // Set iterations: 'auto' chooses the resolution that brings worst-case
+        // round-trip error under the source's own precision (using the same
+        // engine as the import accuracy readout); a number sets it directly.
+        if (p.iters) {
+          const gKey = (typeof getActiveGridKey === 'function' && getActiveGridKey()) || cardState.active;
+          const gDef = CARD_GRIDS[gKey];
+          if (gDef) {
+            if (String(p.iters).toLowerCase() === 'auto') {
+              if (typeof ImportAccuracy !== 'undefined' && gpxOriginalCoords && gpxOriginalCoords.length) {
+                const orig = gpxOriginalCoords.map(c => [c.lat, c.lon]);
+                const res = ImportAccuracy.suggestIterations(
+                  (it) => _roundTripAt(orig, gKey, it),
+                  { original: orig,
+                    minIter: gDef.minIterations || 1,
+                    maxIter: gDef.maxIterations || 21,
+                    currentIter: cardState.iterations[gKey] || gDef.defaultIterations,
+                    geodesicFn: geodesicDistance }
+                );
+                if (res && res.suggested) {
+                  if (typeof CardRenderer !== 'undefined' && CardRenderer.setIterations)
+                    CardRenderer.setIterations(gKey, res.suggested.iter);
+                  else cardState.iterations[gKey] = res.suggested.iter;
+                }
+              }
+            } else {
+              const n = parseInt(p.iters, 10);
+              if (!isNaN(n)) {
+                const clamped = Math.max(gDef.minIterations || 1, Math.min(gDef.maxIterations || 21, n));
+                if (typeof CardRenderer !== 'undefined' && CardRenderer.setIterations)
+                  CardRenderer.setIterations(gKey, clamped);
+                else cardState.iterations[gKey] = clamped;
+              }
+            }
           }
         }
         
