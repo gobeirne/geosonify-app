@@ -100,6 +100,60 @@ const PropertyImport = (function () {
       tested: false
     },
     {
+      id: 'au_wa',
+      name: 'Landgate (WA SLIP)',
+      countries: ['au'],
+      bbox: [112.9, -35.2, 129.0, -13.7],   // Western Australia
+      type: 'arcgis',
+      url: 'https://public-services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning/MapServer/2',
+      labelFields: ['land_id', 'polygon_number', 'lot_number'],
+      keyRequired: false,
+      attribution: 'Landgate (Western Australia) — SLIP Public Services',
+      licenseUrl: 'https://catalogue.data.wa.gov.au/',
+      tested: false
+    },
+    {
+      id: 'au_qld',
+      name: 'Queensland (LandParcelPropertyFramework)',
+      countries: ['au'],
+      bbox: [137.9, -29.2, 153.6, -9.0],    // Queensland
+      type: 'arcgis',
+      url: 'https://spatial-gis.information.qld.gov.au/arcgis/rest/services/PlanningCadastre/LandParcelPropertyFramework/MapServer/1',
+      labelFields: ['lotplan', 'lot', 'plan'],
+      labelPrefix: 'Lot ',
+      keyRequired: false,
+      attribution: 'State of Queensland (DRDMW) — CC BY 4.0',
+      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+      tested: false
+    },
+    {
+      id: 'au_tas',
+      name: 'theLIST (Tasmania)',
+      countries: ['au'],
+      bbox: [143.8, -43.7, 148.5, -39.4],   // Tasmania
+      type: 'arcgis',
+      url: 'https://services.thelist.tas.gov.au/arcgis/rest/services/Public/CadastreParcels/MapServer/0',
+      labelFields: ['CID', 'PID', 'VOLUME', 'FOLIO'],
+      keyRequired: false,
+      attribution: 'theLIST © State of Tasmania',
+      licenseUrl: 'https://www.thelist.tas.gov.au/',
+      tested: false
+    },
+    {
+      id: 'au_national',
+      name: 'National Cadastre (Geoscience Australia)',
+      countries: ['au'],
+      bbox: [112.9, -43.7, 153.7, -9.0],    // whole of Australia — catch-all fallback
+      type: 'arcgis',
+      url: 'https://gis.environment.gov.au/gispub/rest/services/national_basemap_v2/national_base_map_V2/MapServer/12',
+      labelFields: ['jurisdiction_id', 'lot', 'plan', 'plan_label'],
+      keyRequired: false,
+      lowPriority: true,   // try state layers first; this is the seamless fallback
+      attribution: 'Geoscience Australia — National Cadastre (CC BY 4.0)',
+      licenseUrl: 'https://creativecommons.org/licenses/by/4.0/',
+      tested: false
+    },
+    {
       id: 'us_ma',
       name: 'MassGIS (Massachusetts)',
       countries: ['us'],
@@ -410,6 +464,11 @@ const PropertyImport = (function () {
         if (!(lon >= w && lon <= e && lat >= s && lat <= n)) return false;
       }
       return true;
+    }).sort((a, b) => {
+      // Try specific (state) layers before broad fallbacks (national cadastre):
+      // a lowPriority provider is the seamless catch-all, used only if the
+      // more specific layers return nothing.
+      return (a.lowPriority ? 1 : 0) - (b.lowPriority ? 1 : 0);
     });
   }
 
@@ -512,6 +571,47 @@ const PropertyImport = (function () {
   }
 
   /**
+   * Pin-based lookup: a known lat/lon (e.g. a dropped map pin) → parcel
+   * candidates, skipping geocoding entirely. This is the RELIABLE path —
+   * geocoding an address can land on the road centreline and miss the
+   * parcel, whereas an exact point does a true point-in-polygon query.
+   * Returns { geocode, provider, candidates } in the same shape as
+   * lookupAddress so callers/UI are interchangeable.
+   */
+  async function lookupPoint(lat, lon, options) {
+    options = options || {};
+    const status = options.onStatus || function () {};
+    const geo = { lat, lon, display_name: `${lat.toFixed(6)}, ${lon.toFixed(6)}`, countryCode: options.countryCode || null };
+
+    let providers;
+    if (options.customArcgisUrl && options.customArcgisUrl.trim()) {
+      providers = [customArcgisProvider(options.customArcgisUrl)];
+    } else {
+      providers = findProviders(geo.countryCode, lat, lon);
+    }
+    if (providers.length === 0) {
+      throw new Error(
+        `No free parcel source registered for this location yet. ` +
+        `If you know a public ArcGIS parcel layer here, paste its URL in the Advanced field.`
+      );
+    }
+
+    let lastErr = null;
+    for (const provider of providers) {
+      const key = provider.keyRequired ? getStoredKey(provider.id) : null;
+      try {
+        status(`Querying ${provider.name}…`);
+        const candidates = await fetchParcelsAtPoint(provider, lat, lon, key);
+        return { geocode: geo, geocodes: [geo], provider: provider, candidates: candidates };
+      } catch (e) {
+        lastErr = e;
+        console.warn(`[property-import] ${provider.id} failed:`, e.message);
+      }
+    }
+    throw lastErr || new Error('All parcel sources failed at that point.');
+  }
+
+  /**
    * One-shot variant for the URL auto-pipeline: returns the single
    * best parcel as { coords, groups, name, attribution }.
    */
@@ -535,6 +635,7 @@ const PropertyImport = (function () {
     customArcgisProvider: customArcgisProvider,
     fetchParcelsAtPoint: fetchParcelsAtPoint,
     lookupAddress: lookupAddress,
+    lookupPoint: lookupPoint,
     lookupAddressAuto: lookupAddressAuto,
     getStoredKey: getStoredKey,
     storeKey: storeKey,
