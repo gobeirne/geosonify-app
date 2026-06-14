@@ -6495,7 +6495,35 @@ function encodeRaw(sol) {
         const isDelta = isPathOrPoly && useDelta && !rawModeActive;
         const param = getURLParamForActiveCard(isDelta);
         return `${window.location.origin}${window.location.pathname}?${param}=${s}`;
-      } catch (e) { return null; }
+      } catch (e) {
+        console.warn('[geosonify] _encodeSolutionURL failed:', e && e.message, '| sol.type=', sol && sol.type);
+        return null;
+      }
+    }
+
+    // Encode a solution's full URL in a SPECIFIC codec (temporarily overrides
+    // the codec selector), for the cross-codec comparison breakdown.
+    function _encodeSolutionURLInCodec(sol, codecVal) {
+      const codecEl = document.getElementById('codec');
+      if (!codecEl) return _encodeSolutionURL(sol);
+      const prev = codecEl.value;
+      codecEl.value = codecVal;
+      const url = _encodeSolutionURL(sol);
+      codecEl.value = prev;
+      return url;
+    }
+
+    // Build a "URL length by codec" breakdown for a solution. Returns
+    // [{codec, len, url}] sorted shortest-first, or [] on failure.
+    function _codecBreakdown(sol) {
+      const codecs = ['raw', 'b36', 'b64'];
+      const rows = [];
+      for (const cd of codecs) {
+        const url = _encodeSolutionURLInCodec(sol, cd);
+        if (url) rows.push({ codec: cd, len: url.length, url });
+      }
+      rows.sort((a, b) => a.len - b.len);
+      return rows;
     }
 
     function _pathEncodedLength(coords) {
@@ -6594,6 +6622,28 @@ function encodeRaw(sol) {
       if (typeof switchToTab === 'function') switchToTab('output');
     }
 
+    // Swap which import button is visually primary based on shape type.
+    // Closed ring (parcel) → "Import All Points" primary; open track → "Import
+    // Simplified" primary. Mirrors the epsilon default (rings keep every vertex).
+    function _setImportButtonDefault() {
+      const simpBtn = document.getElementById('importGpxBtn');
+      const allBtn = document.getElementById('importAllBtn');
+      if (!simpBtn || !allBtn) return;
+      let closed = false;
+      try {
+        if (typeof ShapeImport !== 'undefined' && ShapeImport.isClosedRing) {
+          closed = ShapeImport.isClosedRing(gpxOriginalCoords);
+        }
+      } catch (e) {}
+      if (closed) {
+        allBtn.classList.remove('btn-secondary'); allBtn.classList.add('btn-primary');
+        simpBtn.classList.remove('btn-primary'); simpBtn.classList.add('btn-secondary');
+      } else {
+        simpBtn.classList.remove('btn-secondary'); simpBtn.classList.add('btn-primary');
+        allBtn.classList.remove('btn-primary'); allBtn.classList.add('btn-secondary');
+      }
+    }
+
     function updateImportAccuracy() {
       const box = document.getElementById('importAccuracyBox');
       if (!box) return;
@@ -6603,6 +6653,11 @@ function encodeRaw(sol) {
         return;
       }
       if (!gpxOriginalCoords || gpxOriginalCoords.length === 0) { box.style.display = 'none'; return; }
+
+      // Default the highlighted import button to suit the shape: a closed ring
+      // (property boundary / parcel) defaults to "Import All Points" — every
+      // corner matters; an open track (GPX) defaults to "Import Simplified".
+      _setImportButtonDefault();
 
       const gridKey = (typeof getActiveGridKey === 'function' && getActiveGridKey()) || cardState.active;
       const gridDef = CARD_GRIDS[gridKey];
@@ -6675,22 +6730,38 @@ function encodeRaw(sol) {
           if (offer && offer.plausible) {
             _lastRectOffer = offer;
             const fmt = ImportAccuracy.fmtError;
-            const shorter = offer.rectLen != null && pathLen != null && offer.rectLen < pathLen;
-            const codecName = ((document.getElementById('codec') || {}).value || 'raw');
+            const rectSol = { type: 'rect', centroid: offer.fit.centroid, thetaDeg: offer.fit.thetaDeg, L: offer.fit.L, S: offer.fit.S };
+            const pathSol = { type: 'path', points: original.map(c => [c[0], c[1]]), centroid: calculateCentroid(original) };
+            const rectByCodec = _codecBreakdown(rectSol);
+            const pathByCodec = _codecBreakdown(pathSol);
+            const codecLabel = { raw: 'Raw', b36: 'Base-36', b64: 'Base-64' };
+            // Build the codec comparison rows: each codec, rect vs path URL length.
+            let codecRows = '';
+            if (rectByCodec.length) {
+              const bestRect = rectByCodec[0].codec;
+              codecRows = `<div style="margin-top:8px; font-size:11px;">` +
+                `<div style="color:#888; margin-bottom:3px;">URL length by encoding (rectangle · path):</div>` +
+                ['raw', 'b36', 'b64'].map(cd => {
+                  const r = rectByCodec.find(x => x.codec === cd);
+                  const p = pathByCodec.find(x => x.codec === cd);
+                  if (!r) return '';
+                  const isBest = cd === bestRect;
+                  return `<div style="${isBest ? 'color:#1a7c4c; font-weight:600;' : 'color:#bbb;'}">` +
+                    `${codecLabel[cd]}: ${r.len}${p ? ' · ' + p.len : ''} chars${isBest ? '  ← shortest' : ''}</div>`;
+                }).join('') +
+                `</div>`;
+            }
             rectOfferEl.innerHTML =
               `<div style="border-top:0.5px solid #3a3a3c; margin-top:8px; padding-top:8px;">` +
                 `<div style="font-weight:600; margin-bottom:6px;">This is close to a rectangle</div>` +
                 `<div style="display:flex; gap:10px; align-items:flex-start;">` +
                   `<div style="flex-shrink:0;">${_rectOfferSVG(original, offer.fit)}</div>` +
                   `<div style="font-size:12px; line-height:1.7;">` +
-                    `<div><span style="color:#ff9800;">▬ Rectangle</span>: worst ${fmt(offer.rectErrM)}` +
-                      (offer.rectLen != null ? `, ${offer.rectLen}-char URL` : '') + `</div>` +
-                    `<div><span style="color:#00bcd4;">⋯ Path</span>: worst ${fmt(offer.pathErrM)}` +
-                      (pathLen != null ? `, ${pathLen}-char URL` : '') + `</div>` +
-                    (shorter ? `<div style="color:#1a7c4c; margin-top:2px;">Rectangle URL is ${pathLen - offer.rectLen} chars shorter</div>` : '') +
-                    `<div style="color:#888; margin-top:2px; font-size:11px;">Full URLs · ${codecName} codec</div>` +
+                    `<div><span style="color:#ff9800;">▬ Rectangle</span>: worst ${fmt(offer.rectErrM)}</div>` +
+                    `<div><span style="color:#00bcd4;">⋯ Path</span>: worst ${fmt(offer.pathErrM)}</div>` +
                   `</div>` +
                 `</div>` +
+                codecRows +
                 `<button id="rectImportBtn" class="btn btn-primary" style="font-size:12px; padding:5px 12px; font-weight:600; margin-top:8px;">Import as rectangle</button>` +
               `</div>`;
             const rbtn = document.getElementById('rectImportBtn');
