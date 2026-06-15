@@ -3510,6 +3510,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   }
   
   function showEditCodeModal(gridKey, currentCode) {
+    // GIS reference grids (Plus Codes, MGRS, UTM, …) have their own engine
+    // with no grid-shuffle or obfuscation. Deobfuscate / Enter Passphrase
+    // are meaningless here and would imply a false sense of security, so
+    // they're hidden for GIS cards.
+    const _gd = CARD_GRIDS[gridKey];
+    const isGis = !!(_gd && _gd.gis);
+    
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
     
@@ -3520,9 +3527,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       <input type="text" id="editCodeInput" value="${currentCode}" style="width:100%;padding:10px;font-size:16px;font-family:'SF Mono',monospace;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;">
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button id="decodeBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #007AFF;background:#007AFF;color:white;font-size:15px;cursor:pointer;">Decode</button>
-        <button id="deobfuscateBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #5856D6;background:#5856D6;color:white;font-size:15px;cursor:pointer;">Deobfuscate</button>
+        ${isGis ? '' : '<button id="deobfuscateBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #5856D6;background:#5856D6;color:white;font-size:15px;cursor:pointer;">Deobfuscate</button>'}
       </div>
-      <button id="passphraseDecodeBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #FF9500;background:#FF9500;color:white;font-size:15px;cursor:pointer;">🔑 Enter Passphrase</button>
+      ${isGis ? '' : '<button id="passphraseDecodeBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #FF9500;background:#FF9500;color:white;font-size:15px;cursor:pointer;">🔑 Enter Passphrase</button>'}
       <button id="cancelEditBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #ccc;background:#f5f5f5;font-size:15px;cursor:pointer;">Cancel</button>
     `;
     modal.appendChild(dialog);
@@ -3534,7 +3541,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     dialog.querySelector('#cancelEditBtn').onclick = () => modal.remove();
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
     
-    dialog.querySelector('#passphraseDecodeBtn').onclick = () => {
+    const passphraseDecodeBtnEl = dialog.querySelector('#passphraseDecodeBtn');
+    if (passphraseDecodeBtnEl) passphraseDecodeBtnEl.onclick = () => {
       const code = input.value.trim();
       if (!code) return;
       modal.remove();
@@ -3565,7 +3573,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       }
     };
     
-    dialog.querySelector('#deobfuscateBtn').onclick = () => {
+    const deobfuscateBtnEl = dialog.querySelector('#deobfuscateBtn');
+    if (deobfuscateBtnEl) deobfuscateBtnEl.onclick = () => {
       const code = input.value.trim();
       if (!code) return;
       const result = decodeCardCode(gridKey, code, true);
