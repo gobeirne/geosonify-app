@@ -59,17 +59,20 @@
     html.display-mode, html.display-mode body {
       margin: 0; padding: 0; height: 100%; overflow: hidden; background: #000;
     }
-    html.display-mode .app-container { margin: 0; padding: 0; max-width: none; height: 100vh; }
+    html.display-mode .app-container { margin: 0; padding: 0; max-width: none; height: 100vh; height: 100dvh; }
     /* Hide every tab panel's non-map content */
     html.display-mode .tab-content { display: none !important; }
     html.display-mode #sharedMapContainer {
       display: block !important; position: fixed !important; inset: 0 !important;
-      width: 100vw !important; height: 100vh !important;
+      width: 100vw !important; height: 100vh !important; height: 100dvh !important;
       max-width: none !important; max-height: none !important;
       border: none !important; border-radius: 0 !important;
       margin: 0 !important;
     }
-    html.display-mode #mapContainerMobile { width: 100%; height: 100%; }
+    html.display-mode #mapContainerMobile {
+      position: absolute !important; inset: 0 !important;
+      width: 100% !important; height: 100% !important; max-height: none !important;
+    }
     /* Viewer attribution tag — matches the quiet Leaflet/OSM style */
     .geosonify-viewer-tag {
       position: fixed; bottom: 8px; left: 8px; z-index: 1200;
@@ -1192,13 +1195,14 @@
           const mc = document.getElementById('mapContainerMobile');
           if (sc) { sc.style.height = ''; sc.style.width = ''; sc.style.maxHeight = ''; }
           if (mc) { mc.style.height = ''; mc.style.width = ''; mc.style.maxHeight = ''; }
-          // Two passes: immediately and after layout settles.
-          m.invalidateSize(true);
-          setTimeout(() => {
-            m.invalidateSize(true);
-            // Re-frame the shape at the new full-viewport size. Collect bounds
-            // from drawn vector layers (the boundary), ignoring tile/marker.
+
+          // Re-fit the shape to the current map size. Extracted so it can run
+          // again whenever the viewport changes (mobile address-bar collapse,
+          // orientation change, resize) — those alter the visible height after
+          // load, which would otherwise leave a black band.
+          const _viewerFit = () => {
             try {
+              m.invalidateSize(true);
               let b = null;
               m.eachLayer(layer => {
                 if (layer.getBounds && (layer instanceof L.Polygon || layer instanceof L.Polyline)) {
@@ -1206,14 +1210,10 @@
                 }
               });
               if (!isNaN(opts.zoom) && opts.zoom != null) {
-                // Absolute zoom: centre on the shape, set the level explicitly.
                 const centre = (b && b.isValid()) ? b.getCenter() : m.getCenter();
                 const z = Math.max(m.getMinZoom() || 1, Math.min(m.getMaxZoom() || 22, opts.zoom));
                 m.setView(centre, z);
               } else if (b && b.isValid()) {
-                // Auto-fit, with optional &context breathing-room multiplier:
-                // fit tightly, then step out so the shape fills 1/context of
-                // the frame (1.0 = tight, 1.5/2.0 = more surrounding streets).
                 m.fitBounds(b, { padding: [40, 40] });
                 const ctx = opts.context;
                 if (!isNaN(ctx) && ctx > 1) {
@@ -1221,18 +1221,28 @@
                   if (steps > 0) m.setZoom(Math.max(m.getMinZoom() || 1, m.getZoom() - steps));
                 }
               }
-              // &fixzoom — lock zoom interactions for a static-style embed
-              // (pan stays enabled).
-              if (opts.fixzoom) {
-                m.scrollWheelZoom.disable();
-                m.doubleClickZoom.disable();
-                m.touchZoom.disable();
-                m.boxZoom.disable();
-                if (m.zoomControl) m.removeControl(m.zoomControl);
-                if (m.keyboard) m.keyboard.disable();
-              }
             } catch (e) {}
-          }, 220);
+          };
+
+          // Immediate + settle passes, then bind to viewport-change events.
+          m.invalidateSize(true);
+          setTimeout(_viewerFit, 220);
+          setTimeout(() => m.invalidateSize(true), 600);   // catch late address-bar collapse
+          window.addEventListener('resize', () => m.invalidateSize(true));
+          window.addEventListener('orientationchange', () => setTimeout(_viewerFit, 300));
+
+          // &fixzoom — lock zoom interactions for a static-style embed
+          // (pan stays enabled).
+          if (opts.fixzoom) {
+            try {
+              m.scrollWheelZoom.disable();
+              m.doubleClickZoom.disable();
+              m.touchZoom.disable();
+              m.boxZoom.disable();
+              if (m.zoomControl) m.removeControl(m.zoomControl);
+              if (m.keyboard) m.keyboard.disable();
+            } catch (e) {}
+          }
         }
       } catch (e) {}
 
