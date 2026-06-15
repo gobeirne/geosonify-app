@@ -2061,6 +2061,38 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return;
       }
       
+      // ── GIS scheme params (?mgrs=, ?utm=, ?pluscode=, …) ────
+      // A GIS param name equals its GISGrids.SCHEMES key. Decode locally
+      // via GISGrids.decode → [lat,lon] and feed the point-decode tail.
+      // (localgrid is never emitted on share — concrete scheme only — but
+      // accept it defensively for hand-typed URLs.)
+      for (const [paramName, paramValue] of urlParams.entries()) {
+        if (!paramValue) continue;
+        if (typeof GISGrids === 'undefined' || !GISGrids.SCHEMES.hasOwnProperty(paramName)) continue;
+        const decodedVal = decodeURIComponent(paramValue);
+        const coord = GISGrids.decode(paramName, decodedVal);
+        if (!coord) {
+          setTimeout(() => showToast('Invalid ' + paramName + ' code in URL', 'error'), 200);
+          return;
+        }
+        setTimeout(() => {
+          _suppressURLUpdate = true;
+          currentCardCoord = { lat: coord[0], lon: coord[1] };
+          cardState.active = paramName;
+          if (!cardState.visible.includes(paramName)) cardState.visible.push(paramName);
+          saveCardState();
+          updateCoordDisplay();
+          updateMapPin();
+          renderCards();
+          if (map && currentCardCoord) {
+            map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
+          }
+          switchToTab('home');
+          setTimeout(() => { _suppressURLUpdate = false; }, 500);
+        }, 200);
+        return;
+      }
+      
       // ── Shape Import URL params ─────────────────────────────
       // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391,
       // ?geojson=https://..., ?kml=https://..., ?gpx=https://...
@@ -2076,6 +2108,24 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         address:     urlParams.get('address')
       };
       
+      // ── Part 2: explicit address seed format ─────────────────
+      // ?address=        → value is coordinates (legacy / unchanged)
+      // ?address_<fmt>=  → value is a seed in <fmt> (a/bip/mgrs/pluscode/…)
+      //                    or a ~~~-joined list of such seeds (Part 3).
+      // The suffix declares the format so we never sniff. First match wins.
+      let _seedFormat = null;
+      if (!shapeImportParams.address) {
+        for (const [pName, pVal] of urlParams.entries()) {
+          if (!pVal || !pName.startsWith('address_')) continue;
+          const fmt = pName.slice('address_'.length);
+          if (BASE_PARAM_MAP[fmt] || isGisParam(fmt)) {
+            shapeImportParams.address = pVal;
+            _seedFormat = fmt;
+            break;
+          }
+        }
+      }
+      
       const activeImport = Object.entries(shapeImportParams).find(([k, v]) => v);
       if (activeImport) {
         const [importType, importValue] = activeImport;
@@ -2089,7 +2139,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           pass:     urlParams.get('pass') || null,           // grid passphrase
           obf:      urlParams.get('obf') === '1',            // obfuscation
           enc_pass: urlParams.get('enc_pass') || null,       // hard encryption passphrase
-          result:   urlParams.get('result') || 'r'           // r=redirect, s=stay, c=copy
+          result:   urlParams.get('result') || 'r',          // r=redirect, s=stay, c=copy
+          seedFormat: _seedFormat                            // Part 2: explicit address seed format (or null)
         };
         
         // Immediately strip sensitive params from browser history
@@ -2384,6 +2435,44 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       'base64': 'b64'
     };
     
+    // ── Part 0: seed-format registry rule (shared) ────────────
+    // A seed format suffix is one of:
+    //   • a base param name (alpha/emoji/hex/bip/…) → resolves to a grid key
+    //   • a GIS scheme key (mgrs/utm/pluscode/…)    → membership via SCHEMES
+    // Rule: a GIS param name EQUALS its GISGrids.SCHEMES key. No new object.
+    const BASE_PARAM_MAP = {
+      'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
+      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
+      'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
+      'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
+      'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
+      'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
+    };
+    
+    function isGisParam(name) {
+      return typeof GISGrids !== 'undefined' && GISGrids.SCHEMES.hasOwnProperty(name);
+    }
+    
+    /**
+     * Decode a single seed string into [lat,lon] given an explicit format.
+     * - GIS scheme key  → GISGrids.decode(fmt, value)
+     * - base param name → decodeCardCode(gridKey, value, obf)
+     * Returns [lat,lon] or null. `fmt` is the suffix as it appears in the
+     * URL (e.g. 'a', 'bip', 'mgrs'); `obf` only applies to base formats.
+     */
+    function decodeSeed(fmt, value, obf) {
+      if (!fmt || value == null) return null;
+      if (isGisParam(fmt)) {
+        return GISGrids.decode(fmt, value);
+      }
+      const gridKey = BASE_PARAM_MAP[fmt];
+      if (gridKey) {
+        const r = decodeCardCode(gridKey, value, !!obf);
+        return r ? [r[0], r[1]] : null;
+      }
+      return null;
+    }
+    
     function getURLParamForActiveCard(isDelta = false) {
       // Raw mode is an encoding format - use 'r' for raw coordinates
       if (rawModeActive) {
@@ -2414,6 +2503,21 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         const flags = (obfuscated ? 'o' : '') + (isDelta ? 'd' : '') + (isAllRhumb ? 'r' : '');
         if (flags) param = param + '.' + flags;
         return param;
+      }
+      
+      // GIS card — param name IS the scheme key, bare (no o/d/r flags;
+      // GIS formats can't obfuscate or delta-encode).
+      if (gridDef && gridDef.gis) {
+        // localgrid is decode-only: a bare ?localgrid= is ambiguous because
+        // its projection is chosen by location. Emit the concrete scheme
+        // (mga/nztm/etc.) resolved from the current coordinate instead.
+        if (gridDef.gis === 'localgrid') {
+          if (currentCardCoord) {
+            return GISGrids.localScheme(currentCardCoord.lat, currentCardCoord.lon);
+          }
+          return 'r';
+        }
+        return gridDef.gis;
       }
       
       return 'r';
@@ -7794,13 +7898,18 @@ function encodeRaw(sol) {
       showToast(`Added — ${_accumParcels.length} parcel${_accumParcels.length === 1 ? '' : 's'} collected`, 'success');
     }
 
+    // Part 3: flatten a list of {name, rings} parcels into one groups array
+    // (each ring its own disjoint group, joined by ~~~, no connecting lines).
+    // Shared by the combine-checkbox path and the ~~~ seed pipeline.
+    function _groupsFromParcels(parcels) {
+      const groups = [];
+      for (const p of parcels) for (const ring of p.rings) groups.push(ring);
+      return { groups, allCoords: groups.flat() };
+    }
+
     function _combineAccumParcels() {
       if (_accumParcels.length === 0) return;
-      // Flatten every parcel's rings into one groups array; each ring is its
-      // own disjoint group (joined by ~~~, no connecting lines).
-      const groups = [];
-      for (const p of _accumParcels) for (const ring of p.rings) groups.push(ring);
-      const allCoords = groups.flat();
+      const { groups, allCoords } = _groupsFromParcels(_accumParcels);
       const name = `${_accumParcels.length} combined parcels`;
       processLoadedShape(allCoords, name, groups);
       // Reset the collection now it's imported.
@@ -7944,16 +8053,73 @@ function encodeRaw(sol) {
             processLoadedShape(kmlResult.coords, kmlResult.name || 'KML');
             break;
             
-          case 'address':
+          case 'address': {
             activateImportPill('parcel');
             document.getElementById('parcelAddressInput').value = value;
-            document.getElementById('shapeImportLoadingText').textContent = `Finding parcel at "${value}"...`;
-            const pcResult = await PropertyImport.lookupAddressAuto(value, {
-              onStatus: t => { document.getElementById('shapeImportLoadingText').textContent = t; }
-            });
+            const seedFormat = pipeline && pipeline.seedFormat;
+            const seedObf = !!(pipeline && pipeline.obf);
+            const statusEl = document.getElementById('shapeImportLoadingText');
+            const onStatus = t => { statusEl.textContent = t; };
+
+            if (seedFormat && value.includes('~~~')) {
+              // ── Part 3: ~~~-joined list of seeds → multi-parcel import ──
+              // Decode each seed locally (shared seedFormat), resolve its
+              // parcel via the reliable point-in-polygon path, and combine.
+              // Partial failures are collected, never fatal — silent drops
+              // are dangerous for embedded real-estate maps.
+              const seeds = value.split('~~~').map(s => s.trim()).filter(Boolean);
+              statusEl.textContent = `Loading ${seeds.length} parcels...`;
+              const parcels = [];
+              const failures = [];
+              let lastAttribution = null;
+              for (let i = 0; i < seeds.length; i++) {
+                const seed = seeds[i];
+                statusEl.textContent = `Loading parcel ${i + 1} of ${seeds.length}...`;
+                const coord = decodeSeed(seedFormat, seed, seedObf);
+                if (!coord) { failures.push({ seed, reason: 'could not decode' }); continue; }
+                try {
+                  const r = await PropertyImport.lookupPointAuto(coord[0], coord[1], { onStatus });
+                  lastAttribution = r.attribution || lastAttribution;
+                  parcels.push({ name: r.name || `Parcel ${i + 1}`, rings: _candidateRings(r) });
+                } catch (e) {
+                  failures.push({ seed, reason: e.message || 'lookup failed' });
+                }
+              }
+              if (parcels.length === 0) {
+                throw new Error(`No parcels loaded (0 of ${seeds.length}).`);
+              }
+              if (lastAttribution) _showParcelAttribution(lastAttribution);
+              const { groups, allCoords } = _groupsFromParcels(parcels);
+              const combinedName = `${parcels.length} parcels`;
+              processLoadedShape(allCoords, combinedName, groups);
+              const loaded = parcels.length, total = seeds.length;
+              if (failures.length > 0) {
+                showToast(`${loaded} of ${total} titles loaded — ${failures.length} failed`, 'warning');
+                console.warn('[geosonify] seed pipeline partial failures:', failures);
+              } else {
+                showToast(`${loaded} of ${total} titles loaded`, 'success');
+              }
+              break;
+            }
+
+            if (seedFormat) {
+              // ── Part 2: single seed in an explicit format → point lookup ──
+              const coord = decodeSeed(seedFormat, value, seedObf);
+              if (!coord) throw new Error(`Could not decode ${seedFormat} seed.`);
+              statusEl.textContent = `Finding parcel...`;
+              const ptResult = await PropertyImport.lookupPointAuto(coord[0], coord[1], { onStatus });
+              _showParcelAttribution(ptResult.attribution);
+              processLoadedShape(ptResult.coords, ptResult.name, ptResult.groups || undefined);
+              break;
+            }
+
+            // ── Legacy ?address= : value is a free-form address string ──
+            statusEl.textContent = `Finding parcel at "${value}"...`;
+            const pcResult = await PropertyImport.lookupAddressAuto(value, { onStatus });
             _showParcelAttribution(pcResult.attribution);
             processLoadedShape(pcResult.coords, pcResult.name, pcResult.groups || undefined);
             break;
+          }
 
           case 'gpx':
             activateImportPill('url');
