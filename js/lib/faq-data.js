@@ -112,12 +112,28 @@
 <p>If you would rather not draw by hand, the same tab can import shapes. As described in detail below, you can search for a place by name, or use the File, URL, Wikidata, and OSM ID options to pull in a GeoJSON, KML, or GPX file, a Wikidata entity, or an OpenStreetMap relation. Imported routes can be played back as sound from here too (see the route-playback entry under Music &amp; Sonification). There are also boxes for pasting coordinates directly (one latitude, longitude pair per line) and for pasting a compact code to decode and redraw it.</p>`
           },
 
-          {
+ {
             id: 'output-tab',
             q: 'The Output tab',
             a: `<p>The Output tab controls how the current location or shape is written down and shared. The encoding on the map does not change; only its presentation does.</p>
 <p>Pick a representation from the codec selector: <strong>Raw</strong> (human-readable), <strong>Base36</strong>, <strong>Base64url</strong>, or <strong>Emoji</strong>. For a path or polygon you can switch on <strong>delta compression</strong> to shorten the code while keeping full precision. A <strong>checksum</strong> option adds a verification character so a recipient can tell whether the code was copied correctly, and a <strong>rounded</strong> option produces tidier values.</p>
-<p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>`
+<p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Display (viewer) mode – embedding a bare map</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p>Adding <strong>?display</strong> to a share link opens a clean, embeddable map showing just the shape – no tabs, controls, or prompts. The boundary is fixed in place (you can pan and zoom, but not drag it), which suits embedding a property’s exact boundaries in a listing. A quiet geosonify tag sits in the corner, linking back to the full interactive version of the same shape.</p>
+<p>Optional tags tailor the view, and combine freely:</p>
+<ul>
+<li><strong>&amp;area</strong> – land area (m²/hectares and acres) for a closed shape; summed across a property split over several titles.</li>
+<li><strong>&amp;zoom=N</strong> – an exact zoom level, centred on the shape.</li>
+<li><strong>&amp;context=N</strong> – keeps the shape framed but pulls back to show surrounding streets (1 is tight, 2 shows more, and so on).</li>
+<li><strong>&amp;fixzoom</strong> – locks the zoom for a static, image-like embed (panning stays on).</li>
+<li><strong>&amp;gps</strong> – shows the viewer’s live location as a dot, useful for walking a route or boundary.</li>
+<li><strong>&amp;export=gpx</strong> or <strong>&amp;export=kml</strong> – a download button so anyone can take the boundary into their own GIS, GPS unit, or Google Earth.</li>
+</ul>
+<p>For example, <strong>?display&amp;area&amp;export=kml&amp;context=2</strong> shows the property in its neighbourhood with its area and a KML download.</p>
+</div>
+</details>`
           }
 
         ]
