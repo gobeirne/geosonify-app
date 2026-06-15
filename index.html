@@ -91,6 +91,14 @@
       cursor: pointer; color: #1a6ebd; background: none; border: none;
       font: inherit; padding: 0; text-decoration: underline;
     }
+    /* Shape Mode card greyed out while accumulating parcels */
+    .card.card-disabled { opacity: 0.45; pointer-events: none; position: relative; }
+    .card.card-disabled::after {
+      content: 'Building from parcels'; position: absolute; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 600; color: #555;
+      background: rgba(255,255,255,0.35); border-radius: inherit; pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -370,7 +378,7 @@
         </div>
       </div>
       
-      <div class="card">
+      <div class="card" id="shapeModeCard">
         <div class="card-header">Shape Mode</div>
         <div class="card-body">
           <div class="segmented-control">
@@ -1686,6 +1694,21 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
         
         // Shape mode (Input tab)
+        // Exception: when accumulating parcels, a map click is just a lookup
+        // pin (so "Use map pin location" works), NOT a shape vertex. Without
+        // this, dropping pins to find parcels would build a rectangle/path
+        // and fight the parcel accumulation.
+        if (document.getElementById('parcelAccumulate') &&
+            document.getElementById('parcelAccumulate').checked) {
+          markers.forEach(m => map.removeLayer(m));
+          markers = [];
+          if (shapeLayer) { map.removeLayer(shapeLayer); shapeLayer = null; }
+          const pin = L.marker([e.latlng.lat, normalizedLng]).addTo(map);
+          markers.push(pin);
+          currentCardCoord = { lat: e.latlng.lat, lon: normalizedLng };
+          return;
+        }
+
         _suppressURLUpdate = false; // User actively clicked map
         const mode = document.querySelector('input[name="shapeMode"]:checked').value;
         const isPathPoly = mode === 'pathpoly';
@@ -7703,6 +7726,11 @@ function encodeRaw(sol) {
       const listEl = document.getElementById('parcelAccumList');
       if (!listEl) return;
       const on = document.getElementById('parcelAccumulate')?.checked;
+      // While accumulating parcels, the Shape Mode controls don't apply (the
+      // shape is built from parcels, not map clicks) — grey them out so a
+      // dropped pin can't start a rectangle/path.
+      const shapeModeCard = document.getElementById('shapeModeCard');
+      if (shapeModeCard) shapeModeCard.classList.toggle('card-disabled', !!on);
       if (!on) { listEl.style.display = 'none'; return; }
       listEl.style.display = 'block';
       if (_accumParcels.length === 0) {
