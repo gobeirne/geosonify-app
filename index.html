@@ -1852,9 +1852,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       parseURLParameters();
 
       // Display (viewer) mode: after the shape is decoded and drawn, add the
-      // bare-map chrome (attribution tag, optional area/export/gps).
+      // bare-map chrome. For a direct shape URL (adr=, etc.) the shape is ready
+      // quickly, so set up on a short timer. For the async address-pipeline
+      // (address=/place=/… with auto=), the shape isn't ready yet — the
+      // pipeline calls setupDisplayViewer itself when it finishes, so skip here.
       if (window.DISPLAY_MODE) {
-        setTimeout(setupDisplayViewer, 300);
+        const _up = new URLSearchParams(window.location.search);
+        const _pipelineActive = ['address','place','wikidata','osmrelation','geojson','kml','gpx']
+          .some(k => _up.has(k));
+        if (!_pipelineActive) {
+          setTimeout(setupDisplayViewer, 300);
+        }
       }
     });
     
@@ -2085,8 +2093,22 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         };
         
         // Immediately strip sensitive params from browser history
-        // The pipeline URL is ephemeral — passwords should never persist
-        window.history.replaceState({}, '', window.location.pathname);
+        // The pipeline URL is ephemeral — passwords should never persist.
+        // But preserve the display-mode params so the viewer (and its
+        // back-link) still work when the pipeline feeds display mode.
+        if (window.DISPLAY_MODE) {
+          // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
+          // reads them and they're not sensitive.
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export'];
+          const kept = keep.filter(k => urlParams.has(k))
+            .map(k => urlParams.get(k) === '' || urlParams.get(k) === null ? k : `${k}=${urlParams.get(k)}`);
+          window.history.replaceState({}, '', window.location.pathname + (kept.length ? '?' + kept.join('&') : ''));
+          // In display mode the viewer shows the result in place — never
+          // redirect away from the display URL.
+          pipeline.result = 's';
+        } else {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
         
         setTimeout(() => {
           switchToTab('input');
@@ -8114,9 +8136,27 @@ function encodeRaw(sol) {
               showToast('URL ready in address bar');
             });
           } else {
-            // 's' = stay — update address bar and show the output
-            window.history.replaceState({}, '', shareURL);
+            // 's' = stay — update address bar and show the output.
+            // In display mode, re-attach the display params so the resulting
+            // address-bar URL is itself a shareable display/viewer link.
+            let finalURL = shareURL;
+            if (window.DISPLAY_MODE) {
+              const dParams = [];
+              const dp = window.DISPLAY_OPTS || {};
+              dParams.push('display');
+              if (dp.area) dParams.push('area');
+              if (dp.context != null && !isNaN(dp.context)) dParams.push('context=' + dp.context);
+              if (dp.zoom != null && !isNaN(dp.zoom)) dParams.push('zoom=' + dp.zoom);
+              if (dp.fixzoom) dParams.push('fixzoom');
+              if (dp.gps) dParams.push('gps');
+              if (dp.export) dParams.push('export=' + dp.export);
+              finalURL = shareURL + (shareURL.includes('?') ? '&' : '?') + dParams.join('&');
+            }
+            window.history.replaceState({}, '', finalURL);
             showToast('Shape encoded');
+            if (window.DISPLAY_MODE) {
+              setTimeout(setupDisplayViewer, 200);
+            }
           }
         }
         
