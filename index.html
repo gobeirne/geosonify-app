@@ -1176,6 +1176,31 @@
           m.eachLayer(layer => {
             if (layer instanceof L.Marker && layer.dragging) layer.dragging.disable();
           });
+          // Leaflet caches the container size at creation; the display-mode CSS
+          // stretches the container to the full viewport AFTER that, so the map
+          // must re-measure or tiles only cover the old (smaller) area, leaving
+          // black gutters. Clear any inline sizing JS set on the containers,
+          // then invalidate so Leaflet repaints to fill the screen.
+          const sc = document.getElementById('sharedMapContainer');
+          const mc = document.getElementById('mapContainerMobile');
+          if (sc) { sc.style.height = ''; sc.style.width = ''; sc.style.maxHeight = ''; }
+          if (mc) { mc.style.height = ''; mc.style.width = ''; mc.style.maxHeight = ''; }
+          // Two passes: immediately and after layout settles.
+          m.invalidateSize(true);
+          setTimeout(() => {
+            m.invalidateSize(true);
+            // Re-frame the shape at the new full-viewport size. Collect bounds
+            // from drawn vector layers (the boundary), ignoring tile/marker.
+            try {
+              let b = null;
+              m.eachLayer(layer => {
+                if (layer.getBounds && (layer instanceof L.Polygon || layer instanceof L.Polyline)) {
+                  b = b ? b.extend(layer.getBounds()) : layer.getBounds();
+                }
+              });
+              if (b && b.isValid()) m.fitBounds(b, { padding: [40, 40] });
+            } catch (e) {}
+          }, 220);
         }
       } catch (e) {}
 
