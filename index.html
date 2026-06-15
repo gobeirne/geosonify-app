@@ -71,8 +71,12 @@
     .geosonify-viewer-tag {
       position: fixed; bottom: 8px; left: 8px; z-index: 1200;
       background: rgba(255,255,255,0.82); border-radius: 5px;
-      padding: 3px 8px; font: 500 12px/1.4 system-ui, sans-serif;
-      color: #333; box-shadow: 0 1px 4px rgba(0,0,0,0.2); display: flex; gap: 10px; align-items: center;
+      padding: 4px 8px; font: 500 12px/1.4 system-ui, sans-serif;
+      color: #333; box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+      display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    }
+    .geosonify-viewer-tag .geosonify-viewer-row {
+      display: flex; gap: 10px; align-items: center;
     }
     .geosonify-viewer-tag a { color: #1a6ebd; text-decoration: none; }
     .geosonify-viewer-tag a:hover { text-decoration: underline; }
@@ -1198,7 +1202,32 @@
                   b = b ? b.extend(layer.getBounds()) : layer.getBounds();
                 }
               });
-              if (b && b.isValid()) m.fitBounds(b, { padding: [40, 40] });
+              if (!isNaN(opts.zoom) && opts.zoom != null) {
+                // Absolute zoom: centre on the shape, set the level explicitly.
+                const centre = (b && b.isValid()) ? b.getCenter() : m.getCenter();
+                const z = Math.max(m.getMinZoom() || 1, Math.min(m.getMaxZoom() || 22, opts.zoom));
+                m.setView(centre, z);
+              } else if (b && b.isValid()) {
+                // Auto-fit, with optional &context breathing-room multiplier:
+                // fit tightly, then step out so the shape fills 1/context of
+                // the frame (1.0 = tight, 1.5/2.0 = more surrounding streets).
+                m.fitBounds(b, { padding: [40, 40] });
+                const ctx = opts.context;
+                if (!isNaN(ctx) && ctx > 1) {
+                  const steps = Math.round(Math.log2(ctx));
+                  if (steps > 0) m.setZoom(Math.max(m.getMinZoom() || 1, m.getZoom() - steps));
+                }
+              }
+              // &fixzoom — lock zoom interactions for a static-style embed
+              // (pan stays enabled).
+              if (opts.fixzoom) {
+                m.scrollWheelZoom.disable();
+                m.doubleClickZoom.disable();
+                m.touchZoom.disable();
+                m.boxZoom.disable();
+                if (m.zoomControl) m.removeControl(m.zoomControl);
+                if (m.keyboard) m.keyboard.disable();
+              }
             } catch (e) {}
           }, 220);
         }
@@ -1207,22 +1236,28 @@
       const tag = document.createElement('div');
       tag.className = 'geosonify-viewer-tag';
 
+      // Area on its own row (top), so the tag stays narrow and clears the
+      // Leaflet attribution on the right.
       if (opts.area) {
         const areaM2 = _viewerComputeArea();
         if (areaM2 != null && areaM2 > 0) {
-          const span = document.createElement('span');
-          span.className = 'geosonify-viewer-area';
-          span.textContent = _viewerFormatArea(areaM2);
-          tag.appendChild(span);
+          const arow = document.createElement('div');
+          arow.className = 'geosonify-viewer-row geosonify-viewer-area';
+          arow.textContent = _viewerFormatArea(areaM2);
+          tag.appendChild(arow);
         }
       }
+
+      // Bottom row: optional export button + the geosonify back-link.
+      const row = document.createElement('div');
+      row.className = 'geosonify-viewer-row';
 
       if (opts.export === 'gpx' || opts.export === 'kml') {
         const btn = document.createElement('button');
         btn.className = 'geosonify-viewer-export';
         btn.textContent = '↓ ' + opts.export.toUpperCase();
         btn.onclick = () => _viewerExport(opts.export);
-        tag.appendChild(btn);
+        row.appendChild(btn);
       }
 
       const link = document.createElement('a');
@@ -1234,8 +1269,9 @@
       link.href = window.location.pathname + (qs ? '?' + qs : '');
       link.textContent = '⬡ geosonify';
       link.title = 'Open in geosonify';
-      tag.appendChild(link);
+      row.appendChild(link);
 
+      tag.appendChild(row);
       document.body.appendChild(tag);
 
       if (opts.gps) _viewerStartGpsDot();
@@ -1414,13 +1450,18 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // ?display (or &display) renders a bare, embed-friendly map of the
       // shape in the URL: no chrome, no GPS prompt, shape fixed (pan/zoom
       // ok, not draggable). Opt-in extras: &gps (live dot), &area (land
-      // area for closed shapes), &export=gpx|kml (download button).
+      // area for closed shapes), &export=gpx|kml (download button),
+      // &zoom=N (absolute zoom, centred on shape), &context=N (auto-fit with
+      // N× breathing room), &fixzoom (lock zoom interactions).
       const _dispParams = new URLSearchParams(window.location.search);
       window.DISPLAY_MODE = _dispParams.has('display');
       window.DISPLAY_OPTS = {
         gps: _dispParams.has('gps'),
         area: _dispParams.has('area'),
-        export: _dispParams.get('export') || null
+        export: _dispParams.get('export') || null,
+        zoom: _dispParams.has('zoom') ? parseFloat(_dispParams.get('zoom')) : null,
+        context: _dispParams.has('context') ? parseFloat(_dispParams.get('context')) : null,
+        fixzoom: _dispParams.has('fixzoom')
       };
       if (window.DISPLAY_MODE) {
         document.documentElement.classList.add('display-mode');
