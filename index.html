@@ -1622,6 +1622,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (!hasURLParams) updateMapPin();
 
       map.on('click', function(e) {
+        // Display (viewer) mode is read-only: clicking must not clear the
+        // shape, drop a pin, or rewrite the URL. Pan/zoom remain free.
+        if (window.DISPLAY_MODE) return;
         const normalizedLng = normalizeLongitude(e.latlng.lng);
         const newCoord = [e.latlng.lat, normalizedLng];
         
