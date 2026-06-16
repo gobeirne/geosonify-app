@@ -583,7 +583,7 @@
 -->
 
 <!-- Features -->
-<script src="js/features/map-manager.js?v=20260109"></script>
+<script src="js/features/map-manager.js?v=20260616a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -599,7 +599,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260331"></script>
 <script src="js/lib/faq-data.js"></script>
-<script src="js/ui/faq-ui.js"></script>
+<script src="js/ui/faq-ui.js?v=20260616a"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -1616,6 +1616,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         getCurrentCoord: () => currentCardCoord
       });
       
+      // Apply a basemap chosen via ?basemap= (works in display mode too).
+      if (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.applyFromURL) {
+        GeosonifyBasemap.applyFromURL();
+      }
+      
       // Initialize GPSTracking module
       if (typeof GPSTracking !== 'undefined') {
         GPSTracking.init({
@@ -2150,7 +2155,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (window.DISPLAY_MODE) {
           // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
           // reads them and they're not sensitive.
-          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export'];
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'basemap'];
           const kept = keep.filter(k => urlParams.has(k))
             .map(k => urlParams.get(k) === '' || urlParams.get(k) === null ? k : `${k}=${urlParams.get(k)}`);
           window.history.replaceState({}, '', window.location.pathname + (kept.length ? '?' + kept.join('&') : ''));
@@ -8316,6 +8321,7 @@ function encodeRaw(sol) {
               if (dp.fixzoom) dParams.push('fixzoom');
               if (dp.gps) dParams.push('gps');
               if (dp.export) dParams.push('export=' + dp.export);
+              if (window.__GEOSONIFY_BASEMAP_ACTIVE) dParams.push('basemap=' + encodeURIComponent(window.__GEOSONIFY_BASEMAP_ACTIVE));
               finalURL = shareURL + (shareURL.includes('?') ? '&' : '?') + dParams.join('&');
             }
             window.history.replaceState({}, '', finalURL);
