@@ -272,6 +272,17 @@
   @media (prefers-color-scheme: dark) {
     .basemap-warn { color: #ffcf80; background: #3a2e12; }
   }
+
+  /* ── Social image (below credits) ── */
+  .faq-social-image {
+    text-align: center;
+    padding: 28px 16px 40px;
+  }
+  .faq-social-image img {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--border-radius-lg, 12px);
+  }
   `;
 
   function injectCSS() {
@@ -366,6 +377,14 @@
         parts.push(`    <p style="margin:0 0 4px 0;">${line}</p>`);
       }
       parts.push(`  </div>
+</div>`);
+    }
+
+    // ── Social image — its own section below the credits ──
+    if (data.socialImage && data.socialImage.src) {
+      parts.push(`
+<div class="faq-social-image">
+  <img src="${esc(data.socialImage.src)}" alt="${esc(data.socialImage.alt || '')}" loading="lazy">
 </div>`);
     }
 
