@@ -345,9 +345,9 @@
   <div class="card-body">
     <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Aerial is satellite/aerial imagery; Standard is the plain street map. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL — your choice travels in the share link, so anyone you send it to sees the same imagery.</p>
     <div class="basemap-presets" id="basemapPresets">
-      <button class="basemap-chip active" data-basemap="osm" data-attrib="© OpenStreetMap contributors">Standard</button>
-      <button class="basemap-chip" data-basemap="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" data-attrib="Imagery © Esri, Maxar, Earthstar Geographics">Aerial</button>
-      <button class="basemap-chip" data-basemap="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}" data-attrib="© Esri — World Topographic Map">Topographic</button>
+      <button class="basemap-chip active" data-basemap="osm">Standard</button>
+      <button class="basemap-chip" data-basemap="aerial">Aerial</button>
+      <button class="basemap-chip" data-basemap="topo">Topographic</button>
     </div>
     <div class="basemap-paste-row">
       <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
