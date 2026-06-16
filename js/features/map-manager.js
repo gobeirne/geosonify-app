@@ -45,6 +45,15 @@
   const SHAPE_COLOR_IMAGERY = '#ffd400';   // vivid yellow — pops on aerial
   let _shapeColor = SHAPE_COLOR_DEFAULT;
   function getShapeColor() { return _shapeColor; }
+
+  // Area shapes (rectangles, circles, graticules) use a distinct colour so
+  // they read differently from traced paths. Blue on the light basemaps;
+  // a bright cyan on aerial (blue, like purple, sinks into dark imagery)
+  // chosen to stay distinct from the path yellow.
+  const AREA_COLOR_DEFAULT = 'blue';
+  const AREA_COLOR_IMAGERY = '#00e5ff';
+  let _areaColor = AREA_COLOR_DEFAULT;
+  function getAreaColor() { return _areaColor; }
   
   // Callbacks
   let callbacks = {
@@ -296,10 +305,11 @@
 
     // Adapt shape contrast colour to the basemap and recolour any live shape.
     _shapeColor = isImagery ? SHAPE_COLOR_IMAGERY : SHAPE_COLOR_DEFAULT;
+    _areaColor  = isImagery ? AREA_COLOR_IMAGERY  : AREA_COLOR_DEFAULT;
     _recolourActiveShape();
     // Let the host recolour shapes it owns (index.html draws its own layers).
     if (typeof callbacks.onBasemapChange === 'function') {
-      try { callbacks.onBasemapChange(_shapeColor); } catch (e) { /* non-fatal */ }
+      try { callbacks.onBasemapChange(_shapeColor, _areaColor); } catch (e) { /* non-fatal */ }
     }
 
     return { ok: true, url: tileUrl };
@@ -999,6 +1009,11 @@
      * Current shape contrast colour (adapts to basemap).
      */
     getShapeColor: getShapeColor,
+
+    /**
+     * Current area-shape colour — rectangles/circles/graticules (adapts to basemap).
+     */
+    getAreaColor: getAreaColor,
 
     /**
      * Set map view
