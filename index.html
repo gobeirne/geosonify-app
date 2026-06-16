@@ -1617,16 +1617,19 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
 
         // When the basemap switches, recolour the shape this file owns
         // (the map-manager recolours its own layers separately).
-        onBasemapChange: (color) => {
+        onBasemapChange: (color, areaColor) => {
           try {
-            // Only recolour simple single shapes live. Multi-group featureGroups
-            // contain fixed-colour point markers (red/white) that must not be
-            // swept by a blanket setStyle — they redraw correctly on next interaction.
+            // Graticules keep their fixed orange/red (already visible on both
+            // backgrounds), so skip them. Rect/circle take the area colour;
+            // everything else (paths/polygons) takes the path colour.
+            const t = (typeof lastSolution !== 'undefined' && lastSolution) ? lastSolution.type : null;
+            if (t === 'graticule') return;
+            const useColor = (t === 'rect' || t === 'circle') ? areaColor : color;
             const isSimple = shapeLayer && shapeLayer.setStyle &&
               (shapeLayer instanceof L.Polyline || shapeLayer instanceof L.Polygon) &&
               !(shapeLayer instanceof L.FeatureGroup);
-            if (isSimple) shapeLayer.setStyle({ color });
-            if (centroidMarker && centroidMarker.setStyle) centroidMarker.setStyle({ color, fillColor: color });
+            if (isSimple) shapeLayer.setStyle({ color: useColor });
+            if (centroidMarker && centroidMarker.setStyle) centroidMarker.setStyle({ color: useColor, fillColor: useColor });
           } catch (e) { /* non-fatal */ }
         }
       });
@@ -3274,6 +3277,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       return 'purple';
     }
 
+    // Area-shape colour (rectangles, circles, graticules) — follows the
+    // basemap (blue on light maps, cyan on aerial). Falls back to blue.
+    function _areaColor() {
+      if (typeof MapManager !== 'undefined' && MapManager.getAreaColor) {
+        return MapManager.getAreaColor();
+      }
+      return 'blue';
+    }
+
     function drawPathPolyOnMap(coords, centroid, isClosed, clearPins = false, addDraggable = false, segmentModes = null) {
       if (clearPins) {
         markers.forEach(m => map.removeLayer(m));
@@ -3883,7 +3895,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       
       // Densify rectangle edges along great circles
       const densified = densifyPolygonGreatCircle(corners);
-      shapeLayer = L.polygon(densified, { color: 'blue', fillOpacity: 0.3 }).addTo(map);
+      shapeLayer = L.polygon(densified, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
       
       const bounds = L.latLngBounds(corners);
       map.fitBounds(bounds, { padding: [50, 50] });
@@ -3901,7 +3913,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (antipodeLayer) map.removeLayer(antipodeLayer);
       antipodeLayer = null;
       if (typeof MapManager !== 'undefined') MapManager.removePin();
-      shapeLayer = L.polygon(points, { color: 'blue', fillOpacity: 0.3 }).addTo(map);
+      shapeLayer = L.polygon(points, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
       
       const bounds = L.latLngBounds(points);
       map.fitBounds(bounds, { padding: [50, 50] });
@@ -3933,7 +3945,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           const corners = buildRectangle(lastSolution.L, lastSolution.S, deg2rad(lastSolution.thetaDeg), newCentroid);
           if (shapeLayer) map.removeLayer(shapeLayer);
           const densified = densifyPolygonGreatCircle(corners);
-          shapeLayer = L.polygon(densified, { color: 'blue', fillOpacity: 0.3 }).addTo(map);
+          shapeLayer = L.polygon(densified, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
           document.getElementById('finalCoords').textContent = 
             corners.map(pt => `${pt[0].toFixed(6)}, ${pt[1].toFixed(6)}`).join("\n");
           lastSolution.centroid = newCentroid;
@@ -3941,7 +3953,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         } else if (lastSolution.type === 'circle') {
           const circle = buildCircle(newCentroid, lastSolution.radius);
           if (shapeLayer) map.removeLayer(shapeLayer);
-          shapeLayer = L.polygon(circle, { color: 'blue', fillOpacity: 0.3 }).addTo(map);
+          shapeLayer = L.polygon(circle, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
           lastSolution.centroid = newCentroid;
           updateCompactOutputs();
         } else if (lastSolution.type === 'graticule') {
