@@ -172,12 +172,13 @@
       maxZoom: maxZoom 
     }).setView(center, zoom);
     
-    // Add tile layer
-    L.tileLayer(tileUrl, {
+    // Add tile layer (tracked so it can be swapped via setBasemap)
+    _basemapLayer = L.tileLayer(tileUrl, {
       attribution: attribution,
       maxNativeZoom: 19,
       maxZoom: maxZoom
     }).addTo(map);
+    _basemapMaxZoom = maxZoom;
     
     // Invalidate size after init
     setTimeout(() => map.invalidateSize(), 100);
@@ -185,6 +186,87 @@
     console.log('[geosonify] map-manager initialized');
     return map;
   }
+
+  // ============== BASEMAP SWITCHING ==============
+
+  let _basemapLayer = null;
+  let _basemapMaxZoom = 22;
+  const _OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  const _OSM_ATTRIB = '© OpenStreetMap contributors';
+
+  /**
+   * Normalise a user-supplied imagery URL into a Leaflet-ready XYZ template.
+   * - Already-templated XYZ ({z}/{x}/{y} in any order)         → as-is
+   * - ArcGIS hosted tile service root (…/MapServer)            → append /tile/{z}/{y}/{x}
+   * - ArcGIS dynamic image service (…/ImageServer) or REST root → unsupported (needs esri-leaflet)
+   * Returns { url } on success or { error } describing what to paste instead.
+   */
+  function _resolveBasemapUrl(raw) {
+    const url = String(raw || '').trim();
+    if (!url) return { error: 'Paste an imagery URL first.' };
+    // Already an XYZ template
+    if (/\{z\}/.test(url) && /\{x\}/.test(url) && /\{y\}/.test(url)) {
+      return { url };
+    }
+    // ArcGIS hosted tile service: …/services/<name>/MapServer  (no /tile yet)
+    const mapServer = url.match(/^(https?:\/\/.+?\/MapServer)\/?$/i);
+    if (mapServer) {
+      return { url: mapServer[1] + '/tile/{z}/{y}/{x}' };
+    }
+    // Dynamic image service — not XYZ-tiled, needs esri-leaflet which we don't load
+    if (/\/ImageServer\/?$/i.test(url) || /\/arcgis\/rest\/?$/i.test(url)) {
+      return { error: 'That looks like a dynamic ArcGIS image service. Paste the hosted-tile URL instead — it ends in /MapServer or contains {z}/{x}/{y}.' };
+    }
+    // Unknown shape — let Leaflet try only if it has placeholders; otherwise reject
+    return { error: 'Unrecognised imagery URL. Use an XYZ template (with {z}/{x}/{y}) or an ArcGIS hosted-tile URL ending in /MapServer.' };
+  }
+
+  /**
+   * Swap the basemap. `source` is a raw URL (XYZ template or ArcGIS hosted
+   * tile root) or the literal 'osm'. On tile-load failure the map falls back
+   * to OSM and calls options.onError so the UI can tell the user.
+   * Returns { ok, url } or { ok:false, error }.
+   */
+  function setBasemap(source, options = {}) {
+    if (!map) return { ok: false, error: 'Map not ready.' };
+    const attribution = options.attribution || '';
+
+    let tileUrl, attrib;
+    if (!source || source === 'osm') {
+      tileUrl = _OSM_URL;
+      attrib = _OSM_ATTRIB;
+    } else {
+      const resolved = _resolveBasemapUrl(source);
+      if (resolved.error) return { ok: false, error: resolved.error };
+      tileUrl = resolved.url;
+      attrib = attribution || 'Imagery © its provider';
+    }
+
+    const newLayer = L.tileLayer(tileUrl, {
+      attribution: attrib,
+      maxNativeZoom: 19,
+      maxZoom: _basemapMaxZoom
+    });
+
+    // Fallback: if imagery tiles fail to load, revert to OSM once.
+    if (tileUrl !== _OSM_URL) {
+      let failed = false;
+      newLayer.on('tileerror', () => {
+        if (failed) return;
+        failed = true;
+        if (typeof options.onError === 'function') {
+          options.onError('That imagery source didn’t load — back on the standard map.');
+        }
+        setBasemap('osm');
+      });
+    }
+
+    newLayer.addTo(map);
+    if (_basemapLayer) map.removeLayer(_basemapLayer);
+    _basemapLayer = newLayer;
+    return { ok: true, url: tileUrl };
+  }
+
 
   // ============== GPS PIN MARKER ==============
 
@@ -855,6 +937,11 @@
      * Get the Leaflet map instance
      */
     getMap: () => map,
+
+    /**
+     * Swap the basemap (imagery). source = raw URL or 'osm'.
+     */
+    setBasemap: setBasemap,
 
     /**
      * Set map view
