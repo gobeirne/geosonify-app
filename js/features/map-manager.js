@@ -164,6 +164,7 @@
     if (options.onMarkerDrag) callbacks.onMarkerDrag = options.onMarkerDrag;
     if (options.onMarkerDragEnd) callbacks.onMarkerDragEnd = options.onMarkerDragEnd;
     if (options.onCentroidDrag) callbacks.onCentroidDrag = options.onCentroidDrag;
+    if (options.onBasemapChange) callbacks.onBasemapChange = options.onBasemapChange;
     if (options.getCardState) callbacks.getCardState = options.getCardState;
     if (options.getGridDefinitions) callbacks.getGridDefinitions = options.getGridDefinitions;
     if (options.getCurrentCoord) callbacks.getCurrentCoord = options.getCurrentCoord;
@@ -296,6 +297,10 @@
     // Adapt shape contrast colour to the basemap and recolour any live shape.
     _shapeColor = isImagery ? SHAPE_COLOR_IMAGERY : SHAPE_COLOR_DEFAULT;
     _recolourActiveShape();
+    // Let the host recolour shapes it owns (index.html draws its own layers).
+    if (typeof callbacks.onBasemapChange === 'function') {
+      try { callbacks.onBasemapChange(_shapeColor); } catch (e) { /* non-fatal */ }
+    }
 
     return { ok: true, url: tileUrl };
   }
@@ -989,6 +994,11 @@
      * Swap the basemap (imagery). source = raw URL or 'osm'.
      */
     setBasemap: setBasemap,
+
+    /**
+     * Current shape contrast colour (adapts to basemap).
+     */
+    getShapeColor: getShapeColor,
 
     /**
      * Set map view
