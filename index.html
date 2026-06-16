@@ -1613,7 +1613,22 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // State accessors for hierarchical grid
         getCardState: () => cardState,
         getGridDefinitions: () => CARD_GRIDS,
-        getCurrentCoord: () => currentCardCoord
+        getCurrentCoord: () => currentCardCoord,
+
+        // When the basemap switches, recolour the shape this file owns
+        // (the map-manager recolours its own layers separately).
+        onBasemapChange: (color) => {
+          try {
+            // Only recolour simple single shapes live. Multi-group featureGroups
+            // contain fixed-colour point markers (red/white) that must not be
+            // swept by a blanket setStyle — they redraw correctly on next interaction.
+            const isSimple = shapeLayer && shapeLayer.setStyle &&
+              (shapeLayer instanceof L.Polyline || shapeLayer instanceof L.Polygon) &&
+              !(shapeLayer instanceof L.FeatureGroup);
+            if (isSimple) shapeLayer.setStyle({ color });
+            if (centroidMarker && centroidMarker.setStyle) centroidMarker.setStyle({ color, fillColor: color });
+          } catch (e) { /* non-fatal */ }
+        }
       });
       
       // Apply a basemap chosen via ?basemap= (works in display mode too).
@@ -3012,7 +3027,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       } else {
         if (centroidMarker) map.removeLayer(centroidMarker);
         centroidMarker = L.circleMarker(effectiveCentroid, {
-          radius: 5, fillColor: 'purple', color: 'purple', fillOpacity: 1
+          radius: 5, fillColor: _shapeColor(), color: _shapeColor(), fillOpacity: 1
         }).addTo(map);
       }
     }
@@ -3250,6 +3265,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       return result;
     }
 
+    // Shape contrast colour — follows the active basemap (purple on light
+    // maps, yellow on aerial). Falls back to purple if MapManager isn't ready.
+    function _shapeColor() {
+      if (typeof MapManager !== 'undefined' && MapManager.getShapeColor) {
+        return MapManager.getShapeColor();
+      }
+      return 'purple';
+    }
+
     function drawPathPolyOnMap(coords, centroid, isClosed, clearPins = false, addDraggable = false, segmentModes = null) {
       if (clearPins) {
         markers.forEach(m => map.removeLayer(m));
@@ -3272,9 +3296,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         : densifyPathGreatCircle(coords, 10, segmentModes);
 
       if (isClosed) {
-        shapeLayer = L.polygon(densified, { color: 'purple', weight: 2, fillOpacity: 0.3 }).addTo(map);
+        shapeLayer = L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }).addTo(map);
       } else {
-        shapeLayer = L.polyline(densified, { color: 'purple', weight: 3 }).addTo(map);
+        shapeLayer = L.polyline(densified, { color: _shapeColor(), weight: 3 }).addTo(map);
       }
       
       // Add start/end markers for open paths only (closed polygons just show centroid)
@@ -3307,7 +3331,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       } else {
         if (centroidMarker) map.removeLayer(centroidMarker);
         centroidMarker = L.circleMarker(effectiveCentroid, { 
-          radius: 5, fillColor: 'purple', color: 'purple', fillOpacity: 1 
+          radius: 5, fillColor: _shapeColor(), color: _shapeColor(), fillOpacity: 1 
         }).addTo(map);
       }
     }
@@ -3400,10 +3424,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           }));
         } else if (groupTypes[gi] === 'polygon') {
           const densified = densifyPolygonGreatCircle(g, 10, gModes);
-          layers.push(L.polygon(densified, { color: 'purple', weight: 2, fillOpacity: 0.3 }));
+          layers.push(L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }));
         } else {
           const densified = densifyPathGreatCircle(g, 10, gModes);
-          layers.push(L.polyline(densified, { color: 'purple', weight: 3 }));
+          layers.push(L.polyline(densified, { color: _shapeColor(), weight: 3 }));
         }
       }
       
@@ -3425,7 +3449,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       } else {
         if (centroidMarker) map.removeLayer(centroidMarker);
         centroidMarker = L.circleMarker(effectiveCentroid, {
-          radius: 5, fillColor: 'purple', color: 'purple', fillOpacity: 1
+          radius: 5, fillColor: _shapeColor(), color: _shapeColor(), fillOpacity: 1
         }).addTo(map);
       }
     }
@@ -3997,10 +4021,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                 }));
               } else if (groupTypes[gi] === 'polygon') {
                 const densified = densifyPathGreatCircle(g);
-                layers.push(L.polygon(densified, { color: 'purple', weight: 2, fillOpacity: 0.3 }));
+                layers.push(L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }));
               } else {
                 const densified = densifyPathGreatCircle(g);
-                layers.push(L.polyline(densified, { color: 'purple', weight: 3 }));
+                layers.push(L.polyline(densified, { color: _shapeColor(), weight: 3 }));
               }
             }
             shapeLayer = L.featureGroup(layers).addTo(map);
@@ -4024,9 +4048,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               : densifyPathGreatCircle(newPoints, 10, segModes);
             
             if (isClosed) {
-              shapeLayer = L.polygon(densified, { color: 'purple', weight: 2, fillOpacity: 0.3 }).addTo(map);
+              shapeLayer = L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }).addTo(map);
             } else {
-              shapeLayer = L.polyline(densified, { color: 'purple', weight: 3 }).addTo(map);
+              shapeLayer = L.polyline(densified, { color: _shapeColor(), weight: 3 }).addTo(map);
             }
             
             document.getElementById('finalCoords').textContent = 
