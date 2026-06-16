@@ -37,6 +37,14 @@
   // Hierarchical grid layers
   let gridLayers = [];          // Array of grid polygon layers
   let gridLayersVisible = true;
+
+  // Shape contrast colour — adapts to the basemap. Purple reads well on the
+  // light OSM/topo maps but disappears on dark aerial photos, so imagery
+  // basemaps switch the shape to a high-contrast yellow.
+  const SHAPE_COLOR_DEFAULT = 'purple';
+  const SHAPE_COLOR_IMAGERY = '#ffd400';   // vivid yellow — pops on aerial
+  let _shapeColor = SHAPE_COLOR_DEFAULT;
+  function getShapeColor() { return _shapeColor; }
   
   // Callbacks
   let callbacks = {
@@ -194,6 +202,20 @@
   const _OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   const _OSM_ATTRIB = '© OpenStreetMap contributors';
 
+  // Named shorthands so share links can say ?basemap=aerial instead of a long
+  // encoded URL. Keep keys lowercase; attribution travels with each.
+  const BASEMAP_ALIASES = {
+    osm: { url: _OSM_URL, attrib: _OSM_ATTRIB },
+    aerial: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      attrib: 'Imagery © Esri, Maxar, Earthstar Geographics'
+    },
+    topo: {
+      url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+      attrib: '© Esri — World Topographic Map'
+    }
+  };
+
   /**
    * Normalise a user-supplied imagery URL into a Leaflet-ready XYZ template.
    * - Already-templated XYZ ({z}/{x}/{y} in any order)         → as-is
@@ -231,15 +253,21 @@
     if (!map) return { ok: false, error: 'Map not ready.' };
     const attribution = options.attribution || '';
 
-    let tileUrl, attrib;
-    if (!source || source === 'osm') {
-      tileUrl = _OSM_URL;
-      attrib = _OSM_ATTRIB;
+    let tileUrl, attrib, isImagery;
+    const aliasKey = String(source || '').trim().toLowerCase();
+    if (!source || BASEMAP_ALIASES[aliasKey]) {
+      const alias = BASEMAP_ALIASES[aliasKey] || BASEMAP_ALIASES.osm;
+      tileUrl = alias.url;
+      attrib = alias.attrib;
+      // osm and topo are light maps (purple reads fine); everything else is
+      // treated as aerial-style imagery (switch shapes to yellow).
+      isImagery = !(aliasKey === 'osm' || aliasKey === 'topo' || !source);
     } else {
       const resolved = _resolveBasemapUrl(source);
       if (resolved.error) return { ok: false, error: resolved.error };
       tileUrl = resolved.url;
       attrib = attribution || 'Imagery © its provider';
+      isImagery = true;   // any pasted custom basemap is assumed to be imagery
     }
 
     const newLayer = L.tileLayer(tileUrl, {
@@ -264,7 +292,26 @@
     newLayer.addTo(map);
     if (_basemapLayer) map.removeLayer(_basemapLayer);
     _basemapLayer = newLayer;
+
+    // Adapt shape contrast colour to the basemap and recolour any live shape.
+    _shapeColor = isImagery ? SHAPE_COLOR_IMAGERY : SHAPE_COLOR_DEFAULT;
+    _recolourActiveShape();
+
     return { ok: true, url: tileUrl };
+  }
+
+  // Recolour the currently-drawn shape/centroid to the active _shapeColor,
+  // so switching basemaps updates an existing shape without a full redraw.
+  function _recolourActiveShape() {
+    try {
+      if (shapeLayer && shapeLayer.setStyle) {
+        shapeLayer.setStyle({ color: _shapeColor });
+      }
+      if (centroidMarker && centroidMarker.setStyle) {
+        // Only circleMarker centroids have setStyle; draggable icon markers don't.
+        centroidMarker.setStyle({ color: _shapeColor, fillColor: _shapeColor });
+      }
+    } catch (e) { /* non-fatal */ }
   }
 
 
@@ -547,13 +594,13 @@
     
     if (isClosed) {
       shapeLayer = L.polygon(densified, { 
-        color: 'purple', 
+        color: getShapeColor(), 
         weight: 2, 
         fillOpacity: 0.3 
       }).addTo(map);
     } else {
       shapeLayer = L.polyline(densified, { 
-        color: 'purple', 
+        color: getShapeColor(), 
         weight: 3 
       }).addTo(map);
     }
@@ -591,8 +638,8 @@
       if (centroidMarker) map.removeLayer(centroidMarker);
       centroidMarker = L.circleMarker(centroid, {
         radius: 5,
-        fillColor: 'purple',
-        color: 'purple',
+        fillColor: getShapeColor(),
+        color: getShapeColor(),
         fillOpacity: 1
       }).addTo(map);
     }
