@@ -192,22 +192,86 @@
   .examples-section .card:nth-child(6) .example-link { background: linear-gradient(135deg, var(--kereru-blue) 0%, var(--kereru-teal) 100%); }
   .examples-section .card:nth-child(7) .example-link { background: linear-gradient(135deg, var(--kereru-pink) 0%, var(--kereru-green) 100%); }
 
-@media (prefers-color-scheme: dark) {
-  .faq-answer pre,
-  .faq-answer code {
-    background: #2c2c2e;
+  @media (prefers-color-scheme: dark) {
+    .faq-answer pre,
+    .faq-answer code {
+      background: #2c2c2e;
+    }
+    .faq-answer tr:nth-child(even) td {
+      background: #2c2c2e;
+    }
   }
-  .faq-answer tr:nth-child(even) td {
-    background: #2c2c2e;
+
+  /* ── Basemap / imagery control ── */
+  .basemap-presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0 0 14px;
   }
-  .faq-answer a {
-    color: var(--kereru-blue, #7d9fc2);
+  .basemap-chip {
+    flex: 1 1 auto;
+    min-width: 88px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1.5px solid var(--ios-separator, #C6C6C8);
+    background: var(--ios-card, #fff);
+    color: var(--ios-text, #000);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    transition: border-color .12s, background .12s;
   }
-  .faq-section-heading,
-  .faq-answer h4 {
-    color: var(--kereru-blue, #7d9fc2);
+  .basemap-chip:hover { border-color: var(--kereru-teal, #325756); }
+  .basemap-chip.active {
+    border-color: var(--kereru-teal, #325756);
+    background: var(--kereru-teal, #325756);
+    color: #fff;
   }
-}
+  .basemap-paste-row { display: flex; gap: 8px; margin: 0 0 8px; }
+  .basemap-paste-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 9px 12px;
+    font-size: 14px;
+    border: 1.5px solid var(--ios-separator, #C6C6C8);
+    border-radius: 10px;
+    background: var(--ios-card, #fff);
+    color: var(--ios-text, #000);
+    box-sizing: border-box;
+  }
+  .basemap-apply {
+    flex: 0 0 auto;
+    padding: 9px 16px;
+    border-radius: 10px;
+    border: none;
+    background: var(--kereru-teal, #325756);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .basemap-note {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--ios-secondary, #3C3C43);
+    margin: 0;
+  }
+  .basemap-warn {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #8a5a00;
+    background: #fff5e0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin: 8px 0 0;
+    display: none;
+  }
+  .basemap-warn.show { display: block; }
+  @media (prefers-color-scheme: dark) {
+    .basemap-warn { color: #ffcf80; background: #3a2e12; }
+  }
   `;
 
   function injectCSS() {
@@ -274,7 +338,25 @@
       parts.push(`</div>`);
     }
 
-// ── Credits — native .card matching original style ──
+    // ── Basemap / imagery — between examples and credits ──
+    parts.push(`
+<div class="card">
+  <div class="card-header">Map imagery</div>
+  <div class="card-body">
+    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Aerial is satellite/aerial imagery; Standard is the plain street map. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL — your choice travels in the share link, so anyone you send it to sees the same imagery.</p>
+    <div class="basemap-presets" id="basemapPresets">
+      <button class="basemap-chip active" data-basemap="osm" data-attrib="© OpenStreetMap contributors">Standard</button>
+      <button class="basemap-chip" data-basemap="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}" data-attrib="Imagery © Esri, Maxar, Earthstar Geographics">Aerial</button>
+      <button class="basemap-chip" data-basemap="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}" data-attrib="© Esri — World Topographic Map">Topographic</button>
+    </div>
+    <div class="basemap-paste-row">
+      <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
+      <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
+    </div>
+    <p class="basemap-warn" id="basemapWarn"></p>
+  </div>
+</div>`);
+
     if (data.credits && data.credits.lines && data.credits.lines.length) {
       parts.push(`
 <div class="card">
@@ -287,13 +369,6 @@
 </div>`);
     }
 
-    // ── Social image — in a card so it gets the white background and rounded edges ──
-    if (data.socialImage) {
-      parts.push(`
-<div class="card" style="overflow:hidden;">
-  <img src="${esc(data.socialImage.src)}" alt="${esc(data.socialImage.alt)}" style="width:100%;display:block;">
-</div>`);
-    }
     rootEl.innerHTML = parts.join('\n');
 
     // ── Wire up accordions ──
@@ -317,6 +392,114 @@
 
     // ── Example links: let them navigate normally (href handles it) ──
     // Native <a href> navigation works without JS intervention.
+
+    // ── Basemap control wiring ──
+    wireBasemapControl(rootEl);
+  }
+
+  // ── Basemap: shared apply logic, used by UI and by URL param ───────────────
+
+  // Heuristic: does this imagery URL carry a credential that would be exposed
+  // to anyone the share link reaches?
+  function _basemapHasSecret(url) {
+    return /[?&](token|apikey|api_key|key|access_token)=/i.test(String(url || ''));
+  }
+
+  function _applyBasemap(source, attribution, ui) {
+    if (typeof MapManager === 'undefined' || !MapManager.setBasemap) return { ok: false, error: 'Map not ready.' };
+    const res = MapManager.setBasemap(source, {
+      attribution: attribution,
+      onError: msg => { if (ui && ui.warn) { ui.warn.textContent = msg; ui.warn.classList.add('show'); } }
+    });
+    return res;
+  }
+
+  function wireBasemapControl(rootEl) {
+    const presets = rootEl.querySelector('#basemapPresets');
+    const input = rootEl.querySelector('#basemapPasteInput');
+    const applyBtn = rootEl.querySelector('#basemapApplyBtn');
+    const warn = rootEl.querySelector('#basemapWarn');
+    if (!presets || !input || !applyBtn) return;
+    const ui = { warn };
+
+    const clearActive = () => presets.querySelectorAll('.basemap-chip').forEach(c => c.classList.remove('active'));
+    const setWarn = (msg, kind) => {
+      if (!warn) return;
+      if (!msg) { warn.classList.remove('show'); warn.textContent = ''; return; }
+      warn.textContent = msg;
+      warn.classList.add('show');
+    };
+
+    presets.querySelectorAll('.basemap-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const source = chip.dataset.basemap;
+        const attrib = chip.dataset.attrib || '';
+        const res = _applyBasemap(source, attrib, ui);
+        if (!res.ok) { setWarn(res.error); return; }
+        clearActive();
+        chip.classList.add('active');
+        setWarn('');
+        input.value = '';
+        _writeBasemapParam(source === 'osm' ? null : source);
+      });
+    });
+
+    const applyPasted = () => {
+      const source = input.value.trim();
+      if (!source) { setWarn('Paste an imagery URL first.'); return; }
+      const res = _applyBasemap(source, '', ui);
+      if (!res.ok) { setWarn(res.error); return; }
+      clearActive();
+      if (_basemapHasSecret(source)) {
+        setWarn('Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.');
+      } else {
+        setWarn('');
+      }
+      _writeBasemapParam(source);
+    };
+    applyBtn.addEventListener('click', applyPasted);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
+
+    // Reflect any basemap already chosen via URL param into the UI.
+    if (global.__GEOSONIFY_BASEMAP_ACTIVE) {
+      const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+      let matched = false;
+      presets.querySelectorAll('.basemap-chip').forEach(chip => {
+        if (chip.dataset.basemap === active) { clearActive(); chip.classList.add('active'); matched = true; }
+      });
+      if (!matched) { clearActive(); input.value = active; }
+    }
+  }
+
+  // Persist the basemap choice into the live URL (so a subsequent share keeps
+  // it). Display-mode share links also read ?basemap. null = back to default.
+  function _writeBasemapParam(source) {
+    try {
+      const u = new URL(window.location.href);
+      if (source) u.searchParams.set('basemap', source);
+      else u.searchParams.delete('basemap');
+      window.history.replaceState({}, '', u.pathname + (u.search ? u.search : '') + u.hash);
+      global.__GEOSONIFY_BASEMAP_ACTIVE = source || null;
+    } catch (e) { /* non-fatal */ }
+  }
+
+  /**
+   * Apply a basemap from a URL param at load time. Call after MapManager.init.
+   * Returns the active source (or null for default/OSM).
+   */
+  function applyFromURL() {
+    let source = null;
+    try {
+      source = new URLSearchParams(window.location.search).get('basemap');
+    } catch (e) { return null; }
+    if (!source) return null;
+    global.__GEOSONIFY_BASEMAP_ACTIVE = source;
+    if (typeof MapManager !== 'undefined' && MapManager.setBasemap) {
+      MapManager.setBasemap(source, {
+        onError: () => { global.__GEOSONIFY_BASEMAP_ACTIVE = null; }
+      });
+    }
+    return source;
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -333,5 +516,6 @@
   }
 
   global.GeosonifyFAQ = { init, version: __FAQ_UI_VER__ };
+  global.GeosonifyBasemap = { applyFromURL: applyFromURL };
 
 })(typeof window !== 'undefined' ? window : this);
