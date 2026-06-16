@@ -627,6 +627,25 @@ const PropertyImport = (function () {
     };
   }
 
+  /**
+   * Point-based one-shot: a known lat/lon → single best parcel in the
+   * same { coords, groups, name, attribution } shape as lookupAddressAuto.
+   * Used by the seed pipeline (Part 2/3) where seeds decode to coordinates
+   * and we want the reliable point-in-polygon path, not address geocoding.
+   */
+  async function lookupPointAuto(lat, lon, options) {
+    const result = await lookupPoint(lat, lon, options);
+    const best = result.candidates[0];
+    if (!best) throw new Error('No parcel found at that point.');
+    return {
+      coords: best.coords,
+      groups: best.groups,
+      name: best.display_name,
+      attribution: result.provider.attribution,
+      provider: result.provider
+    };
+  }
+
   // ── Public API ────────────────────────────────────────────
   return {
     PROVIDERS: PROVIDERS,
@@ -636,6 +655,7 @@ const PropertyImport = (function () {
     fetchParcelsAtPoint: fetchParcelsAtPoint,
     lookupAddress: lookupAddress,
     lookupPoint: lookupPoint,
+    lookupPointAuto: lookupPointAuto,
     lookupAddressAuto: lookupAddressAuto,
     getStoredKey: getStoredKey,
     storeKey: storeKey,
