@@ -112,26 +112,46 @@
 <p>If you would rather not draw by hand, the same tab can import shapes. As described in detail below, you can search for a place by name, or use the File, URL, Wikidata, and OSM ID options to pull in a GeoJSON, KML, or GPX file, a Wikidata entity, or an OpenStreetMap relation. Imported routes can be played back as sound from here too (see the route-playback entry under Music &amp; Sonification). There are also boxes for pasting coordinates directly (one latitude, longitude pair per line) and for pasting a compact code to decode and redraw it.</p>`
           },
 
- {
+          {
             id: 'output-tab',
             q: 'The Output tab',
             a: `<p>The Output tab controls how the current location or shape is written down and shared. The encoding on the map does not change; only its presentation does.</p>
 <p>Pick a representation from the codec selector: <strong>Raw</strong> (human-readable), <strong>Base36</strong>, <strong>Base64url</strong>, or <strong>Emoji</strong>. For a path or polygon you can switch on <strong>delta compression</strong> to shorten the code while keeping full precision. A <strong>checksum</strong> option adds a verification character so a recipient can tell whether the code was copied correctly, and a <strong>rounded</strong> option produces tidier values.</p>
-<p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>
+<p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>`
+          },
+
+          {
+            id: 'map-imagery',
+            q: 'Can I put my shapes on aerial imagery instead of the street map?',
+            a: `<p>Yes. By default the map underneath your codes is the plain OpenStreetMap street map, but you can switch it to satellite/aerial imagery or a topographic map. The control lives in the <strong>FAQ</strong> tab under <strong>Map imagery</strong>: tap <strong>Aerial</strong> for worldwide satellite imagery, <strong>Topographic</strong> for terrain, or <strong>Standard</strong> to go back. Your choice rides along in the share link, so anyone you send it to sees the same imagery.</p>
+<p>Shapes change colour to stay visible: purple on the light street and topographic maps, and a high-contrast yellow on aerial photography (where purple tends to vanish). That happens automatically - nothing to set.</p>
+
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Display (viewer) mode – embedding a bare map</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Choosing imagery in a link, and pasting your own</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>Adding <strong>?display</strong> to a share link opens a clean, embeddable map showing just the shape – no tabs, controls, or prompts. The boundary is fixed in place (you can pan and zoom, but not drag it), which suits embedding a property’s exact boundaries in a listing. A quiet geosonify tag sits in the corner, linking back to the full interactive version of the same shape.</p>
-<p>Optional tags tailor the view, and combine freely:</p>
+<p>Any link can carry a basemap with the <code>?basemap=</code> parameter. The three presets have short names, so a shareable aerial link stays tidy:</p>
+<pre>?basemap=aerial     (satellite / aerial imagery)
+?basemap=topo       (topographic)
+?basemap=osm        (standard street map - the default)</pre>
+<p>This works alongside everything else, including display mode and the import pipeline. For example, a parcel on satellite imagery:</p>
+<pre>?address_a=thp9el4j1&amp;auto=1&amp;basemap=aerial</pre>
+
+<h4>Pasting your own imagery</h4>
+<p>The Map imagery panel also has a paste field for any tile source of your own. Two URL shapes work:</p>
 <ul>
-<li><strong>&amp;area</strong> – land area (m²/hectares and acres) for a closed shape; summed across a property split over several titles.</li>
-<li><strong>&amp;zoom=N</strong> – an exact zoom level, centred on the shape.</li>
-<li><strong>&amp;context=N</strong> – keeps the shape framed but pulls back to show surrounding streets (1 is tight, 2 shows more, and so on).</li>
-<li><strong>&amp;fixzoom</strong> – locks the zoom for a static, image-like embed (panning stays on).</li>
-<li><strong>&amp;gps</strong> – shows the viewer’s live location as a dot, useful for walking a route or boundary.</li>
-<li><strong>&amp;export=gpx</strong> or <strong>&amp;export=kml</strong> – a download button so anyone can take the boundary into their own GIS, GPS unit, or Google Earth.</li>
+  <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
+  <li>An <strong>ArcGIS hosted-tile URL</strong> - one ending in <code>/MapServer</code>; Geosonify appends the tile path for you.</li>
 </ul>
-<p>For example, <strong>?display&amp;area&amp;export=kml&amp;context=2</strong> shows the property in its neighbourhood with its area and a KML download.</p>
+<p>Dynamic ArcGIS image services (ending in <code>/ImageServer</code>, or a bare REST root) aren't tiled the way a web map needs, so those are declined with a note telling you what to paste instead. If a source you paste contains an access key or token, Geosonify warns you - because that link, key and all, would be visible to anyone you share it with. And if imagery ever fails to load, the map quietly falls back to the standard street map rather than going blank.</p>
+
+<table>
+  <tr><th>Value</th><th>Shows</th></tr>
+  <tr><td><code>aerial</code></td><td>Worldwide satellite / aerial (Esri)</td></tr>
+  <tr><td><code>topo</code></td><td>Topographic / terrain (Esri)</td></tr>
+  <tr><td><code>osm</code> or omitted</td><td>Standard street map (default)</td></tr>
+  <tr><td>a pasted URL</td><td>Your own XYZ or ArcGIS hosted-tile source</td></tr>
+</table>
+<p>A note on imagery rights: the built-in aerial and topographic layers come from Esri's public basemap services, free for this kind of use with attribution shown on the map. Anything you paste carries its own provider's terms - worth a glance if you're publishing widely.</p>
 </div>
 </details>`
           }
@@ -490,7 +510,39 @@
             a: `<p>Yes. The <strong>🏠 Parcel</strong> source in Shape Import takes a street address or a raw <code>lat, lon</code> pair and fetches the legal cadastral parcel polygon at that location - the actual surveyed property boundary, not a guess. It becomes an ordinary Geosonify shape: simplify it, encode it in any vocabulary, share it as a link.</p>
 <p>It works in two steps: the address is geocoded to a point (using the same OpenStreetMap geocoder as place search), or you can import directly from the pin location, then the official cadastral service for that country is asked <em>"which parcel contains this point?"</em>. If several parcels sit at <a href="?address=-31.982097,115.819166">that point</a> - cross-leases, unit titles, an ambiguous address - a picker lets you choose. You can also share the whole thing as <a href="?address=-31.982097,115.819166&auto=1&grid=a&result=s">a single link</a> with <code>?address=...</code>, including the full automatic pipeline (<code>&amp;auto=1&amp;grid=a&amp;result=s</code> and friends, exactly as for <code>?place=</code>).</p>
 <p>Only <strong>free, open</strong> cadastral sources are used. Most sources need no key at all; New Zealand's LINZ needs a free API key (no payment details involved), which you paste once and which is stored only on your device, never in shared links. Coverage so far: New Zealand (LINZ), the Netherlands (Kadaster/PDOK), France (IGN cadastre), New South Wales (Spatial Services), Massachusetts (MassGIS) and North Carolina (NC OneMap) - with more one-registry-entry-each to come. Anywhere else, the Advanced field accepts any public ArcGIS parcel layer URL, which covers thousands of councils and US counties.</p>
-<p>One caveat, straight from the cadastral agencies themselves: these polygons are <em>indicative</em> records of where the boundaries lie, not survey-accurate legal definitions. Perfect for mapping, art and sound; not a substitute for a surveyor.</p>`
+<p>One caveat, straight from the cadastral agencies themselves: these polygons are <em>indicative</em> records of where the boundaries lie, not survey-accurate legal definitions. Perfect for mapping, art and sound; not a substitute for a surveyor.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Loading parcels from codes, and many at once</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p>The plain <code>?address=</code> takes a street address or a <code>lat, lon</code> pair. But a parcel can also be seeded from a Geosonify code in any vocabulary - so a location you already have as alphanumeric, emoji, BIP39 words, MGRS, or a Plus Code can pull its parcel directly, with no address lookup in between.</p>
+
+<h4>Seeding from a code</h4>
+<p>Add the format as a suffix on the parameter name. The suffix says how to read the value, so nothing has to be guessed:</p>
+<pre>?address_a=thp9el4j1        (alphanumeric)
+?address_e=🐊🎲🚝🏁🎏           (emoji)
+?address_bip=word word word…   (BIP39 English)
+?address_mgrs=59GMK1234567     (MGRS)
+?address_pluscode=4VCH+W9       (Plus Code)</pre>
+<p>The suffix is the same short code used everywhere else in the app: <code>a</code> alphanumeric, <code>e</code> emoji, <code>h</code> hex, <code>n</code> NATO, <code>bip</code> (and <code>bipfr</code>, <code>bipja</code>, …) for BIP39 languages, plus the GIS reference grids by their own names - <code>pluscode</code>, <code>mgrs</code>, <code>geohash</code>, <code>utm</code>, <code>nztm</code>, <code>bng</code>, <code>mga</code>. Geosonify decodes the seed to a point on your own device, then asks the cadastral service which parcel sits there - the reliable point-in-parcel path, the same one a dropped pin uses. Plain <code>?address=</code> (no suffix) still means a free-text address or raw coordinates, exactly as before.</p>
+
+<h4>Many parcels in one link</h4>
+<p>Join several seeds with <code>~~~</code> and a single link loads every parcel and combines them into one shape - each parcel its own disjoint piece, ready to encode, sonify or display together:</p>
+<pre>?address_a=t8khb28ja~~~t8khb2pny~~~t8khb8jl1&amp;auto=1</pre>
+<p>All the seeds share the one format declared in the suffix. This is built for embedded real-estate and portfolio maps, so partial failure is handled out loud rather than silently: if some titles load and others don't, you get the ones that resolved plus a clear "<em>n of m titles loaded</em>" - never a quietly incomplete map. Each parcel is resolved independently, so one bad seed never sinks the whole import.</p>
+
+<h4>The same pipeline applies</h4>
+<p>Everything from the automatic pipeline works here too - <code>&amp;auto=1</code> to run end-to-end, <code>&amp;grid=</code> to choose the output vocabulary, <code>&amp;result=s</code> to stay and show it, <code>&amp;iters=</code> to set the encoding precision, <code>&amp;basemap=aerial</code> to show it on satellite imagery. So a portfolio of titles can become a finished, shareable, satellite-backed map in one URL.</p>
+
+<table>
+  <tr><th>Form</th><th>Means</th><th>Example value</th></tr>
+  <tr><td><code>?address=</code></td><td>Free-text address or lat,lon</td><td>12 Example St, or -43.5,172.6</td></tr>
+  <tr><td><code>?address_a=</code></td><td>One alphanumeric-coded location</td><td>thp9el4j1</td></tr>
+  <tr><td><code>?address_&lt;fmt&gt;=</code></td><td>One seed in any vocabulary</td><td>e, bip, mgrs, pluscode, …</td></tr>
+  <tr><td><code>~~~</code> between seeds</td><td>Several parcels, combined</td><td>seed1~~~seed2~~~seed3</td></tr>
+</table>
+</div>
+</details>`
           }
         ]
       },
