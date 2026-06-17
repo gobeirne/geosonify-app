@@ -3445,7 +3445,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     if (typeof GISGrids !== 'undefined' && GISGrids.renderResolutionPopup) {
       GISGrids.renderResolutionPopup({
         title: gridDef.name,
-        note: 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split), the same principle as Plus Codes.',
+        note: 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).',
         levels,
         detail
       });
