@@ -312,6 +312,80 @@
     }
   }
 
+  // === COLOUR-STRING <-> HEX ===
+  // The 8 palette colours, in binary RGB111 order, double as an alphabet.
+  // Each cell (3 bits) is one letter; 16 cells = one 12-char hex code.
+  //   index = (R<<2)|(G<<1)|B
+  //   0 K(black) 1 B 2 G 3 C 4 R 5 M 6 Y 7 W(white)
+  // The "ink" form spells black/white as K and W (URL-safe, plain letters).
+  // The "slash" form substitutes \ for K (000) and / for W (111) — visually
+  // suggestive on a card but NOT URL-safe (browsers fold \ into /), so the
+  // slash form is for display/manual entry only, never for URLs.
+  var COLOR_LETTERS = ['K', 'B', 'G', 'C', 'R', 'M', 'Y', 'W']; // index 0..7
+
+  // Map any accepted input character to its palette index.
+  var CHAR_TO_INDEX = (function () {
+    var m = {};
+    for (var i = 0; i < 8; i++) m[COLOR_LETTERS[i]] = i;
+    m['\\'] = 0; // slash form: backslash = K = black = 000
+    m['/'] = 7;  // slash form: forward slash = W = white = 111
+    return m;
+  })();
+
+  // hex (12 chars) -> colour string. style 'slash' (default) uses \ and /,
+  // style 'ink' uses K and W (use 'ink' anywhere the string goes in a URL).
+  function hexToColorString(hexString, style) {
+    var hex = (hexString || '').toUpperCase().replace(/[^0-9A-F]/g, '').padEnd(12, '0').slice(0, 12);
+    var bits = hexToBits(hex);
+    var useSlash = style !== 'ink';
+    var out = '';
+    for (var c = 0; c < 16; c++) {
+      var idx = parseInt(bits.substr(c * 3, 3), 2);
+      if (useSlash && idx === 0) out += '\\';
+      else if (useSlash && idx === 7) out += '/';
+      else out += COLOR_LETTERS[idx];
+    }
+    return out;
+  }
+
+  // colour string (any accepted spelling, case-insensitive) -> 12-char hex.
+  // Returns null if it isn't a valid 16-symbol colour string.
+  function colorStringToHex(str) {
+    if (!str || typeof str !== 'string') return null;
+    var s = str.toUpperCase().replace(/\s+/g, '');
+    // tolerate a trailing .checksum suffix if one was copied along
+    var dot = s.indexOf('.');
+    if (dot !== -1) s = s.slice(0, dot);
+    if (s.length !== 16) return null;
+    var bits = '';
+    for (var i = 0; i < 16; i++) {
+      var idx = CHAR_TO_INDEX[s[i]];
+      if (idx === undefined) return null;
+      bits += idx.toString(2).padStart(3, '0');
+    }
+    var hex = '';
+    for (var b = 0; b < 48; b += 4) hex += parseInt(bits.substr(b, 4), 2).toString(16).toUpperCase();
+    return hex;
+  }
+
+  // Does this string look like a colour-string (vs hex)? True only if every
+  // character is an accepted colour symbol AND it isn't also valid hex — i.e.
+  // it contains a slash or one of the colour-only letters (K W G M Y).
+  function looksLikeColorString(str) {
+    if (!str || typeof str !== 'string') return false;
+    var s = str.toUpperCase().replace(/\s+/g, '');
+    var dot = s.indexOf('.'); if (dot !== -1) s = s.slice(0, dot);
+    if (s.length !== 16) return false;
+    var hasColorOnly = false;
+    for (var i = 0; i < 16; i++) {
+      var ch = s[i];
+      if (CHAR_TO_INDEX[ch] === undefined) return false;
+      // characters that can't appear in a hex string
+      if (ch === '\\' || ch === '/' || ch === 'K' || ch === 'W' || ch === 'G' || ch === 'M' || ch === 'Y') hasColorOnly = true;
+    }
+    return hasColorOnly;
+  }
+
   global.RGB111Lib = {
     version: __RGB111_LIB_VER__,
     generateCanvas: generateCanvas, generateDataURL: generateDataURL, generateBlob: generateBlob,
@@ -320,6 +394,9 @@
     rotateHex90: rotateHex90, rotateNotches90: rotateNotches90,
     validateChecksum: validateChecksum, findCorrectRotation: findCorrectRotation,
     decodeFromCanvas: decodeFromCanvas,
+    hexToColorString: hexToColorString, colorStringToHex: colorStringToHex,
+    looksLikeColorString: looksLikeColorString,
+    COLOR_LETTERS: COLOR_LETTERS,
     COLORS: COLORS
   };
 })(typeof window !== 'undefined' ? window : this);
