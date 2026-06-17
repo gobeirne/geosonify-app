@@ -1989,10 +1989,13 @@
         }
       } else if (gridDef.display === 'chroma') {
         const hexEl = card.querySelector('.chroma-hex');
-        if (hexEl && hexEl.textContent !== code) {
-          hexEl.innerHTML = checksumValue 
-            ? `${code}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>` 
-            : code;
+        const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
+          ? RGB111Lib.hexToColorString(code) : code;
+        if (hexEl && hexEl.dataset.code !== code) {
+          hexEl.dataset.code = code;
+          hexEl.innerHTML = checksumValue
+            ? `${chromaStr}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
+            : chromaStr;
           const ctrEl = card.querySelector('.chroma-container');
           if (ctrEl) {
             ctrEl.dataset.code = code;
@@ -2109,7 +2112,15 @@
       if (gridDef.display === 'emoji') {
         bodyContent = `<div class="code-display emoji" data-editable="true" title="Click to edit">${codeWithChecksum}</div>`;
       } else if (isChroma) {
-        bodyContent = `<div class="chroma-display"><div class="chroma-container" data-code="${code}"></div><div class="chroma-hex" data-editable="true" title="Click to edit">${codeWithChecksum}</div></div>`;
+        // Show the colour-string spelling (slash form) rather than raw hex —
+        // it's the natural way to read the colours in and out. Hex still lives
+        // in data-code / URLs. Fall back to hex if the lib isn't present.
+        const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
+          ? RGB111Lib.hexToColorString(code) : code;
+        const chromaText = checksumValue
+          ? `${chromaStr}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
+          : chromaStr;
+        bodyContent = `<div class="chroma-display"><div class="chroma-container" data-code="${code}"></div><div class="chroma-hex" data-editable="true" title="Click to edit">${chromaText}</div></div>`;
       } else if (isBarcode) {
         bodyContent = `<div class="barcode-display"><div class="barcode-container" data-code="${code}" data-grid="${gridKey}"></div><div class="barcode-hex" data-editable="true" title="Click to edit">${code}</div></div>`;
       } else if (gridDef.display === 'music') {
@@ -3537,12 +3548,20 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
+    // For ChromaCoord, pre-fill the editable field with the colour-string
+    // spelling the user sees on the card (they can also paste hex — decode
+    // accepts either).
+    let prefillCode = currentCode;
+    if (_gd && _gd.display === 'chroma' && typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString) {
+      const hexOnly = (currentCode || '').toString().split('.')[0];
+      if (/^[0-9A-Fa-f]{12}$/.test(hexOnly)) prefillCode = RGB111Lib.hexToColorString(hexOnly);
+    }
     
     const dialog = document.createElement('div');
     dialog.style.cssText = 'background:white;border-radius:12px;padding:20px;max-width:90vw;width:360px;';
     dialog.innerHTML = `
       <h3 style="margin:0 0 12px;font-size:18px;">Edit Code</h3>
-      <input type="text" id="editCodeInput" value="${currentCode}" style="width:100%;padding:10px;font-size:16px;font-family:'SF Mono',monospace;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;">
+      <input type="text" id="editCodeInput" value="${prefillCode}" style="width:100%;padding:10px;font-size:16px;font-family:'SF Mono',monospace;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;">
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button id="decodeBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #007AFF;background:#007AFF;color:white;font-size:15px;cursor:pointer;">Decode</button>
         ${isGis ? '' : '<button id="deobfuscateBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #5856D6;background:#5856D6;color:white;font-size:15px;cursor:pointer;">Deobfuscate</button>'}
@@ -3574,6 +3593,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // a trailing comma closes off the final token. Normalize so the user
       // doesn't have to remember to type it.
       if (CARD_GRIDS[gridKey]?.display === 'music') code = code.replace(/,\s*$/, '') + ',';
+      // ChromaCoord accepts its colour-string spelling (slash or ink form) as
+      // well as raw hex; convert to hex before decoding.
+      if (CARD_GRIDS[gridKey]?.display === 'chroma' && typeof RGB111Lib !== 'undefined'
+          && RGB111Lib.looksLikeColorString(code)) {
+        const h = RGB111Lib.colorStringToHex(code);
+        if (h) code = h;
+      }
       const result = decodeCardCode(gridKey, code, false);
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
@@ -3600,6 +3626,11 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       let code = input.value.trim();
       if (!code) return;
       if (CARD_GRIDS[gridKey]?.display === 'music') code = code.replace(/,\s*$/, '') + ',';
+      if (CARD_GRIDS[gridKey]?.display === 'chroma' && typeof RGB111Lib !== 'undefined'
+          && RGB111Lib.looksLikeColorString(code)) {
+        const h = RGB111Lib.colorStringToHex(code);
+        if (h) code = h;
+      }
       const result = decodeCardCode(gridKey, code, true);
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
