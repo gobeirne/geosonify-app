@@ -1659,25 +1659,43 @@
 
     // Normalize
     hex = hex.toUpperCase().replace(/[^0-9A-F]/g, '');
+    // Drop a dangling nibble — each cell is exactly 2 hex chars
+    if (hex.length % 2 !== 0) hex = hex.slice(0, -1);
 
-    // Get expected length
     const gridDef = CARD_GRIDS[gridKey];
-    const iterations = getBarcodeIterations(gridKey);
-    const expectedLen = iterations * 2;
 
-    if (hex.length < expectedLen) {
-      showToast(`Expected ${expectedLen} hex chars, got ${hex.length}`);
+    // The scanned code is self-describing: its length IS its precision.
+    // Decode at the code's own precision rather than forcing the card's
+    // current iteration setting. The card setting governs what the user
+    // GENERATES; a one-off scan shouldn't override it (and isn't changed here).
+    const minIter = gridDef.minIterations || 3;
+    const maxIter = gridDef.dynamicIterations
+      ? getQRUrlIterations()
+      : (gridDef.maxIterations || 12);
+
+    let scannedIterations = hex.length / 2;
+
+    if (scannedIterations < minIter) {
+      showToast(`Code too short to decode (${hex.length} hex chars)`);
       return;
     }
-    hex = hex.slice(0, expectedLen);
+    // Clamp to the grid's supported precision (beyond this the coordinate
+    // math loses meaning); the reported precision reflects the clamped value.
+    if (scannedIterations > maxIter) {
+      scannedIterations = maxIter;
+      hex = hex.slice(0, maxIter * 2);
+    }
 
     // Decode using existing pipeline (handles passphrase + obfuscation)
-    const result = decodeCardCoordinate(gridKey, hex, iterations);
+    const result = decodeCardCoordinate(gridKey, hex, scannedIterations);
     if (result) {
       setCoordinate(result[0], result[1]);
       const map = callbacks.getMap ? callbacks.getMap() : null;
       if (map) map.setView(result, 16, { animate: true });
-      showToast('Decoded: ' + hex.slice(0, 12) + '...');
+      // Name the resolved precision in human units — the whole point of the
+      // scan is "where does this point", so say how precisely we landed.
+      const prec = getPrecisionText(gridKey, scannedIterations);
+      showToast(prec ? `✓ Decoded — ${prec}` : '✓ Decoded', 'success');
       showDecodeBanner(gridKey, hex, result[0], result[1]);
     } else {
       showToast('Invalid code (wrong passphrase?)');
@@ -3550,8 +3568,12 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     };
     
     dialog.querySelector('#decodeBtn').onclick = () => {
-      const code = input.value.trim();
+      let code = input.value.trim();
       if (!code) return;
+      // Music codes use comma-delimited, prefix-ambiguous tokens (F, FG, FGB…);
+      // a trailing comma closes off the final token. Normalize so the user
+      // doesn't have to remember to type it.
+      if (CARD_GRIDS[gridKey]?.display === 'music') code = code.replace(/,\s*$/, '') + ',';
       const result = decodeCardCode(gridKey, code, false);
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
@@ -3575,8 +3597,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     
     const deobfuscateBtnEl = dialog.querySelector('#deobfuscateBtn');
     if (deobfuscateBtnEl) deobfuscateBtnEl.onclick = () => {
-      const code = input.value.trim();
+      let code = input.value.trim();
       if (!code) return;
+      if (CARD_GRIDS[gridKey]?.display === 'music') code = code.replace(/,\s*$/, '') + ',';
       const result = decodeCardCode(gridKey, code, true);
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
