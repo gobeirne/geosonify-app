@@ -354,7 +354,7 @@
 <div class="card">
   <div class="card-header">Map imagery</div>
   <div class="card-body">
-    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Aerial is satellite/aerial imagery; Standard is the plain street map. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL — your choice travels in the share link, so anyone you send it to sees the same imagery.</p>
+    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Aerial is satellite/aerial imagery; Standard is the plain street map. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL. This is your own viewing preference — it isn't baked into a normal share link. When you build a display link from the Output tab, your basemap choice travels with it so the viewer sees the same imagery.</p>
     <div class="basemap-presets" id="basemapPresets">
       <button class="basemap-chip active" data-basemap="osm">Standard</button>
       <button class="basemap-chip" data-basemap="aerial">Aerial</button>
@@ -490,27 +490,30 @@
     }
   }
 
-  // Persist the basemap choice into the live URL (so a subsequent share keeps
-  // it). Display-mode share links also read ?basemap. null = back to default.
+  // Record the active basemap in memory only. It is intentionally NOT written
+  // to the live URL: in normal full-app use the basemap is a personal viewing
+  // preference, not part of the shareable state. It becomes URL-relevant only
+  // when the user builds a display link, where the display-link builder reads
+  // __GEOSONIFY_BASEMAP_ACTIVE and emits ?basemap=. null = back to default.
   function _writeBasemapParam(source) {
-    try {
-      const u = new URL(window.location.href);
-      if (source) u.searchParams.set('basemap', source);
-      else u.searchParams.delete('basemap');
-      window.history.replaceState({}, '', u.pathname + (u.search ? u.search : '') + u.hash);
-      global.__GEOSONIFY_BASEMAP_ACTIVE = source || null;
-    } catch (e) { /* non-fatal */ }
+    global.__GEOSONIFY_BASEMAP_ACTIVE = source || null;
   }
 
   /**
    * Apply a basemap from a URL param at load time. Call after MapManager.init.
-   * Returns the active source (or null for default/OSM).
+   * The ?basemap= param is a sender's "show the viewer this" instruction, so it
+   * is honored ONLY on display links (those carrying ?display). A plain shape
+   * link opens in the recipient's own current/default basemap and ignores it.
+   * Returns the active source (or null for default/OSM, or non-display links).
    */
   function applyFromURL() {
-    let source = null;
+    let params;
     try {
-      source = new URLSearchParams(window.location.search).get('basemap');
+      params = new URLSearchParams(window.location.search);
     } catch (e) { return null; }
+    // Only display links carry an intended basemap for the recipient.
+    if (!params.has('display')) return null;
+    const source = params.get('basemap');
     if (!source) return null;
     global.__GEOSONIFY_BASEMAP_ACTIVE = source;
     if (typeof MapManager !== 'undefined' && MapManager.setBasemap) {
