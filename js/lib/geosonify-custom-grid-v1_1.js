@@ -67,6 +67,7 @@
       grid: null,
       name: options.name || 'Custom',
       isMusical: !!options.isMusical,
+      isWords: !!options.isWords,
       rows: 0,
       cols: 0,
       tokenCount: 0,
@@ -238,15 +239,27 @@
     const bitsPerIter = Math.log2(totalCells);
     const defaultIter = Math.max(4, Math.min(12, Math.floor(28 / bitsPerIter)));
 
+    // Word mode (BIP39-style): prefixLength turns on word display, delimiter
+    // joins words, and checksum support. Auto-pick the shortest unique prefix.
+    var wordPrefix = null;
+    if (parseResult.isWords) {
+      wordPrefix = computeWordPrefix(parseResult.grid);
+    }
+
     const gridDef = {
       name: parseResult.name,
       grid: parseResult.grid,
       defaultIterations: defaultIter,
-      isEmoji: containsEmoji(parseResult.grid),
+      maxIterations: 12,
+      isEmoji: !parseResult.isWords && containsEmoji(parseResult.grid),
       isCustom: true,
       isMusical: parseResult.isMusical,
-      display: parseResult.isMusical ? 'music' : (containsEmoji(parseResult.grid) ? 'emoji' : null)
+      display: parseResult.isMusical ? 'music' : ((!parseResult.isWords && containsEmoji(parseResult.grid)) ? 'emoji' : null)
     };
+    if (parseResult.isWords && wordPrefix) {
+      gridDef.prefixLength = wordPrefix.prefixLength;
+      gridDef.delimiter = '-';
+    }
 
     _config.CARD_GRIDS[key] = gridDef;
 
@@ -267,7 +280,8 @@
       key: key,
       name: parseResult.name,
       grid: parseResult.grid,
-      isMusical: parseResult.isMusical
+      isMusical: parseResult.isMusical,
+      isWords: !!parseResult.isWords
     };
     // Preserve any user-modified iterations
     if (_config.cardState && _config.cardState.iterations[key]) {
@@ -327,6 +341,20 @@
     return /[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u.test(flat);
   }
 
+  // Smallest leading-character count that keeps every word unique (like BIP39's
+  // 4). Returns { prefixLength, unique } — unique:false means even full words
+  // collide, so prefix-matched entry can't be relied on (caller should warn).
+  function computeWordPrefix(grid) {
+    const words = grid.flat().map(function (w) { return String(w); });
+    const maxLen = words.reduce(function (m, w) { return Math.max(m, w.length); }, 0);
+    for (var p = 1; p <= maxLen; p++) {
+      var set = new Set();
+      for (var i = 0; i < words.length; i++) set.add(words[i].slice(0, p).toLowerCase());
+      if (set.size === words.length) return { prefixLength: p, unique: true };
+    }
+    return { prefixLength: maxLen || 1, unique: false };
+  }
+
   // ============== RESTORE FROM STORAGE ==============
 
   function restoreGridsFromStorage() {
@@ -342,6 +370,7 @@
           grid: gridData.grid,
           name: gridData.name,
           isMusical: gridData.isMusical,
+          isWords: !!gridData.isWords,
           rows: gridData.grid.length,
           cols: gridData.grid[0]?.length || 0,
           errors: [],
@@ -437,6 +466,11 @@
           <label for="cgMusical" style="margin:0;cursor:pointer;">Treat as musical notes</label>
         </div>
         
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="cgWords">
+          <label for="cgWords" style="margin:0;cursor:pointer;">Treat as words (BIP39-style)</label>
+        </div>
+        
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
           <button id="cgLoadBtn" style="padding:8px 16px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer;">Load Grid</button>
           <button id="cgClearBtn" style="padding:8px 16px;background:#6c757d;color:white;border:none;border-radius:4px;cursor:pointer;">Clear</button>
@@ -452,11 +486,16 @@
     const textArea = document.getElementById('cgText');
     const nameInput = document.getElementById('cgName');
     const musicalCheck = document.getElementById('cgMusical');
+    const wordsCheck = document.getElementById('cgWords');
     const loadBtn = document.getElementById('cgLoadBtn');
     const clearBtn = document.getElementById('cgClearBtn');
     const previewDiv = document.getElementById('cgPreview');
     const messagesDiv = document.getElementById('cgMessages');
     const loadedDiv = document.getElementById('cgLoaded');
+
+    // A grid is notes OR words OR neither — never both.
+    musicalCheck.addEventListener('change', () => { if (musicalCheck.checked) wordsCheck.checked = false; });
+    wordsCheck.addEventListener('change', () => { if (wordsCheck.checked) musicalCheck.checked = false; });
 
     function showMessages(result, success = false) {
       let html = '';
@@ -484,7 +523,7 @@
       let html = '<div style="margin-top:12px;padding-top:12px;border-top:1px solid #ddd;"><strong>Loaded Custom Grids:</strong>';
       for (const [key, def] of custom) {
         const dims = def.grid ? `${def.grid.length}×${def.grid[0].length}` : '?';
-        const flags = [def.isMusical ? '🎵' : '', def.isEmoji ? '😀' : ''].filter(Boolean).join('');
+        const flags = [def.isMusical ? '🎵' : '', def.prefixLength ? '🔤' : '', def.isEmoji ? '😀' : ''].filter(Boolean).join('');
         html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
           <span>${escapeHtml(def.name)} (${dims}) ${flags}</span>
           <button onclick="CustomGridLoader.unregisterGrid('${key}')" style="padding:2px 8px;background:#dc3545;color:white;border:none;border-radius:3px;cursor:pointer;font-size:12px;">Remove</button>
@@ -502,7 +541,8 @@
       try {
         const result = await parseGridFile(file, {
           name: nameInput.value || file.name.replace(/\.[^.]+$/, ''),
-          isMusical: musicalCheck.checked
+          isMusical: musicalCheck.checked,
+          isWords: wordsCheck.checked
         });
         previewDiv.innerHTML = result.grid ? createGridPreview(result) : '';
         showMessages(result);
@@ -529,7 +569,8 @@
         }
         const result = parseGridText(text, {
           name: nameInput.value || 'Custom',
-          isMusical: musicalCheck.checked
+          isMusical: musicalCheck.checked,
+          isWords: wordsCheck.checked
         });
         previewDiv.innerHTML = result.grid ? createGridPreview(result) : '';
         showMessages(result);
@@ -546,12 +587,23 @@
 
       const result = parseGridText(text, {
         name: nameInput.value || 'Custom',
-        isMusical: musicalCheck.checked
+        isMusical: musicalCheck.checked,
+        isWords: wordsCheck.checked
       });
 
       if (!result.valid) {
         showMessages(result);
         return;
+      }
+
+      // Word mode relies on words being distinguishable by a leading prefix.
+      // If full words still collide, prefix-matched entry won't be reliable.
+      if (result.isWords && result.grid) {
+        const wp = computeWordPrefix(result.grid);
+        if (!wp.unique) {
+          result.warnings = result.warnings || [];
+          result.warnings.push('Some words are identical — word-entry matching may be unreliable.');
+        }
       }
 
       // Sanitize grid name for URL safety (z.GridName format)
@@ -574,6 +626,7 @@
       textArea.value = '';
       nameInput.value = 'Custom';
       musicalCheck.checked = false;
+      wordsCheck.checked = false;
       fileInput.value = '';
       previewDiv.innerHTML = '';
       messagesDiv.innerHTML = '';
