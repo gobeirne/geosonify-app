@@ -1634,7 +1634,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
       });
       
-      // Apply a basemap chosen via ?basemap= (works in display mode too).
+      // Apply a basemap chosen via ?basemap= — honored only on display links
+      // (applyFromURL ignores it on plain shape links, which open in the
+      // recipient's own basemap).
       if (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.applyFromURL) {
         GeosonifyBasemap.applyFromURL();
       }
