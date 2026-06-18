@@ -1990,7 +1990,7 @@
       } else if (gridDef.display === 'chroma') {
         const hexEl = card.querySelector('.chroma-hex');
         const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
-          ? RGB111Lib.hexToColorString(code) : code;
+          ? RGB111Lib.hexToColorString(code, 'ink') : code;
         if (hexEl && hexEl.dataset.code !== code) {
           hexEl.dataset.code = code;
           hexEl.innerHTML = checksumValue
@@ -2116,7 +2116,7 @@
         // it's the natural way to read the colours in and out. Hex still lives
         // in data-code / URLs. Fall back to hex if the lib isn't present.
         const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
-          ? RGB111Lib.hexToColorString(code) : code;
+          ? RGB111Lib.hexToColorString(code, 'ink') : code;
         const chromaText = checksumValue
           ? `${chromaStr}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
           : chromaStr;
@@ -3415,16 +3415,24 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       return `${formatMetric(w)} × ${formatMetric(h)}`;
     }
 
-    // Build the ladder: a window of levels around the current one
+    // Build the ladder: a window of levels around the current one.
+    // Fixed-precision grids (e.g. ChromaCoord) have no +/- stepper, so a ladder
+    // is misleading — show only the single level the card is locked to.
+    const isFixedPrecision = gridDef.fixedIterations !== undefined;
     const maxIter = gridDef.maxIterations || (iterations + 2);
     const minIter = gridDef.minIterations || 1;
-    const loadStart = Math.max(minIter, iterations - 3);
-    const loadEnd = Math.min(maxIter, iterations + 2);
+    const loadStart = isFixedPrecision ? iterations : Math.max(minIter, iterations - 3);
+    const loadEnd = isFixedPrecision ? iterations : Math.min(maxIter, iterations + 2);
     const levels = [];
     for (let it = loadStart; it <= loadEnd; it++) {
       const b = boundsAtLevel(it);
       // Sample code at this level (display form, honouring current obfuscation)
       let sample = encodeCardCoordinate(gridKey, currentCardCoord.lat, currentCardCoord.lon, it);
+      // ChromaCoord displays the colour-string spelling, not hex — match it here.
+      if (gridDef.display === 'chroma' && typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString
+          && /^[0-9A-Fa-f]{12}$/.test((sample || '').split('.')[0])) {
+        sample = RGB111Lib.hexToColorString(sample.split('.')[0], 'ink');
+      }
       levels.push({
         label: `${it} char${it === 1 ? '' : 's'}`,
         code: sample,
@@ -3456,7 +3464,10 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     if (typeof GISGrids !== 'undefined' && GISGrids.renderResolutionPopup) {
       GISGrids.renderResolutionPopup({
         title: gridDef.name,
-        note: 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).',
+        subtitle: isFixedPrecision ? 'cell size' : 'resolution levels',
+        note: isFixedPrecision
+          ? 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).'
+          : 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).',
         levels,
         detail
       });
@@ -3554,7 +3565,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     let prefillCode = currentCode;
     if (_gd && _gd.display === 'chroma' && typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString) {
       const hexOnly = (currentCode || '').toString().split('.')[0];
-      if (/^[0-9A-Fa-f]{12}$/.test(hexOnly)) prefillCode = RGB111Lib.hexToColorString(hexOnly);
+      if (/^[0-9A-Fa-f]{12}$/.test(hexOnly)) prefillCode = RGB111Lib.hexToColorString(hexOnly, 'ink');
     }
     
     const dialog = document.createElement('div');
