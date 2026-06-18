@@ -498,7 +498,41 @@
           </div>
           
           <div class="result-box" id="compactOutput" style="margin-top:12px;"></div>
-          
+
+          <div class="list-row" style="padding:0; margin-top:10px;">
+            <label>🖥️ Share as display link</label>
+            <div class="toggle"><input type="checkbox" id="shareDisplayMode" /><span class="toggle-slider"></span></div>
+          </div>
+
+          <div id="displaySharePanel" style="display:none; margin:6px 0 4px; padding:10px 12px; border:1px solid var(--ios-separator); border-radius:10px;">
+            <p style="margin:0 0 10px; font-size:13px; color:var(--ios-secondary-label, #8a8a8e);">A display link opens a read-only viewer showing your shape on a chosen map. Pick what the recipient sees.</p>
+
+            <div style="margin-bottom:10px;">
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Map</div>
+              <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="osm"> Standard</label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="aerial"> Aerial</label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="topo"> Topographic</label>
+              </div>
+            </div>
+
+            <div class="list-row" style="padding:6px 0;">
+              <label style="font-size:14px;">Show area / measurements</label>
+              <div class="toggle"><input type="checkbox" id="displayShowArea" /><span class="toggle-slider"></span></div>
+            </div>
+
+            <div style="margin-top:8px;">
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Let viewer export</div>
+              <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value=""> Off</label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="gpx"> GPX</label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="kml"> KML</label>
+              </div>
+            </div>
+
+            <p id="displayShareWarn" style="display:none; margin:10px 0 0; font-size:13px; color:#b8860b;"></p>
+          </div>
+
           <div class="btn-row">
             <button class="btn btn-secondary" id="copyOutputBtn">📋 Copy</button>
             <button class="btn btn-secondary" id="copyURLBtn">🔗 Share URL</button>
@@ -1822,7 +1856,56 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.getElementById('copyOutputBtn').addEventListener('click', copyCompactOutput);
       document.getElementById('copyURLBtn').addEventListener('click', copyShareURL);
       document.getElementById('visitURLBtn').addEventListener('click', visitShareURL);
-      
+
+      // Display-share panel wiring
+      (function wireDisplaySharePanel() {
+        const toggle = document.getElementById('shareDisplayMode');
+        const panel = document.getElementById('displaySharePanel');
+        if (!toggle || !panel) return;
+
+        const warnEl = document.getElementById('displayShareWarn');
+
+        // Custom pasted imagery may carry a key/token. The viewer link would
+        // expose it to whoever receives it, so warn when display mode is on and
+        // a non-preset basemap is active.
+        function refreshWarn() {
+          const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
+          const isPreset = !active || active === 'osm' || active === 'aerial' || active === 'topo';
+          const looksSecret = active && /[?&](key|token|apikey|access_token|signature)=/i.test(active);
+          if (toggle.checked && active && !isPreset && looksSecret) {
+            warnEl.textContent = 'Heads up: your custom imagery URL contains a key or token. It will be visible to anyone you send this display link to.';
+            warnEl.style.display = 'block';
+          } else {
+            warnEl.style.display = 'none';
+          }
+        }
+
+        // Seed the panel's basemap radio from whatever the user is currently
+        // viewing, so a display link defaults to "show them what I see". A
+        // custom (non-preset) basemap can't be represented by the radios, so
+        // fall back to Standard for the toggle but keep the custom URL active
+        // in memory — getDisplayShareParams will still emit it via the radio
+        // only when a preset is chosen; custom imagery is surfaced via warning.
+        function seedBasemapRadio() {
+          const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
+          const want = (active === 'aerial' || active === 'topo') ? active : 'osm';
+          const radio = document.querySelector(`input[name="displayBasemap"][value="${want}"]`);
+          if (radio) radio.checked = true;
+        }
+        seedBasemapRadio();
+        // Default export to Off.
+        const exportOff = document.querySelector('input[name="displayExport"][value=""]');
+        if (exportOff) exportOff.checked = true;
+
+        toggle.addEventListener('change', () => {
+          panel.style.display = toggle.checked ? 'block' : 'none';
+          if (toggle.checked) seedBasemapRadio();
+          refreshWarn();
+        });
+        panel.querySelectorAll('input[name="displayBasemap"]').forEach(r =>
+          r.addEventListener('change', refreshWarn));
+      })();
+
       // Map resize handle functionality - now handled by MapManager
       MapManager.setupResizeHandle('mapResizeHandle', 'mapContainerMobile');
       MapManager.setupResizeHandleH('mapResizeHandleH', 'sharedMapContainer');
@@ -2562,6 +2645,58 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       }
     }
 
+    // Build the base shareable URL (shape or encrypted blob) from the current
+    // compact output. Returns null with an alert if there's nothing to share.
+    function buildBaseShareURL() {
+      const encoded = document.getElementById('compactOutput').textContent;
+      if (!encoded || encoded.startsWith('ERR')) {
+        return null;
+      }
+      if (encryptURL && encryptPassphrase) {
+        // The compact output already contains the encrypted blob.
+        return `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
+      }
+      const param = getURLParamForActiveCard(_currentOutputIsDelta);
+      return `${window.location.origin}${window.location.pathname}?${param}=${encoded}`;
+    }
+
+    // Read the display-share panel and assemble the ?display… params. Returns
+    // an array of param strings (empty when the panel toggle is off). This is
+    // the single place that serializes the panel; the same vocabulary is read
+    // back on load by the DISPLAY_OPTS parser.
+    function getDisplayShareParams() {
+      const toggle = document.getElementById('shareDisplayMode');
+      if (!toggle || !toggle.checked) return [];
+      const params = ['display'];
+      const basemap = (document.querySelector('input[name="displayBasemap"]:checked') || {}).value || '';
+      const showArea = document.getElementById('displayShowArea');
+      const exportFmt = (document.querySelector('input[name="displayExport"]:checked') || {}).value || '';
+      if (showArea && showArea.checked) params.push('area');
+      if (exportFmt) params.push('export=' + exportFmt);
+      // Basemap: a chosen preset radio wins. If the radio is left at the
+      // Standard default but the user is actually viewing a custom pasted
+      // imagery URL, carry that custom URL through instead (so "share what I
+      // see" still holds for custom basemaps). 'osm' is the viewer default and
+      // is never emitted.
+      const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
+      const isPreset = active === 'osm' || active === 'aerial' || active === 'topo';
+      if (basemap === 'aerial' || basemap === 'topo') {
+        params.push('basemap=' + encodeURIComponent(basemap));
+      } else if (basemap === 'osm' && active && !isPreset) {
+        params.push('basemap=' + encodeURIComponent(active));
+      }
+      return params;
+    }
+
+    // Compose the final share URL: base shape/enc URL plus any display params.
+    function buildShareURL() {
+      const base = buildBaseShareURL();
+      if (base == null) return null;
+      const dParams = getDisplayShareParams();
+      if (!dParams.length) return base;
+      return base + (base.includes('?') ? '&' : '?') + dParams.join('&');
+    }
+
     function copyCompactOutput() {
       const output = document.getElementById('compactOutput').textContent;
       if (!output) {
@@ -2585,35 +2720,24 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         alert('No shape to share. Create a shape first.');
         return;
       }
-      
-      // Use the current compact output (which respects the selected encoding)
-      const encoded = document.getElementById('compactOutput').textContent;
-      if (!encoded || encoded.startsWith('ERR')) {
+
+      const shareURL = buildShareURL();
+      if (shareURL == null) {
         alert('Cannot generate shareable URL.');
         return;
       }
-      
-      async function doCopyShareURL() {
-        let shareURL;
-        if (encryptURL && encryptPassphrase) {
-          // The compact output already contains the encrypted blob
-          shareURL = `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
-        } else {
-          const param = getURLParamForActiveCard(_currentOutputIsDelta);
-          shareURL = `${window.location.origin}${window.location.pathname}?${param}=${encoded}`;
-        }
-        
-        navigator.clipboard.writeText(shareURL).then(() => {
-          const btn = document.getElementById('copyURLBtn');
-          const original = btn.textContent;
-          btn.textContent = encryptURL ? '✓ Encrypted & Copied!' : '✓ Copied!';
-          setTimeout(() => btn.textContent = original, 1500);
-        }).catch(err => {
-          console.error('Copy failed:', err);
-          alert('Copy failed. Please select and copy manually.');
-        });
-      }
-      doCopyShareURL();
+
+      const isDisplay = document.getElementById('shareDisplayMode')?.checked;
+      navigator.clipboard.writeText(shareURL).then(() => {
+        const btn = document.getElementById('copyURLBtn');
+        const original = btn.textContent;
+        btn.textContent = encryptURL ? '✓ Encrypted & Copied!'
+          : isDisplay ? '✓ Display link copied!' : '✓ Copied!';
+        setTimeout(() => btn.textContent = original, 1500);
+      }).catch(err => {
+        console.error('Copy failed:', err);
+        alert('Copy failed. Please select and copy manually.');
+      });
     }
 
     function visitShareURL() {
@@ -2621,21 +2745,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         alert('No shape to visit. Create a shape first.');
         return;
       }
-      
-      const encoded = document.getElementById('compactOutput').textContent;
-      if (!encoded || encoded.startsWith('ERR')) {
+
+      const shareURL = buildShareURL();
+      if (shareURL == null) {
         alert('Cannot generate shareable URL.');
         return;
       }
-      
-      let shareURL;
-      if (encryptURL && encryptPassphrase) {
-        shareURL = `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
-      } else {
-        const param = getURLParamForActiveCard(_currentOutputIsDelta);
-        shareURL = `${window.location.origin}${window.location.pathname}?${param}=${encoded}`;
-      }
-      
+
       window.open(shareURL, '_blank');
     }
 
