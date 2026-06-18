@@ -806,12 +806,26 @@ const GISGrids = (function () {
       return parts.join(' ') || '0';
     };
 
-    const ladderRows = data.levels.map(l => `
+    const singleLevel = data.levels.length === 1;
+
+    const ladderRows = data.levels.map(l => singleLevel ? `
+      <tr>
+        <td style="padding:7px 8px;font-family:'SF Mono',Menlo,monospace;font-size:12px;word-break:break-all;color:#4fc3f7;">${l.code != null ? l.code : ''}</td>
+        <td style="padding:7px 8px;color:#4fc3f7;white-space:nowrap;text-align:right;">${l.dims}</td>
+      </tr>` : `
       <tr style="${l.here ? 'background:rgba(0,188,212,0.18);' : ''}">
         <td style="padding:5px 8px;color:${l.here ? '#4fc3f7' : '#aaa'};white-space:nowrap;">${l.label}</td>
         <td style="padding:5px 8px;font-family:'SF Mono',Menlo,monospace;font-size:12px;word-break:break-all;color:${l.here ? '#4fc3f7' : '#ddd'};">${l.code != null ? l.code : ''}</td>
         <td style="padding:5px 8px;color:${l.here ? '#4fc3f7' : '#888'};white-space:nowrap;text-align:right;">${l.dims}</td>
       </tr>`).join('');
+
+    const tableHeader = singleLevel ? `
+        <tr style="color:#888;font-size:11px;text-align:left;">
+          <th style="padding:6px 8px;font-weight:normal;">Code</th><th style="padding:6px 8px;font-weight:normal;text-align:right;">Cell size</th>
+        </tr>` : `
+        <tr style="color:#888;font-size:11px;text-align:left;">
+          <th style="padding:6px 8px;font-weight:normal;">Level</th><th style="padding:6px 8px;font-weight:normal;">Here</th><th style="padding:6px 8px;font-weight:normal;text-align:right;">Cell size</th>
+        </tr>`;
 
     const d = data.detail || {};
     const detailRows = [];
@@ -863,12 +877,10 @@ const GISGrids = (function () {
     const dialog = document.createElement('div');
     dialog.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:92vw;width:440px;max-height:82vh;overflow-y:auto;color:white;';
     dialog.innerHTML = `
-      <h3 style="margin:0 0 6px;font-size:18px;color:#00bcd4;">${data.title} — resolution levels</h3>
+      <h3 style="margin:0 0 6px;font-size:18px;color:#00bcd4;">${data.title}${data.subtitle === '' ? '' : ' — ' + (data.subtitle || 'resolution levels')}</h3>
       ${data.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px;line-height:1.5;">${data.note}</div>` : ''}
       <table style="width:100%;border-collapse:collapse;font-size:13px;background:#2c2c2e;border-radius:8px;overflow:hidden;">
-        <tr style="color:#888;font-size:11px;text-align:left;">
-          <th style="padding:6px 8px;font-weight:normal;">Level</th><th style="padding:6px 8px;font-weight:normal;">Here</th><th style="padding:6px 8px;font-weight:normal;text-align:right;">Cell size</th>
-        </tr>
+        ${tableHeader}
         ${ladderRows}
       </table>
       ${data.compareLine ? `<div style="margin-top:12px;padding:10px;background:rgba(0,188,212,0.08);border:1px solid rgba(0,188,212,0.25);border-radius:8px;font-size:12px;color:#bbb;">↔ ${data.compareLine}</div>` : ''}
