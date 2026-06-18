@@ -35,9 +35,6 @@
     --ios-secondary: #EBEBF5;
     --ios-separator: #38383A;
   }
-    .card-body a:not(.example-link) {
-    color: var(--kereru-blue, #7d9fc2);
-  }
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -816,6 +813,7 @@ select {
 .dropdown-item .check { color: var(--primary); }
 
 .chroma-display { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.chroma-hex { font-family: 'SF Mono', ui-monospace, monospace; font-size: 12px; color: var(--ios-secondary); text-align: center; }
 .chroma-canvas { border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.12); }
 .barcode-display { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .barcode-canvas { border-radius: 4px; }
