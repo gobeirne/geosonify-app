@@ -467,6 +467,25 @@
     
     const gridConfig = CARD_GRIDS[gridKey];
 
+    // HEALPix cards: the cell boundary is a curved equal-area diamond, not a
+    // lat/lon box. cellCorners returns a closed, many-point ring already
+    // unwrapped across the antimeridian — draw it whole (do NOT slice to 4).
+    if (gridConfig && gridConfig.healpix && typeof HealpixGrids !== 'undefined') {
+      const ring = HealpixGrids.cellCorners(gridConfig.healpix, lat, lon, iterations, 18);
+      if (ring) {
+        const layer = L.polygon(ring, {
+          color: '#ff4444',
+          fillColor: '#ff4444',
+          weight: 2,
+          opacity: 0.8,
+          fillOpacity: 0.15,
+          interactive: false
+        }).addTo(map);
+        gridLayers.push(layer);
+      }
+      return;
+    }
+
     // GIS reference cards (Plus Code, MGRS, UTM, NZTM, …) don't subdivide
     // the world uniformly, so the generic row/col model below would draw a
     // wrongly-sized box. Use the scheme's true cell footprint instead.
