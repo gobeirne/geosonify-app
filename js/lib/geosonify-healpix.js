@@ -246,7 +246,7 @@ const HealpixGrids = (function () {
     hpquad: {
       name: 'HEALPix · quaternary',
       link: 'https://healpix.sourceforge.io/',
-      defaultIterations: 16, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
+      defaultIterations: 22, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
       iterLabel: k => `order ${k}`,
       levelsPerChar: 1,
       encode: (lat, lon, k, opt) => {
@@ -262,7 +262,7 @@ const HealpixGrids = (function () {
     hphex: {
       name: 'HEALPix · hex',
       link: 'https://healpix.sourceforge.io/',
-      defaultIterations: 16, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
+      defaultIterations: 22, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
       iterLabel: k => `order ${k}`,
       levelsPerChar: 2,
       encode: (lat, lon, k, opt) => {
@@ -278,7 +278,7 @@ const HealpixGrids = (function () {
     hp64: {
       name: 'HEALPix · base64',
       link: 'https://healpix.sourceforge.io/',
-      defaultIterations: 16, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
+      defaultIterations: 22, minIterations: MIN_ORDER, maxIterations: MAX_ORDER,
       iterLabel: k => `order ${k}`,
       levelsPerChar: 3,
       encode: (lat, lon, k, opt) => {
