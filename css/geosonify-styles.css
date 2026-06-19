@@ -690,7 +690,11 @@ select {
   padding: 12px 6px;
   word-break: break-all;
   line-height: 1.35;
-  min-height: 60px;
+  /* Reserve two lines' worth of height so a code that wraps from one line to
+     two doesn't change the card height (which shoved neighbouring cards around
+     as the string length / order changed). Codes longer than two lines still
+     grow — that's expected when more words are added. */
+  min-height: 76px;
   display: flex;
   align-items: center;
   justify-content: center;
