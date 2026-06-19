@@ -533,8 +533,13 @@
       }
       if (!cardState.order.includes(key)) cardState.order.push(key);
     }
-    // One-time: surface the HEALPix hex card by default (incl. existing users
-    // whose saved state predates it). hpquad/hp64 stay add-on only.
+  }
+
+  // One-time: surface the HEALPix hex card by default (incl. existing users
+  // whose saved state predates it). Runs AFTER loadCardState so it doesn't get
+  // overwritten by the restore. hpquad/hp64 stay add-on only.
+  function surfaceHealpixDefault() {
+    if (typeof HealpixGrids === 'undefined') return;
     try {
       if (!localStorage.getItem('geosonify_hphex_default_added')) {
         if (!cardState.visible.includes('hphex')) cardState.visible.push('hphex');
@@ -4621,6 +4626,21 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     
     const activeKey = cardState.active;
     const gridDef = CARD_GRIDS[activeKey];
+    // HEALPix cards have no 2D vocabulary grid to draw. Show what the
+    // passphrase actually does to them instead of the (misleading) "No grid".
+    if (gridDef && gridDef.healpix) {
+      preview.innerHTML =
+        '<div style="font-size:11px;color:#888;line-height:1.5;">' +
+        '<b>' + gridDef.name + '</b><br>' +
+        (passphrase
+          ? 'Passphrase active — the location is permuted at the tree level: ' +
+            'the base pixel (1 of 12) and every level (1 of 4) are shuffled by your key. ' +
+            'The code scrambles; it decodes back only with the same passphrase.'
+          : 'Enter a passphrase to permute this HEALPix code. The base pixel and ' +
+            'each level shuffle by your key; the same passphrase reverses it.') +
+        '</div>';
+      return;
+    }
     if (!gridDef || !gridDef.grid) {
       preview.innerHTML = '<div style="color:#888;font-size:11px;">No grid selected</div>';
       return;
@@ -4660,18 +4680,22 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       
       // Refresh grid references in case arrays weren't available at module load time
       refreshGridReferences();
-      
+
+      // Register reference grids BEFORE loading saved state, so that
+      // loadCardState() can reconcile saved order/visibility/active against a
+      // fully-populated CARD_GRIDS (otherwise GIS/HEALPix cards aren't known
+      // yet and saved additions/ordering for them are dropped on reload).
+      registerGISCards();
+      registerHealpixCards();
+
       // Load saved state
       loadCardState();
-      
+
+      // One-time HEALPix-hex default visibility (after load so it isn't clobbered)
+      surfaceHealpixDefault();
+
       // Auto-add BIP39 card based on device language (first load only)
       autoAddBIP39ByLanguage();
-      
-      // Register GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …)
-      registerGISCards();
-
-      // Register HEALPix reference grids (hphex default-visible; hpquad/hp64 add-on)
-      registerHealpixCards();
       
       // Initialize UI elements
       initCardUIHandlers();
