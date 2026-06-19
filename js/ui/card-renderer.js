@@ -254,8 +254,8 @@
   // ============== INTERNAL STATE ==============
   
   let cardState = {
-    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji'],
+    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -500,9 +500,8 @@
   /**
    * Auto-add BIP39 card based on device language (first load only)
    */
-  // Register GIS reference grids into CARD_GRIDS. Plus Code is surfaced
-  // by default (once) so every user sees Geosonify codes alongside a
-  // familiar global standard; the rest are available via "+ Add Mode".
+  // Register GIS reference grids into CARD_GRIDS. All GIS cards (incl. Plus
+  // Code) are available via "+ Add Mode"; none are surfaced by default.
   function registerGISCards() {
     if (typeof GISGrids === 'undefined') return;
     const defs = GISGrids.cardDefs();
@@ -515,11 +514,31 @@
       }
       if (!cardState.order.includes(key)) cardState.order.push(key);
     }
-    // One-time: make Plus Code visible by default
+  }
+
+  // Register HEALPix reference grids (equal-area, hierarchical). Three
+  // serializations of one nested index: hphex (default-visible, robust),
+  // hpquad and hp64 (added via "+ Add Mode"). Marked `healpix:<key>` so the
+  // renderer routes encode/decode to HealpixGrids while keeping them eligible
+  // for the trademark features the `gis` flag disables.
+  function registerHealpixCards() {
+    if (typeof HealpixGrids === 'undefined') return;
+    const defs = HealpixGrids.cardDefs();
+    const order = ['hphex', 'hpquad', 'hp64'];
+    for (const key of order) {
+      if (!defs[key]) continue;
+      CARD_GRIDS[key] = defs[key];
+      if (cardState.iterations[key] === undefined) {
+        cardState.iterations[key] = defs[key].defaultIterations;
+      }
+      if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+    // One-time: surface the HEALPix hex card by default (incl. existing users
+    // whose saved state predates it). hpquad/hp64 stay add-on only.
     try {
-      if (!localStorage.getItem('geosonify_pluscode_default_added')) {
-        if (!cardState.visible.includes('pluscode')) cardState.visible.push('pluscode');
-        localStorage.setItem('geosonify_pluscode_default_added', '1');
+      if (!localStorage.getItem('geosonify_hphex_default_added')) {
+        if (!cardState.visible.includes('hphex')) cardState.visible.push('hphex');
+        localStorage.setItem('geosonify_hphex_default_added', '1');
         saveCardState();
       }
     } catch (e) { /* private mode */ }
@@ -705,6 +724,11 @@
   
   function _encodeCardCoordinateInternal(gridKey, lat, lon, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
+    // Tier 1: plain encode. (Passphrase/obfuscation wired in Tier 2.)
+    if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+      return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations);
+    }
     // GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …) — own engine, no shuffle/obfuscation
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
       return GISGrids.encode(gridDef.gis, lat, lon, iterations);
@@ -804,6 +828,9 @@
   
   function decodeCardCoordinate(gridKey, code, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+      return HealpixGrids.decode(gridDef.healpix, code, iterations);
+    }
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
       return GISGrids.decode(gridDef.gis, code);
     }
@@ -889,6 +916,11 @@
   
   function decodeCardCode(gridKey, code, deobfuscate) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+      // order isn't passed here; infer it from the code's own length/shape
+      return HealpixGrids.decode(gridDef.healpix, code,
+        HealpixGrids.inferOrder(gridDef.healpix, code));
+    }
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
       return GISGrids.decode(gridDef.gis, code);
     }
@@ -1140,6 +1172,9 @@
   
   function getPrecisionText(gridKey, iterations) {
     const gd = CARD_GRIDS[gridKey];
+    if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
+      return HealpixGrids.precisionText(gd.healpix, iterations, currentCardCoord);
+    }
     if (gd && gd.gis && typeof GISGrids !== 'undefined') {
       return GISGrids.precisionText(gd.gis, iterations, currentCardCoord);
     }
@@ -1176,7 +1211,8 @@
     // GIS reference cards can't be privacy-transformed. If a privacy mode is on,
     // never emit a real standard code AND never fall back to raw lat/lon (that
     // would leak the exact location). Emit a redaction placeholder instead.
-    if (gridDef.gis && (passphrase || obfuscated)) {
+    // HEALPix is redacted here too in Tier 1 (keyed permutation arrives in Tier 2).
+    if ((gridDef.gis || gridDef.healpix) && (passphrase || obfuscated)) {
       return '████████';
     }
     const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
@@ -1951,9 +1987,12 @@
       const gridKey = card.dataset.gridKey;
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef || (!gridDef.grid && !gridDef.gis)) return;
-      // Redacted GIS card under privacy mode: leave the blurred block alone
-      if (gridDef.gis && (passphrase || obfuscated)) return;
+      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix)) return;
+      // Redacted GIS card under privacy mode: leave the blurred block alone.
+      // HEALPix is redacted here too FOR NOW (Tier 1) — its keyed-permutation
+      // path lands in Tier 2; until then a passphrase must not leak an
+      // un-permuted code. Flip this to allow healpix once Tier 2 ships.
+      if ((gridDef.gis || gridDef.healpix) && (passphrase || obfuscated)) return;
       
       const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
       const isFixed = gridDef.fixedIterations !== undefined;
@@ -2054,7 +2093,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis)
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix)
     );
     
     container.innerHTML = '';
@@ -2071,7 +2110,9 @@
       // passphrase or obfuscation is active we must REDACT them — otherwise a
       // user in privacy mode would see (and could copy) a genuine, unprotected
       // location. Redact before the code reaches display, copy, share, or map.
-      const gisRedacted = !!(gridDef.gis && (passphrase || obfuscated));
+      // HEALPix is redacted alongside GIS in Tier 1 (no keyed-permutation yet);
+      // Tier 2 gives HEALPix a real permutation and this drops the healpix term.
+      const gisRedacted = !!((gridDef.gis || gridDef.healpix) && (passphrase || obfuscated));
       if (gisRedacted) {
         code = '████████';
       }
@@ -2182,7 +2223,7 @@
           </div>
           <div class="footer-buttons">
             <button class="action-btn info-btn" title="Cell info">ℹ️</button>
-            ${gridDef.gis ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
+            ${(gridDef.gis || gridDef.healpix) ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
           </div>
         </div>
@@ -2366,7 +2407,19 @@
           showToast('Hidden while privacy mode is active', 'error');
           return;
         }
-        if (gridDef.gis && typeof GISGrids !== 'undefined') {
+        if (gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+          let compareLine = null;
+          const activeKey = cardState.active;
+          const activeDef = CARD_GRIDS[activeKey];
+          if (activeDef && activeDef.grid && currentCardCoord) {
+            const aIter = activeDef.fixedIterations !== undefined
+              ? activeDef.fixedIterations
+              : (cardState.iterations[activeKey] || activeDef.defaultIterations);
+            const aPrec = getPrecisionText(activeKey, aIter);
+            compareLine = `Your active ${activeDef.name} card at ${aIter} iterations: ${aPrec} cell`;
+          }
+          HealpixGrids.showInfo(gridDef.healpix, iterations, currentCardCoord, { compareLine });
+        } else if (gridDef.gis && typeof GISGrids !== 'undefined') {
           // Build a comparison line from the currently-active Geosonify card
           let compareLine = null;
           const activeKey = cardState.active;
@@ -3847,12 +3900,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
     
     Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      if ((!def.grid && !def.gis) || def.deprecated) return;
+      if ((!def.grid && !def.gis && !def.healpix) || def.deprecated) return;
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
       const isGis = !!def.gis;
+      const isHealpix = !!def.healpix;
       const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
-                : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>' : '';
+                : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
+                : isHealpix ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>' : '';
       const label = def.name + tag;
       html += `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
@@ -4602,6 +4657,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       
       // Register GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …)
       registerGISCards();
+
+      // Register HEALPix reference grids (hphex default-visible; hpquad/hp64 add-on)
+      registerHealpixCards();
       
       // Initialize UI elements
       initCardUIHandlers();
