@@ -602,10 +602,11 @@
         });
       }
       
-      // Default checksum ON for all grids with prefixLength (BIP39 grids)
+      // Default speaker (per-word) view OFF for BIP39 grids, so cards open in
+      // the compact view. The ✓ tick switches to the per-word view.
       Object.keys(CARD_GRIDS).forEach(key => {
         if (CARD_GRIDS[key].prefixLength && cardState.checksumEnabled[key] === undefined) {
-          cardState.checksumEnabled[key] = true;
+          cardState.checksumEnabled[key] = false;
         }
       });
     } catch (e) {
