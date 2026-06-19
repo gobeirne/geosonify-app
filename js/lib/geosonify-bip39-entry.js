@@ -45,6 +45,8 @@
         interrogateStep: 0,
         errorSearch: null,     // { slot, candidates, callerFinalCs } | null
         suggestions: [],
+        csFilter: '',           // checksum filter string (user types 3 digits to filter autocomplete)
+        csFilterSlot: -1,       // which slot the filter is active for (-1 = none)
         entryEl: null,         // DOM ref — receiver entry view
         speakerEl: null,       // DOM ref — speaker readout view
         speakerActive: false,  // speaker view visible?
@@ -123,13 +125,9 @@
     // Falls back to raw string hash if wordlist unavailable (legacy safety).
     let input = code;
     if (wordlist && wordlist.length > 0) {
-      // code here is a concatenated word string; split into tokens greedily by matching wordlist
-      // Use simple greedy longest-match tokenization
       const tokens = [];
       let remaining = code;
       while (remaining.length > 0) {
-        let matched = false;
-        // Try longest match first (words can vary in length)
         const sorted = wordlist.filter(w => remaining.toLowerCase().startsWith(w.toLowerCase()));
         if (sorted.length > 0) {
           sorted.sort((a, b) => b.length - a.length);
@@ -137,9 +135,9 @@
           const idx = wordlist.findIndex(w => w.toLowerCase() === word.toLowerCase());
           tokens.push(idx);
           remaining = remaining.slice(word.length);
-          matched = true;
+        } else {
+          break; // unrecognized token — fall back below
         }
-        if (!matched) break; // unrecognized token — fall back below
       }
       if (tokens.length > 0 && remaining.length === 0) {
         input = tokens.join(',');
@@ -266,7 +264,6 @@
   function getGeoForPosition(locked, position, gridKey) {
     const wordlist = getWordlist(gridKey);
     if (position === 0 && !hasPassphraseOrObfuscation()) {
-      // No passphrase: base-list index matches cell index, use static lookup
       const idx = wordlist.indexOf(locked[0]);
       return idx >= 0 ? getGeoDescriptorStatic(idx) : null;
     }
@@ -290,8 +287,8 @@
   // Compute bounds for locked words (hierarchical subdivision)
   // With a passphrase or obfuscation, the word→cell mapping is position-dependent
   // and can't be resolved by a simple wordlist.indexOf(). We delegate to
-  // CardRenderer.decode() which handles all passphrase/obfuscation combos,
-  // then derive the cell bounds from the centroid and known cell dimensions.
+  // CardRenderer.decodeCardCode() which handles delimiter stripping, passphrase,
+  // and obfuscation correctly, then derive cell bounds from the centroid.
   function computeBounds(locked, gridKey) {
     const { rows, cols } = getGridDims(gridKey);
     const lockedCount = locked.filter(w => w !== null).length;
@@ -387,6 +384,16 @@
       else rc.push(null);
     }
     return rc;
+  }
+
+  // Compute the running checksum if `word` were placed at `slot`,
+  // given the already-locked words before it.
+  function checksumForCandidate(locked, slot, word, wordlist) {
+    let concat = '';
+    for (let i = 0; i <= slot; i++) {
+      concat += (i === slot) ? word : (locked[i] || '');
+    }
+    return computeChecksum(concat, wordlist);
   }
 
   // ============== MAP INTEGRATION ==============
@@ -496,11 +503,11 @@
 
     const speakerDiv = document.createElement('div');
     speakerDiv.className = 'bip39-speaker-mode';
-    speakerDiv.style.cssText = 'background:#000; border-radius:8px; padding:16px 12px; text-align:center;';
+    speakerDiv.style.cssText = 'background:#2D2844; border-radius:8px; padding:6px 0; text-align:left;';
 
     // We need to get the current code — read from the code display
     // This will be populated by updateSpeakerMode()
-    speakerDiv.innerHTML = '<div style="color:#64748b; font-size:12px;">Move the map to generate a code</div>';
+    speakerDiv.innerHTML = '<div style="color:#8b80a8; font-size:12px; text-align:center; padding:16px;">Move the map to generate a code</div>';
     entry.appendChild(speakerDiv);
 
     // Store ref for updates
@@ -521,7 +528,7 @@
     const coord = (typeof CardRenderer !== 'undefined' && CardRenderer.getCoordinate)
       ? CardRenderer.getCoordinate() : null;
     if (!coord) {
-      state._speakerDiv.innerHTML = '<div style="color:#64748b; font-size:12px;">Move the map to generate a code</div>';
+      state._speakerDiv.innerHTML = '<div style="color:#8b80a8; font-size:12px; text-align:center; padding:16px;">Move the map to generate a code</div>';
       return;
     }
 
@@ -553,15 +560,21 @@
     }
     const finalCs = checksums[checksums.length - 1];
 
+    // Kererū palette colours per word position
+    const KERERU_COLORS = ['#B5A0C8', '#96AACC', '#C787A8', '#6B8E6B'];
+    const SEP = 'border-bottom:1px solid rgba(181,160,200,0.12);';
+
     // Build the speaker display
     let html = '';
     for (let i = 0; i < words.length; i++) {
+      const color = KERERU_COLORS[i] || KERERU_COLORS[0];
       html += `
-        <div style="display:flex; align-items:center; justify-content:center; gap:16px; padding:10px 0; ${i > 0 ? 'border-top:1px solid #222;' : ''}">
-          <span style="font-size:26px; font-weight:800; color:#fff; letter-spacing:0.05em;">
+        <div style="display:flex; align-items:center; gap:14px; padding:12px 16px; ${i < words.length - 1 ? SEP : ''}">
+          <div style="width:4px; height:32px; border-radius:2px; flex-shrink:0; background:${color};"></div>
+          <span style="font-size:24px; font-weight:600; color:#eee8f4; letter-spacing:0.04em; flex:1;">
             ${words[i].toLowerCase()}
           </span>
-          <span style="font-size:18px; font-weight:600; color:#94a3b8; font-variant-numeric:tabular-nums;">
+          <span style="font-size:17px; font-weight:600; color:${color}; font-variant-numeric:tabular-nums; flex-shrink:0;">
             ${checksums[i]}
           </span>
         </div>`;
@@ -618,19 +631,45 @@
       locked.style.cssText = 'display:none; flex:1; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:13px; font-weight:600; border:1px solid transparent; transition:all 0.2s;';
       row.appendChild(locked);
 
-      // Running checksum
+      // Running checksum + filter button container
+      const csWrap = document.createElement('div');
+      csWrap.style.cssText = 'display:flex; align-items:center; gap:2px; flex-shrink:0;';
+
       const cs = document.createElement('div');
       cs.className = 'bip39-running-cs';
       cs.dataset.slot = i;
-      cs.style.cssText = 'font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; color:#1e293b; min-width:28px; text-align:center;';
+      cs.style.cssText = 'font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; color:#1e293b; min-width:28px; text-align:right;';
       cs.textContent = '···';
-      row.appendChild(cs);
+      csWrap.appendChild(cs);
+
+      // ⋯ button — opens checksum filter for this slot
+      const csFilterBtn = document.createElement('button');
+      csFilterBtn.className = 'bip39-cs-filter-btn';
+      csFilterBtn.dataset.slot = i;
+      csFilterBtn.textContent = '⋯';
+      csFilterBtn.title = 'Filter by checksum';
+      csFilterBtn.style.cssText = 'display:none; background:transparent; border:1px solid #334155; border-radius:3px; color:#64748b; font-size:12px; font-weight:700; padding:1px 4px; cursor:pointer; font-family:inherit; line-height:1;';
+      csWrap.appendChild(csFilterBtn);
+
+      row.appendChild(csWrap);
+
+      // Checksum filter input (hidden, shown when ⋯ tapped)
+      const csFilterRow = document.createElement('div');
+      csFilterRow.className = 'bip39-cs-filter-row';
+      csFilterRow.dataset.slot = i;
+      csFilterRow.style.cssText = 'display:none; position:absolute; right:0; top:-2px; z-index:25; background:#1a1f2e; border:1px solid var(--accent, #f59e0b); border-radius:4px; padding:3px 5px; display:none; align-items:center; gap:3px;';
+      csFilterRow.innerHTML = `
+        <input class="bip39-cs-filter-input" data-slot="${i}" inputmode="numeric" maxlength="3" placeholder="___"
+          style="width:38px; padding:2px 4px; text-align:center; background:#0d1117; border:1px solid #475569; border-radius:3px; color:#fbbf24; font-size:13px; font-weight:700; font-family:inherit; outline:none; letter-spacing:0.15em; font-variant-numeric:tabular-nums;">
+        <button class="bip39-cs-filter-close" data-slot="${i}" style="background:transparent; border:none; color:#64748b; font-size:14px; cursor:pointer; padding:0 2px;">✕</button>
+      `;
+      row.appendChild(csFilterRow);
 
       // Autocomplete dropdown (hidden)
       const dropdown = document.createElement('div');
       dropdown.className = 'bip39-autocomplete';
       dropdown.dataset.slot = i;
-      dropdown.style.cssText = 'display:none; position:absolute; left:13px; right:34px; top:100%; z-index:20; margin-top:2px; background:var(--ios-card, #1a1f2e); border:1px solid var(--ios-separator, #334155); border-radius:4px; max-height:120px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,0.5);';
+      dropdown.style.cssText = 'display:none; position:absolute; left:13px; right:0; top:100%; z-index:20; margin-top:2px; background:var(--ios-card, #1a1f2e); border:1px solid var(--ios-separator, #334155); border-radius:4px; max-height:120px; overflow-y:auto; box-shadow:0 6px 20px rgba(0,0,0,0.5);';
       row.appendChild(dropdown);
 
       slotsContainer.appendChild(row);
@@ -671,13 +710,26 @@
 
   // ============== EVENT HANDLERS ==============
 
+  // Character filter for word input — CJK grids need wider Unicode ranges
+  function filterInputChars(value, gridKey) {
+    const gridDef = getGridInfo(gridKey);
+    const isCJK = gridKey && (gridKey.includes('japanese') || gridKey.includes('korean') || 
+                   gridKey.includes('chinese'));
+    if (isCJK) {
+      // Strip delimiters (、。・-, space) but keep CJK, hiragana, katakana, hangul
+      return value.replace(/[\s\-,、。・\u30FB\uFF0C]/g, '');
+    }
+    // Latin grids: keep letters + accented Latin, strip everything else
+    return value.replace(/[^a-zA-Z\u00C0-\u024F]/g, '').toLowerCase();
+  }
+
   function wireEventHandlers(gridKey, wordlist) {
     const state = getState(gridKey);
 
     state.inputEls.forEach((input, i) => {
       input.addEventListener('input', () => {
         if (state.locked[i] !== null) { input.value = ''; return; }
-        state.words[i] = input.value.replace(/[^a-zA-Z\u00C0-\u024F]/g, '').toLowerCase();
+        state.words[i] = filterInputChars(input.value, gridKey);
         input.value = state.words[i];
         updateAutocomplete(gridKey, i, wordlist);
       });
@@ -701,19 +753,73 @@
         updateSlotVisuals(gridKey);
       });
     });
+
+    // ⋯ checksum filter buttons
+    state.entryEl.querySelectorAll('.bip39-cs-filter-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slot = parseInt(btn.dataset.slot);
+        const filterRow = state.entryEl.querySelector(`.bip39-cs-filter-row[data-slot="${slot}"]`);
+        if (filterRow) {
+          filterRow.style.display = 'flex';
+          const filterInput = filterRow.querySelector('.bip39-cs-filter-input');
+          if (filterInput) { filterInput.value = ''; filterInput.focus(); }
+        }
+      });
+    });
+
+    // Checksum filter inputs
+    state.entryEl.querySelectorAll('.bip39-cs-filter-input').forEach(filterInput => {
+      filterInput.addEventListener('input', () => {
+        const slot = parseInt(filterInput.dataset.slot);
+        state.csFilter = filterInput.value.replace(/[^0-9]/g, '').slice(0, 3);
+        filterInput.value = state.csFilter;
+        state.csFilterSlot = slot;
+        // When 3 digits entered, filter the autocomplete by checksum
+        if (state.csFilter.length === 3) {
+          updateAutocomplete(gridKey, slot, wordlist);
+        } else if (state.csFilter.length === 0) {
+          updateAutocomplete(gridKey, slot, wordlist);
+        }
+      });
+    });
+
+    // Checksum filter close buttons
+    state.entryEl.querySelectorAll('.bip39-cs-filter-close').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const slot = parseInt(btn.dataset.slot);
+        state.csFilter = '';
+        state.csFilterSlot = -1;
+        const filterRow = state.entryEl.querySelector(`.bip39-cs-filter-row[data-slot="${slot}"]`);
+        if (filterRow) filterRow.style.display = 'none';
+        updateAutocomplete(gridKey, slot, wordlist);
+        state.inputEls[slot]?.focus();
+      });
+    });
   }
 
   // ============== AUTOCOMPLETE ==============
 
   function updateAutocomplete(gridKey, slot, wordlist) {
     const state = getState(gridKey);
-    const filtered = getFilteredWords(state.words[slot], wordlist);
+    let filtered = getFilteredWords(state.words[slot], wordlist);
+
+    // If checksum filter is active for this slot, filter by matching checksum
+    if (state.csFilterSlot === slot && state.csFilter.length === 3) {
+      const targetCs = state.csFilter;
+      // When filtering by checksum, show ALL matching words (not just prefix matches)
+      const candidates = state.words[slot].length >= 1 ? filtered : wordlist;
+      filtered = candidates.filter(w => checksumForCandidate(state.locked, slot, w, wordlist) === targetCs);
+    }
+
     state.suggestions = filtered;
 
     const dropdown = state.entryEl.querySelector(`.bip39-autocomplete[data-slot="${slot}"]`);
     if (!dropdown) return;
 
-    if (filtered.length === 0 || state.locked[slot] !== null || state.words[slot].length < 1) {
+    const hasFilter = state.csFilterSlot === slot && state.csFilter.length === 3;
+    if (filtered.length === 0 || state.locked[slot] !== null || (state.words[slot].length < 1 && !hasFilter)) {
       dropdown.style.display = 'none';
       return;
     }
@@ -725,10 +831,13 @@
     dropdown.innerHTML = '';
     filtered.forEach((w, si) => {
       const item = document.createElement('div');
-      item.style.cssText = `padding:7px 10px; cursor:pointer; font-size:15px; font-weight:${si === 0 ? 700 : 500}; color:#fff; background:${si === 0 ? '#334155' : '#1e293b'}; border-bottom:1px solid rgba(255,255,255,0.08);`;
+      item.style.cssText = `display:flex; align-items:center; justify-content:space-between; padding:7px 10px; cursor:pointer; font-size:15px; font-weight:${si === 0 ? 700 : 500}; color:#fff; background:${si === 0 ? '#334155' : '#1e293b'}; border-bottom:1px solid rgba(255,255,255,0.08);`;
       
       const matchLen = state.words[slot].length;
-      item.innerHTML = `<span style="color:#fbbf24; font-weight:700;">${w.slice(0, matchLen)}</span><span style="color:#e2e8f0;">${w.slice(matchLen)}</span>`;
+      const cs = checksumForCandidate(state.locked, slot, w, wordlist);
+      item.innerHTML = `
+        <span><span style="color:#fbbf24; font-weight:700;">${w.slice(0, matchLen)}</span><span style="color:#e2e8f0;">${w.slice(matchLen)}</span></span>
+        <span style="font-size:11px; font-weight:600; color:#94a3b8; font-variant-numeric:tabular-nums; margin-left:8px;">${cs}</span>`;
       
       item.onmouseenter = () => item.style.background = '#475569';
       item.onmouseleave = () => item.style.background = si === 0 ? '#334155' : '#1e293b';
@@ -818,9 +927,15 @@
     state.interrogateStep = 0;
     state.errorSearch = null;
     state.suggestions = [];
+    state.csFilter = '';
+    state.csFilterSlot = -1;
 
     state.inputEls.forEach(input => { input.value = ''; });
     hideAllDropdowns(gridKey);
+    // Hide any open checksum filter rows
+    if (state.entryEl) {
+      state.entryEl.querySelectorAll('.bip39-cs-filter-row').forEach(r => r.style.display = 'none');
+    }
     updateSlotVisuals(gridKey);
     updateChecksumPanel(gridKey);
     updateGeoBar(gridKey, getWordlist(gridKey));
@@ -878,6 +993,19 @@
         csEl.style.color = isError ? '#f87171' : (isLocked && checksums[i]) ? color : checksums[i] ? '#94a3b8' : '#475569';
         csEl.style.fontSize = checksums[i] ? '14px' : '10px';
         csEl.style.fontWeight = '700';
+      }
+
+      // ⋯ filter button — show for active unlocked slots
+      const filterBtn = state.entryEl.querySelector(`.bip39-cs-filter-btn[data-slot="${i}"]`);
+      if (filterBtn) {
+        filterBtn.style.display = (isActive && !isLocked) ? 'inline-block' : 'none';
+      }
+
+      // Hide filter row when slot gets locked
+      if (isLocked) {
+        const filterRow = state.entryEl.querySelector(`.bip39-cs-filter-row[data-slot="${i}"]`);
+        if (filterRow) filterRow.style.display = 'none';
+        if (state.csFilterSlot === i) { state.csFilter = ''; state.csFilterSlot = -1; }
       }
     }
   }
@@ -947,22 +1075,38 @@
       const lat = ((bounds.latMin + bounds.latMax) / 2).toFixed(6);
       const lon = ((bounds.lonMin + bounds.lonMax) / 2).toFixed(6);
       const codeStr = state.locked.join('-').toLowerCase() + '.' + finalCs;
-      // Detect iOS/macOS for Apple Maps, otherwise Google Maps
-      const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0;
-      const mapsUrl = isApple
-        ? `maps://maps.apple.com/?q=${encodeURIComponent(codeStr)}&ll=${lat},${lon}`
-        : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-      const mapsLabel = isApple ? 'Open in Apple Maps' : 'Open in Google Maps';
+      // Detect iOS for dual Apple Maps + Google Maps buttons
+      const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0);
+      const googleUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
+      const appleUrl = `maps://maps.apple.com/?q=${encodeURIComponent(codeStr)}&ll=${lat},${lon}`;
+
+      let mapsButtons;
+      if (isApple) {
+        mapsButtons = `
+          <div style="display:flex; gap:6px; justify-content:center; flex-wrap:wrap;">
+            <a href="${appleUrl}" target="_blank" rel="noopener"
+              style="display:inline-block; padding:8px 14px; background:#166534; border:2px solid #4ade80; border-radius:6px; color:#fff; font-size:12px; font-weight:700; text-decoration:none; font-family:inherit;">
+              🍎 Apple Maps
+            </a>
+            <a href="${googleUrl}" target="_blank" rel="noopener"
+              style="display:inline-block; padding:8px 14px; background:#1e3a5f; border:2px solid #3b82f6; border-radius:6px; color:#fff; font-size:12px; font-weight:700; text-decoration:none; font-family:inherit;">
+              📍 Google Maps
+            </a>
+          </div>`;
+      } else {
+        mapsButtons = `
+          <a href="${googleUrl}" target="_blank" rel="noopener"
+            style="display:inline-block; padding:8px 16px; background:#166534; border:2px solid #4ade80; border-radius:6px; color:#fff; font-size:12px; font-weight:700; text-decoration:none; font-family:inherit;">
+            📍 Open in Google Maps
+          </a>`;
+      }
 
       html += `
         <div style="margin-top:8px; padding:6px 0 2px; border-top:1px solid rgba(22,101,52,0.2); text-align:center;">
           <div style="font-size:13px; color:#86efac; font-weight:600; margin-bottom:6px;">
             ${codeStr}
           </div>
-          <a href="${mapsUrl}" target="_blank" rel="noopener"
-            style="display:inline-block; padding:8px 16px; background:#166534; border:2px solid #4ade80; border-radius:6px; color:#fff; font-size:12px; font-weight:700; text-decoration:none; font-family:inherit;">
-            📍 ${mapsLabel}
-          </a>
+          ${mapsButtons}
           <div style="font-size:9px; color:#64748b; margin-top:4px;">${lat}, ${lon}</div>
         </div>`;
     }
@@ -983,6 +1127,7 @@
     if (state.csStatus === 'interrogate' && !state.errorSearch) {
       html += '<div style="margin-top:8px;">';
       const wordlist = getWordlist(gridKey);
+      const checksums = getRunningChecksums(state.locked, gridKey);
       for (let i = 0; i < 4; i++) {
         const isConf = state.confirmedSlots[i];
         const isCurr = state.interrogateStep === i && !isConf;
@@ -998,6 +1143,7 @@
               <span style="font-size:15px; font-weight:700; color:${isConf ? '#4ade80' : '#fff'};">${state.locked[i]}</span>
               ${geo ? `<div style="font-size:11px; color:${isConf ? '#86efac' : '#93c5fd'}; font-weight:500; margin-top:1px;">${geo}</div>` : ''}
             </div>
+            <span style="font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; color:${isConf ? '#4ade80' : '#94a3b8'}; flex-shrink:0; min-width:32px; text-align:right;">${checksums[i] || ''}</span>
             ${isCurr ? `
               <div style="display:flex; gap:5px; flex-shrink:0;">
                 <button class="bip39-word-yes" data-slot="${i}" style="background:#166534; border:2px solid #4ade80; color:#fff; font-size:12px; font-weight:700; padding:6px 12px; border-radius:5px; cursor:pointer; font-family:inherit;">YES</button>
@@ -1105,6 +1251,7 @@
     const state = getState(gridKey);
     const box = state.entryEl?.querySelector('.bip39-error-box');
     if (!box) return;
+    const wordlist = getWordlist(gridKey);
 
     if (!state.errorSearch) {
       box.style.display = 'none';
@@ -1116,16 +1263,19 @@
     if (state.errorSearch.slot >= 0 && state.errorSearch.candidates.length > 0) {
       box.style.cssText = 'display:block; margin-top:8px; padding:10px 12px; border-radius:6px; background:#1c1917; border:2px solid #f59e0b;';
       const slot = state.errorSearch.slot;
+      const origCs = checksumForCandidate(state.locked, slot, state.locked[slot], wordlist);
       let html = `<div style="font-size:12px; font-weight:700; color:#fbbf24; margin-bottom:8px;">
-        WORD ${slot + 1}: "${state.locked[slot]}" → REPLACE WITH:
+        WORD ${slot + 1}: "${state.locked[slot]} <span style="color:#f87171;">${origCs}</span>" → REPLACE WITH:
       </div>`;
       
-      // Build candidate buttons — each is a row with word + geo placeholder
+      // Build candidate buttons — each is a row with word + geo + checksum
       state.errorSearch.candidates.forEach(c => {
+        const candCs = checksumForCandidate(state.locked, slot, c, wordlist);
         html += `
           <div class="bip39-correction-row" data-word="${c}" style="display:flex; align-items:center; gap:10px; padding:8px 10px; margin-bottom:4px; background:#334155; border:2px solid #64748b; border-radius:6px; cursor:pointer;">
             <span style="font-size:18px; font-weight:800; color:#fff; min-width:80px;">${c}</span>
-            <span class="bip39-correction-geo" data-candidate="${c}" style="font-size:11px; color:#94a3b8; font-weight:500;">looking up...</span>
+            <span class="bip39-correction-geo" data-candidate="${c}" style="flex:1; font-size:11px; color:#94a3b8; font-weight:500;">looking up...</span>
+            <span style="font-size:13px; font-weight:700; color:#94a3b8; font-variant-numeric:tabular-nums; flex-shrink:0;">${candCs}</span>
           </div>`;
       });
       
@@ -1227,9 +1377,17 @@
     if (state.entryEl) state.entryEl.style.display = state.active ? 'block' : 'none';
     if (state.codeEl) state.codeEl.style.display = state.active ? 'none' : '';
     if (state.toggleBtn) {
-      state.toggleBtn.textContent = state.active ? '✕' : '✎';
-      state.toggleBtn.style.color = state.active ? 'var(--accent, #f59e0b)' : '';
-      state.toggleBtn.title = state.active ? 'Close entry mode' : 'Entry mode';
+      if (state.active) {
+        state.toggleBtn.innerHTML = '✕ CLOSE';
+        state.toggleBtn.style.background = '#78350f';
+        state.toggleBtn.style.color = '#fbbf24';
+        state.toggleBtn.title = 'Close entry mode';
+      } else {
+        state.toggleBtn.innerHTML = '📥 RECEIVE';
+        state.toggleBtn.style.background = '#555078';
+        state.toggleBtn.style.color = '#e2dff0';
+        state.toggleBtn.title = 'Enter a code received from sender';
+      }
     }
 
     if (state.active && state.inputEls.length > 0) {
@@ -1256,8 +1414,9 @@
       state.active = false;
       if (state.entryEl) state.entryEl.style.display = 'none';
       if (state.toggleBtn) {
-        state.toggleBtn.textContent = '✎';
-        state.toggleBtn.style.color = '';
+        state.toggleBtn.innerHTML = '📥 RECEIVE';
+        state.toggleBtn.style.background = '#555078';
+        state.toggleBtn.style.color = '#e2dff0';
       }
     }
 
@@ -1284,24 +1443,18 @@
       const state = getState(gridKey);
       card.dataset.gridKey = gridKey;
 
-      // checksumEnabled drives which view the card opens in: false = compact
-      // view (image 1), true = per-word speaker view (image 2). Default to
-      // false so cards open in the simpler compact view; the ✓ tick switches.
-      if (typeof CardRenderer !== 'undefined' && CardRenderer.getCardState) {
-        const cs = CardRenderer.getCardState();
-        if (cs && cs.checksumEnabled && cs.checksumEnabled[gridKey] === undefined) {
-          cs.checksumEnabled[gridKey] = false;
-        }
-      }
+      // Note: checksumEnabled[gridKey] controls speaker readout only.
+      // The .246 checksum suffix always appears in the code display
+      // (handled by card-renderer.js). Default is false (speaker hidden).
 
-      // Add ✎ toggle button to card header
+      // Add 📥 RECEIVE toggle button to card header
       const titleEl = card.querySelector('.card-title');
       if (titleEl && !titleEl.querySelector('.bip39-entry-toggle')) {
         const toggle = document.createElement('button');
         toggle.className = 'audio-speaker-btn bip39-entry-toggle';
-        toggle.innerHTML = '✎';
-        toggle.title = 'Entry mode';
-        toggle.style.cssText = "margin-left:4px; font-family:'SF Mono',ui-monospace,monospace; font-weight:700; font-size:16px;";
+        toggle.innerHTML = '📥 RECEIVE';
+        toggle.title = 'Enter a code received from sender';
+        toggle.style.cssText = "margin-left:4px; background:#555078; border:none; border-radius:6px; color:#e2dff0; font-size:10px; font-weight:700; padding:4px 8px; cursor:pointer; font-family:inherit; letter-spacing:0.04em;";
         toggle.onclick = (e) => { e.stopPropagation(); toggleView(gridKey); };
         titleEl.appendChild(toggle);
         state.toggleBtn = toggle;
@@ -1310,11 +1463,7 @@
       // Build both entry + speaker views
       buildEntryDOM(card, gridKey);
 
-      // checksumEnabled is now PURELY the speaker toggle (the ✓ tick). It does
-      // NOT affect the compact code view's trailing checksum (.672) — that is
-      // always shown for prefixLength grids, independent of this flag. The flag
-      // defaults to false, so BIP39 cards open in the compact view; pressing ✓
-      // reveals the per-word running-checksum speaker readout.
+      // If ✓ checksum is toggled on, auto-show the speaker readout
       if (isChecksumEnabled(gridKey)) {
         toggleSpeaker(gridKey, true);
       }
