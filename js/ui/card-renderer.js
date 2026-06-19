@@ -725,13 +725,15 @@
   function _encodeCardCoordinateInternal(gridKey, lat, lon, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
-    // Tier 2: keyed permutation. When a passphrase is set, the location is
-    // permuted at the quaternary tree level (face=12-cell, each level=4-cell)
-    // via the SAME frozen shuffle the vocabulary grids use, injected here so
-    // the engine stays standalone. Obfuscation reuses the same path (below).
+    // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
+    // both at the quaternary tree level, conforming to the vocabulary-grid
+    // model. Passphrase permutes via the injected frozen shuffle; obfuscation
+    // is the same index-shift principle as GeoCodec.applyObfuscation, adapted
+    // to HEALPix's per-position alphabets (face=12, levels=4).
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+      if (obfuscated) { opt.obf = true; }
       return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations, opt);
     }
     // GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …) — own engine, no shuffle/obfuscation
@@ -836,6 +838,7 @@
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+      if (obfuscated) { opt.obf = true; }
       return HealpixGrids.decode(gridDef.healpix, code, iterations, opt);
     }
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
@@ -925,10 +928,16 @@
     const gridDef = CARD_GRIDS[gridKey];
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
-      // only un-permute when asked to (mirrors the vocabulary-grid deobfuscate flag)
-      if (deobfuscate && passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      return HealpixGrids.decode(gridDef.healpix, code,
-        HealpixGrids.inferOrder(gridDef.healpix, code), opt);
+      if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+      if (obfuscated) { opt.obf = true; }
+      // Prefer the card's CURRENT order over inferring from the string: bare
+      // hex/base64 codes are order-ambiguous (packing rounds up to whole chars),
+      // so the known stepper value is exact where inference might over-read.
+      // Fall back to inference only if no order is on record (e.g. pasted code).
+      const knownOrder = (cardState.iterations && cardState.iterations[gridKey]) ||
+                         gridDef.defaultIterations;
+      const order = knownOrder || HealpixGrids.inferOrder(gridDef.healpix, code);
+      return HealpixGrids.decode(gridDef.healpix, code, order, opt);
     }
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
       return GISGrids.decode(gridDef.gis, code);
@@ -1218,12 +1227,9 @@
     
     const gridDef = CARD_GRIDS[gridKey];
     // GIS reference cards can't be privacy-transformed → redact under any privacy mode.
-    // HEALPix: passphrase now PERMUTES (handled in encode), so it must NOT redact for
-    // passphrase. Obfuscation for HEALPix isn't wired yet → still redact for obfuscation.
+    // HEALPix now PERMUTES (passphrase) and OBFUSCATES (index-shift) properly, so it
+    // never redacts — it emits a real transformed code that decodes back with the key.
     if (gridDef.gis && (passphrase || obfuscated)) {
-      return '████████';
-    }
-    if (gridDef.healpix && obfuscated) {
       return '████████';
     }
     const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
@@ -2000,10 +2006,9 @@
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix)) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
-      // HEALPix now PERMUTES under passphrase (Tier 2), so it must re-render
-      // then — only skip it under obfuscation (HEALPix obfuscation not yet wired).
+      // HEALPix now transforms properly under both passphrase and obfuscation,
+      // so it always re-renders (never skipped for privacy).
       if (gridDef.gis && (passphrase || obfuscated)) return;
-      if (gridDef.healpix && obfuscated) return;
       
       const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
       const isFixed = gridDef.fixedIterations !== undefined;
@@ -2116,14 +2121,10 @@
       const iterations = isBarcodeCard ? getBarcodeIterations(gridKey)
         : (gridDef.fixedIterations !== undefined ? gridDef.fixedIterations : (cardState.iterations[gridKey] || gridDef.defaultIterations));
       let code = encodeCardCoordinate(gridKey, currentCardCoord.lat, currentCardCoord.lon, iterations);
-      // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …).
-      // Geosonify's privacy modes can't meaningfully transform them, so any privacy
-      // mode redacts them. HEALPix now PERMUTES under passphrase (Tier 2), so it is
-      // NOT redacted for passphrase — only for obfuscation (not yet wired for HEALPix).
-      const gisRedacted = !!(
-        (gridDef.gis && (passphrase || obfuscated)) ||
-        (gridDef.healpix && obfuscated)
-      );
+      // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …)
+      // that can't be privacy-transformed → redact under any privacy mode.
+      // HEALPix transforms properly (permute + obfuscate) so it is NEVER redacted.
+      const gisRedacted = !!(gridDef.gis && (passphrase || obfuscated));
       if (gisRedacted) {
         code = '████████';
       }
