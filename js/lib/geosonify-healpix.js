@@ -301,6 +301,37 @@ const HealpixGrids = (function () {
     return { f: trueF, digits: out };
   }
 
+  // ── obfuscation (position-based index shift) ──────────────
+  // FROZEN FORMAT: part of geosonify-healpix-pass-v1.
+  //
+  // Conforms to the host's applyIndexObfuscation MODEL: a reversible,
+  // position-dependent index shift over each token's own alphabet. The host
+  // version shifts each non-final token by its distance-from-end (mod N) over
+  // a single vocabulary of size N. HEALPix's tokens have per-position alphabet
+  // sizes — face = 12, each level = 4 — so we shift each token mod its own
+  // size by distance-from-end. The FINAL token is left unshifted (matching the
+  // host, which preserves the last token to keep the deepest cell addressable).
+  // Order in the pipeline mirrors vocabulary grids: permute (passphrase) FIRST,
+  // then obfuscate. Decode reverses: un-obfuscate, then un-permute.
+  //
+  // The token sequence is [face, level0, level1, …]; "distance from end" counts
+  // from the last level. Face size 12, levels size 4.
+  function obfuscatePath(f, digits, mode) {
+    // tokens with their alphabet sizes
+    const sizes = [12].concat(digits.map(() => 4));
+    const vals = [f].concat(digits.slice());
+    const n = vals.length;
+    const out = vals.slice();
+    // shift every token except the final one, by distance-from-end
+    for (let i = 0; i < n - 1; i++) {
+      const posFromEnd = (n - 1) - i;       // 1 for 2nd-last, 2 for 3rd-last, …
+      const N = sizes[i];
+      if (mode === 'encode') out[i] = ((vals[i] - posFromEnd) % N + N) % N;
+      else                   out[i] = (vals[i] + posFromEnd) % N;
+    }
+    return { f: out[0], digits: out.slice(1) };
+  }
+
   // ── scheme registry (mirrors GISGrids.SCHEMES shape) ──────
   const SCHEMES = {
     hpquad: {
@@ -312,11 +343,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
         return serQuad(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserQuad(str, opt); if (!p) return null;
         let { f, digits } = p;
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -331,11 +364,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
         return serHex(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserHex(str, k, opt); if (!p) return null;
         let { f, digits } = p;
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -350,11 +385,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
         return ser64(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deser64(str, k, opt); if (!p) return null;
         let { f, digits } = p;
+        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -394,8 +431,13 @@ const HealpixGrids = (function () {
       explicitK = parseInt(str.slice(at + 1), 10);
       str = str.slice(0, at);
     }
-    let k = iterations;
-    if (k == null) k = (explicitK != null ? explicitK : inferOrder(schemeKey, str));
+    // Order precedence: an explicit "@k" in the string is authoritative (it was
+    // written to make the code exact), then the caller-passed order, then
+    // inference from length.
+    let k;
+    if (explicitK != null) k = explicitK;
+    else if (iterations != null) k = iterations;
+    else k = inferOrder(schemeKey, str);
     try {
       const r = s.decodeAt(str, clampOrder(k), opt || {});
       if (r && isFinite(r[0]) && isFinite(r[1]) &&
@@ -1167,7 +1209,7 @@ function assert(condition) {
     inferOrder, clampOrder,
     // serializers exposed for tests
     _ser: { serQuad, deserQuad, serHex, deserHex, ser64, deser64, packBase, unpackBase },
-    _perm: { permutePath, unpermutePath },
+    _perm: { permutePath, unpermutePath, obfuscatePath },
     // core exposed for tests
     _core: { ang2pix_nest, pix2ang_nest, corners_nest, pixcoord2vec_nest,
              order2nside, nside2pixarea, orderpix2uniq }
