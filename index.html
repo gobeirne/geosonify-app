@@ -628,6 +628,7 @@
 <script src="js/ui/piano-roll.js?v=202603173"></script>
 <script src="js/ui/scanner-ui.js?v=20260109"></script>
 <script src="js/lib/gis-grids.js?v=20260613"></script>
+<script src="js/lib/geosonify-healpix.js?v=20260619"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/ui/card-renderer.js?v=20260616a"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -2201,6 +2202,36 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return;
       }
       
+      // ── HEALPix scheme params (?hphex=, ?hpquad=, ?hp64=) ───
+      // Param name equals its HealpixGrids.SCHEMES key. Order is recovered
+      // from the code's own shape via inferOrder (bare URL carries none).
+      for (const [paramName, paramValue] of urlParams.entries()) {
+        if (!paramValue) continue;
+        if (typeof HealpixGrids === 'undefined' || !HealpixGrids.SCHEMES.hasOwnProperty(paramName)) continue;
+        const decodedVal = decodeURIComponent(paramValue);
+        const coord = HealpixGrids.decode(paramName, decodedVal, null);
+        if (!coord) {
+          setTimeout(() => showToast('Invalid ' + paramName + ' code in URL', 'error'), 200);
+          return;
+        }
+        setTimeout(() => {
+          _suppressURLUpdate = true;
+          currentCardCoord = { lat: coord[0], lon: coord[1] };
+          cardState.active = paramName;
+          if (!cardState.visible.includes(paramName)) cardState.visible.push(paramName);
+          saveCardState();
+          updateCoordDisplay();
+          updateMapPin();
+          renderCards();
+          if (map && currentCardCoord) {
+            map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
+          }
+          switchToTab('home');
+          setTimeout(() => { _suppressURLUpdate = false; }, 500);
+        }, 200);
+        return;
+      }
+
       // ── Shape Import URL params ─────────────────────────────
       // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391,
       // ?geojson=https://..., ?kml=https://..., ?gpx=https://...
@@ -2226,7 +2257,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         for (const [pName, pVal] of urlParams.entries()) {
           if (!pVal || !pName.startsWith('address_')) continue;
           const fmt = pName.slice('address_'.length);
-          if (BASE_PARAM_MAP[fmt] || isGisParam(fmt)) {
+          if (BASE_PARAM_MAP[fmt] || isGisParam(fmt) || isHealpixParam(fmt)) {
             shapeImportParams.address = pVal;
             _seedFormat = fmt;
             break;
@@ -2560,18 +2591,27 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function isGisParam(name) {
       return typeof GISGrids !== 'undefined' && GISGrids.SCHEMES.hasOwnProperty(name);
     }
+
+    function isHealpixParam(name) {
+      return typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES.hasOwnProperty(name);
+    }
     
     /**
      * Decode a single seed string into [lat,lon] given an explicit format.
-     * - GIS scheme key  → GISGrids.decode(fmt, value)
-     * - base param name → decodeCardCode(gridKey, value, obf)
+     * - GIS scheme key     → GISGrids.decode(fmt, value)
+     * - HEALPix scheme key → HealpixGrids.decode(fmt, value, inferredOrder)
+     * - base param name    → decodeCardCode(gridKey, value, obf)
      * Returns [lat,lon] or null. `fmt` is the suffix as it appears in the
-     * URL (e.g. 'a', 'bip', 'mgrs'); `obf` only applies to base formats.
+     * URL (e.g. 'a', 'bip', 'mgrs', 'hphex'); `obf` only applies to base formats.
      */
     function decodeSeed(fmt, value, obf) {
       if (!fmt || value == null) return null;
       if (isGisParam(fmt)) {
         return GISGrids.decode(fmt, value);
+      }
+      if (isHealpixParam(fmt)) {
+        // decode() strips an optional "@k" suffix and infers order otherwise
+        return HealpixGrids.decode(fmt, value, null);
       }
       const gridKey = BASE_PARAM_MAP[fmt];
       if (gridKey) {
@@ -2613,6 +2653,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return param;
       }
       
+      // HEALPix card — param name IS the healpix key (hphex/hpquad/hp64),
+      // bare. Order is recovered on decode from the code's own length/shape
+      // via HealpixGrids.inferOrder, so no extra param is needed. (Tier 1:
+      // no o/d/r flags — privacy/delta for HEALPix arrive in Tier 2.)
+      if (gridDef && gridDef.healpix) {
+        return gridDef.healpix;
+      }
+
       // GIS card — param name IS the scheme key, bare (no o/d/r flags;
       // GIS formats can't obfuscate or delta-encode).
       if (gridDef && gridDef.gis) {
@@ -2640,9 +2688,26 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const encoded = document.getElementById('compactOutput').textContent;
       if (encoded && !encoded.startsWith('ERR')) {
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
-        const newURL = `${window.location.pathname}?${param}=${encoded}`;
+        const newURL = `${window.location.pathname}?${param}=${withHealpixOrder(param, encoded)}`;
         window.history.replaceState({}, '', newURL);
       }
+    }
+
+    // HEALPix hex/base64 codes left-pad when packing, so their length alone
+    // can't recover the exact order on decode. For share/URL we append the
+    // order as "@k" (hphex/hp64 only; hpquad is self-describing, and only for
+    // a plain point code — not a delta/multi seed). Decode strips "@k".
+    function withHealpixOrder(param, encoded) {
+      try {
+        if ((param === 'hphex' || param === 'hp64') &&
+            typeof encoded === 'string' && encoded.indexOf('@') === -1 &&
+            encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1) {
+          const k = cardState.iterations[param] ||
+                    (CARD_GRIDS[param] && CARD_GRIDS[param].defaultIterations);
+          if (k) return encoded + '@' + k;
+        }
+      } catch (e) { /* fall through to bare */ }
+      return encoded;
     }
 
     // Build the base shareable URL (shape or encrypted blob) from the current
@@ -2657,7 +2722,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
       }
       const param = getURLParamForActiveCard(_currentOutputIsDelta);
-      return `${window.location.origin}${window.location.pathname}?${param}=${encoded}`;
+      return `${window.location.origin}${window.location.pathname}?${param}=${withHealpixOrder(param, encoded)}`;
     }
 
     // Read the display-share panel and assemble the ?display… params. Returns
