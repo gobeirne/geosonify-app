@@ -241,6 +241,66 @@ const HealpixGrids = (function () {
     return { face: f, levels: digits };   // levels: array of 0..3
   }
 
+  // ── keyed permutation (passphrase / obfuscation) ──────────
+  // FROZEN FORMAT: geosonify-healpix-pass-v1
+  //
+  // HEALPix conforms to Geosonify's existing keyed-permutation model rather
+  // than inventing its own crypto. The host app's frozen shuffle —
+  // shuffleGridAndOrder(grid, pass, chainPrefix) → { order } — is injected
+  // (so this engine stays standalone) and called on:
+  //   • the face   as a 1×12 grid (chainPrefix = '')
+  //   • each level as a 1×4  grid (chainPrefix = comma-joined TRUE indices
+  //                                 chosen so far: face, then each child)
+  // exactly mirroring how the vocabulary grids chain. One permutation of the
+  // location; the three serializations are renderings of its result, so all
+  // three are identically secure (representation ≠ breakability).
+  //
+  // Chain semantics (must match encode⇄decode): after each step the TRUE
+  // chosen index is appended to the chain — identical to the native loop —
+  // so the per-level shuffle is reproducible in both directions.
+  //
+  // shuffleGridAndOrder returns order[] where order[i] = the original index
+  // now sitting at sorted position i. So:
+  //   permute (encode):  displayed = indexOf(order, trueVal)
+  //   invert  (decode):  trueVal   = order[displayedVal]
+  // The chain is always built from TRUE indices, available in both directions.
+
+  function _row(n) { const r = new Array(n); for (let i = 0; i < n; i++) r[i] = i; return [r]; }
+
+  // permute a true (face, levels) → displayed (face, levels)
+  function permutePath(f, digits, pass, shuffleFn) {
+    if (!pass || !shuffleFn) return { f, digits: digits.slice() };
+    const chain = [];
+    // face: 12-cell
+    const fo = shuffleFn(_row(12), pass, '').order;
+    const dispF = fo.indexOf(f);
+    chain.push(String(f));                 // TRUE index into chain
+    const out = new Array(digits.length);
+    for (let i = 0; i < digits.length; i++) {
+      const lo = shuffleFn(_row(4), pass, chain.join(',')).order;
+      out[i] = lo.indexOf(digits[i]);      // displayed child
+      chain.push(String(digits[i]));       // TRUE child into chain
+    }
+    return { f: dispF, digits: out };
+  }
+
+  // invert displayed (face, levels) → true (face, levels)
+  function unpermutePath(dispF, dispDigits, pass, shuffleFn) {
+    if (!pass || !shuffleFn) return { f: dispF, digits: dispDigits.slice() };
+    const chain = [];
+    const fo = shuffleFn(_row(12), pass, '').order;
+    const trueF = fo[dispF];               // invert face
+    chain.push(String(trueF));
+    const out = new Array(dispDigits.length);
+    for (let i = 0; i < dispDigits.length; i++) {
+      const lo = shuffleFn(_row(4), pass, chain.join(',')).order;
+      const trueChild = lo[dispDigits[i]]; // invert child
+      out[i] = trueChild;
+      chain.push(String(trueChild));
+    }
+    return { f: trueF, digits: out };
+  }
+
   // ── scheme registry (mirrors GISGrids.SCHEMES shape) ──────
   const SCHEMES = {
     hpquad: {
@@ -250,12 +310,15 @@ const HealpixGrids = (function () {
       iterLabel: k => `order ${k}`,
       levelsPerChar: 1,
       encode: (lat, lon, k, opt) => {
-        const { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
         return serQuad(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserQuad(str, opt); if (!p) return null;
-        return nestCentre(pathToNest(p.f, p.digits), p.digits.length);
+        let { f, digits } = p;
+        if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
+        return nestCentre(pathToNest(f, digits), digits.length);
       },
       cellMetres: k => cellMetres(k)
     },
@@ -266,12 +329,15 @@ const HealpixGrids = (function () {
       iterLabel: k => `order ${k}`,
       levelsPerChar: 2,
       encode: (lat, lon, k, opt) => {
-        const { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
         return serHex(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserHex(str, k, opt); if (!p) return null;
-        return nestCentre(pathToNest(p.f, p.digits), p.digits.length);
+        let { f, digits } = p;
+        if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
+        return nestCentre(pathToNest(f, digits), digits.length);
       },
       cellMetres: k => cellMetres(k)
     },
@@ -282,12 +348,15 @@ const HealpixGrids = (function () {
       iterLabel: k => `order ${k}`,
       levelsPerChar: 3,
       encode: (lat, lon, k, opt) => {
-        const { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
+        if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
         return ser64(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deser64(str, k, opt); if (!p) return null;
-        return nestCentre(pathToNest(p.f, p.digits), p.digits.length);
+        let { f, digits } = p;
+        if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
+        return nestCentre(pathToNest(f, digits), digits.length);
       },
       cellMetres: k => cellMetres(k)
     }
@@ -1098,6 +1167,7 @@ function assert(condition) {
     inferOrder, clampOrder,
     // serializers exposed for tests
     _ser: { serQuad, deserQuad, serHex, deserHex, ser64, deser64, packBase, unpackBase },
+    _perm: { permutePath, unpermutePath },
     // core exposed for tests
     _core: { ang2pix_nest, pix2ang_nest, corners_nest, pixcoord2vec_nest,
              order2nside, nside2pixarea, orderpix2uniq }
