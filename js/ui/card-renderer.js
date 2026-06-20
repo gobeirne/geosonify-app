@@ -541,22 +541,20 @@
     // display==='datamatrix' render/scan path picks it up). hphex is case-free
     // and URL-safe, so it sits cleanly in the symbol with no case hazard.
     //
-    // EVEN ORDERS ONLY. hphex left-pads when packing, so an ODD order produces
-    // the same character count as the next even order — the bare code would be
-    // length-ambiguous and need an "@k" suffix to disambiguate on scan. Because
-    // this is its own card, we sidestep that entirely: the ±-clicker steps in
-    // twos (iterStep:2) over even bounds, so every code is even-length and fully
-    // self-describing. inferOrder alone recovers the order on scan — no suffix,
-    // no label/code desync, clicker value always equals the encoded order.
+    // EVERY ORDER 1..73 is reachable (femtometre-scale at the deep end). hphex
+    // left-pads when packing, so ODD orders are length-ambiguous; the symbol
+    // therefore carries an "@k" order suffix ONLY when the order is odd (even
+    // orders are self-describing and stay clean). This lets someone address an
+    // EXACT cell at any order — including odd ones — while the common, even-order
+    // case shows no suffix. HealpixGrids.decode/inferOrder strip "@k" natively.
     if (defs.hphex) {
       CARD_GRIDS.hpmatrix = {
         name: 'HEALPix Matrix',
         healpix: 'hphex',
         grid: null,
-        defaultIterations: 22,           // even → 1.6 m
-        minIterations: 2,
-        maxIterations: 24,               // largest even ≤ hphex max (25)
-        iterStep: 2,                     // ±-clicker moves in twos (even only)
+        defaultIterations: 22,           // even → 1.6 m, clean (no suffix)
+        minIterations: 1,
+        maxIterations: 73,               // ~0.7 fm at the deep end
         display: 'datamatrix',
         link: defs.hphex.link,
         isEmoji: false,
@@ -1623,6 +1621,25 @@
   /**
    * Get iterations for a barcode card (handles dynamic qrurl)
    */
+  // HEALPix Matrix payload helper. hphex left-pads when packing, so ODD orders
+  // produce the same character count as the next even order — the bare code is
+  // length-ambiguous. Append "@k" (which HealpixGrids.decode/inferOrder strip
+  // natively) ONLY when the bare code's inferred order disagrees with the true
+  // order, i.e. for odd orders. Even orders are self-describing and stay clean,
+  // so the common case shows no suffix; the suffix appears only when a user
+  // deliberately addresses an exact cell at an odd order.
+  function withHealpixBarcodeOrder(gridKey, code) {
+    const gd = CARD_GRIDS[gridKey];
+    if (!gd || !gd.healpix || typeof HealpixGrids === 'undefined') return code;
+    if (typeof code !== 'string' || !code || code.indexOf('@') !== -1) return code;
+    const k = cardState.iterations[gridKey] || gd.defaultIterations;
+    if (!k) return code;
+    try {
+      if (HealpixGrids.inferOrder(gd.healpix, code) === k) return code; // even: clean
+    } catch (e) { /* fall through to suffixed form */ }
+    return code + '@' + k;
+  }
+
   function getBarcodeIterations(gridKey) {
     const gridDef = CARD_GRIDS[gridKey];
     if (!gridDef) return 6;
@@ -1762,19 +1779,20 @@
     // the card's `healpix` flag). A scanned symbol is treated as HEALPix purely
     // because THIS card's scanner produced it; the symbol itself is unmarked.
     if (gridDefEarly && gridDefEarly.healpix && typeof HealpixGrids !== 'undefined') {
-      // hphex alphabet is 0-9 A-B (case-free). Codes from this card are always
-      // EVEN order (even-only ±-clicker), so they're even-length and fully
-      // self-describing — inferOrder alone recovers the order, no "@k" suffix.
-      // Strip scanner noise / quiet-zone artefacts down to the hex run.
+      // hphex alphabet is 0-9 A-B (case-free). Preserve an optional "@k" order
+      // suffix: even-order codes are self-describing and carry none, but ODD
+      // orders are length-ambiguous and carry "@k" so an EXACT cell at any order
+      // round-trips. Keep [0-9A-F] plus a trailing "@<digits>"; strip the rest
+      // (scanner noise / quiet-zone artefacts).
       const raw = String(rawText).toUpperCase();
-      const m = raw.match(/[0-9A-F]+/);
-      let code = m ? m[0] : '';
+      const m = raw.match(/^[^0-9A-F]*([0-9A-F]+(?:@\d{1,3})?)/);
+      let code = m ? m[1] : raw.replace(/[^0-9A-F@]/g, '');
       if (!code) { showToast('No HEALPix code found in symbol'); return; }
       let order;
       try { order = HealpixGrids.inferOrder(gridDefEarly.healpix, code); }
       catch (e) { order = null; }
       if (!order || order < 1) { showToast('Code too short to decode'); return; }
-      const maxK = gridDefEarly.maxIterations || 24;
+      const maxK = gridDefEarly.maxIterations || 73;
       if (order > maxK) order = maxK;
       const result = decodeCardCoordinate(gridKey, code, order);
       if (result) {
@@ -1783,7 +1801,8 @@
         if (map) map.setView(result, 16, { animate: true });
         const prec = getPrecisionText(gridKey, order);
         showToast(prec ? `✓ Decoded — ${prec}` : '✓ Decoded', 'success');
-        showDecodeBanner(gridKey, code, result[0], result[1]);
+        // banner shows the clean code without the @k machinery
+        showDecodeBanner(gridKey, code.replace(/@\d+$/, ''), result[0], result[1]);
       } else {
         showToast('Invalid code (wrong passphrase?)');
       }
@@ -2154,7 +2173,7 @@
                 : code;
               renderBarcodeQR(qrUrlContent, ctrEl, 'qrurl');
             } else if (gridDef.display === 'datamatrix') {
-              renderBarcodeDataMatrix(code, ctrEl);
+              renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), ctrEl);
             }
           }
         }
@@ -2403,7 +2422,7 @@
           try {
             if (gridDef.display === 'datamatrix') {
               await BarcodeLib.ensureBwipLoaded();
-              bcCanvas = BarcodeLib.generateDataMatrixCanvas(code, { size: 1024 });
+              bcCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, code), { size: 1024 });
             } else {
               await BarcodeLib.ensureQRGenLoaded();
               let content = code;
@@ -2726,7 +2745,7 @@
           : code;
         renderBarcodeQR(qrUrlContent, card.querySelector('.barcode-container'), 'qrurl');
       } else if (gridDef.display === 'datamatrix') {
-        renderBarcodeDataMatrix(code, card.querySelector('.barcode-container'));
+        renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), card.querySelector('.barcode-container'));
       }
 	  
 	  // BIP39 entry view (like piano roll for music)
@@ -2922,7 +2941,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
         if (typeof BarcodeLib !== 'undefined') {
           if (gridDef?.display === 'datamatrix') {
-            fsCanvas = BarcodeLib.generateDataMatrixCanvas(displayCode, { size: displaySize });
+            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: displaySize });
           } else if (gridDef?.display === 'qrbin') {
             fsCanvas = BarcodeLib.generateQRBinaryCanvas(displayCode, { size: displaySize, eccLevel: 'L' });
           } else {
@@ -3002,7 +3021,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
         if (gridDef?.display === 'datamatrix') {
           if (typeof BarcodeLib !== 'undefined') {
-            fsCanvas = BarcodeLib.generateDataMatrixCanvas(displayCode, { size: displaySize });
+            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: displaySize });
             fsCanvas.style.borderRadius = '8px';
             codeEl.appendChild(fsCanvas);
           }
@@ -3118,7 +3137,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             let hiResCanvas;
             if (gridDef?.display === 'datamatrix') {
               await BarcodeLib.ensureBwipLoaded();
-              hiResCanvas = BarcodeLib.generateDataMatrixCanvas(displayCode, { size: 1024 });
+              hiResCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: 1024 });
             } else if (gridDef?.display === 'qrbin') {
               await BarcodeLib.ensureQRGenLoaded();
               hiResCanvas = BarcodeLib.generateQRBinaryCanvas(displayCode, { size: 1024, eccLevel: 'L' });
@@ -3269,7 +3288,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           const cellSize = Math.floor(gridSize / 3 - 6);
           let canvas;
           if (gridDef?.display === 'datamatrix') {
-            canvas = BarcodeLib.generateDataMatrixCanvas(item.code, { size: cellSize });
+            canvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, item.code), { size: cellSize });
           } else if (gridDef?.display === 'qrbin') {
             canvas = BarcodeLib.generateQRBinaryCanvas(item.code, { size: cellSize, eccLevel: 'L' });
           } else {
