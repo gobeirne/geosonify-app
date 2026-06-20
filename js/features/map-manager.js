@@ -38,6 +38,11 @@
   let gridLayers = [];          // Array of grid polygon layers
   let gridLayersVisible = true;
 
+  // HEALPix path/polygon per-vertex cell overlays (curved equal-area diamonds
+  // drawn at each path vertex; separate from gridLayers so they clear together
+  // with the path, not with the single-point hierarchical grid).
+  let pathCellLayers = [];
+
   // Shape contrast colour — adapts to the basemap. Purple reads well on the
   // light OSM/topo maps but disappears on dark aerial photos, so imagery
   // basemaps switch the shape to a high-contrast yellow.
@@ -608,6 +613,49 @@
   // ============== SHAPE DRAWING ==============
 
   /**
+   * Clear any HEALPix per-vertex cell overlays.
+   */
+  function clearHealpixPathCells() {
+    pathCellLayers.forEach(layer => {
+      if (layer && map.hasLayer(layer)) map.removeLayer(layer);
+    });
+    pathCellLayers = [];
+  }
+
+  /**
+   * Overlay each path/polygon vertex's curved equal-area HEALPix cell.
+   * @param {Array<Array<number>>} coords - [[lat,lon],…] path vertices
+   * @param {string} healpixKey - 'hphex' | 'hpquad' | 'hp64'
+   * @param {number} iterations - HEALPix order
+   * Cells are drawn faintly so the connecting path/polygon stays dominant.
+   */
+  function drawHealpixPathCells(coords, healpixKey, iterations) {
+    clearHealpixPathCells();
+    if (!map || !coords || !coords.length) return;
+    if (typeof HealpixGrids === 'undefined' || !HealpixGrids.cellCorners) return;
+    // A closed polygon repeats its first vertex last — skip the duplicate so
+    // we don't double-draw that cell.
+    const n = coords.length;
+    const isClosedDup = n > 2 &&
+      Math.abs(coords[0][0] - coords[n-1][0]) < 1e-9 &&
+      Math.abs(coords[0][1] - coords[n-1][1]) < 1e-9;
+    const last = isClosedDup ? n - 1 : n;
+    for (let i = 0; i < last; i++) {
+      const ring = HealpixGrids.cellCorners(healpixKey, coords[i][0], coords[i][1], iterations, 14);
+      if (!ring) continue;
+      const layer = L.polygon(ring, {
+        color: getShapeColor(),
+        fillColor: getShapeColor(),
+        weight: 1,
+        opacity: 0.7,
+        fillOpacity: 0.12,
+        interactive: false
+      }).addTo(map);
+      pathCellLayers.push(layer);
+    }
+  }
+
+  /**
    * Draw a path or polygon on the map
    */
   function drawPathPoly(coords, centroid, isClosed, options = {}) {
@@ -861,6 +909,7 @@
     if (antipodeLayer) { map.removeLayer(antipodeLayer); antipodeLayer = null; }
     if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
     if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+    clearHealpixPathCells();
   }
 
   /**
@@ -872,6 +921,7 @@
     if (antipodeLayer) { map.removeLayer(antipodeLayer); antipodeLayer = null; }
     if (startMarker) { map.removeLayer(startMarker); startMarker = null; }
     if (endMarker) { map.removeLayer(endMarker); endMarker = null; }
+    clearHealpixPathCells();
   }
 
   // ============== MAP RESIZE HANDLERS ==============
@@ -1079,6 +1129,8 @@
     
     // Shape drawing
     drawPathPoly,
+    drawHealpixPathCells,
+    clearHealpixPathCells,
     drawGraticule,
     drawRectangle,
     drawCircle,
