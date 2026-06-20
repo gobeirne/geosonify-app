@@ -3525,20 +3525,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       } else {
         shapeLayer = L.polyline(densified, { color: _shapeColor(), weight: 3 }).addTo(map);
       }
-
-      // HEALPix paths: overlay each vertex's curved equal-area cell so the
-      // discretisation is visible (matches the single-point hierarchical grid).
-      // Non-HEALPix cards clear any stale cell overlay from a previous path.
-      if (typeof MapManager !== 'undefined' && MapManager.drawHealpixPathCells) {
-        const _ak = (cardState && cardState.active) || null;
-        const _ad = _ak ? CARD_GRIDS[_ak] : null;
-        if (_ad && _ad.healpix) {
-          const _it = _ad.fixedIterations || cardState.iterations[_ak] || _ad.defaultIterations;
-          MapManager.drawHealpixPathCells(coords, _ad.healpix, _it);
-        } else if (MapManager.clearHealpixPathCells) {
-          MapManager.clearHealpixPathCells();
-        }
-      }
       
       // Add start/end markers for open paths only (closed polygons just show centroid)
       // Use unwrapped positions so markers appear near the shape when crossing the antimeridian
