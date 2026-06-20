@@ -182,6 +182,25 @@
           },
 
           {
+            id: 'healpix-grids',
+            q: 'What are the HEALPix cards, and how deep can they go?',
+            a: `<p>HEALPix is a way of dividing the sphere into cells that all have <strong>exactly the same area</strong>, used widely in astronomy and Earth science to tile a globe without the distortion you get from squares of latitude and longitude. Geosonify offers it as a coordinate vocabulary, so you can name any location by the HEALPix cell it falls in.</p>
+<p>It comes in three card forms, all describing the same HEALPix geography in different alphabets: <strong>HEALPix · hex</strong> (compact, case-free, URL-safe), <strong>HEALPix · quaternary</strong> (the raw 0-3 subdivision path), and <strong>HEALPix · base64</strong> (shortest of the three). There is also a <strong>HEALPix Matrix</strong> card that renders the hex form as a Data Matrix barcode.</p>
+<p>Like every Geosonify code, HEALPix codes are <strong>hierarchical and gracefully truncating</strong>: each character refines the cell, and dropping characters from the end gives you the same place at a coarser resolution, never a wrong place. The +/- buttons step the resolution exactly as they do on the other cards.</p>
+<p>The thing that makes Geosonify's HEALPix special is that it has <strong>no built-in depth limit</strong>. Standard HEALPix software stops at a fixed resolution because of how computers store whole numbers; Geosonify removes that ceiling, so you can specify a cell as finely as you like - down to nanometre and even femtometre scales - and it will be represented exactly. (How precisely such a code pins down a spot on the real Earth still depends on how precise the coordinate you started from was - but the code itself loses nothing.)</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;The details - arbitrary-depth HEALPix and how we extend it - are here</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p>Geosonify uses the standard <strong>HEALPix NESTED</strong> scheme, in which the sphere is split into 12 equal-area base cells and each cell is recursively quartered. A cell at order <em>k</em> is identified by its base face and its position within that face, and the NESTED index is the reference HEALPix bit-interleaving of that position. The mean cell size follows <code>L &#8776; R&#183;&#8730;(&#960;/3) / 2<sup>k</sup></code>: order 25 &#8776; 19 cm, order 53 &#8776; 0.7 nm, order 73 &#8776; 0.7 fm.</p>
+<p>Reference HEALPix libraries stop near order 29 because they pack the cell index into a 64-bit integer (12&#183;4<sup>29</sup> is about as large as a 64-bit value holds). That is a storage limit, not a property of the tessellation. Geosonify represents the cell as <code>(face, x, y, order)</code> using JavaScript <strong>BigInt</strong> arbitrary-precision integers throughout the address layer - the hex, quaternary and base64 serializers, parent/child operations, and NUNIQ export all run in BigInt from order 1 - so there is no order-25/29 ceiling at all. The cap is a deliberate UI choice (order 73), not a numeric one.</p>
+<p>This is <strong>exact HEALPix, not a look-alike</strong>. The BigInt construction is a direct transcription of the reference NESTED index, and is verified <strong>bit-identical to the reference implementation (healpy) at every shared order</strong>; beyond the reference's ceiling it is the same construction continued. A side effect of the rewrite: codes at order 25 (the previous maximum) are now computed exactly, correcting a small last-digit error the earlier double-precision code produced for some locations at that single order. Codes at order 24 and below are unchanged.</p>
+<p>One honest boundary remains, and it is about the <em>input</em>, not the representation. Converting an ordinary latitude/longitude into a cell uses floating-point projection maths, which is reliable to roughly order 26 on Earth. Below that, a code generated from a tapped map point carries the safe coarse cell exactly, and the deeper digits are an exact refinement <em>within</em> that cell rather than information recovered from the tap. So an address is exactly representable and reproducible at any depth - but two people who tap the same spot may agree only down to the precision their coordinates actually carried. If you need a deep code to be reproduced exactly, share the code itself, not the coordinate it came from. This mirrors how every Geosonify code works: the code is the precise thing; the input that created it is only as precise as it was.</p>
+</div>
+</details>`
+          },
+
+          {
             id: 'why-hierarchy',
             q: 'Why is hierarchy useful?',
             a: `<p>Because both computers and humans benefit from it, though in different ways.</p>

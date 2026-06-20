@@ -57,35 +57,77 @@ const HealpixGrids = (function () {
   // can't actually distinguish, so 25 is the truthful limit. (Going
   // deeper needs a local-origin / extended-precision projection, a
   // separate piece of work — not just a wider integer type.)
-  const MAX_ORDER = 25;
+  // Address depth is limited only by BigInt (i.e. not at all in practice). We
+  // cap the UI/codec at a value far beyond any physical relevance: order 73 ≈
+  // 0.7 fm mean cell. The ADDRESS layer (digits/string ↔ BigInt face/x/y) is
+  // exact at every order here; only lat/lon INGESTION is precision-bounded by
+  // double-precision projection (~order 26 on Earth), which is the coordinate's
+  // limit, not the representation's. See bootstrap notes on nestIndex.
+  const MAX_ORDER = 73;
+  // Highest order at which the double-precision projection (lat/lon → f,x,y) is
+  // bit-exact. Beyond this, ingestion still produces a valid deeper address, but
+  // the trailing digits are a contained-cell refinement of the safe parent, not
+  // information recovered from the (double) input coordinate.
+  const PROJECTION_EXACT_ORDER = 26;
 
   // ── order ↔ nside, identity ───────────────────────────────
   function nsideOf(order) { return order2nside(order); }
 
-  // (lat,lon) → nested pixel index at this order
+  // (lat,lon) → nested pixel index (BigInt) at this order.
+  //
+  // For order ≤ PROJECTION_EXACT_ORDER this is the standard projection and is
+  // bit-identical to reference HEALPix. For deeper orders the fused index/​nside
+  // would overflow double precision, so we instead take the face and the
+  // fractional position (p,q) ∈ [0,1) within that face and read off `order`
+  // quaternary digits directly from the binary expansions of p and q. The first
+  // ~PROJECTION_EXACT_ORDER digits carry real input information; deeper digits
+  // are the contained-cell refinement permitted by the input's precision (a
+  // double carries ~52 fraction bits, and the projection itself is the binding
+  // limit). The result is always a VALID nested address that contains the input.
   function nestIndex(lat, lon, order) {
-    const nside = nsideOf(order);
     const theta = (90 - lat) * D2R;
     const phi = (((lon % 360) + 360) % 360) * D2R;
-    return ang2pix_nest(nside, theta, phi);
+    if (order <= PROJECTION_EXACT_ORDER) {
+      const nside = nsideOf(order);
+      return BigInt(ang2pix_nest(nside, theta, phi));
+    }
+    // Deep path: face + fractional p,q, then bit-extract `order` levels.
+    const z = Math.cos(theta);
+    const { t, u } = za2tu(z, phi);
+    const { f, p, q } = tu2fpq(t, u);
+    let px = p, qy = q;
+    let x = 0n, y = 0n;
+    for (let i = 0; i < order; i++) {
+      px *= 2; const xb = px >= 1 ? 1 : 0; if (xb) px -= 1;
+      qy *= 2; const yb = qy >= 1 ? 1 : 0; if (yb) qy -= 1;
+      x = (x << 1n) | BigInt(xb);
+      y = (y << 1n) | BigInt(yb);
+    }
+    return fxy2nest(order2nsideBig(order), f, x, y);
   }
 
   // nested index → {f, digits[]} : base pixel 0..11 and the order-long
   // array of quaternary digits (root-first).
+  // fused nested index (BigInt or Number) → {f, digits[]}
+  // Exact at any order: face = ipix / 4^order, then peel quaternary digits.
   function nestPath(ipix, order) {
-    const span = Math.pow(4, order);          // 4^order pixels per face
-    const f = Math.floor(ipix / span);
-    let rest = ipix - f * span;
+    const span = 1n << (2n * BigInt(order));   // 4^order, exact BigInt
+    let ip = BigInt(ipix);
+    const f = Number(ip / span);               // face 0..11, safe as Number
+    let rest = ip - BigInt(f) * span;
     const digits = new Array(order);
-    for (let i = order - 1; i >= 0; i--) { digits[i] = rest & 3; rest = Math.floor(rest / 4); }
+    for (let i = order - 1; i >= 0; i--) {
+      digits[i] = Number(rest & 3n);
+      rest >>= 2n;
+    }
     return { f, digits };
   }
 
-  // {f, digits[]} → nested index
+  // {f, digits[]} → fused nested index as BigInt (exact at any depth).
   function pathToNest(f, digits) {
-    let q = 0;
-    for (let i = 0; i < digits.length; i++) q = q * 4 + digits[i];
-    return f * Math.pow(4, digits.length) + q;
+    let q = 0n;
+    for (let i = 0; i < digits.length; i++) q = q * 4n + BigInt(digits[i]);
+    return BigInt(f) * (1n << (2n * BigInt(digits.length))) + q;
   }
 
   // nested index → [lat,lon] of the pixel centre
@@ -669,7 +711,14 @@ const HealpixGrids = (function () {
  */
 
 function order2nside(order) {
-    return 1 << order;
+    // Number nside is used ONLY by the double-precision projection, which is
+    // itself bounded to PROJECTION_EXACT_ORDER; 1<<order would overflow the
+    // 32-bit shift past order 30, so use 2**order (exact as a double to 2^53).
+    return Math.pow(2, order);
+}
+// BigInt nside for the address layer — exact at any order.
+function order2nsideBig(order) {
+    return 1n << BigInt(order);
 }
 function nside2order(nside) {
     return ilog2(nside);
@@ -1062,7 +1111,8 @@ function tu2fpq(t, u) {
 }
 // f, p, q -> nest index
 function fxy2nest(nside, f, x, y) {
-    return f * nside * nside + bit_combine(x, y);
+    const n = BigInt(nside);
+    return BigInt(f) * n * n + bit_combine(x, y);
 }
 // x = (...x2 x1 x0)_2 <- in binary
 // y = (...y2 y1 y0)_2
@@ -1076,10 +1126,14 @@ function fxy2nest(nside, f, x, y) {
 // JS's exact-integer range (2^53). Verified bit-identical to the
 // upstream formula for all x,y < 2^15, and exact round-trip to 2^26.
 function bit_combine(x, y) {
-    let p = 0;
-    for (let i = 0; i < 26; i++) {
-        if ((Math.floor(x / Math.pow(2, i)) & 1)) p += Math.pow(2, 2 * i);
-        if ((Math.floor(y / Math.pow(2, i)) & 1)) p += Math.pow(2, 2 * i + 1);
+    // Interleave x -> even bits, y -> odd bits (standard HEALPix NESTED Z-order).
+    // BigInt, looping over actual significant bits -> no order-26 ceiling.
+    let bx = BigInt(x), by = BigInt(y);
+    let p = 0n, shift = 0n;
+    while (bx > 0n || by > 0n) {
+        if (bx & 1n) p |= (1n << (2n * shift));
+        if (by & 1n) p |= (1n << (2n * shift + 1n));
+        bx >>= 1n; by >>= 1n; shift += 1n;
     }
     return p;
 }
@@ -1088,10 +1142,13 @@ function bit_combine(x, y) {
 // p = (...y2 x2 y1 x1 y0 x0)_2
 // returns x, y
 function bit_decombine(p) {
-    let x = 0, y = 0;
-    for (let i = 0; i < 26; i++) {
-        if (Math.floor(p / Math.pow(2, 2 * i)) & 1) x += Math.pow(2, i);
-        if (Math.floor(p / Math.pow(2, 2 * i + 1)) & 1) y += Math.pow(2, i);
+    // Inverse of bit_combine. Returns BigInt x,y.
+    let bp = BigInt(p);
+    let x = 0n, y = 0n, shift = 0n;
+    while (bp > 0n) {
+        if (bp & 1n) x |= (1n << shift);
+        if (bp & 2n) y |= (1n << shift);
+        bp >>= 2n; shift += 1n;
     }
     return { x, y };
 }
@@ -1099,13 +1156,16 @@ function bit_decombine(p) {
 // x: north east index in base pixel
 // y: north west index in base pixel
 function nest2fxy(nside, ipix) {
-    const nside2 = nside * nside;
-    const f = Math.floor(ipix / nside2); // base pixel index
-    const k = ipix % nside2; // nested pixel index in base pixel
-    const { x, y } = bit_decombine(k);
+    const n = BigInt(nside);
+    const nside2 = n * n;
+    const ip = BigInt(ipix);
+    const f = Number(ip / nside2); // base pixel index 0..11
+    const k = ip % nside2; // nested index within base pixel
+    const { x, y } = bit_decombine(k); // BigInt x,y
     return { f, x, y };
 }
 function fxy2ring(nside, f, x, y) {
+    x = Number(x); y = Number(y);
     const f_row = Math.floor(f / 4); // {0 .. 2}
     const f1 = f_row + 2; // {2 .. 4}
     const v = x + y;
@@ -1134,6 +1194,7 @@ function fxy2ring(nside, f, x, y) {
 }
 // f, x, y -> spherical projection
 function fxy2tu(nside, f, x, y) {
+    x = Number(x); y = Number(y);   // projection works in doubles (bounded order)
     const f_row = Math.floor(f / 4);
     const f1 = f_row + 2;
     const f2 = 2 * (f % 4) - (f_row % 2) + 1;
@@ -1147,13 +1208,12 @@ function fxy2tu(nside, f, x, y) {
 }
 function orderpix2uniq(order, ipix) {
     /**
-     * Pack `(order, ipix)` into a `uniq` integer.
-     *
-     * This HEALPix "unique identifier scheme" is starting to be used widely:
-     * - see section 3.2 in http://healpix.sourceforge.net/pdf/intro.pdf
-     * - see section 2.3.1 in http://ivoa.net/documents/MOC/
+     * Pack `(order, ipix)` into a `uniq` integer (HEALPix NUNIQ scheme).
+     * BigInt: 4*(4^order - 1) + ipix overflows Number past order ~15, and ipix
+     * is BigInt at depth, so the whole computation is BigInt.
      */
-    return 4 * ((1 << (2 * order)) - 1) + ipix;
+    const k = BigInt(order);
+    return 4n * ((1n << (2n * k)) - 1n) + BigInt(ipix);
 }
 function uniq2orderpix(uniq) {
     /**
