@@ -629,6 +629,7 @@
 <script src="js/ui/scanner-ui.js?v=20260109"></script>
 <script src="js/lib/gis-grids.js?v=20260613"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260619"></script>
+<script src="js/lib/geosonify-healpix-path.js?v=20260620"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/ui/card-renderer.js?v=20260616a"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -2324,8 +2325,16 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // obfuscated mode and the code is un-shifted, exactly like ?ao=… does.
         if (typeof HealpixGrids !== 'undefined') {
           for (const hk of ['hphex', 'hpquad', 'hp64']) {
-            if (paramName === hk || paramName === hk + 'o') {
-              return { grid: hk, obf: paramName.endsWith('o'), delta: false, rhumb: false };
+            // Flags after the scheme key: 'o' (obfuscated) and/or 'd' (delta path),
+            // in either order — same convention as the vocabulary grids.
+            if (paramName === hk) {
+              return { grid: hk, obf: false, delta: false, rhumb: false };
+            }
+            if (paramName.startsWith(hk)) {
+              const flags = paramName.slice(hk.length);
+              if (/^[od]+$/.test(flags)) {
+                return { grid: hk, obf: flags.includes('o'), delta: flags.includes('d'), rhumb: false };
+              }
             }
           }
         }
@@ -2668,6 +2677,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (gridDef && gridDef.healpix) {
         let param = gridDef.healpix;
         if (obfuscated) param = param + 'o';
+        if (isDelta) param = param + 'd';
         return param;
       }
 
@@ -3514,6 +3524,20 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         shapeLayer = L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }).addTo(map);
       } else {
         shapeLayer = L.polyline(densified, { color: _shapeColor(), weight: 3 }).addTo(map);
+      }
+
+      // HEALPix paths: overlay each vertex's curved equal-area cell so the
+      // discretisation is visible (matches the single-point hierarchical grid).
+      // Non-HEALPix cards clear any stale cell overlay from a previous path.
+      if (typeof MapManager !== 'undefined' && MapManager.drawHealpixPathCells) {
+        const _ak = (cardState && cardState.active) || null;
+        const _ad = _ak ? CARD_GRIDS[_ak] : null;
+        if (_ad && _ad.healpix) {
+          const _it = _ad.fixedIterations || cardState.iterations[_ak] || _ad.defaultIterations;
+          MapManager.drawHealpixPathCells(coords, _ad.healpix, _it);
+        } else if (MapManager.clearHealpixPathCells) {
+          MapManager.clearHealpixPathCells();
+        }
       }
       
       // Add start/end markers for open paths only (closed polygons just show centroid)
@@ -4828,6 +4852,17 @@ function encodeRaw(sol) {
       if (!gridDef) return points.slice(1).map(p => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('~');
       
       const iterations = gridDef.fixedIterations || cardState.iterations[gridKey] || gridDef.defaultIterations;
+
+      // ── HEALPix cards (hphex/hpquad/hp64) ─────────────────────
+      // HEALPix has its own engine: passphrase + obfuscation are applied
+      // structurally inside HealpixGrids.encode (not as a string step), and
+      // hpquad codes are folded (f3.123 → 3123) before gear-delta so the '.'
+      // doesn't collide with the path '~'. CardRenderer.encodeHealpixPath owns
+      // the passphrase/shuffle/obf state and returns the delta SUFFIX (the gear
+      // payload after the first code + '~'), matching the caller contract.
+      if (gridDef.healpix && typeof CardRenderer !== 'undefined' && CardRenderer.encodeHealpixPath) {
+        return CardRenderer.encodeHealpixPath(gridDef.healpix, points, iterations);
+      }
       
       const shuffled = getShuffledGrid(gridKey);
       if (!shuffled) return '';
@@ -6391,7 +6426,53 @@ function encodeRaw(sol) {
         // If we have delta format, decode it
         if (isDelta) {
           console.log('[geosonify] ENTERING delta decoding branch');
-          
+
+          // ── HEALPix short-circuit ─────────────────────────────
+          // HEALPix cards have their own engine; detecting the grid from code
+          // shape is unreliable (folded hpquad looks like hex). When the active
+          // card is HEALPix, decode the FULL gear string via CardRenderer and
+          // skip the vocabulary-grid per-code loop entirely.
+          const _activeKey = (cardState && cardState.active) || null;
+          const _activeDef = _activeKey ? CARD_GRIDS[_activeKey] : null;
+          if (_activeDef && _activeDef.healpix && typeof CardRenderer !== 'undefined' && CardRenderer.decodeHealpixPath) {
+            const hpIters = _activeDef.fixedIterations || cardState.iterations[_activeKey] || _activeDef.defaultIterations;
+            const fullWire = parts.join('~');
+            const hpCoords = CardRenderer.decodeHealpixPath(_activeDef.healpix, fullWire, hpIters);
+            if (hpCoords && hpCoords.length >= 2 && hpCoords.every(Boolean)) {
+              const isClosed = isClosedPolygon(hpCoords);
+              const centroid = calculateGeographicCentroid(hpCoords);
+              const pathRadio = document.querySelector('input[name="shapeMode"][value="pathpoly"]');
+              if (pathRadio) {
+                pathRadio.checked = true;
+                document.getElementById('graticuleInfo').style.display = 'none';
+                document.getElementById('pathpolyInfo').style.display = 'block';
+                document.getElementById('calcBtn').textContent = 'Create Path/Polygon';
+              }
+              lastSolution = {
+                type: isClosed ? 'polygon' : 'path',
+                centroid: centroid,
+                points: hpCoords,
+                segmentModes: null
+              };
+              drawPathPolyOnMap(hpCoords, centroid, isClosed, true, true, null);
+              let totalLength = 0;
+              for (let i = 0; i < hpCoords.length - 1; i++) {
+                totalLength += geodesicDistance(hpCoords[i], hpCoords[i + 1]);
+              }
+              document.getElementById('results').textContent =
+                `Type: ${isClosed ? 'Polygon' : 'Path'}\n` +
+                `Centroid: ${centroid[0].toFixed(6)}, ${centroid[1].toFixed(6)}\n` +
+                `Points: ${hpCoords.length}\n` +
+                `Total Length: ${totalLength < 1000 ? totalLength.toFixed(2) + ' m' : (totalLength/1000).toFixed(3) + ' km'}`;
+              document.getElementById('finalCoords').textContent =
+                hpCoords.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
+              updateCompactOutputs();
+              console.log('[geosonify] HEALPix path decoded:', hpCoords.length, 'points, closed=', isClosed);
+              return;
+            }
+            console.warn('[geosonify] HEALPix path decode returned no coords; falling through');
+          }
+
           // Try to detect grid from first code
           const gridKey = detectGridFromCode(firstPart);
           console.log('[geosonify] Delta decoding - detected grid:', gridKey, 'for code:', firstPart.substring(0, 15));
