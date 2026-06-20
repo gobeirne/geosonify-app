@@ -31,21 +31,22 @@
 (function (global) {
   'use strict';
 
-  function _resolve(globalName, modPath) {
-    if (global[globalName]) return global[globalName];
-    if (typeof require !== 'undefined') {
-      try {
-        const m = require(modPath);
-        // delta-gear assigns to global (window) rather than module.exports;
-        // after require, the global should be populated.
-        return global[globalName] || m;
-      } catch (e) { return null; }
-    }
+  // Resolve dependencies LAZILY at call time. NOTE: geosonify-healpix.js
+  // exposes its API as a top-level `const HealpixGrids` (script-scoped lexical
+  // binding), NOT as window.HealpixGrids — so we must reference the bare
+  // identifier, exactly as card-renderer.js does, rather than global.*.
+  // delta-gear.js does assign window.DeltaGear, but the bare identifier works
+  // for it too. Reading at call time avoids any script load-order dependence.
+  function _HP() {
+    if (typeof HealpixGrids !== 'undefined' && HealpixGrids) return HealpixGrids;
+    if (typeof require !== 'undefined') { try { return require('./geosonify-healpix.js'); } catch (e) {} }
     return null;
   }
-  const HP = _resolve('HealpixGrids', './geosonify-healpix.js');
-  const DG = _resolve('DeltaGear',    './delta-gear.js');
-  if (!HP || !DG) { try { console.warn('[healpix-path] missing HealpixGrids or DeltaGear'); } catch (e) {} }
+  function _DG() {
+    if (typeof DeltaGear !== 'undefined' && DeltaGear) return DeltaGear;
+    if (typeof require !== 'undefined') { try { require('./delta-gear.js'); } catch (e) {} return (typeof DeltaGear !== 'undefined') ? DeltaGear : (global.DeltaGear || null); }
+    return null;
+  }
 
   const FACE12 = '0123456789AB';
 
@@ -71,26 +72,33 @@
 
   // ── per-card point <-> wire-code ──────────────────────────
   // wire code = the string we delta. Self-contained, collision-free.
+  // Returns null (never throws) if the HEALPix engine isn't available, so a
+  // transient missing dependency degrades gracefully instead of breaking the
+  // whole compact-output panel.
   function pointToWire(schemeKey, lat, lon, order, opt) {
+    const hp = _HP();
+    if (!hp) return null;
     if (schemeKey === 'hpquad') {
-      const q = HP.encode('hpquad', lat, lon, order, opt || {}); // 'f3.113…'
+      const q = hp.encode('hpquad', lat, lon, order, opt || {}); // 'f3.113…'
       return foldQuad(q);
     }
     // hphex/hp64: folded public form (NO separateFace) → self-contained.
     // Pass opt WITHOUT separateFace so the face folds in (hex) / leads (b64).
     const o = Object.assign({}, opt || {});
     delete o.separateFace;
-    return HP.encode(schemeKey, lat, lon, order, o);
+    return hp.encode(schemeKey, lat, lon, order, o);
   }
   function wireToPoint(schemeKey, wire, order, opt) {
+    const hp = _HP();
+    if (!hp) return null;
     if (schemeKey === 'hpquad') {
       const q = unfoldQuad(wire);
       if (!q) return null;
-      return HP.decode('hpquad', q, order, opt || {});
+      return hp.decode('hpquad', q, order, opt || {});
     }
     const o = Object.assign({}, opt || {});
     delete o.separateFace;
-    return HP.decode(schemeKey, wire, order, o);
+    return hp.decode(schemeKey, wire, order, o);
   }
 
   // ── points -> array of wire codes (and back) ──────────────
@@ -110,9 +118,11 @@
   // a '@k' can be reintroduced later if exact cold-open ever matters.
   function encodePath(schemeKey, points, order, opt) {
     if (!points || !points.length) return '';
+    const dg = _DG();
+    if (!dg) return null;
     const codes = pointsToWire(schemeKey, points, order, opt);
     if (codes.some(c => c == null)) return null;
-    return DG.encodeGearPath(codes);              // forced explicit-gear, no suffix
+    return dg.encodeGearPath(codes);              // forced explicit-gear, no suffix
   }
 
   function decodePath(schemeKey, wire, orderHint, opt) {
@@ -131,7 +141,9 @@
         if (folded) str = folded + tail;
       }
     }
-    const codes = DG.decodeGearPath(str);
+    const dg = _DG();
+    if (!dg) return [];
+    const codes = dg.decodeGearPath(str);
     if (schemeKey === 'hpquad' && order == null && codes.length) {
       // self-describing: folded code length minus 1 (the face char) = order
       order = Math.max(0, codes[0].length - 1);
