@@ -255,7 +255,7 @@
   
   let cardState = {
     visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64', 'hpmatrix'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -532,6 +532,40 @@
         cardState.iterations[key] = defs[key].defaultIterations;
       }
       if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+
+    // HEALPix Matrix (hpmatrix): the SAME hphex code, rendered as a Data Matrix
+    // barcode instead of text. It reuses the hphex engine wholesale via
+    // `healpix:'hphex'` (so passphrase + obfuscation + encode/decode all work
+    // identically) and `display:'datamatrix'` (so every existing
+    // display==='datamatrix' render/scan path picks it up). hphex is case-free
+    // and URL-safe, so it sits cleanly in the symbol with no case hazard.
+    //
+    // EVEN ORDERS ONLY. hphex left-pads when packing, so an ODD order produces
+    // the same character count as the next even order — the bare code would be
+    // length-ambiguous and need an "@k" suffix to disambiguate on scan. Because
+    // this is its own card, we sidestep that entirely: the ±-clicker steps in
+    // twos (iterStep:2) over even bounds, so every code is even-length and fully
+    // self-describing. inferOrder alone recovers the order on scan — no suffix,
+    // no label/code desync, clicker value always equals the encoded order.
+    if (defs.hphex) {
+      CARD_GRIDS.hpmatrix = {
+        name: 'HEALPix Matrix',
+        healpix: 'hphex',
+        grid: null,
+        defaultIterations: 22,           // even → 1.6 m
+        minIterations: 2,
+        maxIterations: 24,               // largest even ≤ hphex max (25)
+        iterStep: 2,                     // ±-clicker moves in twos (even only)
+        display: 'datamatrix',
+        link: defs.hphex.link,
+        isEmoji: false,
+        curvedCell: true
+      };
+      if (cardState.iterations.hpmatrix === undefined) {
+        cardState.iterations.hpmatrix = CARD_GRIDS.hpmatrix.defaultIterations;
+      }
+      if (!cardState.order.includes('hpmatrix')) cardState.order.push('hpmatrix');
     }
   }
 
@@ -1716,6 +1750,46 @@
       }
     }
 
+    const gridDefEarly = CARD_GRIDS[gridKey];
+
+    // ── HEALPix Matrix (hpmatrix) ─────────────────────────────
+    // The scanned symbol carries a plain hphex string (face nibble 0–B + hex
+    // levels). It is NOT the byte model below: hphex codes are legitimately
+    // odd-length (odd orders), and order ≠ length/2 — it's recovered by
+    // HealpixGrids.inferOrder. So we skip the even-nibble drop and the ÷2
+    // mapping entirely and decode the raw code at its own precision, with the
+    // active passphrase + obfuscation (decodeCardCoordinate handles those via
+    // the card's `healpix` flag). A scanned symbol is treated as HEALPix purely
+    // because THIS card's scanner produced it; the symbol itself is unmarked.
+    if (gridDefEarly && gridDefEarly.healpix && typeof HealpixGrids !== 'undefined') {
+      // hphex alphabet is 0-9 A-B (case-free). Codes from this card are always
+      // EVEN order (even-only ±-clicker), so they're even-length and fully
+      // self-describing — inferOrder alone recovers the order, no "@k" suffix.
+      // Strip scanner noise / quiet-zone artefacts down to the hex run.
+      const raw = String(rawText).toUpperCase();
+      const m = raw.match(/[0-9A-F]+/);
+      let code = m ? m[0] : '';
+      if (!code) { showToast('No HEALPix code found in symbol'); return; }
+      let order;
+      try { order = HealpixGrids.inferOrder(gridDefEarly.healpix, code); }
+      catch (e) { order = null; }
+      if (!order || order < 1) { showToast('Code too short to decode'); return; }
+      const maxK = gridDefEarly.maxIterations || 24;
+      if (order > maxK) order = maxK;
+      const result = decodeCardCoordinate(gridKey, code, order);
+      if (result) {
+        setCoordinate(result[0], result[1]);
+        const map = callbacks.getMap ? callbacks.getMap() : null;
+        if (map) map.setView(result, 16, { animate: true });
+        const prec = getPrecisionText(gridKey, order);
+        showToast(prec ? `✓ Decoded — ${prec}` : '✓ Decoded', 'success');
+        showDecodeBanner(gridKey, code, result[0], result[1]);
+      } else {
+        showToast('Invalid code (wrong passphrase?)');
+      }
+      return;
+    }
+
     // Normalize
     hex = hex.toUpperCase().replace(/[^0-9A-F]/g, '');
     // Drop a dangling nibble — each cell is exactly 2 hex chars
@@ -1768,7 +1842,7 @@
    */
   function showBarcodeScanModal(mode, gridKey) {
     console.log('[CardRenderer] showBarcodeScanModal called:', mode, gridKey);
-    const isDataMatrix = gridKey === 'datamatrix';
+    const isDataMatrix = (gridKey === 'datamatrix' || gridKey === 'hpmatrix');
     const cardName = CARD_GRIDS[gridKey]?.name || gridKey;
     
     const modal = document.createElement('div');
@@ -2605,7 +2679,8 @@
       if (!isFixed) {
         card.querySelector('.minus-btn')?.addEventListener('click', () => {
           const min = gridDef.minIterations || 1;
-          cardState.iterations[gridKey] = Math.max(min, (cardState.iterations[gridKey] || gridDef.defaultIterations) - 1);
+          const step = gridDef.iterStep || 1;
+          cardState.iterations[gridKey] = Math.max(min, (cardState.iterations[gridKey] || gridDef.defaultIterations) - step);
           saveCardState();
           // Persist iterations for custom grids
           if (gridDef.isCustom && typeof CustomGridLoader !== 'undefined' && CustomGridLoader.updateStoredIterations) {
@@ -2617,7 +2692,8 @@
           }
         });
         card.querySelector('.plus-btn')?.addEventListener('click', () => {
-          const newIter = (cardState.iterations[gridKey] || gridDef.defaultIterations) + 1;
+          const step = gridDef.iterStep || 1;
+          const newIter = (cardState.iterations[gridKey] || gridDef.defaultIterations) + step;
           const max = gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations;
           cardState.iterations[gridKey] = max ? Math.min(max, newIter) : newIter;
           saveCardState();
@@ -4940,42 +5016,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       const rawResult = [(latMin + latMax) / 2, (lonMin + lonMax) / 2];
       console.log('[decodeRaw] result for', code, ':', rawResult);
       return rawResult;
-    },
-
-    /**
-     * Encode a HEALPix multi-point path to a delta SUFFIX (gear payload after
-     * the first code + '~'). Passphrase + obfuscation are applied structurally
-     * inside HealpixGrids; hpquad is folded. Returns '' on failure.
-     * The caller prepends the first code itself (anchor encoded separately).
-     */
-    encodeHealpixPath(healpixKey, points, iterations) {
-      if (typeof HealpixPath === 'undefined' || !points || points.length < 2) return '';
-      const opt = {};
-      if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      if (obfuscated) { opt.obf = true; }
-      const full = HealpixPath.encodePath(healpixKey, points, iterations, opt);
-      if (!full) return '';
-      const firstWire = HealpixPath.pointToWire(healpixKey, points[0][0], points[0][1], iterations, opt);
-      if (firstWire == null) return '';
-      return full.length > firstWire.length ? full.substring(firstWire.length + 1) : '';
-    },
-
-    /**
-     * Decode a HEALPix multi-point path. `fullWire` is the COMPLETE gear string
-     * (first code + '~' + gear payload). Returns array of [lat,lon] or null.
-     * Obfuscation/passphrase handled inside HealpixGrids; hpquad unfolded.
-     */
-    decodeHealpixPath(healpixKey, fullWire, iterations) {
-      if (typeof HealpixPath === 'undefined' || !fullWire) return null;
-      const opt = {};
-      if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      if (obfuscated) { opt.obf = true; }
-      try {
-        return HealpixPath.decodePath(healpixKey, fullWire, iterations, opt);
-      } catch (e) {
-        console.warn('[card-renderer] decodeHealpixPath failed:', e);
-        return null;
-      }
     },
     
     /**
