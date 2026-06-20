@@ -4941,6 +4941,42 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       console.log('[decodeRaw] result for', code, ':', rawResult);
       return rawResult;
     },
+
+    /**
+     * Encode a HEALPix multi-point path to a delta SUFFIX (gear payload after
+     * the first code + '~'). Passphrase + obfuscation are applied structurally
+     * inside HealpixGrids; hpquad is folded. Returns '' on failure.
+     * The caller prepends the first code itself (anchor encoded separately).
+     */
+    encodeHealpixPath(healpixKey, points, iterations) {
+      if (typeof HealpixPath === 'undefined' || !points || points.length < 2) return '';
+      const opt = {};
+      if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+      if (obfuscated) { opt.obf = true; }
+      const full = HealpixPath.encodePath(healpixKey, points, iterations, opt);
+      if (!full) return '';
+      const firstWire = HealpixPath.pointToWire(healpixKey, points[0][0], points[0][1], iterations, opt);
+      if (firstWire == null) return '';
+      return full.length > firstWire.length ? full.substring(firstWire.length + 1) : '';
+    },
+
+    /**
+     * Decode a HEALPix multi-point path. `fullWire` is the COMPLETE gear string
+     * (first code + '~' + gear payload). Returns array of [lat,lon] or null.
+     * Obfuscation/passphrase handled inside HealpixGrids; hpquad unfolded.
+     */
+    decodeHealpixPath(healpixKey, fullWire, iterations) {
+      if (typeof HealpixPath === 'undefined' || !fullWire) return null;
+      const opt = {};
+      if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+      if (obfuscated) { opt.obf = true; }
+      try {
+        return HealpixPath.decodePath(healpixKey, fullWire, iterations, opt);
+      } catch (e) {
+        console.warn('[card-renderer] decodeHealpixPath failed:', e);
+        return null;
+      }
+    },
     
     /**
      * Set passphrase for grid shuffling
