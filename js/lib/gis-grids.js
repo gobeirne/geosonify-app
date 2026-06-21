@@ -878,6 +878,7 @@ const GISGrids = (function () {
     dialog.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:92vw;width:440px;max-height:82vh;overflow-y:auto;color:white;';
     dialog.innerHTML = `
       <h3 style="margin:0 0 6px;font-size:18px;color:#00bcd4;">${data.title}${data.subtitle === '' ? '' : ' — ' + (data.subtitle || 'resolution levels')}</h3>
+      ${data.uncertaintyLine ? `<div style="margin:0 0 12px;padding:9px 12px;background:rgba(255,193,7,0.10);border:1px solid rgba(255,193,7,0.35);border-radius:8px;font-size:12px;color:#ffd54f;line-height:1.5;">📍 ${data.uncertaintyLine}</div>` : ''}
       ${data.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px;line-height:1.5;">${data.note}</div>` : ''}
       <table style="width:100%;border-collapse:collapse;font-size:13px;background:#2c2c2e;border-radius:8px;overflow:hidden;">
         ${tableHeader}
@@ -953,6 +954,7 @@ const GISGrids = (function () {
       note: SCHEME_NOTES[schemeKey] || '',
       levels,
       detail,
+      uncertaintyLine: options.uncertaintyLine || null,
       compareLine: options.compareLine || null
     });
   }

@@ -27,10 +27,17 @@
   const Decimal =
     global.Decimal ||
     (typeof require !== 'undefined' ? require('decimal.js') : null);
-  const HealpixGrids =
-    global.HealpixGrids ||
-    (typeof require !== 'undefined' ? (function(){try{return require('./geosonify-healpix.js');}catch(e){return null;}})() : null);
-  const api = factory(Decimal, HealpixGrids, global);
+  // HealpixGrids is declared as a top-level `const` in geosonify-healpix.js,
+  // which is NOT a property of window — so global.HealpixGrids is undefined in
+  // the browser. Resolve it via the scope chain (bare identifier) instead, with
+  // a TDZ-safe probe, falling back to window then require (Node).
+  let HG = null;
+  try { if (typeof HealpixGrids !== 'undefined') HG = HealpixGrids; } catch (e) { /* not in scope */ }
+  if (!HG && typeof global !== 'undefined' && global.HealpixGrids) HG = global.HealpixGrids;
+  if (!HG && typeof require !== 'undefined') {
+    try { HG = require('./geosonify-healpix.js'); } catch (e) { HG = null; }
+  }
+  const api = factory(Decimal, HG, global);
   global.GeoPrecision = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : this, function (Decimal, HealpixGrids, global) {

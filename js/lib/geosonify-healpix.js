@@ -654,7 +654,8 @@ const HealpixGrids = (function () {
     const baseNote = SCHEME_NOTES[schemeKey] || '';
     GISGrids.renderResolutionPopup({
       title: s.name,
-      note: options.uncertaintyLine ? (baseNote ? baseNote + '\n\n' + options.uncertaintyLine : options.uncertaintyLine) : baseNote,
+      note: baseNote,
+      uncertaintyLine: options.uncertaintyLine || null,
       levels,
       detail: corners4 ? {
         corners: corners4,
