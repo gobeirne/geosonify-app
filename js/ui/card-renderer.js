@@ -1234,12 +1234,22 @@
       const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
         ? GeosonifyMain.getExact
         : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
-      if (!getEx) return null;
+      if (!getEx) {
+        console.warn('[provenance] ℹ️ open: GeosonifyMain.getExact not available — uncertainty line skipped.');
+        return null;
+      }
       const pt = getEx();
-      if (!pt || typeof pt.uncertaintyText !== 'function') return null;
+      if (!pt || typeof pt.uncertaintyText !== 'function') {
+        console.warn('[provenance] ℹ️ open: no exact point stored yet (drop a pin / get GPS first).');
+        return null;
+      }
       const txt = pt.uncertaintyText();
+      console.log('%c[provenance]%c ℹ️ uncertainty line:', 'color:#ffd54f;font-weight:bold', 'color:inherit', txt);
       return txt ? ('Measurement uncertainty: ' + txt) : null;
-    } catch (e) { return null; }
+    } catch (e) {
+      console.warn('[provenance] buildUncertaintyLine error:', e && e.message);
+      return null;
+    }
   }
 
   function getPrecisionText(gridKey, iterations) {
