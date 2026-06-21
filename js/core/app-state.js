@@ -23,10 +23,20 @@
   // ============== STATE STRUCTURE ==============
   
   const DEFAULT_STATE = {
-    // Current coordinate (the "pin" location)
+    // Current coordinate (the "pin" location) — LOSSY derived double view that
+    // every legacy consumer reads. The lossless source of truth is `exact`.
     coordinate: {
       lat: null,
       lon: null
+    },
+
+    // Source of truth: the exact point (lossless rational lat/lon + provenance).
+    // Stored as decimal strings so it survives save/reload. meta carries
+    // uncertaintyMetres + basis (the measurement uncertainty shown in the ℹ️ box).
+    exact: {
+      latStr: null,
+      lonStr: null,
+      meta: null         // { source, depth, uncertaintyMetres, basis, scheme }
     },
     
     // Card system
