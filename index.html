@@ -629,7 +629,8 @@
 <script src="js/ui/scanner-ui.js?v=20260109"></script>
 <script src="js/lib/gis-grids.js?v=20260613"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260619"></script>
-<script src="js/lib/geosonify-healpix-path.js?v=20260620"></script>
+<script src="js/lib/decimal.min.js?v=20260622"></script>
+<script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/ui/card-renderer.js?v=20260616a"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -1566,6 +1567,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                   const lat = position.coords.latitude;
                   const lon = position.coords.longitude;
                   currentCardCoord = { lat, lon };
+                  // Stamp the device's own fused accuracy (GPS/WiFi/cell blended)
+                  // as the source-of-truth provenance, so the ℹ️ box can show
+                  // Measurement uncertainty. coords.accuracy is the 68% radius (m).
+                  try {
+                    if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.setCoordinate) {
+                      GeosonifyMain.setCoordinate(lat, lon, {
+                        accuracyMetres: position.coords.accuracy,
+                        basis: 'device fix ±' + Math.round(position.coords.accuracy) + ' m'
+                      });
+                    }
+                  } catch (e) { /* best-effort provenance */ }
                   updateCoordDisplay();
                   updateMapPin();
                   renderCards();
@@ -1700,6 +1712,20 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Add initial GPS pin marker (only if we have coords)
       if (!hasURLParams) updateMapPin();
 
+      // Stamp the single "where am I" dot with a measurement uncertainty derived
+      // from the current map zoom (metres-per-pixel, careful placement = ~1px).
+      // ONLY for the single-point pin — shape vertices are construction geometry
+      // and are deliberately NOT stamped (uncertainty is a property of a located
+      // point, not of a polygon's corners). Routes through setCoordinate so the
+      // exact-point source of truth carries the provenance for the ℹ️ box.
+      function stampSinglePin(lat, lon) {
+        try {
+          if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.setCoordinate && map) {
+            GeosonifyMain.setCoordinate(lat, lon, { zoom: map.getZoom(), pixels: 1 });
+          }
+        } catch (e) { /* best-effort provenance */ }
+      }
+
       map.on('click', function(e) {
         // Display (viewer) mode is read-only: clicking must not clear the
         // shape, drop a pin, or rewrite the URL. Pan/zoom remain free.
@@ -1748,6 +1774,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             const normLng = normalizeLongitude(pos.lng);
             _suppressURLUpdate = false;
             currentCardCoord = { lat: pos.lat, lon: normLng };
+            stampSinglePin(pos.lat, normLng);
             lastSolution = {
               type: 'point',
               centroid: [pos.lat, normLng],
@@ -1762,6 +1789,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           
           // Update cards display
           currentCardCoord = { lat: e.latlng.lat, lon: normalizedLng };
+          stampSinglePin(e.latlng.lat, normalizedLng);
           updateCoordDisplay();
           renderCards();
           
@@ -2325,16 +2353,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // obfuscated mode and the code is un-shifted, exactly like ?ao=… does.
         if (typeof HealpixGrids !== 'undefined') {
           for (const hk of ['hphex', 'hpquad', 'hp64']) {
-            // Flags after the scheme key: 'o' (obfuscated) and/or 'd' (delta path),
-            // in either order — same convention as the vocabulary grids.
-            if (paramName === hk) {
-              return { grid: hk, obf: false, delta: false, rhumb: false };
-            }
-            if (paramName.startsWith(hk)) {
-              const flags = paramName.slice(hk.length);
-              if (/^[od]+$/.test(flags)) {
-                return { grid: hk, obf: flags.includes('o'), delta: flags.includes('d'), rhumb: false };
-              }
+            if (paramName === hk || paramName === hk + 'o') {
+              return { grid: hk, obf: paramName.endsWith('o'), delta: false, rhumb: false };
             }
           }
         }
@@ -2677,7 +2697,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (gridDef && gridDef.healpix) {
         let param = gridDef.healpix;
         if (obfuscated) param = param + 'o';
-        if (isDelta) param = param + 'd';
         return param;
       }
 
@@ -4838,17 +4857,6 @@ function encodeRaw(sol) {
       if (!gridDef) return points.slice(1).map(p => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('~');
       
       const iterations = gridDef.fixedIterations || cardState.iterations[gridKey] || gridDef.defaultIterations;
-
-      // ── HEALPix cards (hphex/hpquad/hp64) ─────────────────────
-      // HEALPix has its own engine: passphrase + obfuscation are applied
-      // structurally inside HealpixGrids.encode (not as a string step), and
-      // hpquad codes are folded (f3.123 → 3123) before gear-delta so the '.'
-      // doesn't collide with the path '~'. CardRenderer.encodeHealpixPath owns
-      // the passphrase/shuffle/obf state and returns the delta SUFFIX (the gear
-      // payload after the first code + '~'), matching the caller contract.
-      if (gridDef.healpix && typeof CardRenderer !== 'undefined' && CardRenderer.encodeHealpixPath) {
-        return CardRenderer.encodeHealpixPath(gridDef.healpix, points, iterations);
-      }
       
       const shuffled = getShuffledGrid(gridKey);
       if (!shuffled) return '';
@@ -6412,53 +6420,7 @@ function encodeRaw(sol) {
         // If we have delta format, decode it
         if (isDelta) {
           console.log('[geosonify] ENTERING delta decoding branch');
-
-          // ── HEALPix short-circuit ─────────────────────────────
-          // HEALPix cards have their own engine; detecting the grid from code
-          // shape is unreliable (folded hpquad looks like hex). When the active
-          // card is HEALPix, decode the FULL gear string via CardRenderer and
-          // skip the vocabulary-grid per-code loop entirely.
-          const _activeKey = (cardState && cardState.active) || null;
-          const _activeDef = _activeKey ? CARD_GRIDS[_activeKey] : null;
-          if (_activeDef && _activeDef.healpix && typeof CardRenderer !== 'undefined' && CardRenderer.decodeHealpixPath) {
-            const hpIters = _activeDef.fixedIterations || cardState.iterations[_activeKey] || _activeDef.defaultIterations;
-            const fullWire = parts.join('~');
-            const hpCoords = CardRenderer.decodeHealpixPath(_activeDef.healpix, fullWire, hpIters);
-            if (hpCoords && hpCoords.length >= 2 && hpCoords.every(Boolean)) {
-              const isClosed = isClosedPolygon(hpCoords);
-              const centroid = calculateGeographicCentroid(hpCoords);
-              const pathRadio = document.querySelector('input[name="shapeMode"][value="pathpoly"]');
-              if (pathRadio) {
-                pathRadio.checked = true;
-                document.getElementById('graticuleInfo').style.display = 'none';
-                document.getElementById('pathpolyInfo').style.display = 'block';
-                document.getElementById('calcBtn').textContent = 'Create Path/Polygon';
-              }
-              lastSolution = {
-                type: isClosed ? 'polygon' : 'path',
-                centroid: centroid,
-                points: hpCoords,
-                segmentModes: null
-              };
-              drawPathPolyOnMap(hpCoords, centroid, isClosed, true, true, null);
-              let totalLength = 0;
-              for (let i = 0; i < hpCoords.length - 1; i++) {
-                totalLength += geodesicDistance(hpCoords[i], hpCoords[i + 1]);
-              }
-              document.getElementById('results').textContent =
-                `Type: ${isClosed ? 'Polygon' : 'Path'}\n` +
-                `Centroid: ${centroid[0].toFixed(6)}, ${centroid[1].toFixed(6)}\n` +
-                `Points: ${hpCoords.length}\n` +
-                `Total Length: ${totalLength < 1000 ? totalLength.toFixed(2) + ' m' : (totalLength/1000).toFixed(3) + ' km'}`;
-              document.getElementById('finalCoords').textContent =
-                hpCoords.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
-              updateCompactOutputs();
-              console.log('[geosonify] HEALPix path decoded:', hpCoords.length, 'points, closed=', isClosed);
-              return;
-            }
-            console.warn('[geosonify] HEALPix path decode returned no coords; falling through');
-          }
-
+          
           // Try to detect grid from first code
           const gridKey = detectGridFromCode(firstPart);
           console.log('[geosonify] Delta decoding - detected grid:', gridKey, 'for code:', firstPart.substring(0, 15));
