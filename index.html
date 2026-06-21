@@ -1205,6 +1205,7 @@
       if (typeof GPSTracking !== 'undefined') {
         GPSTracking.stopTracking();
       }
+      window._trackProvLogged = false;  // next Track session logs its first fix
     }
 
     // ============== ORIGINAL APP CODE ==============
@@ -1696,6 +1697,26 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           
           onPosition: (lat, lon, accuracy) => {
             currentCardCoord = { lat, lon };
+            // Stamp provenance from the device's own accuracy on EVERY tracking
+            // fix (Track uses watchPosition — a separate path from the one-shot
+            // getCurrentPosition handler). Log the FIRST fix loudly so you can
+            // see it's calculating; keep subsequent watch-stream fixes quiet to
+            // avoid console spam (the exact point still updates each fix).
+            try {
+              if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.setCoordinate) {
+                const firstTrackFix = !window._trackProvLogged;
+                window._trackProvLogged = true;
+                GeosonifyMain.setCoordinate(lat, lon, {
+                  accuracyMetres: accuracy,
+                  basis: 'device fix ±' + Math.round(accuracy) + ' m',
+                  quiet: !firstTrackFix
+                });
+                if (firstTrackFix) {
+                  console.log('%c[provenance]%c Track started — stamping device accuracy each fix (further fixes quiet). First: \u00b1' + Math.round(accuracy) + ' m',
+                    'color:#ffd54f;font-weight:bold', 'color:inherit');
+                }
+              }
+            } catch (e) { /* best-effort provenance */ }
             updateCoordDisplay();
             MapManager.updatePin(lat, lon, { isTracking: true });
             renderCards();
