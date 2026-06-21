@@ -258,8 +258,29 @@
               lonStr: pt.lon.toString(),
               meta: pt.meta || {}
             });
+            // Verbose: prove provenance is being calculated (not on drag spam —
+            // callers pass meta.quiet for high-frequency updates like dragging).
+            if (!(meta && meta.quiet)) {
+              const u = pt.meta && pt.meta.uncertaintyMetres;
+              console.log(
+                '%c[provenance]%c stamped exact point',
+                'color:#ffd54f;font-weight:bold', 'color:inherit',
+                {
+                  lat: lat, lon: lon,
+                  uncertainty: pt.uncertaintyText ? pt.uncertaintyText() : (u + ' m'),
+                  basis: pt.meta && pt.meta.basis,
+                  source: pt.meta && pt.meta.source,
+                  exactLat: pt.lat.toString().slice(0, 24) + '…'
+                }
+              );
+            }
+          } else {
+            console.warn('[provenance] GeoPrecision unavailable — no exact point stored. ' +
+              'Check decimal.min.js + geosonify-precision.js are loaded before main.js.');
           }
-        } catch (e) { /* exact point is best-effort; double always set */ }
+        } catch (e) {
+          console.warn('[provenance] exact-point stamp failed:', e && e.message);
+        }
       }
       
       // Also update legacy global for backwards compatibility
@@ -311,6 +332,25 @@
   // ============== EXPORT ==============
 
   global.GeosonifyMain = Main;
+
+  // One-time wiring check so you can see in the console whether the precision
+  // stack actually loaded (the thing that powers provenance + ℹ️ uncertainty).
+  setTimeout(function () {
+    try {
+      const gp = (typeof GeoPrecision !== 'undefined') && !GeoPrecision._unavailable;
+      const dec = (typeof Decimal !== 'undefined');
+      const hpx = (typeof HealpixGrids !== 'undefined');
+      console.log(
+        '%c[geosonify precision]%c ' +
+        'Decimal=' + (dec ? '\u2713' : '\u2717') + '  ' +
+        'GeoPrecision=' + (gp ? '\u2713 live' : '\u2717 MISSING') + '  ' +
+        'HealpixGrids=' + (hpx ? '\u2713' : '\u2717') + '  ' +
+        'getExact=' + (typeof Main.getExact === 'function' ? '\u2713' : '\u2717'),
+        'color:#4fc3f7;font-weight:bold', 'color:inherit'
+      );
+      if (!gp) console.warn('[geosonify precision] GeoPrecision NOT live \u2014 provenance/uncertainty will not appear. Check load order / missing files.');
+    } catch (e) { /* ignore */ }
+  }, 0);
   
   // Also expose convenient shortcuts
   global.geosonify = {
