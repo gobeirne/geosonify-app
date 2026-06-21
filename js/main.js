@@ -236,10 +236,30 @@
      * Set coordinate (updates state and triggers UI updates)
      * @param {number} lat
      * @param {number} lon
+     * @param {object} [meta] optional provenance for the exact-point truth:
+     *        { accuracyMetres } GPS · { zoom, pixels } map pin ·
+     *        { exactPoint } a pre-built GeoPrecision.ExactPoint (from a code/scan)
+     *        When omitted, precision is derived from the lat/lon decimals (typed).
      */
-    setCoordinate(lat, lon) {
+    setCoordinate(lat, lon, meta) {
       if (typeof AppState !== 'undefined') {
         AppState.set('coordinate', { lat, lon });
+
+        // Source-of-truth: store an exact point with provenance when the
+        // precision module is available. The double above stays as the derived
+        // view every legacy consumer reads; this is the lossless truth + its
+        // measurement uncertainty, used by the ℹ️ box and cross-card movement.
+        try {
+          if (typeof GeoPrecision !== 'undefined' && !GeoPrecision._unavailable) {
+            let pt = (meta && meta.exactPoint) ? meta.exactPoint : null;
+            if (!pt) pt = GeoPrecision.fromLatLon(lat, lon, meta || {});
+            AppState.set('exact', {
+              latStr: pt.lat.toString(),
+              lonStr: pt.lon.toString(),
+              meta: pt.meta || {}
+            });
+          }
+        } catch (e) { /* exact point is best-effort; double always set */ }
       }
       
       // Also update legacy global for backwards compatibility
@@ -260,6 +280,21 @@
         return global.currentCardCoord;
       }
       return null;
+    },
+
+    /**
+     * Get the source-of-truth exact point (lossless, with provenance/​uncertainty),
+     * rehydrated as a GeoPrecision.ExactPoint. Returns null if unavailable.
+     * Use this for cross-card movement, distance, conversion, and the ℹ️ box —
+     * NOT getCoordinate(), which is the lossy derived double for display/export.
+     */
+    getExact() {
+      if (typeof AppState === 'undefined' || typeof GeoPrecision === 'undefined') return null;
+      const ex = AppState.get('exact');
+      if (!ex || ex.latStr == null) return null;
+      try {
+        return GeoPrecision.makeExactPoint(ex.latStr, ex.lonStr, ex.meta || {});
+      } catch (e) { return null; }
     }
   };
 
@@ -283,6 +318,7 @@
     toggleAudio: () => Main.toggleAudio(),
     setCoordinate: (lat, lon) => Main.setCoordinate(lat, lon),
     getCoordinate: () => Main.getCoordinate(),
+    getExact: () => Main.getExact(),
     get state() { return typeof AppState !== 'undefined' ? AppState : null; }
   };
 
