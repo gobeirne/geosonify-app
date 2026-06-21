@@ -529,11 +529,20 @@ const HealpixGrids = (function () {
   function precisionText(schemeKey, iterations, coord) {
     const k = clampOrder(iterations);
     const d = cellMetres(k);
+    // Full unit ladder from km down to attometre, so deep cells report a real
+    // measurement instead of flooring to "0.0 µm". Picks the unit whose value
+    // lands in a readable range; sub-attometre falls back to scientific metres.
     const f = m => {
-      if (m >= 1000) return (m / 1000).toFixed(1) + ' km';
-      if (m >= 1) return m.toFixed(1) + ' m';
-      if (m >= 0.001) return (m * 1000).toFixed(1) + ' mm';
-      return (m * 1e6).toFixed(1) + ' µm';
+      if (!isFinite(m) || m <= 0) return '0';
+      if (m >= 1000)   return (m / 1000).toFixed(1) + ' km';
+      if (m >= 1)      return m.toFixed(1) + ' m';
+      if (m >= 1e-3)   return (m * 1e3).toFixed(1) + ' mm';
+      if (m >= 1e-6)   return (m * 1e6).toFixed(1) + ' µm';
+      if (m >= 1e-9)   return (m * 1e9).toFixed(1) + ' nm';
+      if (m >= 1e-12)  return (m * 1e12).toFixed(1) + ' pm';
+      if (m >= 1e-15)  return (m * 1e15).toFixed(1) + ' fm';
+      if (m >= 1e-18)  return (m * 1e18).toFixed(1) + ' am';
+      return m.toExponential(1) + ' m';
     };
     // equal-area: a single honest figure, no latitude term
     return `${f(d.h)} cell (equal-area)`;
@@ -642,9 +651,10 @@ const HealpixGrids = (function () {
     const dLon = (centre[1] - coord.lon) * 111319.9 * Math.cos(coord.lat * D2R);
     const errorM = Math.sqrt(dLat*dLat + dLon*dLon);
 
+    const baseNote = SCHEME_NOTES[schemeKey] || '';
     GISGrids.renderResolutionPopup({
       title: s.name,
-      note: SCHEME_NOTES[schemeKey] || '',
+      note: options.uncertaintyLine ? (baseNote ? baseNote + '\n\n' + options.uncertaintyLine : options.uncertaintyLine) : baseNote,
       levels,
       detail: corners4 ? {
         corners: corners4,

@@ -62,11 +62,80 @@
     this.meta = meta || {};     // { source:'tap'|'geosonify'|'healpix'|'latlon', depth, scheme }
   }
 
+  // ── Uncertainty model ─────────────────────────────────────
+  // Uncertainty is a property of the SOURCE, not the displayed scheme: a single
+  // worst-case ground-distance radius in METRES, scheme-independent, that does
+  // NOT change when you switch cards. (Cell size, by contrast, is a property of
+  // the displayed card and is scheme-dependent.) Every constructor stamps
+  // meta.uncertaintyMetres + meta.basis at creation, because an exact coordinate
+  // cannot reveal its own source precision after the fact — it must be recorded.
+  const EARTH_R_M = 6371008.7714;
+  const M_PER_DEG = (Math.PI / 180) * EARTH_R_M;   // ≈ 111195 m per degree (lat)
+
+  // worst-case ground radius (m) of an equirectangular cell at `lat` whose span
+  // is base^-depth of the full range. latM constant; lonM shrinks by cos lat.
+  function equirectCellMetres(rows, cols, depth, latDeg) {
+    const latM = Math.exp(Math.log(180 * M_PER_DEG) - depth * Math.log(rows));
+    const cosL = Math.max(1e-12, Math.cos(latDeg * Math.PI / 180));
+    const lonM = Math.exp(Math.log(360 * M_PER_DEG * cosL) - depth * Math.log(cols));
+    return Math.max(latM, lonM);
+  }
+  // HEALPix equal-area cell: single mean linear size √(area).
+  function healpixCellMetres(order) {
+    const logArea = Math.log(Math.PI / 3) - order * Math.log(4);
+    return EARTH_R_M * Math.exp(0.5 * logArea);
+  }
+  // typed/imported lat/lon at N decimal places → worst-case quantisation (m).
+  function decimalsToMetres(decimals, latDeg) {
+    const stepDeg = Math.pow(10, -decimals) * 0.5;
+    const latM = stepDeg * M_PER_DEG;
+    const lonM = stepDeg * M_PER_DEG * Math.max(1e-12, Math.cos(latDeg * Math.PI / 180));
+    return Math.max(latM, lonM);
+  }
+  function countDecimals(v) {
+    const s = String(v);
+    const i = s.indexOf('.');
+    return i < 0 ? 0 : (s.length - i - 1);
+  }
+  // map pin placed with care at a given zoom (Web Mercator metres-per-pixel).
+  function pinMetres(zoom, latDeg, pixels) {
+    const mpp = 156543.03392 * Math.cos(latDeg * Math.PI / 180) / Math.pow(2, zoom);
+    return Math.abs(mpp) * (pixels || 1);
+  }
+
+  // metre formatter with the full ladder (km → am), shared by basis + readout.
+  function fmtM(m) {
+    if (!isFinite(m) || m <= 0) return '0';
+    if (m >= 1000)  return (m / 1000).toFixed(1) + ' km';
+    if (m >= 1)     return m.toFixed(1) + ' m';
+    if (m >= 1e-2)  return (m * 1e2).toFixed(1) + ' cm';
+    if (m >= 1e-3)  return (m * 1e3).toFixed(1) + ' mm';
+    if (m >= 1e-6)  return (m * 1e6).toFixed(1) + ' µm';
+    if (m >= 1e-9)  return (m * 1e9).toFixed(1) + ' nm';
+    if (m >= 1e-12) return (m * 1e12).toFixed(1) + ' pm';
+    if (m >= 1e-15) return (m * 1e15).toFixed(1) + ' fm';
+    if (m >= 1e-18) return (m * 1e18).toFixed(1) + ' am';
+    return m.toExponential(1) + ' m';
+  }
+
   // ── Constructors ──────────────────────────────────────────
   function fromLatLon(lat, lon, meta) {
-    // tap / interchange precision — exact point that equals the given double.
+    meta = meta || {};
+    const latDeg = Number(lat);
+    let uncertaintyMetres, basis;
+    if (meta.accuracyMetres != null) {
+      uncertaintyMetres = Math.abs(meta.accuracyMetres);
+      basis = meta.basis || ('GPS ±' + fmtM(uncertaintyMetres));
+    } else if (meta.zoom != null) {
+      uncertaintyMetres = pinMetres(meta.zoom, latDeg, meta.pixels || 1);
+      basis = meta.basis || ('map pin @ z' + meta.zoom);
+    } else {
+      const dec = Math.max(countDecimals(lat), countDecimals(lon));
+      uncertaintyMetres = decimalsToMetres(dec, latDeg);
+      basis = meta.basis || ('typed, ' + dec + ' dp');
+    }
     return new ExactPoint(new Decimal(lat), new Decimal(lon),
-      Object.assign({ source: 'latlon', depth: 0 }, meta || {}));
+      Object.assign({ source: 'latlon', depth: 0, uncertaintyMetres, basis }, meta));
   }
 
   // Geosonify equirectangular code → exact rational lat/lon (NO trig, exact).
@@ -91,7 +160,13 @@
     const lonFrac = new Decimal((lonLoN + lonHiN).toString()).div(new Decimal((2n * lonDen).toString()));
     const lat = D90.minus(D180.times(latFrac));         // 90 - 180*frac
     const lon = D180.times(lonFrac.times(2)).minus(D180); // -180 + 360*frac
-    return new ExactPoint(lat, lon, { source: 'geosonify', depth: tokens.length });
+    // A code IS the source of truth, so its uncertainty equals its own cell size
+    // at this depth (no looser measurement behind it). Same for typed or scanned.
+    const u = equirectCellMetres(rows, cols, tokens.length, Number(lat));
+    return new ExactPoint(lat, lon, {
+      source: 'geosonify', depth: tokens.length,
+      uncertaintyMetres: u, basis: 'code, ' + tokens.length + ' digits'
+    });
   }
 
   // HEALPix code → exact point. The HEALPix address is exact; its CENTRE in
@@ -118,7 +193,11 @@
     const ord = parsed.digits.length;
     const { x, y } = digitsToXy(parsed.digits);
     const { lat, lon } = fxyToLatlon(parsed.f, x, y, ord);
-    return new ExactPoint(lat, lon, { source: 'healpix', scheme: schemeKey, depth: ord });
+    const u = healpixCellMetres(ord);
+    return new ExactPoint(lat, lon, {
+      source: 'healpix', scheme: schemeKey, depth: ord,
+      uncertaintyMetres: u, basis: 'HEALPix code, order ' + ord
+    });
   }
 
   // ── Lossy view ────────────────────────────────────────────
@@ -128,6 +207,20 @@
   ExactPoint.prototype.toLatLonStrings = function (digits) {
     const d = digits || 30;
     return { lat: this.lat.toFixed(d), lon: this.lon.toFixed(d) };
+  };
+
+  // ── Source uncertainty (scheme-independent, in metres) ────
+  // The worst-case ground radius the SOURCE knew this location to. Invariant
+  // across cards — switching display schemes does not change it.
+  ExactPoint.prototype.uncertaintyMetres = function () {
+    return (this.meta && this.meta.uncertaintyMetres != null)
+      ? this.meta.uncertaintyMetres : null;
+  };
+  ExactPoint.prototype.uncertaintyText = function () {
+    const u = this.uncertaintyMetres();
+    if (u == null) return null;
+    const basis = this.meta.basis ? ' (' + this.meta.basis + ')' : '';
+    return '±' + fmtM(u) + basis;
   };
 
   // ── Lossless views ────────────────────────────────────────
@@ -370,9 +463,15 @@
     DEFAULT_PRECISION,
     setPrecision: (d) => { Decimal.set({ precision: d }); },
     ExactPoint,
+    makeExactPoint: function (latStr, lonStr, meta) {
+      return new ExactPoint(new Decimal(latStr), new Decimal(lonStr), meta || {});
+    },
     fromLatLon, fromGeosonifyCode, fromHealpixCode,
     distance,
     convertGeosonifyToHealpix, convertHealpixToGeosonify,
+    // formatting + cell-size helpers (for the Cell size / Uncertainty readout)
+    formatMetres: fmtM,
+    equirectCellMetres, healpixCellMetres, decimalsToMetres, pinMetres,
     // exposed for tests
     _proj: { latlonToFxy }, _grid: { tokenizeGeo, fxyToDigits }
   };
