@@ -1212,19 +1212,36 @@
   }
   
   function formatMetric(m) {
-    if (!isFinite(m)) return '';
+    if (!isFinite(m) || m <= 0) return '0';
     if (m >= 1000) return (m/1000).toFixed(1) + ' km';
     if (m >= 1) return m.toFixed(1) + ' m';
-    const cm = m * 100;
-    if (cm >= 1) return cm.toFixed(1) + ' cm';
-    const mm = m * 1000;
-    if (mm >= 1) return mm.toFixed(1) + ' mm';
-    const um = m * 1e6;
-    if (um >= 1) return um.toFixed(1) + ' µm';
-    const nm = m * 1e9;
-    return nm.toFixed(1) + ' nm';
+    if (m >= 1e-2) return (m*1e2).toFixed(1) + ' cm';
+    if (m >= 1e-3) return (m*1e3).toFixed(1) + ' mm';
+    if (m >= 1e-6) return (m*1e6).toFixed(1) + ' µm';
+    if (m >= 1e-9) return (m*1e9).toFixed(1) + ' nm';
+    if (m >= 1e-12) return (m*1e12).toFixed(1) + ' pm';
+    if (m >= 1e-15) return (m*1e15).toFixed(1) + ' fm';
+    if (m >= 1e-18) return (m*1e18).toFixed(1) + ' am';
+    return m.toExponential(1) + ' m';
   }
   
+  // Build the "Measurement uncertainty" line for the ℹ️ box from the source-of-
+  // truth exact point's provenance. Returns null if no exact point / no module,
+  // so callers simply omit the line. Scheme-independent (a property of how the
+  // location was captured, not how it's displayed).
+  function buildUncertaintyLine() {
+    try {
+      const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
+        ? GeosonifyMain.getExact
+        : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
+      if (!getEx) return null;
+      const pt = getEx();
+      if (!pt || typeof pt.uncertaintyText !== 'function') return null;
+      const txt = pt.uncertaintyText();
+      return txt ? ('Measurement uncertainty: ' + txt) : null;
+    } catch (e) { return null; }
+  }
+
   function getPrecisionText(gridKey, iterations) {
     const gd = CARD_GRIDS[gridKey];
     if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
@@ -1236,19 +1253,16 @@
     const grid = CARD_GRIDS[gridKey]?.grid;
     if (!grid) return '';
     const rows = grid.length, cols = grid[0].length;
-    const latDeg = 180 / Math.pow(rows, iterations);
-    const lonDeg = 360 / Math.pow(cols, iterations);
     const lat = currentCardCoord ? currentCardCoord.lat : 0;
     const metersPerDegLat = 111319.9;
     const metersPerDegLon = 111319.9 * Math.cos(lat * Math.PI / 180);
-    const latM = latDeg * metersPerDegLat;
-    const lonM = lonDeg * metersPerDegLon;
-    
-    // Sub-micrometre precision: show "Exact" — the ℹ️ reveals the real dimensions
-    if (latM < 1e-6 && lonM < 1e-6) {
-      return 'Exact';
-    }
-    
+    // Cell size = (degrees span / base^iterations) × metres-per-degree. At deep
+    // iterations base^iterations overflows a double, so compute in log-space and
+    // exponentiate — finite and accurate to fm and far below. The address itself
+    // is exact (BigInt codec); this is just the on-screen measurement.
+    const latM = Math.exp(Math.log(180 * metersPerDegLat) - iterations * Math.log(rows));
+    const lonM = Math.exp(Math.log(360 * metersPerDegLon) - iterations * Math.log(cols));
+
     return `${formatMetric(latM)} × ${formatMetric(lonM)}`;
   }
   
@@ -2517,6 +2531,10 @@
           showToast('Hidden while privacy mode is active', 'error');
           return;
         }
+        // Measurement uncertainty line — read from the source-of-truth exact
+        // point's provenance (scheme-independent, invariant across cards). Shown
+        // in the ℹ️ box only; the clicker stays clean (cell size only).
+        const uncertaintyLine = buildUncertaintyLine();
         if (gridDef.healpix && typeof HealpixGrids !== 'undefined') {
           let compareLine = null;
           const activeKey = cardState.active;
@@ -2528,7 +2546,7 @@
             const aPrec = getPrecisionText(activeKey, aIter);
             compareLine = `Your active ${activeDef.name} card at ${aIter} iterations: ${aPrec} cell`;
           }
-          HealpixGrids.showInfo(gridDef.healpix, iterations, currentCardCoord, { compareLine });
+          HealpixGrids.showInfo(gridDef.healpix, iterations, currentCardCoord, { compareLine, uncertaintyLine });
         } else if (gridDef.gis && typeof GISGrids !== 'undefined') {
           // Build a comparison line from the currently-active Geosonify card
           let compareLine = null;
@@ -2541,9 +2559,9 @@
             const aPrec = getPrecisionText(activeKey, aIter);
             compareLine = `Your active ${activeDef.name} card at ${aIter} iterations: ${aPrec} cell`;
           }
-          GISGrids.showInfo(gridDef.gis, iterations, currentCardCoord, { compareLine });
+          GISGrids.showInfo(gridDef.gis, iterations, currentCardCoord, { compareLine, uncertaintyLine });
         } else {
-          showCellInfo(gridKey, code, iterations);
+          showCellInfo(gridKey, code, iterations, uncertaintyLine);
         }
       };
       
@@ -3542,7 +3560,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     return encodeCardCoordinate(gridKey, clampedLat, wrappedLon, tokens.length);
   }
   
-  function showCellInfo(gridKey, code, iterations) {
+  function showCellInfo(gridKey, code, iterations, uncertaintyLine) {
     const gridDef = CARD_GRIDS[gridKey];
     if (!gridDef || !gridDef.grid || !currentCardCoord) return;
 
@@ -3628,12 +3646,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     };
 
     if (typeof GISGrids !== 'undefined' && GISGrids.renderResolutionPopup) {
+      const baseNote = isFixedPrecision
+          ? 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).'
+          : 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).';
       GISGrids.renderResolutionPopup({
         title: gridDef.name,
         subtitle: isFixedPrecision ? 'cell size' : 'resolution levels',
-        note: isFixedPrecision
-          ? 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).'
-          : 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).',
+        note: uncertaintyLine ? (baseNote + '\n\n' + uncertaintyLine) : baseNote,
         levels,
         detail
       });
