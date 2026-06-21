@@ -3652,7 +3652,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       GISGrids.renderResolutionPopup({
         title: gridDef.name,
         subtitle: isFixedPrecision ? 'cell size' : 'resolution levels',
-        note: uncertaintyLine ? (baseNote + '\n\n' + uncertaintyLine) : baseNote,
+        note: baseNote,
+        uncertaintyLine: uncertaintyLine || null,
         levels,
         detail
       });
