@@ -4899,10 +4899,18 @@ function encodeRaw(sol) {
 
       const iterations = gridDef.fixedIterations || cardState.iterations[gridKey] || gridDef.defaultIterations;
       
-      const shuffled = getShuffledGrid(gridKey);
-      if (!shuffled) return '';
-      const grid = shuffled.grid;
-      const flat = grid.flat();
+      // HEALPix schemes have no vocabulary grid to shuffle — they encode via
+      // projection. Only vocab grids need the shuffled grid; bailing on a null
+      // shuffle here was dropping every HEALPix delta (anchor encoded, rest
+      // empty). For HEALPix, skip the grid setup and encode through encodeRaw.
+      const isHealpix = !!gridDef.healpix;
+      let grid = null, flat = null;
+      if (!isHealpix) {
+        const shuffled = getShuffledGrid(gridKey);
+        if (!shuffled) return '';
+        grid = shuffled.grid;
+        flat = grid.flat();
+      }
       
       // Encode all points as RAW codes (passphrase-aware, no obfuscation)
       // Must use CardRenderer.encodeRaw when passphrase is active, because
@@ -4911,7 +4919,7 @@ function encodeRaw(sol) {
         if (typeof CardRenderer !== 'undefined' && CardRenderer.encodeRaw) {
           return CardRenderer.encodeRaw(gridKey, p[0], p[1], iterations);
         }
-        if (typeof GeoCodec !== 'undefined' && GeoCodec.encodeHierarchical) {
+        if (!isHealpix && typeof GeoCodec !== 'undefined' && GeoCodec.encodeHierarchical) {
           return GeoCodec.encodeHierarchical(p[0], p[1], grid, iterations);
         }
         return '';
@@ -4932,7 +4940,7 @@ function encodeRaw(sol) {
         // Obfuscate the delta if in obfuscation mode
         // Each delta can be obfuscated independently using its last char as seed
         let delta = rawDelta;
-        if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+        if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
           delta = GeoCodec.applyObfuscation('encode', rawDelta, flat);
         }
         
@@ -4946,7 +4954,7 @@ function encodeRaw(sol) {
       
       // First code: obfuscated if in obfuscation mode, otherwise raw
       let firstCode;
-      if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+      if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
         firstCode = GeoCodec.applyObfuscation('encode', firstRawCode, flat);
       } else {
         firstCode = firstRawCode;
