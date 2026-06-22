@@ -554,7 +554,12 @@
         grid: null,
         defaultIterations: 22,           // even → 1.6 m, clean (no suffix)
         minIterations: 1,
-        maxIterations: 73,               // ~0.7 fm at the deep end
+        // Data Matrix capacity cap: order 46 → 24 hex chars, the most this
+        // symbol size holds. Beyond 46 the encoder silently caps the data and
+        // the rendered image stops changing, so clicking deeper is meaningless
+        // (and would imply precision the symbol can't carry). 46 is even, so the
+        // code stays clean with no @k order suffix.
+        maxIterations: 46,
         display: 'datamatrix',
         link: defs.hphex.link,
         isEmoji: false,
@@ -4965,6 +4970,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      */
     encodeRaw(gridKey, lat, lon, iterations) {
       const gridDef = CARD_GRIDS[gridKey];
+
+      // HEALPix schemes have no vocabulary grid — they encode via projection.
+      // Their hex codes are hierarchical (nested cells share a prefix), so the
+      // generic delta machinery works once we produce real codes here.
+      if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+        return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations, {}) || '';
+      }
+
       const baseGrid = gridDef?.grid;
       if (!baseGrid) return '';
       
@@ -5015,6 +5028,15 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      */
     decodeRaw(gridKey, code, iterations) {
       const gridDef = CARD_GRIDS[gridKey];
+
+      // HEALPix: decode via projection. Delta reconstruction rebuilds the full
+      // hex code (shared prefix + delta suffix); this turns it back into coords.
+      if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
+        if (!code) return null;
+        const ll = HealpixGrids.decode(gridDef.healpix, code, iterations, {});
+        return ll ? [ll[0], ll[1]] : null;
+      }
+
       const baseGrid = gridDef?.grid;
       if (!baseGrid || !code) return null;
       
