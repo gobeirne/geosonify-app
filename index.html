@@ -6436,14 +6436,21 @@ function encodeRaw(sol) {
           /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+$/u.test(firstPart) // emoji
         );
         
-        // Variable deltas: parts after first are shorter or equal length (strip R prefix for comparison)
-        const hasVariableDeltas = parts.length > 1 && parts.slice(1).every(p => {
-          const stripped = p.startsWith('R') ? p.substring(1) : p;
-          return stripped.length <= firstPart.length;
-        });
+        // Variable deltas: parts after first are SHORTER than the first code.
+        // Real deltas are suffixes, so at least one must be strictly shorter; if
+        // every part is the SAME length as the first AND looks like a full code,
+        // it's a non-delta full-code path (e.g. equal-length HEALPix hex codes),
+        // NOT deltas — don't let that misroute to the delta decoder on paste.
+        const strippedAfter = parts.slice(1).map(p => (p.startsWith('R') ? p.substring(1) : p));
+        const allSameLenAsFirst = strippedAfter.every(s => s.length === firstPart.length);
+        const looksLikeFullCodePath = allSameLenAsFirst && parts.every(p => looksLikeCoord(p));
+        const hasVariableDeltas = !looksLikeFullCodePath &&
+          parts.length > 1 && strippedAfter.every(s => s.length <= firstPart.length) &&
+          strippedAfter.some(s => s.length < firstPart.length);
         
-        // Check if this looks like a multi-part delta path (lots of tildes with code-like parts)
-        const looksLikeDeltaPath = parts.length > 2 && firstLooksLikeCode;
+        // Multi-part delta path: many tildes with a code-like first part — but
+        // not if it's actually a uniform full-code path (handled above).
+        const looksLikeDeltaPath = parts.length > 2 && firstLooksLikeCode && !looksLikeFullCodePath;
         
         // Use explicit flag if provided, otherwise use heuristics
         const isDelta = isDeltaKnown !== null ? isDeltaKnown : 
