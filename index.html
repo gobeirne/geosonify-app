@@ -6510,17 +6510,21 @@ function encodeRaw(sol) {
             if (firstCoord) {
               const coords = [firstCoord];
               
-              // Get shuffled grid for this grid key
+              // Get shuffled grid for this grid key. HEALPix has no vocabulary
+              // grid (encodes via projection), so `shuffled` is null — but that
+              // is NOT a reason to give up on deltas: reconstruction is pure
+              // string ops, and decodeRaw handles HEALPix passphrase+obfuscation
+              // internally. Only vocab grids use grid/flat (for string-level
+              // de-obfuscation); for HEALPix they stay null and are unused.
               const shuffled = getShuffledGrid(gridKey);
-              if (!shuffled) {
-                coords.length = 1; // Can't decode deltas without grid
-              } else {
-                const grid = shuffled.grid;
-                const flat = grid.flat();
+              {
+                const grid = shuffled ? shuffled.grid : null;
+                const flat = grid ? grid.flat() : null;
                 
-                // De-obfuscate the first code to get raw prefix
+                // De-obfuscate the first code to get raw prefix (vocab only;
+                // HEALPix codes are de-obfuscated inside decodeRaw).
                 let firstRaw = firstPart;
-                if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+                if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
                   firstRaw = GeoCodec.applyObfuscation('decode', firstPart, flat);
                 }
                 
@@ -6543,7 +6547,7 @@ function encodeRaw(sol) {
                 // De-obfuscate a delta - each delta can be de-obfuscated independently
                 // because the last char (the seed) doesn't change during obfuscation
                 function deobfuscateDelta(obfDelta) {
-                  if (!obfuscated || !GeoCodec.applyObfuscation) return obfDelta;
+                  if (!obfuscated || !flat || !GeoCodec.applyObfuscation) return obfDelta;
                   return GeoCodec.applyObfuscation('decode', obfDelta, flat);
                 }
                 
@@ -6585,7 +6589,7 @@ function encodeRaw(sol) {
                   if (typeof DeltaGear !== 'undefined' && DeltaGear.decodeGearPath) {
                     try {
                       let fullEncoded;
-                      if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+                      if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
                         const gearSuffix = parts.slice(1).join('~');
                         const rawGearSuffix = deobfuscateGearSuffix(gearSuffix, firstRaw.length, flat);
                         fullEncoded = firstRaw + '~' + rawGearSuffix;
