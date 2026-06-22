@@ -2392,6 +2392,11 @@
         updateRawModeUI();
         saveCardState();
         renderCards();
+        // Switching the active card is a deliberate re-encode — release the
+        // URL-suppress flag (set true on URL load) so the shareable URL updates
+        // to the newly-selected format (e.g. switching to a HEALPix card with
+        // delta on must let the ?hphexd=… URL be written).
+        if (callbacks.onUserInteraction) callbacks.onUserInteraction();
         if (callbacks.onCompactUpdate) callbacks.onCompactUpdate();
         // Active card changed but the pin didn't move, so the map's grid box
         // won't refresh on its own — nudge it directly.
@@ -4806,6 +4811,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     init(options = {}) {
       callbacks.onCoordChange = options.onCoordChange || null;
       callbacks.onCompactUpdate = options.onCompactUpdate || null;
+      callbacks.onUserInteraction = options.onUserInteraction || null;
       callbacks.getMap = options.getMap || null;
       
       // Refresh grid references in case arrays weren't available at module load time
