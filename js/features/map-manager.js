@@ -473,17 +473,28 @@
     const gridConfig = CARD_GRIDS[gridKey];
 
     // HEALPix cards: the cell boundary is a curved equal-area diamond, not a
-    // lat/lon box. cellCorners returns a closed, many-point ring already
-    // unwrapped across the antimeridian — draw it whole (do NOT slice to 4).
+    // lat/lon box. Draw the current order PLUS up to 5 parent orders, each at
+    // decreasing prominence — the equal-area equivalent of the multi-level
+    // faded grid the vocabulary cards show. cellCorners returns a closed,
+    // antimeridian-unwrapped ring; draw it whole (do NOT slice to 4).
     if (gridConfig && gridConfig.healpix && typeof HealpixGrids !== 'undefined') {
-      const ring = HealpixGrids.cellCorners(gridConfig.healpix, lat, lon, iterations, 18);
-      if (ring) {
+      const showLevels = 6;                       // innermost + up to 5 parents
+      const minOrder = Math.max(1, iterations - (showLevels - 1));
+      // Outermost (faintest) first so the innermost draws on top.
+      for (let ord = minOrder; ord <= iterations; ord++) {
+        const ring = HealpixGrids.cellCorners(gridConfig.healpix, lat, lon, ord, 18);
+        if (!ring) continue;
+        const isInnermost = (ord === iterations);
+        const levelFromInner = iterations - ord;
+        const opacity = isInnermost ? 0.8 : Math.max(0.05, 0.3 - levelFromInner * 0.05);
+        const fillOpacity = isInnermost ? 0.15 : 0;
+        const weight = isInnermost ? 2 : 1;
         const layer = L.polygon(ring, {
           color: '#ff4444',
           fillColor: '#ff4444',
-          weight: 2,
-          opacity: 0.8,
-          fillOpacity: 0.15,
+          weight: weight,
+          opacity: opacity,
+          fillOpacity: fillOpacity,
           interactive: false
         }).addTo(map);
         gridLayers.push(layer);
