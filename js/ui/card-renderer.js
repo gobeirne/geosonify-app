@@ -4977,11 +4977,19 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     encodeRaw(gridKey, lat, lon, iterations) {
       const gridDef = CARD_GRIDS[gridKey];
 
-      // HEALPix schemes have no vocabulary grid — they encode via projection.
-      // Their hex codes are hierarchical (nested cells share a prefix), so the
-      // generic delta machinery works once we produce real codes here.
+      // HEALPix schemes encode via projection but otherwise behave exactly like
+      // vocabulary grids. HEALPix applies passphrase AND obfuscation at the tree
+      // level inside its own encode (position-shift on face/digits, same
+      // algorithm as GeoCodec's index obfuscation). Crucially, HEALPix's
+      // obfuscation PRESERVES shared prefixes for nearby points, so obfuscated
+      // full codes still delta-compress well — we apply obf here and the delta
+      // machinery's per-segment string-obfuscation is skipped for HEALPix
+      // (its `flat` is null), giving one uniform, correct path.
       if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
-        return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations, {}) || '';
+        const opt = {};
+        if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+        if (obfuscated) { opt.obf = true; }
+        return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations, opt) || '';
       }
 
       const baseGrid = gridDef?.grid;
@@ -5035,11 +5043,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     decodeRaw(gridKey, code, iterations) {
       const gridDef = CARD_GRIDS[gridKey];
 
-      // HEALPix: decode via projection. Delta reconstruction rebuilds the full
-      // hex code (shared prefix + delta suffix); this turns it back into coords.
+      // HEALPix: decode via projection, applying passphrase + obfuscation
+      // symmetrically to encodeRaw. Mirrors the vocabulary-grid contract.
       if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
         if (!code) return null;
-        const ll = HealpixGrids.decode(gridDef.healpix, code, iterations, {});
+        const opt = {};
+        if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+        if (obfuscated) { opt.obf = true; }
+        const ll = HealpixGrids.decode(gridDef.healpix, code, iterations, opt);
         return ll ? [ll[0], ll[1]] : null;
       }
 
