@@ -617,7 +617,7 @@
 -->
 
 <!-- Features -->
-<script src="js/features/map-manager.js?v=20260616a"></script>
+<script src="js/features/map-manager.js?v=20260622"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -2570,8 +2570,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                   // For delta paths OR full-code paths, pass the FULL encoded string
                   // Delta: suffixes are relative to first code
                   // Non-delta multi-point: each part is a full code
+                  // Pass the grid known from the URL param name (hphex/hpquad/...)
+                  // so HEALPix paths don't depend on detectGridFromCode (which
+                  // can't disambiguate HEALPix hex from other hex schemes).
+                  window._pathGridHint = config.grid;
                   document.getElementById('redrawString').value = decoded;
                   redrawFromString(isDeltaPath ? true : false);
+                  window._pathGridHint = null;
                 } else {
                   // For other shapes (rect, circle, etc.), convert centroid to raw coords
                   // Use standard ~ separator for redrawFromString
@@ -4876,7 +4881,7 @@ function encodeRaw(sol) {
       const gridKey = cardState.active;
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef) return points.slice(1).map(p => `${p[0].toFixed(6)},${p[1].toFixed(6)}`).join('~');
-      
+
       const iterations = gridDef.fixedIterations || cardState.iterations[gridKey] || gridDef.defaultIterations;
       
       const shuffled = getShuffledGrid(gridKey);
@@ -6335,6 +6340,10 @@ function encodeRaw(sol) {
           if (/^[a-z0-9]{6,12}$/.test(s)) return true;
           // Hex geocode (12 hex chars)
           if (/^[A-Fa-f0-9]{12}$/.test(s)) return true;
+          // HEALPix hex/quad/64: face char + variable-length body, any order
+          // (3..40 chars), optional @k order suffix. Accept so HEALPix paths of
+          // any depth are recognised, not just the 12-char ones.
+          if (/^[0-9A-Fa-f]{3,40}(@\d{1,3})?$/.test(s)) return true;
           // Word geocode (PascalCase words, ~24-30 chars)
           if (/^([A-Z][a-z]+){4,6}$/.test(s)) return true;
           // Emoji geocode (5 emoji = ~20 bytes, checking for emoji)
@@ -6443,7 +6452,9 @@ function encodeRaw(sol) {
           console.log('[geosonify] ENTERING delta decoding branch');
           
           // Try to detect grid from first code
-          const gridKey = detectGridFromCode(firstPart);
+          const gridKey = (window._pathGridHint && CARD_GRIDS[window._pathGridHint])
+            ? window._pathGridHint
+            : detectGridFromCode(firstPart);
           console.log('[geosonify] Delta decoding - detected grid:', gridKey, 'for code:', firstPart.substring(0, 15));
           
           if (gridKey) {
@@ -6675,8 +6686,33 @@ function encodeRaw(sol) {
         }
         
         if (allCoords || (parts.length === 2 && firstIsCoord && !secondIsShapePayload && looksLikeCoord(parts[1]))) {
-          // This is a path/polygon with raw coordinates!
+          // This is a path/polygon with raw coordinates OR encoded codes!
           const rawSegModes = {};
+          // If parts are encoded codes (not raw lat,lon), detect the grid once so
+          // every segment decodes through the same scheme. This is the non-delta
+          // full-code path: ?a=code~code~code (and hphex/emoji/etc equivalents).
+          let pathGridKey = null;
+          const firstTrim = parts[0].trim().replace(/^R/, '');
+          if (!/^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(firstTrim)) {
+            pathGridKey = (window._pathGridHint && CARD_GRIDS[window._pathGridHint])
+              ? window._pathGridHint
+              : ((typeof detectGridFromCode === 'function') ? detectGridFromCode(firstTrim) : null);
+          }
+          // Iterations for code decode (infer from first code length where possible)
+          let pathIters = null;
+          if (pathGridKey) {
+            const gDef = CARD_GRIDS[pathGridKey];
+            if (gDef && gDef.fixedIterations) pathIters = gDef.fixedIterations;
+            else if (gDef && gDef.healpix) pathIters = null; // HEALPix infers from code
+            else {
+              const sh = (typeof getShuffledGrid === 'function') ? getShuffledGrid(pathGridKey) : null;
+              if (sh && typeof GeoCodec !== 'undefined' && GeoCodec.tokenizeCode) {
+                const toks = GeoCodec.tokenizeCode(firstTrim, sh.grid.flat());
+                if (toks && toks.length) pathIters = toks.length;
+              }
+              if (pathIters == null) pathIters = (cardState.iterations[pathGridKey] || (gDef && gDef.defaultIterations) || 9);
+            }
+          }
           const coords = parts.map((p, idx) => {
             p = p.trim();
             // Check for R prefix (rhumb flag)
@@ -6684,10 +6720,15 @@ function encodeRaw(sol) {
               rawSegModes[idx] = 'R';
               p = p.substring(1);
             }
-            // For now, only raw coords are fully implemented
+            // Raw lat,lon
             if (/^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/.test(p)) {
               const [lat, lon] = p.split(',').map(s => parseFloat(s.trim()));
               return [lat, normalizeLongitude(lon)];
+            }
+            // Encoded code segment — decode via the detected path grid.
+            if (pathGridKey && typeof decodeCardCoordinate === 'function') {
+              const c = decodeCardCoordinate(pathGridKey, p, pathIters);
+              if (c && isFinite(c[0]) && isFinite(c[1])) return [c[0], normalizeLongitude(c[1])];
             }
             return null;
           }).filter(c => c !== null);
@@ -6720,6 +6761,19 @@ function encodeRaw(sol) {
               points: coords,
               segmentModes: segmentModes
             };
+            
+            // Populate the cards from the path's first point so the Geosonify tab
+            // isn't empty on arrival — this lets you star a different card to
+            // RE-ENCODE the whole loaded path in that format (the active-card
+            // handler re-runs updateCompactOutputs over lastSolution.points).
+            currentCardCoord = { lat: coords[0][0], lon: coords[0][1] };
+            if (pathGridKey && CARD_GRIDS[pathGridKey]) {
+              cardState.active = pathGridKey;
+              if (!cardState.visible.includes(pathGridKey)) cardState.visible.push(pathGridKey);
+              saveCardState();
+            }
+            updateCoordDisplay();
+            renderCards();
             
             drawPathPolyOnMap(coords, centroid, isClosed, true, true, segmentModes);
             
