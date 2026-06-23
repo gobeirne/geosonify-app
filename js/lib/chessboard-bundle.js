@@ -586,6 +586,19 @@ class GeoChessFamily {
   // Verified against the enumeration ordering placement-by-placement.
 
   // Σ kingPairs over all placements of the remaining bishop slots on `free`. slots = {wL,wD,bL,bD}.
+  // Count of ways to place the STILL-UNPLACED bishops on the given free set, by colour.
+  // `slots` flags which bishop slots remain (wL/wD/bL/bD). On the kingsOutOfRank path the
+  // bishop layer's subtree size is (remaining-bishop placements) × restArr — kings carry no
+  // payload, so they must NOT weight the bishop digit (doing so froze all four bishops on the
+  // lowest squares). Light slots draw from light squares, dark from dark.
+  _remainingBishopPlacements(free, slots) {
+    const sL = (slots.wL ? 1 : 0) + (slots.bL ? 1 : 0);
+    const sD = (slots.wD ? 1 : 0) + (slots.bD ? 1 : 0);
+    let L = 0, D = 0; for (const i of free) (this._color(i) ? L++ : D++);
+    const perm = (x, k) => { if (x < k || k < 0) return ZERO; let r = ONE; for (let i = 0; i < k; i++) r *= BigInt(x - i); return r; };
+    return perm(L, sL) * perm(D, sD);
+  }
+
   _sumKingPairsRemaining(free, slots) {
     const F = this.d.files, R = this.d.ranks;
     const sL = (slots.wL ? 1 : 0) + (slots.bL ? 1 : 0);
@@ -632,7 +645,9 @@ class GeoChessFamily {
       let picked = null;
       for (const sq of cands) {
         const nf = curFree.filter(x => x !== sq);
-        const sub = this._sumKingPairsRemaining(nf, remaining) * restArr;
+        const sub = this.d.kingsOutOfRank
+          ? this._remainingBishopPlacements(nf, remaining) * restArr
+          : this._sumKingPairsRemaining(nf, remaining) * restArr;
         if (sub === ZERO) continue;
         if (N < sub) { picked = sq; break; }
         N -= sub;
@@ -660,7 +675,9 @@ class GeoChessFamily {
       for (const sq of cands) {
         if (sq === target) break;
         const nf = curFree.filter(x => x !== sq);
-        const sub = this._sumKingPairsRemaining(nf, remaining) * restArr;
+        const sub = this.d.kingsOutOfRank
+          ? this._remainingBishopPlacements(nf, remaining) * restArr
+          : this._sumKingPairsRemaining(nf, remaining) * restArr;
         N += sub;
       }
       curFree = curFree.filter(x => x !== target);
@@ -1340,8 +1357,28 @@ function buildCatalogue(families, opts = {}) {
  */
 
 // Fixed irrational-ish offset multiplier (golden ratio fraction). Constant across all families;
-// the per-family offset is offset = floor(cap * GOLD_NUM / GOLD_DEN).
+// Whitening: a MULTIPLICATIVE permutation of [0, cap). The old scheme (offset + p·stride) had
+// stride = cap >> payloadBits ≈ 1 when payloadBits ≈ log2(cap), so it was a pure additive shift
+// that left the high-order layers (bishops, deep pawns) constant for small payloads — every
+// realistic code froze the four bishops on a1/b1/c1/d1 and most of the pawn skeleton. A
+// multiply by a large constant M coprime to cap scatters even a small p across the full range,
+// so all layers vary; decode multiplies by M's modular inverse. Both are exact bijections on
+// [0, cap), so the round-trip is preserved.
 const GOLD_NUM = 6180339887n, GOLD_DEN = 10000000000n;
+
+// extended Euclid -> modular inverse of a mod m (a,m coprime), always returned in [0,m).
+function _modInverse(a, m) {
+  let [old_r, r] = [((a % m) + m) % m, m];
+  let [old_s, s] = [1n, 0n];
+  while (r !== 0n) {
+    const q = old_r / r;
+    [old_r, r] = [r, old_r - q * r];
+    [old_s, s] = [s, old_s - q * s];
+  }
+  if (old_r !== 1n) throw new Error('whitening multiplier not coprime to capacity');
+  return ((old_s % m) + m) % m;
+}
+function _gcd(a, b) { while (b) { [a, b] = [b, a % b]; } return a < 0n ? -a : a; }
 
 class GeoChessEngine {
   constructor(descriptor) {
@@ -1350,27 +1387,40 @@ class GeoChessEngine {
     this.cap = this.fam._capacityViaPawnConv();
     this.capBits = this.cap > 0n ? this.cap.toString(2).length - 1 : 0;
     this.vector = censusOfFamily(descriptor);
+    this._whiten = this.cap > 1n ? this._makeWhiten() : null;
+  }
+  // Build a multiplier M coprime to cap, near cap·φ so the permutation scatters small payloads
+  // across the whole range. Search upward from the golden target for the first coprime value.
+  _makeWhiten() {
+    const cap = this.cap;
+    let M = (cap * GOLD_NUM) / GOLD_DEN;
+    if (M < 2n) M = 2n;
+    // make odd, then step by 2 until coprime to cap (cheap; coprime values are dense)
+    if (M % 2n === 0n) M += 1n;
+    let guard = 0;
+    while (_gcd(M, cap) !== 1n) { M += 2n; if (++guard > 100000) { M = 1n; break; } }
+    const Minv = (M === 1n) ? 1n : _modInverse(M, cap);
+    return { M, Minv };
   }
   _params(payloadBits) {
+    // payloadBits is retained for the range check only; whitening no longer depends on it.
     const pb = BigInt(payloadBits);
-    const stride = this.cap >> pb;
-    if (stride === 0n) throw new Error(`payload ${payloadBits} bits exceeds family capacity ${this.capBits} bits`);
-    const maxScaled = ((1n << pb) - 1n) * stride;
-    if (!(maxScaled < this.cap)) throw new Error('whitening not bijective for this payloadBits');
-    const offset = (this.cap * GOLD_NUM) / GOLD_DEN;
-    return { stride, offset };
+    if ((1n << pb) > this.cap && this.cap > 0n) {
+      // allowed: codec validates p < usableCap; this guard only catches gross misuse
+    }
+    return this._whiten || { M: 1n, Minv: 1n };
   }
   encodePayload(p, payloadBits) {
     p = BigInt(p);
-    if (p < 0n || p >= (1n << BigInt(payloadBits))) throw new Error('payload out of range for payloadBits');
-    const { stride, offset } = this._params(payloadBits);
-    const N = (offset + p * stride) % this.cap;
-    return this.fam.encode(N);            // board (square -> PIECE code)
+    if (p < 0n || p >= this.cap) throw new Error('payload out of range for capacity');
+    const { M } = this._params(payloadBits);
+    const N = (p * M) % this.cap;          // multiplicative permutation (spreads all layers)
+    return this.fam.encode(N);             // board (square -> PIECE code)
   }
   decodePayload(board, payloadBits) {
-    const { stride, offset } = this._params(payloadBits);
+    const { Minv } = this._params(payloadBits);
     const N = this.fam.decode(board);
-    return ((N - offset + this.cap) % this.cap) / stride;
+    return (N * Minv) % this.cap;          // inverse permutation
   }
 }
 
@@ -1440,12 +1490,11 @@ class ChessboardCodec {
   constructor(descriptor, format = 'standard') {
     this.format = format;
     this.engine = new GeoChessEngine(descriptor);
-    // The whitening maps payloads in [0, 2^pb) across the full capacity (spreading high-order
-    // king/bishop layers). pb = floor(log2 cap), so the USABLE payload space is exactly 2^pb —
-    // NOT the raw cap, which can be up to ~2x larger. Sizing the refusal guard and maxHexDigits
-    // to cap (as an earlier version did) admitted codes in [2^pb, cap) that the whitening then
-    // threw on — a corruption-adjacent bug (front door accepts, engine crashes). All three now
-    // agree on usableCap = 2^pb: codes that fit round-trip, codes over it are cleanly refused.
+    // Whitening is now a multiplicative permutation over [0, cap), which spreads every payload
+    // (including short ones) across all board layers — bishops and the deep pawn skeleton vary
+    // as they should. We keep the usable payload space at 2^pb (the largest power of two below
+    // cap) so maxHexDigits stays at the "every length-L code fits" guarantee; codes above it are
+    // cleanly refused. The permutation is bijective on all of [0, cap), so 2^pb is a safe subset.
     this.pb = this.engine.cap.toString(2).length - 1;
     this.usableCap = 1n << BigInt(this.pb);
     this.capBits = this.pb;
