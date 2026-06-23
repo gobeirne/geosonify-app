@@ -1098,3 +1098,55 @@ select {
     display: none !important;
   }
 }
+
+/* ============== Chessboard / HEALPix-Chessboard cards ==============
+   A Geosonify code rendered as a chess position (one more vocabulary, like ChromaCoord).
+   Pieces use SOLID glyphs for both colours, distinguished by fill + outline (hollow Unicode
+   glyphs are illegible on a busy board): white = light fill + dark edge, black = dark fill +
+   light edge. The never-in-check engine guarantees the position always looks legal. */
+.chess-display { display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0; }
+.chess-display.chess-toobig { padding:14px; }
+.chess-error { font-size:13px; color:#c0392b; text-align:center; }
+.gschess-boardgrid {
+  display:grid; grid-template-columns:auto auto; gap:5px; align-items:center; justify-items:center;
+  --gschess-sq: clamp(28px, 8vw, 44px);
+}
+.gschess-ranklab {
+  display:grid; grid-template-rows:repeat(8, var(--gschess-sq)); align-items:center; justify-items:center;
+  font-size:11px; color:var(--ios-gray,#8E8E93); font-family:ui-monospace,Menlo,Consolas,monospace;
+}
+.gschess-filelab {
+  grid-column:2; display:grid; grid-template-columns:repeat(8, var(--gschess-sq)); justify-items:center;
+  font-size:11px; color:var(--ios-gray,#8E8E93); font-family:ui-monospace,Menlo,Consolas,monospace;
+}
+.gschess-board {
+  display:grid; grid-template-columns:repeat(8, var(--gschess-sq));
+  grid-template-rows:repeat(8, var(--gschess-sq));
+  border:1.5px solid #6a5f4c; border-radius:3px; overflow:hidden;
+}
+.gschess-sq { display:flex; align-items:center; justify-content:center; }
+.gschess-sq.l { background:#efe5cf; }   /* light square */
+.gschess-sq.d { background:#b9a07d; }   /* dark square */
+.gschess-pc { font-size:calc(var(--gschess-sq) * 0.74); line-height:1; font-weight:700; }
+.gschess-pc.w {
+  color:#fafafa;
+  text-shadow:-1px -1px 0 #222,1px -1px 0 #222,-1px 1px 0 #222,1px 1px 0 #222,
+              0 -1.4px 0 #222,0 1.4px 0 #222,-1.4px 0 0 #222,1.4px 0 0 #222;
+}
+.gschess-pc.b {
+  color:#1a1a1a;
+  text-shadow:-1px -1px 0 #f0f0f0,1px -1px 0 #f0f0f0,-1px 1px 0 #f0f0f0,1px 1px 0 #f0f0f0,
+              0 -1.4px 0 #f0f0f0,0 1.4px 0 #f0f0f0,-1.4px 0 0 #f0f0f0,1.4px 0 0 #f0f0f0;
+}
+.chess-textforms { width:100%; display:flex; flex-direction:column; gap:5px; }
+.chess-row { display:flex; align-items:center; gap:8px; }
+.chess-label {
+  font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ios-gray,#8E8E93);
+  width:42px; flex:none; font-family:ui-monospace,Menlo,Consolas,monospace;
+}
+.chess-fen {
+  flex:1; min-width:0; overflow-x:auto; white-space:nowrap; font-size:12px;
+  font-family:ui-monospace,Menlo,Consolas,monospace; background:var(--ios-light-gray,#f2f2f7);
+  padding:5px 8px; border-radius:6px;
+}
+.chess-ascii-mini { flex:1; font-size:12px; color:var(--ios-gray,#8E8E93); font-family:ui-monospace,monospace; }
