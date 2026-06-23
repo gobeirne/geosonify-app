@@ -2320,7 +2320,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix)
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || CARD_GRIDS[k].chessOf)
     );
     
     container.innerHTML = '';
@@ -4193,13 +4193,15 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
     
     Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      if ((!def.grid && !def.gis && !def.healpix) || def.deprecated) return;
+      if ((!def.grid && !def.gis && !def.healpix && !def.chessOf) || def.deprecated) return;
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
       const isGis = !!def.gis;
       const isHealpix = !!def.healpix;
+      const isChess = !!def.chessOf;
       const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
                 : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
+                : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
                 : isHealpix ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>' : '';
       const label = def.name + tag;
       html += `
