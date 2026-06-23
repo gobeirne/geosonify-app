@@ -899,10 +899,16 @@ class GeoChessFamily {
       if (skp <= ZERO) return ZERO;
       // kingsOutOfRank: kings carry NO payload (placed deterministically after the rest layer).
       // Two squares are still reserved as empties (residualSize already subtracts 2), but the
-      // king PAIR contributes no multiplier, so the king factor collapses skp -> 1. The skp<=0
-      // guard above still rules out pawn configs with no room for a non-adjacent pair at all.
-      // Old path keeps skp as the king-pair count. This MUST mirror _sumOverBishopsKingsRest.
-      if (this.d.kingsOutOfRank) return restArr;
+      // king PAIR contributes no multiplier. The king factor collapses to 1 — BUT the BISHOP
+      // factor does NOT. Each pawn config has bishopWays = perm(L,sL)·perm(D,sD) (== P here)
+      // distinct bishop placements, each with restArr rest-arrangements, so the true per-config
+      // completion count is P·restArr. (Session 7 erroneously returned just restArr, collapsing
+      // BOTH factors; that starved the bishop layer — _rankBishops sizes its digit over P·restArr
+      // but the pawn layer only ever handed it a restArr-sized residual, freezing all 4 bishops on
+      // the lowest squares. P·restArr restores the 18 bits of bishop entropy and unfreezes them.)
+      // The skp<=0 guard still rules out configs with no room for a non-adjacent king pair at all.
+      // This MUST mirror _rankBishops' subtree weight (_remainingBishopPlacements·restArr).
+      if (this.d.kingsOutOfRank) return P * restArr;
       return skp * restArr;
     };
 
