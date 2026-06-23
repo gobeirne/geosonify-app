@@ -255,11 +255,14 @@
   
   let cardState = {
     visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64', 'hpmatrix'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
   };
+
+  // Chessboard cards: render pieces as Unicode symbols (false) or letters K/Q/R/B/N/P (true).
+  let chessUseLetters = false;
   
   // Initialize default iterations
   Object.keys(CARD_GRIDS).forEach(key => {
@@ -572,6 +575,56 @@
     }
   }
 
+  // Register the two Chessboard cards. Like hpmatrix, these are PRESENTATIONS of an existing
+  // hex code (chessOf: which sibling supplies the hex) rendered as a chess board, NOT new
+  // coordinate encoders. `display:'chessboard'` routes render/scan to the chessboard paths.
+  //   - chessboard      : standard Geosonify hex   (chessOf: 'hexbyte')
+  //   - hpchessboard    : HEALPix hex              (chessOf: 'hphex')
+  // Both reuse the sibling's encode/decode/passphrase/obfuscation untouched. The chess engine
+  // (ChessboardLib) caps usable precision at 19 hex; the sibling's iterations are clamped so a
+  // card never asks for a code the board can't hold (refused-not-truncated is the backstop).
+  function registerChessboardCards() {
+    if (typeof ChessboardLib === 'undefined') return;
+    // Max sibling iterations whose hex still fits the board family. hexbyte/hphex are ~ one hex
+    // char per iteration at the relevant range; we cap to the lib's guaranteed max (19) and let
+    // the sibling's own max also apply. The refusal in ChessboardLib is the hard backstop.
+    const CHESS_MAX_HEX = ChessboardLib.maxHexDigits('standard'); // 19, guaranteed-fit
+    CARD_GRIDS.chessboard = {
+      name: 'Chessboard',
+      chessOf: 'hexbyte',
+      chessFormat: 'standard',
+      grid: null,
+      defaultIterations: 8,
+      minIterations: 1,
+      maxIterations: Math.min(CHESS_MAX_HEX, 14),
+      display: 'chessboard',
+      isEmoji: false
+    };
+    CARD_GRIDS.hpchessboard = {
+      name: 'HEALPix · Chessboard',
+      chessOf: 'hphex',
+      chessFormat: 'healpix',
+      healpixLabel: true,
+      grid: null,
+      defaultIterations: 22,
+      minIterations: 1,
+      // hphex packs 2 orders per hex char, so order k -> ceil(k/2) hex chars. The chess engine
+      // holds 19 hex; order 38 -> 19 hex is the exact ceiling. Beyond that ChessboardLib refuses
+      // (never truncates), so 38 is both the useful max and safe. ~order 38 ≈ sub-nanometre.
+      maxIterations: 38,
+      display: 'chessboard',
+      link: (typeof HealpixGrids !== 'undefined' && HealpixGrids.cardDefs && HealpixGrids.cardDefs().hphex)
+        ? HealpixGrids.cardDefs().hphex.link : null,
+      isEmoji: false
+    };
+    for (const key of ['chessboard', 'hpchessboard']) {
+      if (cardState.iterations[key] === undefined) {
+        cardState.iterations[key] = CARD_GRIDS[key].defaultIterations;
+      }
+      if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+  }
+
   // One-time: surface the HEALPix hex card by default (incl. existing users
   // whose saved state predates it). Runs AFTER loadCardState so it doesn't get
   // overwritten by the restore. hpquad/hp64 stay add-on only.
@@ -766,6 +819,14 @@
   
   function _encodeCardCoordinateInternal(gridKey, lat, lon, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    // Chessboard / HEALPix-Chessboard: a PRESENTATION of a sibling's hex code (chessOf), not a
+    // coordinate encoder of its own. Encode the sibling's hex (reusing its passphrase/obfuscation
+    // pipeline wholesale); the board itself is produced at render time by ChessboardLib. We store
+    // and round-trip the HEX here — the board is a view of it, exactly as hpmatrix is a Data
+    // Matrix view of hphex. iterations is interpreted in the sibling's terms.
+    if (gridDef && gridDef.chessOf) {
+      return _encodeCardCoordinateInternal(gridDef.chessOf, lat, lon, iterations);
+    }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
     // both at the quaternary tree level, conforming to the vocabulary-grid
@@ -877,6 +938,9 @@
   
   function decodeCardCoordinate(gridKey, code, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.chessOf) {
+      return decodeCardCoordinate(gridDef.chessOf, code, iterations);
+    }
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
@@ -968,6 +1032,9 @@
   
   function decodeCardCode(gridKey, code, deobfuscate) {
     const gridDef = CARD_GRIDS[gridKey];
+    if (gridDef && gridDef.chessOf) {
+      return decodeCardCode(gridDef.chessOf, code, deobfuscate);
+    }
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
@@ -2131,7 +2198,7 @@
       const gridKey = card.dataset.gridKey;
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix)) return;
+      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !gridDef.chessOf)) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
       // HEALPix now transforms properly under both passphrase and obfuscation,
       // so it always re-renders (never skipped for privacy).
@@ -2204,6 +2271,23 @@
             } else if (gridDef.display === 'datamatrix') {
               renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), ctrEl);
             }
+          }
+        }
+      } else if (gridDef.display === 'chessboard') {
+        const disp = card.querySelector('.chess-display');
+        if (disp && disp.dataset.code !== code) {
+          const fmt = disp.dataset.fmt || gridDef.chessFormat || 'standard';
+          disp.dataset.code = code;
+          const fenEl = card.querySelector('.chess-fen');
+          const ctrEl = card.querySelector('.chess-board-container');
+          try {
+            const fen = ChessboardLib.toFEN(code, fmt);
+            if (fenEl) fenEl.textContent = fen;
+            if (ctrEl) ChessboardLib.renderBoard(code, ctrEl, { format: fmt, letters: chessUseLetters });
+            disp.classList.remove('chess-toobig');
+          } catch (e) {
+            if (ctrEl) ctrEl.innerHTML = '';
+            if (fenEl) fenEl.textContent = '(code too precise — reduce precision)';
           }
         }
       } else {
@@ -2309,6 +2393,27 @@
       } else if (isWordBased) {
         // Wrap in span so flex treats code+checksum as single item, not separate columns
         bodyContent = `<div class="code-display" data-editable="true" title="Click to edit"><span>${formattedCode}</span></div>`;
+      } else if (gridDef.display === 'chessboard') {
+        // Chess board view of the hex `code`, plus FEN + ASCII text forms (each copyable and
+        // decodable). data-code carries the hex; the board/FEN/ASCII are rendered in updateCardCodes.
+        const fmt = gridDef.chessFormat || 'standard';
+        let fen = '', tooBig = false;
+        try { fen = ChessboardLib.toFEN(code, fmt); } catch (e) { tooBig = true; }
+        if (tooBig) {
+          bodyContent = `<div class="chess-display chess-toobig" data-code="${code}" data-grid="${gridKey}">` +
+            `<div class="chess-error">Code too precise for a chess board (max ${ChessboardLib.maxHexDigits(fmt)} hex digits). Reduce precision.</div></div>`;
+        } else {
+          bodyContent = `<div class="chess-display" data-code="${code}" data-grid="${gridKey}" data-fmt="${fmt}">` +
+            `<div class="chess-board-container"></div>` +
+            `<div class="chess-textforms">` +
+              `<div class="chess-row"><span class="chess-label">FEN</span>` +
+                `<code class="chess-fen" data-editable="true" title="Click to edit">${fen}</code>` +
+                `<button class="card-btn chess-copy-fen" title="Copy FEN">📋</button></div>` +
+              `<div class="chess-row"><span class="chess-label">ASCII</span>` +
+                `<code class="chess-ascii-mini">board ↓</code>` +
+                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">📋</button></div>` +
+            `</div></div>`;
+        }
       } else if (gisRedacted) {
         // Redacted GIS card: show blurred block, not editable, not copyable
         bodyContent = `<div class="code-display gis-redacted" title="Hidden while privacy mode is active" style="filter:blur(4px);user-select:none;opacity:0.55;letter-spacing:2px;cursor:not-allowed;">████████</div>`;
@@ -2326,6 +2431,10 @@
         <button class="card-btn bc-photo-btn" title="Decode from image">🖼️</button>
       ` : '';
       
+      const chessActions = (gridDef.display === 'chessboard') ? `
+        <button class="card-btn chess-decode-btn" title="Decode a board (FEN or ASCII) to its code">⌖</button>
+      ` : '';
+
       const checksumBtn = supportsChecksum ? `
         <button class="card-btn checksum-btn ${checksumOn ? 'checksum-active' : ''}" title="Toggle checksum word">✓</button>
       ` : '';
@@ -2343,6 +2452,7 @@
             <button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>
             ${chromaActions}
             ${barcodeActions}
+            ${chessActions}
             ${checksumBtn}
             <button class="card-btn share-btn" title="Share">📤</button>
             <button class="card-btn copy-btn" title="Copy">📋</button>
@@ -2362,7 +2472,8 @@
           </div>
           <div class="footer-buttons">
             <button class="action-btn info-btn" title="Cell info">ℹ️</button>
-            ${(gridDef.gis || gridDef.healpix) ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
+            ${gridDef.display === 'chessboard' ? `<button class="action-btn chess-letters-btn" title="Toggle Symbols / Letters">${chessUseLetters ? 'Aa' : '♟'}</button>` : ''}
+            ${(gridDef.gis || gridDef.healpix || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
           </div>
         </div>
@@ -2784,6 +2895,36 @@
         renderBarcodeQR(qrUrlContent, card.querySelector('.barcode-container'), 'qrurl');
       } else if (gridDef.display === 'datamatrix') {
         renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), card.querySelector('.barcode-container'));
+      } else if (gridDef.display === 'chessboard') {
+        const fmt = gridDef.chessFormat || 'standard';
+        const ctrEl = card.querySelector('.chess-board-container');
+        if (ctrEl) {
+          try { ChessboardLib.renderBoard(code, ctrEl, { format: fmt, letters: chessUseLetters }); }
+          catch (e) { ctrEl.innerHTML = ''; }
+        }
+        // Copy FEN
+        card.querySelector('.chess-copy-fen')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try { await navigator.clipboard.writeText(ChessboardLib.toFEN(code, fmt)); showToast("Copied!"); }
+          catch (err) { /* clipboard unavailable */ }
+        });
+        // Copy ASCII board
+        card.querySelector('.chess-copy-ascii')?.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try { await navigator.clipboard.writeText(ChessboardLib.toASCII(code, fmt)); showToast("Copied!"); }
+          catch (err) { /* clipboard unavailable */ }
+        });
+        // Decode a pasted board (FEN or ASCII) back to its hex code, then jump the map there.
+        card.querySelector('.chess-decode-btn')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showChessDecodeModal(gridKey);
+        });
+        // Symbols / Letters toggle (applies to all chess cards at once)
+        card.querySelector('.chess-letters-btn')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          chessUseLetters = !chessUseLetters;
+          renderCards();
+        });
       }
 	  
 	  // BIP39 entry view (like piano roll for music)
@@ -4128,6 +4269,56 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
   }
   
+  // Decode a chess board (FEN placement field OR the ASCII board form) back to its hex code,
+  // then move the map to the decoded coordinate. Uses ChessboardLib.scan, which verifies the
+  // board is in the encoder's image (re-encode match) — a hand-edited/illegal board is rejected
+  // as "not a valid card" rather than silently mis-read (the scanner caveat from the handover).
+  function showChessDecodeModal(gridKey) {
+    const gridDef = CARD_GRIDS[gridKey];
+    const fmt = gridDef.chessFormat || 'standard';
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
+    modal.innerHTML = `
+      <div style="background:var(--paper,#fff);color:#222;border-radius:14px;padding:20px;max-width:480px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,0.4);">
+        <div style="font-weight:600;margin-bottom:6px;">Decode a ${gridDef.name}</div>
+        <div style="font-size:13px;color:#666;margin-bottom:12px;">Paste a FEN placement field or an ASCII board. It will be checked and decoded to its location.</div>
+        <textarea id="chessDecodeIn" rows="6" placeholder="e.g. 3R4/2p2pq1/... or the ASCII board" style="width:100%;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;padding:10px;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;resize:vertical;"></textarea>
+        <div id="chessDecodeMsg" style="font-size:13px;margin-top:10px;min-height:18px;"></div>
+        <div style="margin-top:14px;display:flex;gap:10px;justify-content:flex-end;">
+          <button id="chessDecodeCancel" style="padding:10px 18px;border-radius:9px;border:1px solid #ccc;background:#f4f4f4;font-size:14px;cursor:pointer;">Cancel</button>
+          <button id="chessDecodeGo" style="padding:10px 18px;border-radius:9px;border:none;background:#2b6;color:white;font-size:14px;cursor:pointer;">Decode</button>
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    const close = () => modal.remove();
+    modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+    modal.querySelector('#chessDecodeCancel').onclick = close;
+    modal.querySelector('#chessDecodeGo').onclick = () => {
+      const raw = modal.querySelector('#chessDecodeIn').value;
+      const msg = modal.querySelector('#chessDecodeMsg');
+      if (!raw || !raw.trim()) { msg.textContent = 'Paste a board first.'; msg.style.color = '#c33'; return; }
+      let res;
+      try { res = ChessboardLib.scan(raw.trim(), fmt); }
+      catch (e) { res = { ok: false, reason: e.message }; }
+      if (!res.ok) {
+        msg.textContent = res.reason || 'Not a valid card board.';
+        msg.style.color = '#c33';
+        return;
+      }
+      // res.hex is the recovered Geosonify hex. Decode it to a coordinate via the sibling engine.
+      const coord = decodeCardCode(gridKey, res.hex, false);
+      if (!coord || !Array.isArray(coord)) {
+        msg.textContent = 'Recovered code ' + res.hex + ' but could not decode to a location.';
+        msg.style.color = '#c33';
+        return;
+      }
+      msg.textContent = 'Decoded ' + res.hex + ' → ' + coord[0].toFixed(6) + ', ' + coord[1].toFixed(6);
+      msg.style.color = '#2a7';
+      setCoordinate(coord[0], coord[1]);
+      setTimeout(close, 700);
+    };
+  }
+
   function showChromaScanModal(mode) {
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
@@ -4823,6 +5014,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // yet and saved additions/ordering for them are dropped on reload).
       registerGISCards();
       registerHealpixCards();
+      registerChessboardCards();
 
       // Load saved state
       loadCardState();
