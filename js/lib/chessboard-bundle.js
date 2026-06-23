@@ -4,6 +4,13 @@
  * GeoChess-Visible-104 — reference rank/unrank implementation
  * ===========================================================
  *
+ * Related work: John Tromp's ChessPositionRanking, https://github.com/tromp/ChessPositionRanking
+ *   — invertible ranking of legal chess positions and estimates of how many exist. This Geosonify
+ *   Chessboard codec is NOT a port or adaptation of Tromp's code; it ranks one curated,
+ *   fixed-material visible-board family to encode Geosonify hex strings, a different problem from
+ *   ranking all legal positions. Acknowledged as notable prior work on chess-position ranking and
+ *   legal-position capacity (kings-in-check, adjacent kings, monochromatic bishops, and so on).
+ *
  * Spec (locked through Claude/ChatGPT design dialogue):
  *
  *   The carrier is a chessboard image. The DECODER sees only square -> {empty + 12 visible

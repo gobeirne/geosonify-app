@@ -8,6 +8,12 @@
  * doctored rejection. Realistic pawn bands [1-4]/[3-6]; 78-bit capacity; guaranteed max 19 hex.
  * window.ChessboardLib API: makeCodec, maxHexDigits, toBoard, toFEN, toASCII, scan, renderBoard,
  * fenToBoard, boardToFEN, asciiToBoard, boardToASCII. MPL-2.0, part of Geosonify.
+ *
+ * Related work: John Tromp's ChessPositionRanking, https://github.com/tromp/ChessPositionRanking
+ *   — invertible ranking of legal chess positions and estimates of how many exist. This codec is
+ *   NOT a port or adaptation of Tromp's code; it ranks one curated, fixed-material visible-board
+ *   family to encode Geosonify hex strings (a different problem from ranking all legal positions).
+ *   Acknowledged as notable prior work in chess-position ranking and legal-position capacity.
  */
 (function(global){
 // ===== bundled Chessboard codec (geochess + catalogue + engine + parse-layer) =====
@@ -15,6 +21,13 @@
 /*
  * GeoChess-Visible-104 — reference rank/unrank implementation
  * ===========================================================
+ *
+ * Related work: John Tromp's ChessPositionRanking, https://github.com/tromp/ChessPositionRanking
+ *   — invertible ranking of legal chess positions and estimates of how many exist. This Geosonify
+ *   Chessboard codec is NOT a port or adaptation of Tromp's code; it ranks one curated,
+ *   fixed-material visible-board family to encode Geosonify hex strings, a different problem from
+ *   ranking all legal positions. Acknowledged as notable prior work on chess-position ranking and
+ *   legal-position capacity (kings-in-check, adjacent kings, monochromatic bishops, and so on).
  *
  * Spec (locked through Claude/ChatGPT design dialogue):
  *
