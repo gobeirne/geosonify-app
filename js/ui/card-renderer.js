@@ -2464,7 +2464,7 @@
       ` : '';
       
       const chessActions = (gridDef.display === 'chessboard') ? `
-        <button class="card-btn chess-decode-btn" title="Decode a board (FEN or ASCII) to its code">⌖</button>
+        <button class="card-btn card-btn-wide chess-decode-btn" title="Decode a board (FEN or ASCII) to its code"><span class="card-btn-icon">⌖</span><span class="card-btn-text">DECODE</span></button>
       ` : '';
 
       const checksumBtn = supportsChecksum ? `
