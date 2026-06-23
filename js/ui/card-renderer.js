@@ -581,18 +581,19 @@
   //   - chessboard      : standard Geosonify hex   (chessOf: 'hexbyte')
   //   - hpchessboard    : HEALPix hex              (chessOf: 'hphex')
   // Both reuse the sibling's encode/decode/passphrase/obfuscation untouched. The chess engine
-  // (ChessboardLib) caps usable precision at 19 hex; the sibling's iterations are clamped so a
-  // card never asks for a code the board can't hold (refused-not-truncated is the backstop).
+  // (ChessboardLib) caps usable precision at 23 hex (session 8 bishop fix restored the bishop
+  // layer's entropy: maxHex 19→23); the sibling's iterations are clamped so a card never asks
+  // for a code the board can't hold (refused-not-truncated is the backstop).
   function registerChessboardCards() {
     if (typeof ChessboardLib === 'undefined') return;
-    // Per-card precision caps (chosen with the user; both sit under the 19-hex guaranteed max).
+    // Per-card precision caps (chosen with the user; both sit under the 23-hex guaranteed max).
     //   standard Chessboard: HexByte is a 16×16 grid (256 symbols) — each iteration emits one
     //     BYTE = 2 hex chars, so output length is always EVEN. 9 iterations = 18 hex
-    //     (BFDAFC2602C44174F0, ~291.6 µm × 422.6 µm). 10 iters = 20 hex > board, so refused.
+    //     (BFDAFC2602C44174F0, ~291.6 µm × 422.6 µm), well within the 23-hex board capacity.
     //   HEALPix Chessboard: hphex order 36 = 19 hex (956250B0083AA5BB69E, ~94.9 µm cell).
     // ChessboardLib's refusal remains the hard backstop if a sibling ever exceeds these.
     CARD_GRIDS.chessboard = {
-      name: 'Chessboard (beta)',
+      name: 'Chessboard',
       chessOf: 'hexbyte',
       chessFormat: 'standard',
       grid: null,
@@ -603,7 +604,7 @@
       isEmoji: false
     };
     CARD_GRIDS.hpchessboard = {
-      name: 'HEALPix · Chessboard (beta)',
+      name: 'HEALPix · Chessboard',
       chessOf: 'hphex',
       chessFormat: 'healpix',
       healpixLabel: true,
@@ -5100,9 +5101,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
 
       // One-time HEALPix-hex default visibility (after load so it isn't clobbered)
       surfaceHealpixDefault();
-      // Chessboard stays add-on only while in beta (board has known low-variability squares
-      // under investigation). Re-enable surfaceChessboardDefault() when the engine fix lands.
-      // surfaceChessboardDefault();
+      // Engine fix landed (session 8): bishops vary, all 9 gates green, maxHex now 23.
+      surfaceChessboardDefault();
 
       // Auto-add BIP39 card based on device language (first load only)
       autoAddBIP39ByLanguage();
