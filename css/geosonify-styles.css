@@ -681,6 +681,19 @@ select {
 }
 .card-btn.close-btn { background: rgba(255,80,80,0.35); }
 .card-btn.active-indicator { background: var(--accent); }
+/* Wide labelled variant: an icon + uppercase label pill (e.g. the chessboard DECODE
+   button), styled to sit in the same .card-actions row as the square icon buttons. */
+.card-btn-wide {
+  width: auto;
+  padding: 0 9px;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.card-btn-wide .card-btn-icon { font-size: 13px; line-height: 1; }
+.card-btn-wide .card-btn-text { line-height: 1; }
 .card-body-inner { padding: 12px; min-height: 80px; }
 .code-display {
   font-family: 'SF Mono', monospace;
@@ -1097,88 +1110,4 @@ select {
   #mapResizeHandleH {
     display: none !important;
   }
-}
-
-/* ============== Chessboard / HEALPix-Chessboard cards ==============
-   A Geosonify code rendered as a chess position (one more vocabulary, like ChromaCoord).
-   Pieces use SOLID glyphs for both colours, distinguished by fill + outline (hollow Unicode
-   glyphs are illegible on a busy board): white = light fill + dark edge, black = dark fill +
-   light edge. The never-in-check engine guarantees the position always looks legal. */
-.chess-display { display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0; }
-.chess-display.chess-toobig { padding:14px; }
-.chess-error { font-size:13px; color:#c0392b; text-align:center; }
-
-/* Fluid board: fills the card width and stays square, so it shrinks/grows with the CARD
-   (panel resize, window scaling) — not just the viewport. Bulletproof %/aspect-ratio model;
-   piece glyphs track the board via container-query units where supported, with a fixed
-   fallback otherwise (matches the codebase's existing @supports container pattern). */
-.gschess-boardgrid {
-  display:grid;
-  grid-template-columns:auto minmax(0, 1fr);   /* rank labels | board */
-  gap:5px; align-items:stretch; justify-items:stretch;
-  width:100%; max-width:340px;                  /* cap so it doesn't get silly on wide cards */
-  margin:0 auto;
-}
-.gschess-board {
-  grid-column:2;
-  display:grid;
-  grid-template-columns:repeat(8, 1fr);
-  grid-template-rows:repeat(8, 1fr);
-  width:100%; aspect-ratio:1 / 1;               /* always square, always fills its column */
-  border:1.5px solid #6a5f4c; border-radius:3px; overflow:hidden;
-  container-type:inline-size;                   /* board width drives piece-glyph sizing */
-}
-.gschess-ranklab {
-  grid-column:1;
-  display:grid; grid-template-rows:repeat(8, 1fr); align-items:center; justify-items:center;
-  font-size:11px; color:var(--ios-gray,#8E8E93); font-family:ui-monospace,Menlo,Consolas,monospace;
-}
-.gschess-filelab {
-  grid-column:2; display:grid; grid-template-columns:repeat(8, 1fr); justify-items:center;
-  font-size:11px; color:var(--ios-gray,#8E8E93); font-family:ui-monospace,Menlo,Consolas,monospace;
-}
-.gschess-sq { display:flex; align-items:center; justify-content:center; min-width:0; }
-.gschess-sq.l { background:#efe5cf; }   /* light square */
-.gschess-sq.d { background:#b9a07d; }   /* dark square */
-/* Fallback glyph size for browsers without container queries (rare): a fraction of the
-   board's capped max width / 8. Overridden by the cqw rule below where supported. */
-.gschess-pc { font-size:31px; line-height:1; font-weight:700; }
-@supports (width: 1cqw) {
-  .gschess-pc { font-size:9.2cqw; }       /* ~74% of one square (square = 12.5cqw) */
-}
-.gschess-pc.w {
-  color:#fafafa;
-  text-shadow:-1px -1px 0 #222,1px -1px 0 #222,-1px 1px 0 #222,1px 1px 0 #222,
-              0 -1.4px 0 #222,0 1.4px 0 #222,-1.4px 0 0 #222,1.4px 0 0 #222;
-}
-.gschess-pc.b {
-  color:#1a1a1a;
-  text-shadow:-1px -1px 0 #f0f0f0,1px -1px 0 #f0f0f0,-1px 1px 0 #f0f0f0,1px 1px 0 #f0f0f0,
-              0 -1.4px 0 #f0f0f0,0 1.4px 0 #f0f0f0,-1.4px 0 0 #f0f0f0,1.4px 0 0 #f0f0f0;
-}
-.chess-textforms { width:100%; display:flex; flex-direction:column; gap:5px; }
-.chess-row { display:flex; align-items:center; gap:8px; }
-.chess-label {
-  font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--ios-gray,#8E8E93);
-  width:54px; flex:none; font-family:ui-monospace,Menlo,Consolas,monospace;
-}
-.chess-fen-link {
-  color:#2563eb; text-decoration:none; cursor:pointer; border:none; background:none; padding:0;
-}
-.chess-fen-link:hover { text-decoration:underline; }
-.chess-ascii-toggle { background:none; border:none; cursor:pointer; text-align:left; padding:0; color:var(--ios-gray,#8E8E93); }
-.chess-fen {
-  flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px;
-  font-family:ui-monospace,Menlo,Consolas,monospace;
-  background:var(--ios-light-gray,#f2f2f7); color:var(--ios-text,#000);
-  padding:5px 8px; border-radius:6px;
-}
-.chess-edit-fen, .chess-copy-fen, .chess-copy-ascii { flex:none; }
-/* ASCII board: text must always contrast its background. Use theme vars so it flips with
-   light/dark mode (the hardcoded dark text was invisible on the dark-mode background). */
-.chess-ascii-pre {
-  margin:2px 0 0; padding:8px 10px; border-radius:6px;
-  background:var(--ios-light-gray,#f2f2f7); color:var(--ios-text,#222);
-  font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; line-height:1.25;
-  white-space:pre; overflow-x:auto;
 }
