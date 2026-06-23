@@ -254,7 +254,7 @@
   // ============== INTERNAL STATE ==============
   
   let cardState = {
-    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
+    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex', 'chessboard'],
     order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
     iterations: {},
     active: 'alphanumeric',
@@ -585,18 +585,20 @@
   // card never asks for a code the board can't hold (refused-not-truncated is the backstop).
   function registerChessboardCards() {
     if (typeof ChessboardLib === 'undefined') return;
-    // Max sibling iterations whose hex still fits the board family. hexbyte/hphex are ~ one hex
-    // char per iteration at the relevant range; we cap to the lib's guaranteed max (19) and let
-    // the sibling's own max also apply. The refusal in ChessboardLib is the hard backstop.
-    const CHESS_MAX_HEX = ChessboardLib.maxHexDigits('standard'); // 19, guaranteed-fit
+    // Per-card precision caps (chosen with the user; both sit under the 19-hex guaranteed max).
+    //   standard Chessboard: HexByte is a 16×16 grid (256 symbols) — each iteration emits one
+    //     BYTE = 2 hex chars, so output length is always EVEN. 9 iterations = 18 hex
+    //     (BFDAFC2602C44174F0, ~291.6 µm × 422.6 µm). 10 iters = 20 hex > board, so refused.
+    //   HEALPix Chessboard: hphex order 36 = 19 hex (956250B0083AA5BB69E, ~94.9 µm cell).
+    // ChessboardLib's refusal remains the hard backstop if a sibling ever exceeds these.
     CARD_GRIDS.chessboard = {
       name: 'Chessboard',
       chessOf: 'hexbyte',
       chessFormat: 'standard',
       grid: null,
-      defaultIterations: 8,
+      defaultIterations: 9,
       minIterations: 1,
-      maxIterations: Math.min(CHESS_MAX_HEX, 14),
+      maxIterations: 9,
       display: 'chessboard',
       isEmoji: false
     };
@@ -606,12 +608,9 @@
       chessFormat: 'healpix',
       healpixLabel: true,
       grid: null,
-      defaultIterations: 22,
+      defaultIterations: 36,
       minIterations: 1,
-      // hphex packs 2 orders per hex char, so order k -> ceil(k/2) hex chars. The chess engine
-      // holds 19 hex; order 38 -> 19 hex is the exact ceiling. Beyond that ChessboardLib refuses
-      // (never truncates), so 38 is both the useful max and safe. ~order 38 ≈ sub-nanometre.
-      maxIterations: 38,
+      maxIterations: 36,
       display: 'chessboard',
       link: (typeof HealpixGrids !== 'undefined' && HealpixGrids.cardDefs && HealpixGrids.cardDefs().hphex)
         ? HealpixGrids.cardDefs().hphex.link : null,
@@ -634,6 +633,22 @@
       if (!localStorage.getItem('geosonify_hphex_default_added')) {
         if (!cardState.visible.includes('hphex')) cardState.visible.push('hphex');
         localStorage.setItem('geosonify_hphex_default_added', '1');
+        saveCardState();
+      }
+    } catch (e) { /* private mode */ }
+  }
+
+  // One-time: surface the standard Chessboard card by default for existing users whose saved
+  // state predates it. New users get it from the default `visible` array above. HEALPix
+  // Chessboard stays add-on only ("+ Add Mode").
+  function surfaceChessboardDefault() {
+    if (typeof ChessboardLib === 'undefined') return;
+    try {
+      if (!localStorage.getItem('geosonify_chessboard_default_added')) {
+        if (CARD_GRIDS.chessboard && !cardState.visible.includes('chessboard')) {
+          cardState.visible.push('chessboard');
+        }
+        localStorage.setItem('geosonify_chessboard_default_added', '1');
         saveCardState();
       }
     } catch (e) { /* private mode */ }
@@ -5077,6 +5092,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
 
       // One-time HEALPix-hex default visibility (after load so it isn't clobbered)
       surfaceHealpixDefault();
+      surfaceChessboardDefault();
 
       // Auto-add BIP39 card based on device language (first load only)
       autoAddBIP39ByLanguage();
