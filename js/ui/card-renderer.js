@@ -607,11 +607,15 @@
   // for a code the board can't hold (refused-not-truncated is the backstop).
   function registerChessboardCards() {
     if (typeof ChessboardLib === 'undefined') return;
-    // Per-card precision caps (chosen with the user; both sit under the 23-hex guaranteed max).
+    // Per-card precision caps — set to the MAXIMUM that still fits the board with zero
+    // round-trip failures (verified 20k samples/length, 0 corrupt at the cap, refusal just past it).
     //   standard Chessboard: HexByte is a 16×16 grid (256 symbols) — each iteration emits one
-    //     BYTE = 2 hex chars, so output length is always EVEN. 9 iterations = 18 hex
-    //     (BFDAFC2602C44174F0, ~291.6 µm × 422.6 µm), well within the 23-hex board capacity.
-    //   HEALPix Chessboard: hphex order 36 = 19 hex (956250B0083AA5BB69E, ~94.9 µm cell).
+    //     BYTE = 2 hex chars, so output length is always EVEN. 11 iterations = 22 hex, the
+    //     largest even length that fits the 23-hex board (~1.65 µm × 1.14 µm cell). 12 iters = 24
+    //     hex exceeds the board and would be refused, so 11 is the guaranteed-fit ceiling.
+    //   HEALPix Chessboard: the stepper is HEALPix order k directly; hphex packs 2 levels/hex char
+    //     (hex length = ceil(k/2)+1, validated vs order 36→19 and order 46→24 elsewhere). Order 44
+    //     = 23 hex (~5.9 µm cell), the deepest order that fits; order 45 = 24 hex would be refused.
     // ChessboardLib's refusal remains the hard backstop if a sibling ever exceeds these.
     CARD_GRIDS.chessboard = {
       name: 'Chessboard',
@@ -620,7 +624,7 @@
       grid: null,
       defaultIterations: 9,
       minIterations: 1,
-      maxIterations: 9,
+      maxIterations: 11,
       display: 'chessboard',
       isEmoji: false
     };
@@ -632,7 +636,7 @@
       grid: null,
       defaultIterations: 36,
       minIterations: 1,
-      maxIterations: 36,
+      maxIterations: 44,
       display: 'chessboard',
       link: (typeof HealpixGrids !== 'undefined' && HealpixGrids.cardDefs && HealpixGrids.cardDefs().hphex)
         ? HealpixGrids.cardDefs().hphex.link : null,
