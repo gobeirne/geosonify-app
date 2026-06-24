@@ -57,7 +57,9 @@
       precision: 1,
       ultraAngle: false,
       lenExt: false,
-      addChecksum: false
+      addChecksum: false,
+      precisionMode: 'custom',  // 'auto' | 'human' | 'custom' — drives per-card iteration selection
+      unitSystem: 'metric'      // 'metric' | 'us' — global resolution display units
     },
     
     // Current shape (rectangle, circle, path, etc.)
