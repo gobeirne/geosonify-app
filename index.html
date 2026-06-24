@@ -177,6 +177,17 @@
           </div>
         </div>
       </div>
+
+      <!-- Precision controls (sibling of Encoding Mode) -->
+      <div class="card">
+        <div class="card-header">Precision</div>
+        <div class="card-body">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-secondary" id="precisionModeBtn" style="flex:0 0 auto;" title="Auto = finest that still covers your pin's source resolution · Human = friendly ~1–2 m · Custom = per-card steppers">🎯 Custom</button>
+            <span id="precisionReadout" title="Tap to switch metric ⇄ US units" style="cursor:pointer; user-select:none; font-variant-numeric:tabular-nums; opacity:0.85;">—</span>
+          </div>
+        </div>
+      </div>
       
       <!-- Cards container -->
       <div class="cards-container" id="cardsContainer"></div>
@@ -1928,6 +1939,59 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.getElementById('copyOutputBtn').addEventListener('click', copyCompactOutput);
       document.getElementById('copyURLBtn').addEventListener('click', copyShareURL);
       document.getElementById('visitURLBtn').addEventListener('click', visitShareURL);
+
+      // ---- PRECISION control (Auto / Human / Custom + metric⇄US readout) ------
+      (function wirePrecisionControl() {
+        const modeBtn = document.getElementById('precisionModeBtn');
+        const readout = document.getElementById('precisionReadout');
+        if (!modeBtn || !readout || typeof CardRenderer === 'undefined') return;
+
+        const MODE_LABEL = { auto: '🎯 Auto', human: '🎯 Human', custom: '🎯 Custom' };
+        const NEXT_MODE  = { auto: 'human', human: 'custom', custom: 'auto' };
+
+        function refreshModeLabel() {
+          const m = CardRenderer.getPrecisionMode ? CardRenderer.getPrecisionMode() : 'custom';
+          modeBtn.textContent = MODE_LABEL[m] || MODE_LABEL.custom;
+        }
+        // Readout shows the ACTIVE card's resolution (larger axis), via the same
+        // formatLength funnel so it tracks the metric⇄US toggle. Falls back to a
+        // dash when there's no pin/active card yet.
+        function refreshReadout() {
+          try {
+            const txt = CardRenderer.getActiveResolutionText ? CardRenderer.getActiveResolutionText() : '';
+            readout.textContent = (txt && txt.length) ? txt : '—';
+          } catch (e) { readout.textContent = '—'; }
+        }
+        function refreshAll() { refreshModeLabel(); refreshReadout(); }
+
+        modeBtn.addEventListener('click', () => {
+          const cur = CardRenderer.getPrecisionMode ? CardRenderer.getPrecisionMode() : 'custom';
+          const next = NEXT_MODE[cur] || 'auto';
+          CardRenderer.setPrecisionMode(next);   // applies mode + re-renders cards
+          refreshAll();
+        });
+        readout.addEventListener('click', () => {
+          if (CardRenderer.toggleUnitSystem) CardRenderer.toggleUnitSystem();  // re-renders cards
+          refreshReadout();
+        });
+
+        // Keep readout fresh when the pin moves or the active card changes.
+        if (typeof AppState !== 'undefined') {
+          AppState.subscribe('coordinate', () => { if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') CardRenderer.applyPrecisionMode(); refreshReadout(); });
+          AppState.subscribe('exact', () => { if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') CardRenderer.applyPrecisionMode(); refreshReadout(); });
+          AppState.subscribe('cards.active', refreshReadout);
+        }
+        // Expose a refresh hook so other code (card re-render, stepper changes) can
+        // nudge the readout without reaching into this closure.
+        window.refreshPrecisionReadout = refreshReadout;
+
+        // Cold load: if the restored mode is Auto/Human, recompute iterations
+        // against the restored pin now (Custom keeps the restored per-card values).
+        if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') {
+          try { CardRenderer.applyPrecisionMode(); } catch (e) {}
+        }
+        refreshAll();
+      })();
 
       // Display-share panel wiring
       (function wireDisplaySharePanel() {
