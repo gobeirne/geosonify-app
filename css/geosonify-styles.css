@@ -697,6 +697,12 @@ select {
 .card-btn-wide .card-btn-text { line-height: 1; }
 /* card-action icon buttons now hold inline SVGs; centre + size them consistently. */
 .card-btn svg { width: 15px; height: 15px; display: block; }
+/* Inline title icons (passphrase key, obfuscation shuffle) sit beside the card name. */
+.card-title-icon { display: inline-flex; align-items: center; margin-right: 4px; }
+.card-title-icon svg { width: 14px; height: 14px; }
+/* Footer / map-control buttons and the music card-title buttons that now carry SVGs. */
+.action-btn svg, .audio-speaker-btn svg, .open-maps-btn svg { width: 15px; height: 15px; display: inline-block; vertical-align: middle; }
+.info-btn svg { width: 16px; height: 16px; }
 .card-body-inner { padding: 12px; min-height: 80px; }
 .code-display {
   font-family: 'SF Mono', monospace;
@@ -1163,14 +1169,16 @@ select {
   .gschess-pc { font-size:9.2cqw; }       /* ~74% of one square (square = 12.5cqw) */
 }
 .gschess-pc.w {
-  color:#fafafa;
-  text-shadow:-1px -1px 0 #222,1px -1px 0 #222,-1px 1px 0 #222,1px 1px 0 #222,
-              0 -1.4px 0 #222,0 1.4px 0 #222,-1.4px 0 0 #222,1.4px 0 0 #222;
+  color:#fcfcfc;
+  -webkit-text-stroke:1.4px #1c1c1c;
+  text-shadow:0 0 1px #1c1c1c, 0 1px 1.5px rgba(0,0,0,0.45);
+  paint-order:stroke fill;
 }
 .gschess-pc.b {
-  color:#1a1a1a;
-  text-shadow:-1px -1px 0 #f0f0f0,1px -1px 0 #f0f0f0,-1px 1px 0 #f0f0f0,1px 1px 0 #f0f0f0,
-              0 -1.4px 0 #f0f0f0,0 1.4px 0 #f0f0f0,-1.4px 0 0 #f0f0f0,1.4px 0 0 #f0f0f0;
+  color:#161616;
+  -webkit-text-stroke:1px #e6e6e6;
+  text-shadow:0 0 1px #e6e6e6, 0 1px 1.5px rgba(0,0,0,0.35);
+  paint-order:stroke fill;
 }
 .chess-textforms { width:100%; display:flex; flex-direction:column; gap:5px; }
 .chess-row { display:flex; align-items:center; gap:8px; }
@@ -1190,6 +1198,17 @@ select {
   padding:5px 8px; border-radius:6px;
 }
 .chess-edit-fen, .chess-copy-fen, .chess-copy-ascii { flex:none; }
+/* These buttons live in the light card BODY, not the dark header, so the inherited
+   .card-btn styling (white icon on translucent-white) rendered them invisible. Override
+   to a dark icon on a light-grey chip, matching the FEN code field beside them. */
+.chess-edit-fen.card-btn, .chess-copy-fen.card-btn, .chess-copy-ascii.card-btn {
+  background:var(--ios-light-gray,#f2f2f7);
+  color:var(--ios-text,#333);
+}
+.chess-edit-fen.card-btn:hover, .chess-copy-fen.card-btn:hover, .chess-copy-ascii.card-btn:hover {
+  background:#e4e4ea;
+}
+.chess-copy-fen.card-btn svg, .chess-copy-ascii.card-btn svg { stroke:currentColor; }
 /* ASCII board: text must always contrast its background. Use theme vars so it flips with
    light/dark mode (the hardcoded dark text was invisible on the dark-mode background). */
 .chess-ascii-pre {
