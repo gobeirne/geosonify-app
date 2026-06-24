@@ -295,5 +295,30 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
   gate('Gate 8 (NEW: Human=fixed presets, lat-independent, BIP39=4 words; readout=provenance value+basis all modes)', ok && readoutOk, detail);
 })();
 
+// ---- Gate I (correction): units default from device locale on first run, but a
+// prior explicit user choice is always respected (never overridden). ------------
+(() => {
+  if (!AppState) { gate('Gate 9 (locale units default; user choice respected)', false, 'no AppState'); return; }
+  let ok = true, detail = '';
+  const setLocale = (tag) => { ctx.navigator = { language: tag, languages: [tag] }; ctx.Intl = { NumberFormat: function(){ return { resolvedOptions: () => ({ locale: tag }) }; } }; };
+  const cases = [['en-US','us'],['en-GB','metric'],['fr-FR','metric'],['my-MM','us'],['en-LR','us'],['de','metric']];
+  for (const [tag, want] of cases) {
+    setLocale(tag);
+    AppState.set('encoding.unitSystem', 'metric');
+    AppState.set('encoding.unitSystemUserSet', false);
+    CardRenderer.initUnitsFromLocale();
+    if (AppState.get('encoding.unitSystem') !== want) { ok = false; detail = tag + '→' + AppState.get('encoding.unitSystem') + ' (want ' + want + ')'; break; }
+  }
+  // prior explicit choice respected
+  if (ok) {
+    setLocale('en-US');                       // would default to US
+    AppState.set('encoding.unitSystem', 'metric');
+    AppState.set('encoding.unitSystemUserSet', true);   // but user chose metric
+    CardRenderer.initUnitsFromLocale();
+    if (AppState.get('encoding.unitSystem') !== 'metric') { ok = false; detail = 'user metric choice overridden by en-US locale'; }
+  }
+  gate('Gate 9 (NEW: units default from device locale; explicit user choice respected)', ok, detail);
+})();
+
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
 process.exit(fail ? 1 : 0);
