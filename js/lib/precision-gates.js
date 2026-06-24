@@ -244,5 +244,50 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
        'restored=' + AppState.get('encoding.precisionMode') + '/' + AppState.get('encoding.unitSystem') + ' fellBack=' + fellBack);
 })();
 
+// ---- Gate H (correction): Human = NEAREST step; readout = provenance ---------
+// Human rounding picks the step closest to target (log-space), so coarse-stepped
+// grids (BIP39, 45×/step) land on the friendly nearby step rather than overshooting
+// far finer. And the readout reflects measurement provenance, not card resolution.
+(() => {
+  let ok = true, detail = '';
+  // For every testable card, Human's chosen iter must be within ±1 of the
+  // log-space-nearest step to its human target, and never further than the
+  // 'cover' choice from target (i.e. nearest is at least as close as cover).
+  for (const key of testableKeys) {
+    const gd = CARD_GRIDS[key];
+    const isB = gd.prefixLength !== undefined;
+    const target = isB ? 4 : 1.5;
+    const nearest = CardRenderer.resolutionToIterations(key, target, 'nearest');
+    const cover   = CardRenderer.resolutionToIterations(key, target, 'cover');
+    const cN = cellMetresOf(key, nearest), cC = cellMetresOf(key, cover);
+    if (!isFinite(cN)) continue;
+    const dN = Math.abs(Math.log(cN) - Math.log(target));
+    const dC = isFinite(cC) ? Math.abs(Math.log(cC) - Math.log(target)) : Infinity;
+    // nearest must be no further from target than cover (in log-space), modulo eps
+    if (dN > dC + 1e-6) { ok = false; detail = key + ' nearest(' + nearest + ',' + cN.toFixed(3) + ') further than cover(' + cover + ',' + cC.toFixed(3) + ')'; break; }
+  }
+  // BIP39 specifically: Human must NOT overshoot to sub-metre — nearest step to 4 m
+  // should be ≥ ~1 m (the friendly side), proving the coarse-grid fix.
+  if (ok) {
+    for (const key of bip39Keys) {
+      if (!resolvable(key)) continue;
+      const it = CardRenderer.resolutionToIterations(key, 4, 'nearest');
+      const cell = cellMetresOf(key, it);
+      if (isFinite(cell) && cell < 1) { ok = false; detail = key + ' Human overshoots to ' + cell.toFixed(3) + ' m (<1 m) — should be the ~4 m step'; break; }
+    }
+  }
+  // Readout source = provenance, not card. With a stubbed pin, getSourceResolutionText
+  // returns the uncertainty; getActiveResolutionText aliases to the same.
+  let readoutOk = true;
+  try {
+    ctx.GeosonifyMain = { getExact: () => ({ meta: { uncertaintyMetres: 3.2, basis: 'GPS ±3.2 m' }, uncertaintyMetres: () => 3.2 }) };
+    if (AppState) AppState.set('encoding.unitSystem', 'metric');
+    const src = CardRenderer.getSourceResolutionText();
+    readoutOk = (src === '3.2 m');
+    if (!readoutOk) detail = (detail ? detail + '; ' : '') + 'readout=' + src + ' (want 3.2 m)';
+  } catch (e) { readoutOk = false; detail += ' readout-threw'; }
+  gate('Gate 8 (NEW: Human=nearest step incl. coarse BIP39; readout=provenance not card)', ok && readoutOk, detail);
+})();
+
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
 process.exit(fail ? 1 : 0);
