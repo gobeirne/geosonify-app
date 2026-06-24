@@ -1630,7 +1630,12 @@ ChessboardCodec.prototype.scan = function(board){
     if(typeof input==='string'){ board=/\|/.test(input)?asciiToBoard(input):fenToBoard(input);
       if(!board) return {ok:false,hex:null,reason:'could not parse FEN/ASCII board'}; }
     return makeCodec(format).scan(board); }
-  const SOLID={1:'\u265A',2:'\u265B',3:'\u265C',4:'\u265D',5:'\u265E',6:'\u265F',
+  // White pieces (1-6) use the OUTLINE glyphs (U+2654-2659); black (7-12) use the SOLID
+  // glyphs (U+265A-265F). Previously both sides used the solid glyph and relied on fill colour
+  // + a 1px shadow to tell them apart, which made white pawns wash out to near-invisible on the
+  // light squares (the solid body was ~94% pale fill behind a hairline border). Outline-for-white
+  // gives white pieces a genuine fillable interior with a real border, like every Unicode board.
+  const SOLID={1:'\u2654',2:'\u2655',3:'\u2656',4:'\u2657',5:'\u2658',6:'\u2659',
                7:'\u265A',8:'\u265B',9:'\u265C',10:'\u265D',11:'\u265E',12:'\u265F'};
   const LETTER=['','K','Q','R','B','N','P','k','q','r','b','n','p'];
   function _coerce(input,format){ if(input instanceof Int8Array||Array.isArray(input))return input;
