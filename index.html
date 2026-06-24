@@ -1993,6 +1993,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           AppState.subscribe('coordinate', onPin);
           AppState.subscribe('exact', onPin);
           AppState.subscribe('cards.active', refreshReadout);
+          // Re-sync the button label if the mode is changed/restored elsewhere
+          // (e.g. main.js restoreState() runs AFTER this wiring — DOMContentLoaded
+          // handler order isn't guaranteed — so the label must follow state, not
+          // a one-shot read at wiring time).
+          AppState.subscribe('encoding.precisionMode', refreshModeLabel);
+          AppState.subscribe('encoding.unitSystem', refreshReadout);
         }
         // Expose a refresh hook so card re-render / stepper changes can nudge it.
         window.refreshPrecisionReadout = refreshReadout;
@@ -2007,6 +2013,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           try { CardRenderer.applyPrecisionMode(); } catch (e) {}
         }
         refreshAll();
+        // restoreState() in main.js may run AFTER this wiring and restores state with
+        // notify=false (so no subscription fires). Once the current task settles,
+        // re-sync the label/readout AND re-apply the mode if it restored to Auto/Human
+        // (the earlier cold-load apply above may have run while mode still read the
+        // default 'custom'). Idempotent; Custom stays a no-op on iterations.
+        setTimeout(() => {
+          if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') {
+            try { CardRenderer.applyPrecisionMode(); } catch (e) {}
+          }
+          refreshAll();
+        }, 0);
       })();
 
       // Display-share panel wiring
