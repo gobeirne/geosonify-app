@@ -1337,6 +1337,28 @@
     if (m >= 1e-18) return (m*1e18).toFixed(1) + ' am';
     return m.toExponential(1) + ' m';
   }
+
+  // Imperial / US-survey ladder, mirroring formatMetric's one-decimal convention.
+  // Thresholds at the canonical unit boundaries: mile (1609.344 m), foot
+  // (0.3048 m), inch (0.0254 m), then thou/mil (1 inch = 1000 thou) and µin for
+  // the micron range. Below that, scientific inches (parallels formatMetric's
+  // toExponential fallback) so deep-iteration cells still render honestly.
+  function formatImperial(m) {
+    if (!isFinite(m) || m <= 0) return '0';
+    const inch = m / 0.0254;
+    if (m >= 1609.344) return (m/1609.344).toFixed(1) + ' mi';
+    if (m >= 0.3048)   return (m/0.3048).toFixed(1) + ' ft';
+    if (m >= 0.0254)   return inch.toFixed(1) + ' in';
+    if (inch >= 1e-3)  return (inch*1e3).toFixed(1) + ' thou';   // 1 in = 1000 thou (mil)
+    if (inch >= 1e-6)  return (inch*1e6).toFixed(1) + ' µin';
+    return inch.toExponential(1) + ' in';
+  }
+
+  // Single funnel for ALL resolution rendering. One toggle (unitSystem) flips the
+  // Precision readout, every card's .precision-display, and the ℹ️ line together.
+  function formatLength(m) {
+    return (getUnitSystem() === 'us') ? formatImperial(m) : formatMetric(m);
+  }
   
   // Build the "Measurement uncertainty" line for the ℹ️ box from the source-of-
   // truth exact point's provenance. Returns null if no exact point / no module,
@@ -1356,13 +1378,187 @@
         console.warn('[provenance] ℹ️ open: no exact point stored yet (drop a pin / get GPS first).');
         return null;
       }
-      const txt = pt.uncertaintyText();
+      // Funnel the ±value through formatLength so the metric⇄US toggle flips the
+      // ℹ️ line too. Rebuild from raw metres + basis rather than the module's own
+      // hard-metric uncertaintyText(). Basis label kept verbatim (it's descriptive,
+      // e.g. "map pin @ z18" / "typed, 6 dp"); only the leading ±metres is reunit-ed.
+      let txt = null;
+      try {
+        const u = (typeof pt.uncertaintyMetres === 'function') ? pt.uncertaintyMetres() : null;
+        if (u != null && isFinite(u) && u > 0) {
+          const basis = (pt.meta && pt.meta.basis) ? ' (' + pt.meta.basis + ')' : '';
+          txt = '±' + formatLength(u) + basis;
+        } else {
+          txt = pt.uncertaintyText();   // fallback to module's own text
+        }
+      } catch (e) { txt = pt.uncertaintyText(); }
       console.log('%c[provenance]%c ℹ️ uncertainty line:', 'color:#ffd54f;font-weight:bold', 'color:inherit', txt);
       return txt ? ('Measurement uncertainty: ' + txt) : null;
     } catch (e) {
       console.warn('[provenance] buildUncertaintyLine error:', e && e.message);
       return null;
     }
+  }
+
+  // ---- Precision-control state accessors (backed by AppState.encoding) -------
+  // Safe before AppState exists (Node gate harness) and before any pin: default
+  // to metric / custom so nothing downstream breaks if state isn't ready.
+  function getUnitSystem() {
+    try {
+      if (typeof AppState !== 'undefined') {
+        const u = AppState.get('encoding.unitSystem');
+        if (u === 'us' || u === 'metric') return u;
+      }
+    } catch (e) {}
+    return 'metric';
+  }
+  function getPrecisionMode() {
+    try {
+      if (typeof AppState !== 'undefined') {
+        const m = AppState.get('encoding.precisionMode');
+        if (m === 'auto' || m === 'human' || m === 'custom') return m;
+      }
+    } catch (e) {}
+    return 'custom';
+  }
+
+  // INVERSE of getPrecisionText: target metres → fewest iterations whose cell is
+  // equal-or-finer than target (never coarser than source), clamped to the card's
+  // real [min,max]. "Cell size" = the LARGER of the two axes, so BOTH axes end up
+  // ≤ target. Mirrors getPrecisionText's three families:
+  //   • chess  → delegate to chessOf sibling (board inherits sibling's resolution)
+  //   • vocab  → closed-form log inverse of the base^iterations formula
+  //   • HEALPix / GIS → walk cellMetres({w,h}) over [min,max] (discrete standards;
+  //     a card pinned at its max may be COARSER than target — that's correct, the
+  //     standard simply can't express finer, exactly like HexByte's even-length cap)
+  function resolutionToIterations(gridKey, targetMetres) {
+    const gd = CARD_GRIDS[gridKey];
+    if (!gd) return 1;
+    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres);
+    // Fixed-iteration cards (ChromaCoord) are never re-iterated by Auto/Human:
+    // the invert returns their immutable count regardless of target. applyPrecisionMode
+    // also skips them (not adjustable), but guarding here makes the function itself
+    // safe to call on a fixed card.
+    if (gd.fixedIterations !== undefined) return gd.fixedIterations;
+
+    // Effective clamp for this card, computed once so EVERY return path respects it
+    // (incl. garbage targets and the null-grid fallback). Mirrors the per-family
+    // min/max sources used below.
+    let cMin, cMax;
+    if (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix]) {
+      cMin = HealpixGrids.SCHEMES[gd.healpix].minIterations; cMax = HealpixGrids.SCHEMES[gd.healpix].maxIterations;
+    } else if (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis]) {
+      cMin = GISGrids.SCHEMES[gd.gis].minIterations; cMax = GISGrids.SCHEMES[gd.gis].maxIterations;
+    } else {
+      cMin = gd.minIterations || 1;
+      cMax = gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : (gd.maxIterations || cMin))
+                                  : (gd.maxIterations || cMin);
+    }
+    const clamp = (n) => Math.max(cMin, Math.min(cMax, n));
+
+    if (!isFinite(targetMetres) || targetMetres <= 0) {
+      return clamp(gd.defaultIterations || cMin);
+    }
+
+    // HEALPix & GIS: discrete cellMetres({w,h}) ladder — find finest iter whose
+    // larger axis ≤ target; if none qualifies (target finer than the standard),
+    // return max (finest the standard offers). Both expose min/maxIterations on a
+    // per-scheme object, and for HEALPix iterations IS the order (precisionText
+    // does clampOrder(iterations) then cellMetres(order)).
+    const ladder =
+      (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix])
+        ? (() => { const s = HealpixGrids.SCHEMES[gd.healpix];
+            return { min: s.minIterations, max: s.maxIterations,
+                     cell: (it) => s.cellMetres(it) }; })()
+      : (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis])
+        ? (() => { const s = GISGrids.SCHEMES[gd.gis];
+            const lat = currentCardCoord ? currentCardCoord.lat : 0;
+            const lon = currentCardCoord ? currentCardCoord.lon : 0;
+            return { min: s.minIterations, max: s.maxIterations,
+                     cell: (it) => s.cellMetres(it, lat, lon) }; })()
+        : null;
+    if (ladder) {
+      const EPS_L = 1e-9;
+      let chosen = ladder.max;          // default: finest the standard offers
+      for (let it = ladder.min; it <= ladder.max; it++) {
+        const d = ladder.cell(it);
+        const side = Math.max(d.w, d.h);
+        if (side <= targetMetres * (1 + EPS_L)) { chosen = it; break; }  // finest that covers source
+      }
+      return clamp(chosen);
+    }
+
+    // Vocabulary grids: closed-form inverse of
+    //   axisM = exp( ln(span° × m/°) − iterations·ln(base) )
+    // The LARGER cell axis is the binding constraint (if the bigger side ≤ target,
+    // the smaller side is too). Both axes shrink monotonically with iterations, so
+    // the fewest iters with BOTH axes ≤ target is ceil(max(itLat, itLon)). A tiny
+    // epsilon absorbs floating-point error so a target that lands exactly on an
+    // iteration boundary (e.g. itLon = 3.0000000000000004) rounds to that equal
+    // iteration rather than one needlessly-finer step (gate 2 "never needlessly finer").
+    const grid = gd.grid;
+    if (!grid) return clamp(gd.defaultIterations || cMin);   // data not bound: safe clamped default
+    const rows = grid.length, cols = grid[0].length;
+    const lat = currentCardCoord ? currentCardCoord.lat : 0;
+    const mPerDegLat = 111319.9;
+    const mPerDegLon = 111319.9 * Math.cos(lat * Math.PI / 180);
+    const lnTarget = Math.log(targetMetres);
+    const itLat = (Math.log(180 * mPerDegLat) - lnTarget) / Math.log(rows);
+    const itLon = (Math.log(360 * mPerDegLon) - lnTarget) / Math.log(cols);
+    const EPS = 1e-9;
+    let iters = Math.ceil(Math.max(itLat, itLon) - EPS);  // fewest iters with both axes ≤ target
+    if (!isFinite(iters)) iters = cMin;
+    return clamp(iters);
+  }
+
+  // Human-mode named targets (NOT magic iteration numbers — kept as metres so
+  // they stay correct across every grid family/base). BIP39 reads coarser by
+  // design (whole-word friendliness).
+  const HUMAN_TARGET_M = 1.5;
+  const HUMAN_TARGET_BIP39_M = 4;
+
+  // A card is ADJUSTABLE if it has a max and is not fixed. ChromaCoord
+  // (fixedIterations) is excluded — Auto/Human never touch it. BIP39 family is
+  // marked by prefixLength (shared by all 10 BIP39 grids, none else).
+  function isAdjustableCard(gd) {
+    return !!gd && gd.fixedIterations === undefined &&
+           (gd.maxIterations !== undefined || gd.dynamicIterations);
+  }
+  function isBip39Card(gd) { return !!gd && gd.prefixLength !== undefined; }
+
+  // Apply the current precision mode to every adjustable card, then re-render.
+  //   custom → no-op on iterations (user-owned); just re-render so steppers show.
+  //   auto   → target = getExact().meta.uncertaintyMetres (fallback Human if no pin).
+  //   human  → per-card named target (BIP39 4 m, else 1.5 m).
+  // Only cardState.iterations is touched; encode/decode/render read from it, so a
+  // re-render flows everything downstream unchanged. defaultIterations is never
+  // mutated (cold-start/Custom starting points stay put).
+  function applyPrecisionMode() {
+    const mode = getPrecisionMode();
+    if (mode === 'custom') { renderCards(); return; }
+
+    // Auto's source resolution (null-pin → fall back to Human targets).
+    let autoTarget = null;
+    if (mode === 'auto') {
+      try {
+        const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
+          ? GeosonifyMain.getExact
+          : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
+        const pt = getEx ? getEx() : null;
+        const u = pt && pt.meta && pt.meta.uncertaintyMetres;
+        if (isFinite(u) && u > 0) autoTarget = u;
+      } catch (e) {}
+    }
+
+    Object.keys(CARD_GRIDS).forEach(key => {
+      const gd = CARD_GRIDS[key];
+      if (!isAdjustableCard(gd)) return;            // ChromaCoord & non-steppable skip
+      const humanTarget = isBip39Card(gd) ? HUMAN_TARGET_BIP39_M : HUMAN_TARGET_M;
+      const target = (mode === 'auto' && autoTarget != null) ? autoTarget : humanTarget;
+      cardState.iterations[key] = resolutionToIterations(key, target);
+    });
+    saveCardState();
+    renderCards();
   }
 
   function getPrecisionText(gridKey, iterations) {
@@ -1372,9 +1568,25 @@
       return getPrecisionText(gd.chessOf, iterations);
     }
     if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
+      // Funnel through formatLength (metric/US) instead of the module's own
+      // hard-metric precisionText, so one toggle flips every card. cellMetres
+      // returns {w,h} equal-area side (w===h).
+      const s = HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix];
+      if (s && typeof s.cellMetres === 'function') {
+        const k = (typeof HealpixGrids.clampOrder === 'function') ? HealpixGrids.clampOrder(iterations) : iterations;
+        const d = s.cellMetres(k);
+        return `${formatLength(d.w)} × ${formatLength(d.h)}`;
+      }
       return HealpixGrids.precisionText(gd.healpix, iterations, currentCardCoord);
     }
     if (gd && gd.gis && typeof GISGrids !== 'undefined') {
+      const s = GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis];
+      if (s && typeof s.cellMetres === 'function') {
+        const lat = currentCardCoord ? currentCardCoord.lat : 0;
+        const lon = currentCardCoord ? currentCardCoord.lon : 0;
+        const d = s.cellMetres(iterations, lat, lon);
+        return `${formatLength(d.w)} × ${formatLength(d.h)}`;
+      }
       return GISGrids.precisionText(gd.gis, iterations, currentCardCoord);
     }
     const grid = CARD_GRIDS[gridKey]?.grid;
@@ -1390,7 +1602,7 @@
     const latM = Math.exp(Math.log(180 * metersPerDegLat) - iterations * Math.log(rows));
     const lonM = Math.exp(Math.log(360 * metersPerDegLon) - iterations * Math.log(cols));
 
-    return `${formatMetric(latM)} × ${formatMetric(lonM)}`;
+    return `${formatLength(latM)} × ${formatLength(lonM)}`;
   }
   
   function getActiveEncoding(lat, lon) {
@@ -2520,7 +2732,7 @@
         <div class="card-footer-row">
           <div class="precision-row">
             <span class="precision-display">${precision}</span>
-            ${isFixed ? '' : `
+            ${(isFixed || getPrecisionMode() !== 'custom') ? '' : `
               <div class="precision-controls">
                 <button class="precision-btn minus-btn" ${iterations <= (gridDef.minIterations || 1) ? 'disabled' : ''}>−</button>
                 <button class="precision-btn plus-btn" ${iterations >= (gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations) ? 'disabled' : ''}>+</button>
@@ -3044,6 +3256,11 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           }
         }
       }
+    }
+    // Keep the PRECISION readout in sync with whatever just re-rendered (stepper
+    // change, mode switch, pin move). Hook is installed by the control wiring.
+    if (typeof window !== 'undefined' && typeof window.refreshPrecisionReadout === 'function') {
+      try { window.refreshPrecisionReadout(); } catch (e) {}
     }
   }
 
@@ -5157,6 +5374,48 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      * Re-render all cards
      */
     render: renderCards,
+
+    // --- Precision control surface (used by the PRECISION control + gates) ---
+    // Pure math (exposed for the precision round-trip gate):
+    getPrecisionText: getPrecisionText,
+    resolutionToIterations: resolutionToIterations,
+    // Length formatting funnel (one toggle drives metric/US everywhere):
+    formatLength: formatLength,
+    formatMetric: formatMetric,
+    formatImperial: formatImperial,
+    getUnitSystem: getUnitSystem,
+    getPrecisionMode: getPrecisionMode,
+    // Apply the current precision mode: repopulate cardState.iterations for every
+    // ADJUSTABLE card from the mode's target, then re-render. Custom = no-op
+    // (leaves user-set iterations; just re-renders so steppers reappear). Auto
+    // uses the pin's source resolution; Human uses named human-friendly targets.
+    applyPrecisionMode: applyPrecisionMode,
+    setPrecisionMode(mode) {
+      if (mode !== 'auto' && mode !== 'human' && mode !== 'custom') return;
+      if (typeof AppState !== 'undefined') AppState.set('encoding.precisionMode', mode);
+      applyPrecisionMode();
+    },
+    setUnitSystem(sys) {
+      if (sys !== 'metric' && sys !== 'us') return;
+      if (typeof AppState !== 'undefined') AppState.set('encoding.unitSystem', sys);
+      renderCards();   // re-render flips every .precision-display through formatLength
+    },
+    toggleUnitSystem() {
+      this.setUnitSystem(getUnitSystem() === 'metric' ? 'us' : 'metric');
+      return getUnitSystem();
+    },
+    // Resolution text for the currently-active card at its current iteration,
+    // routed through formatLength (metric/US). Returns '' if no active card.
+    // Used by the PRECISION readout so it never has to reach into private state.
+    getActiveResolutionText() {
+      const key = cardState.active;
+      if (!key || !CARD_GRIDS[key] || !currentCardCoord) return '';
+      const gd = CARD_GRIDS[key];
+      const it = gd.fixedIterations !== undefined ? gd.fixedIterations
+               : (gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : gd.defaultIterations)
+               : (cardState.iterations[key] || gd.defaultIterations));
+      return getPrecisionText(key, it);
+    },
 
     /**
      * Set a card's iteration count, persist it, and re-render. Used by
