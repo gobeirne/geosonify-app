@@ -247,46 +247,52 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
 // ---- Gate H (correction): Human = NEAREST step; readout = provenance ---------
 // Human rounding picks the step closest to target (log-space), so coarse-stepped
 // grids (BIP39, 45×/step) land on the friendly nearby step rather than overshooting
-// far finer. And the readout reflects measurement provenance, not card resolution.
+// ---- Gate H (correction): Human = FIXED presets (latitude-independent); BIP39
+// always 4 words; readout = provenance uncertainty (value + basis), all modes. ----
 (() => {
   let ok = true, detail = '';
-  // For every testable card, Human's chosen iter must be within ±1 of the
-  // log-space-nearest step to its human target, and never further than the
-  // 'cover' choice from target (i.e. nearest is at least as close as cover).
-  for (const key of testableKeys) {
-    const gd = CARD_GRIDS[key];
-    const isB = gd.prefixLength !== undefined;
-    const target = isB ? 4 : 1.5;
-    const nearest = CardRenderer.resolutionToIterations(key, target, 'nearest');
-    const cover   = CardRenderer.resolutionToIterations(key, target, 'cover');
-    const cN = cellMetresOf(key, nearest), cC = cellMetresOf(key, cover);
-    if (!isFinite(cN)) continue;
-    const dN = Math.abs(Math.log(cN) - Math.log(target));
-    const dC = isFinite(cC) ? Math.abs(Math.log(cC) - Math.log(target)) : Infinity;
-    // nearest must be no further from target than cover (in log-space), modulo eps
-    if (dN > dC + 1e-6) { ok = false; detail = key + ' nearest(' + nearest + ',' + cN.toFixed(3) + ') further than cover(' + cover + ',' + cC.toFixed(3) + ')'; break; }
-  }
-  // BIP39 specifically: Human must NOT overshoot to sub-metre — nearest step to 4 m
-  // should be ≥ ~1 m (the friendly side), proving the coarse-grid fix.
-  if (ok) {
-    for (const key of bip39Keys) {
-      if (!resolvable(key)) continue;
-      const it = CardRenderer.resolutionToIterations(key, 4, 'nearest');
-      const cell = cellMetresOf(key, it);
-      if (isFinite(cell) && cell < 1) { ok = false; detail = key + ' Human overshoots to ' + cell.toFixed(3) + ' m (<1 m) — should be the ~4 m step'; break; }
+  // Human applies a fixed preset, NOT a metres target. Apply Human at two very
+  // different latitudes; the ITERATION counts must be identical (presets don't
+  // move with latitude), even though displayed metres differ.
+  if (AppState) {
+    AppState.set('encoding.precisionMode', 'human');
+    CardRenderer.setCoordinate(-43.53, 172.63);    // Christchurch
+    CardRenderer.applyPrecisionMode();
+    const csA = CardRenderer.getCardState().iterations;
+    CardRenderer.setCoordinate(64.13, -21.90);     // Reykjavík
+    CardRenderer.applyPrecisionMode();
+    const csB = CardRenderer.getCardState().iterations;
+    for (const key of testableKeys) {
+      if (csA[key] !== csB[key]) { ok = false; detail = key + ' preset moved with latitude: ' + csA[key] + ' vs ' + csB[key]; break; }
+    }
+    // BIP39 must be exactly 4 (words) under Human.
+    if (ok) for (const key of bip39Keys) {
+      if (csA[key] !== 4) { ok = false; detail = key + ' Human=' + csA[key] + ' (want 4 words)'; break; }
+    }
+    // ChromaCoord still fixed.
+    if (ok && CARD_GRIDS.chromacoord && csA.chromacoord !== undefined && csA.chromacoord !== CARD_GRIDS.chromacoord.fixedIterations) {
+      ok = false; detail = 'chromacoord moved under Human';
     }
   }
-  // Readout source = provenance, not card. With a stubbed pin, getSourceResolutionText
-  // returns the uncertainty; getActiveResolutionText aliases to the same.
+  // Readout = provenance uncertainty with value + basis, present in all modes.
   let readoutOk = true;
   try {
-    ctx.GeosonifyMain = { getExact: () => ({ meta: { uncertaintyMetres: 3.2, basis: 'GPS ±3.2 m' }, uncertaintyMetres: () => 3.2 }) };
+    ctx.GeosonifyMain = { getExact: () => ({ meta: { uncertaintyMetres: 0.054, basis: 'map pin @ z21' }, uncertaintyMetres: () => 0.054 }) };
     if (AppState) AppState.set('encoding.unitSystem', 'metric');
-    const src = CardRenderer.getSourceResolutionText();
-    readoutOk = (src === '3.2 m');
-    if (!readoutOk) detail = (detail ? detail + '; ' : '') + 'readout=' + src + ' (want 3.2 m)';
-  } catch (e) { readoutOk = false; detail += ' readout-threw'; }
-  gate('Gate 8 (NEW: Human=nearest step incl. coarse BIP39; readout=provenance not card)', ok && readoutOk, detail);
+    const u = CardRenderer.getUncertainty();
+    readoutOk = !!u && u.value === '5.4 cm' && u.basis === 'map pin @ z21'
+             && /Measurement uncertainty: ±5\.4 cm \(map pin @ z21\)/.test(u.line);
+    // independent of mode:
+    if (readoutOk && AppState) {
+      for (const m of ['auto','human','custom']) {
+        AppState.set('encoding.precisionMode', m);
+        const u2 = CardRenderer.getUncertainty();
+        if (!u2 || u2.value !== '5.4 cm') { readoutOk = false; detail += ' readout-mode-' + m; break; }
+      }
+    }
+    if (!readoutOk) detail = (detail ? detail + '; ' : '') + 'readout=' + JSON.stringify(u);
+  } catch (e) { readoutOk = false; detail += ' readout-threw:' + e.message; }
+  gate('Gate 8 (NEW: Human=fixed presets, lat-independent, BIP39=4 words; readout=provenance value+basis all modes)', ok && readoutOk, detail);
 })();
 
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
