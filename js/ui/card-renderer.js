@@ -40,7 +40,13 @@
     camera: _svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'),
     image:  _svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>'),
     link:   _svg('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'),
-    decode: _svg('<circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>')
+    decode: _svg('<circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>'),
+    key:    _svg('<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M16 7l3 3M14 9l2 2"/>'),
+    shuffle:_svg('<path d="M16 3h5v5M21 3l-7 7M4 20l7-7M21 16v5h-5M15 15l6 6M4 4l5 5"/>'),
+    settings:_svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'),
+    info:   _svg('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>'),
+    pin:    _svg('<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>'),
+    map:    _svg('<path d="M9 3 3 5v16l6-2 6 2 6-2V3l-6 2-6-2zM9 3v16M15 5v16"/>')
   };
 
   // ============== GRID DEFINITIONS ==============
@@ -2396,8 +2402,8 @@
       const card = document.createElement('div');
       card.className = `format-card ${isActive ? 'active-card' : ''}`;
       
-      const lockIcon = passphrase ? '🔑 ' : '';
-      const obfIcon = obfuscated ? '🔀 ' : '';
+      const lockIcon = passphrase ? `<span class="card-title-icon">${ICONS.key}</span>` : '';
+      const obfIcon = obfuscated ? `<span class="card-title-icon">${ICONS.shuffle}</span>` : '';
       const precision = getPrecisionText(gridKey, iterations);
       
       // Format display with grey checksum (smaller font)
@@ -2518,7 +2524,7 @@
             `}
           </div>
           <div class="footer-buttons">
-            <button class="action-btn info-btn" title="Cell info">ℹ️</button>
+            <button class="action-btn info-btn" title="Cell info">${ICONS.info}</button>
             ${gridDef.display === 'chessboard' ? `<button class="action-btn chess-letters-btn" title="Toggle Symbols / Letters">${chessUseLetters ? 'Aa' : '♟'}</button>` : ''}
             ${(gridDef.gis || gridDef.healpix || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
@@ -2824,7 +2830,7 @@
           
           const settingsBtn = document.createElement('button');
           settingsBtn.className = 'audio-speaker-btn';
-          settingsBtn.innerHTML = '⚙️';
+          settingsBtn.innerHTML = ICONS.settings;
           settingsBtn.title = 'Sound Design Settings';
           settingsBtn.style.marginLeft = '4px';
           settingsBtn.onclick = (e) => {
@@ -4191,8 +4197,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     const hasCoords = decodedLat !== null && decodedLon !== null;
     const coordsHtml = hasCoords 
       ? `<span style="font-family:monospace;font-size:12px;opacity:0.8;">${decodedLat.toFixed(6)}, ${decodedLon.toFixed(6)}</span>
-         <button class="open-maps-btn" style="background:#34C759;border:none;color:white;font-size:14px;cursor:pointer;padding:4px 10px;border-radius:12px;margin-left:6px;">🗺️ Maps</button>`
-      : '<span>📍 Not where you expected? </span>';
+         <button class="open-maps-btn" style="background:#34C759;border:none;color:white;font-size:14px;cursor:pointer;padding:4px 10px;border-radius:12px;margin-left:6px;display:inline-flex;align-items:center;gap:5px;">${ICONS.map}<span>Maps</span></button>`
+      : `<span style="display:inline-flex;align-items:center;gap:4px;">${ICONS.pin}<span>Not where you expected? </span></span>`;
     
     banner.innerHTML = `
       ${coordsHtml}
