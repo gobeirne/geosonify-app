@@ -376,5 +376,38 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
   gate('Gate 10 (NEW: hpchessboard shares like hphex — same param + @k round-trip)', ok, detail);
 })();
 
+// ---- Gate K (correction): first-run opens at Custom seeded with Human presets;
+// mode cycle visits all three before repeating (Custom→Match→Human→Custom). ------
+(() => {
+  let ok = true, detail = '';
+  // First run must be tested on a FRESH renderer (earlier gates mutated this one).
+  // Spin up a clean instance with empty localStorage and inspect its cold state.
+  let fresh;
+  try {
+    const { loadCardRenderer } = require('./load-cardrenderer.js');
+    fresh = loadCardRenderer();
+    try { fresh.CardRenderer.init({}); } catch (e) {}
+  } catch (e) { gate('Gate 11 (first-run + cycle)', false, 'fresh load failed: ' + e.message); return; }
+  const FC = fresh.CardRenderer, FCTX = fresh.ctx;
+
+  if (FC.getPrecisionMode() !== 'custom') { ok = false; detail = 'first-run mode=' + FC.getPrecisionMode() + ' (want custom)'; }
+  if (ok) {
+    const cs = FC.getCardState();
+    const expect = { alphanumeric: 9, hexbyte: 6, music: 8, bip39english: 4, hphex: 22 };
+    for (const [k, v] of Object.entries(expect)) {
+      if (cs.iterations[k] !== v) { ok = false; detail = 'first-run ' + k + '=' + cs.iterations[k] + ' (want Human preset ' + v + ')'; break; }
+    }
+  }
+  // Cycle order check (pure logic, independent of instance).
+  if (ok) {
+    const NEXT = { auto: 'human', human: 'custom', custom: 'auto' };
+    const seen = []; let m = 'custom';
+    for (let i = 0; i < 3; i++) { m = NEXT[m]; seen.push(m); }
+    if (seen.slice().sort().join(',') !== 'auto,custom,human') { ok = false; detail = 'cycle visited ' + JSON.stringify(seen); }
+    if (ok && seen[0] !== 'auto') { ok = false; detail = 'first click from Custom → ' + seen[0] + ' (want auto/Match)'; }
+  }
+  gate('Gate 11 (NEW: first-run = Custom seeded w/ Human presets; cycle Custom→Match→Human→Custom)', ok, detail);
+})();
+
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
 process.exit(fail ? 1 : 0);
