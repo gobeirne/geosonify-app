@@ -692,8 +692,11 @@ select {
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
-.card-btn-wide .card-btn-icon { font-size: 13px; line-height: 1; }
+.card-btn-wide .card-btn-icon { font-size: 13px; line-height: 1; display: flex; align-items: center; }
+.card-btn-wide .card-btn-icon svg { width: 14px; height: 14px; }
 .card-btn-wide .card-btn-text { line-height: 1; }
+/* card-action icon buttons now hold inline SVGs; centre + size them consistently. */
+.card-btn svg { width: 15px; height: 15px; display: block; }
 .card-body-inner { padding: 12px; min-height: 80px; }
 .code-display {
   font-family: 'SF Mono', monospace;
