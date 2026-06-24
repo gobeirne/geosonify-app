@@ -755,6 +755,18 @@
             cardState.order.push(key);
           }
         });
+      } else {
+        // FIRST-EVER RUN (no saved state): seed every adjustable card with its
+        // human-scale preset, so the app opens at sensible ~human resolutions.
+        // Mode stays 'custom' (the default) — so steppers show and the user owns
+        // these values — it just happens to start at the Human presets, not the
+        // raw defaultIterations. ChromaCoord/fixed cards untouched.
+        Object.keys(CARD_GRIDS).forEach(key => {
+          const gd = CARD_GRIDS[key];
+          if (isAdjustableCard(gd)) {
+            cardState.iterations[key] = humanIterationsFor(key);
+          }
+        });
       }
       
       // Default speaker (per-word) view OFF for BIP39 grids, so cards open in
