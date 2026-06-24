@@ -1530,7 +1530,7 @@
     alphanumeric: 9,   // 6×6  → ~2 m
     nato:         9,   // 6×6  → ~2 m
     emoji:        5,   // 28×28→ ~1 m
-    music:        9,   // 7×7  → sub-metre (~0.5–0.7 m), confirmed OK
+    music:        8,   // 7×7  → ~3.5×5 m (8 octaves), confirmed
     base64:       8,   // 8×8  → ~1–2 m
     hexbyte:      6,   // 16×16→ ~1.2×1.7 m
     // BIP39 family — always 4 words (human-communication unit)
@@ -1611,6 +1611,12 @@
     });
     saveCardState();
     renderCards();
+    // Mode change (or, in Match mode, a provenance refinement) can change the
+    // active card's iteration count → redraw its grid overlay on the map, same as
+    // the steppers do. Safe no-op if the active card isn't a hierarchical grid.
+    if (typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
+      try { MapManager.refreshHierarchicalGrid(); } catch (e) {}
+    }
   }
 
   function getPrecisionText(gridKey, iterations) {
@@ -4696,7 +4702,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       }
       msg.textContent = 'Decoded ' + res.hex + ' → ' + coord[0].toFixed(6) + ', ' + coord[1].toFixed(6);
       msg.style.color = '#2a7';
+      if (callbacks.onUserInteraction) callbacks.onUserInteraction();
       setCoordinate(coord[0], coord[1]);
+      // Move the map to the decoded location (setCoordinate only drops the pin /
+      // updates the marker; it does NOT recenter the viewport). Match the other
+      // code-decode paths which setView at zoom 15.
+      const _map = callbacks.getMap ? callbacks.getMap() : null;
+      if (_map) { try { _map.setView([coord[0], coord[1]], 15, { animate: true }); } catch (e) {} }
       setTimeout(close, 700);
     };
   }
@@ -5457,12 +5469,41 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     },
     setUnitSystem(sys) {
       if (sys !== 'metric' && sys !== 'us') return;
-      if (typeof AppState !== 'undefined') AppState.set('encoding.unitSystem', sys);
+      if (typeof AppState !== 'undefined') {
+        AppState.set('encoding.unitSystem', sys);
+        AppState.set('encoding.unitSystemUserSet', true);  // explicit choice; locale no longer overrides
+      }
       renderCards();   // re-render flips every .precision-display through formatLength
     },
     toggleUnitSystem() {
       this.setUnitSystem(getUnitSystem() === 'metric' ? 'us' : 'metric');
       return getUnitSystem();
+    },
+    // First-run only: if the user hasn't explicitly chosen units, derive from the
+    // device locale. The three measurement-system holdouts are US, Liberia (LR),
+    // Myanmar (MM); everyone else is metric. Respects a prior explicit choice and
+    // never overrides it. Call once at startup (after state restore).
+    initUnitsFromLocale() {
+      try {
+        if (typeof AppState === 'undefined') return;
+        if (AppState.get('encoding.unitSystemUserSet')) return;   // user already chose
+        let region = '';
+        try {
+          const loc = (typeof Intl !== 'undefined' && Intl.NumberFormat)
+            ? Intl.NumberFormat().resolvedOptions().locale : '';
+          const fromNav = (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) || '';
+          const tag = (loc || fromNav || '').toUpperCase();
+          // region subtag after '-' (e.g. en-US → US); fall back to whole tag
+          const parts = tag.split('-');
+          region = parts.length > 1 ? parts[parts.length - 1] : '';
+          // some tags are just language; also catch 'EN-US' style and bare 'US'
+          if (!region && (tag === 'US' || tag === 'LR' || tag === 'MM')) region = tag;
+        } catch (e) {}
+        const us = (region === 'US' || region === 'LR' || region === 'MM');
+        AppState.set('encoding.unitSystem', us ? 'us' : 'metric');
+        // NOTE: do NOT set unitSystemUserSet — this is a locale default, still
+        // overridable silently if the locale changes before any manual toggle.
+      } catch (e) {}
     },
     // Measurement precision from PROVENANCE (the pin's source uncertainty), routed
     // through formatLength (metric/US). This is what the PRECISION readout shows —
