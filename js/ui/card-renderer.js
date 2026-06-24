@@ -1431,17 +1431,15 @@
   //   • HEALPix / GIS → walk cellMetres({w,h}) over [min,max] (discrete standards;
   //     a card pinned at its max may be COARSER than target — that's correct, the
   //     standard simply can't express finer, exactly like HexByte's even-length cap)
-  function resolutionToIterations(gridKey, targetMetres, rounding) {
-    // rounding: 'cover' (default) = fewest iters whose cell ≤ target (never coarser
-    //   than target) — used by AUTO so it never coarsens below source provenance.
-    // 'nearest' = the step whose cell is CLOSEST to target (in log-space, since
-    //   steps are multiplicative) — used by HUMAN so coarse-stepped grids (BIP39,
-    //   45× per step) land on the human-friendly nearby step instead of overshooting
-    //   far finer. May come out slightly coarser than target; that's intended.
-    rounding = (rounding === 'nearest') ? 'nearest' : 'cover';
+  function resolutionToIterations(gridKey, targetMetres) {
+    // Inverse of getPrecisionText, used by AUTO only: fewest iterations whose cell
+    // is ≤ target (equal-or-finer; never coarser than source provenance), clamped
+    // to the card's real [min,max]. "Cell size" = the LARGER of the two axes so
+    // BOTH axes end up ≤ target. HUMAN does NOT use this — it applies fixed per-card
+    // presets (HUMAN_PRESETS) independent of any metres target.
     const gd = CARD_GRIDS[gridKey];
     if (!gd) return 1;
-    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres, rounding);
+    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres);
     // Fixed-iteration cards (ChromaCoord) are never re-iterated by Auto/Human:
     // the invert returns their immutable count regardless of target. applyPrecisionMode
     // also skips them (not adjustable), but guarding here makes the function itself
@@ -1486,20 +1484,13 @@
         : null;
     if (ladder) {
       const EPS_L = 1e-9;
-      const lnT = Math.log(targetMetres);
-      let chosenCover = ladder.max;     // finest that still covers (≤ target)
-      let chosenNearest = ladder.min, bestDist = Infinity;
-      let foundCover = false;
+      let chosen = ladder.max;          // default: finest the standard offers
       for (let it = ladder.min; it <= ladder.max; it++) {
         const d = ladder.cell(it);
         const side = Math.max(d.w, d.h);
-        // nearest: track min |ln(side) − ln(target)|
-        const dist = Math.abs(Math.log(side) - lnT);
-        if (dist < bestDist) { bestDist = dist; chosenNearest = it; }
-        // cover: first (coarsest) iter whose side ≤ target
-        if (!foundCover && side <= targetMetres * (1 + EPS_L)) { chosenCover = it; foundCover = true; }
+        if (side <= targetMetres * (1 + EPS_L)) { chosen = it; break; }  // finest that covers source
       }
-      return clamp(rounding === 'nearest' ? chosenNearest : chosenCover);
+      return clamp(chosen);
     }
 
     // Vocabulary grids: closed-form inverse of
@@ -1519,21 +1510,42 @@
     const lnTarget = Math.log(targetMetres);
     const itLat = (Math.log(180 * mPerDegLat) - lnTarget) / Math.log(rows);
     const itLon = (Math.log(360 * mPerDegLon) - lnTarget) / Math.log(cols);
-    const EPS = 1e-9;
     const binding = Math.max(itLat, itLon);   // larger axis governs
-    // cover: ceil (fewest iters with both axes ≤ target). nearest: round to the
-    // closest step (the binding-axis fractional position maps directly to log-
-    // distance, so plain rounding gives the nearest cell size).
-    let iters = (rounding === 'nearest') ? Math.round(binding) : Math.ceil(binding - EPS);
+    const EPS = 1e-9;
+    let iters = Math.ceil(binding - EPS);     // fewest iters with both axes ≤ target
     if (!isFinite(iters)) iters = cMin;
     return clamp(iters);
   }
 
-  // Human-mode named targets (NOT magic iteration numbers — kept as metres so
-  // they stay correct across every grid family/base). BIP39 reads coarser by
-  // design (whole-word friendliness).
-  const HUMAN_TARGET_M = 1.5;
-  const HUMAN_TARGET_BIP39_M = 4;
+  // HUMAN mode = a FIXED preset of iteration counts per card — "the size of a human
+  // with arms outstretched" (~1–2 m for most), hand-tuned, NOT derived from the pin's
+  // precision. The metres shown drift slightly with latitude; that's fine and intended.
+  // BIP39 is special: always 4 words, because 4 words is the human-communication-
+  // friendly unit (not a metres target). Music is fine sub-metre. Keyed by gridKey;
+  // chess inherits via chessOf so isn't listed. ChromaCoord (fixed) is never included.
+  // Anchors confirmed at ChCh (~-43.5°): alphanumeric→2.0×2.9 m, hex-based→1.2×1.7 m,
+  // music→~0.5–0.7 m, bip39→4 words, hphex→1.6 m.
+  const HUMAN_PRESETS = {
+    // vocabulary grids
+    alphanumeric: 9,   // 6×6  → ~2 m
+    nato:         9,   // 6×6  → ~2 m
+    emoji:        5,   // 28×28→ ~1 m
+    music:        9,   // 7×7  → sub-metre (~0.5–0.7 m), confirmed OK
+    base64:       8,   // 8×8  → ~1–2 m
+    hexbyte:      6,   // 16×16→ ~1.2×1.7 m
+    // BIP39 family — always 4 words (human-communication unit)
+    bip39english: 4, bip39spanish: 4, bip39french: 4, bip39italian: 4,
+    bip39portuguese: 4, bip39czech: 4, bip39japanese: 4, bip39korean: 4,
+    bip39chinesesimplified: 4, bip39chinesetraditional: 4,
+    // barcode cards (16×16 like hexbyte; qrurl is dynamic)
+    qrhex: 6, qrbin: 6, datamatrix: 6, qrurl: 6,
+    // byteword family (grid data not always loaded; safe friendly mid value)
+    bytewords: 4, bytewordsmin: 4, byteemoji: 4,
+    // HEALPix (order) — ~1.6 m
+    hphex: 22, hpquad: 22, hp64: 22, hpmatrix: 22,
+    // GIS — each standard's ~1–2 m level
+    pluscode: 6, mgrs: 6, geohash: 9, utm: 5, nztm: 5, bng: 6, mga: 5, localgrid: 5
+  };
 
   // A card is ADJUSTABLE if it has a max and is not fixed. ChromaCoord
   // (fixedIterations) is excluded — Auto/Human never touch it. BIP39 family is
@@ -1543,6 +1555,25 @@
            (gd.maxIterations !== undefined || gd.dynamicIterations);
   }
   function isBip39Card(gd) { return !!gd && gd.prefixLength !== undefined; }
+
+  // Human preset for a card: explicit HUMAN_PRESETS entry, else fall back to the
+  // card's defaultIterations (clamped). Chess delegates to its sibling.
+  function humanIterationsFor(gridKey) {
+    let gd = CARD_GRIDS[gridKey];
+    if (!gd) return 1;
+    if (gd.chessOf) return humanIterationsFor(gd.chessOf);
+    if (gd.fixedIterations !== undefined) return gd.fixedIterations;
+    let n = (HUMAN_PRESETS[gridKey] !== undefined) ? HUMAN_PRESETS[gridKey]
+          : (gd.defaultIterations || gd.minIterations || 1);
+    // clamp to the card's real range
+    const min = gd.minIterations || (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES[gd.healpix] && HealpixGrids.SCHEMES[gd.healpix].minIterations)
+              || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].minIterations) || 1;
+    let max = (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES[gd.healpix] && HealpixGrids.SCHEMES[gd.healpix].maxIterations)
+            || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].maxIterations)
+            || (gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : gd.maxIterations) : gd.maxIterations)
+            || min;
+    return Math.max(min, Math.min(max, n));
+  }
 
   // Apply the current precision mode to every adjustable card, then re-render.
   //   custom → no-op on iterations (user-owned); just re-render so steppers show.
@@ -1555,7 +1586,7 @@
     const mode = getPrecisionMode();
     if (mode === 'custom') { renderCards(); return; }
 
-    // Auto's source resolution (null-pin → fall back to Human targets).
+    // Auto's source resolution from provenance (null-pin → fall back to Human presets).
     let autoTarget = null;
     if (mode === 'auto') {
       try {
@@ -1567,17 +1598,16 @@
         if (isFinite(u) && u > 0) autoTarget = u;
       } catch (e) {}
     }
+    const useAuto = (mode === 'auto' && autoTarget != null);
 
     Object.keys(CARD_GRIDS).forEach(key => {
       const gd = CARD_GRIDS[key];
       if (!isAdjustableCard(gd)) return;            // ChromaCoord & non-steppable skip
-      const humanTarget = isBip39Card(gd) ? HUMAN_TARGET_BIP39_M : HUMAN_TARGET_M;
-      const useAuto = (mode === 'auto' && autoTarget != null);
-      const target = useAuto ? autoTarget : humanTarget;
-      // Auto must never coarsen below source → 'cover'. Human wants the friendly
-      // nearby step → 'nearest' (matters on coarse grids like BIP39).
-      const rounding = useAuto ? 'cover' : 'nearest';
-      cardState.iterations[key] = resolutionToIterations(key, target, rounding);
+      // Auto: finest cell still covering source (never coarser). Human (and Auto's
+      // no-pin fallback): the card's FIXED human preset, latitude-independent.
+      cardState.iterations[key] = useAuto
+        ? resolutionToIterations(key, autoTarget)
+        : humanIterationsFor(key);
     });
     saveCardState();
     renderCards();
@@ -4197,7 +4227,15 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       bip39korean: 'bipko', bip39chinesesimplified: 'bipzhs', bip39chinesetraditional: 'bipzht',
       qrhex: 'h', datamatrix: 'h'  // barcode hex cards use hexbyte param
     };
-    let prefix = prefixMap[gridKey];
+    // Chess cards are a PRESENTATION of a sibling's hex code (chessOf), so they
+    // share with the SIBLING's param, not raw. chessboard→hexbyte ('h'); a HEALPix
+    // chess card follows hphex if/when that gains a param. Resolve recursively.
+    let prefixKey = gridKey;
+    {
+      let g = CARD_GRIDS[gridKey], guard = 0;
+      while (g && g.chessOf && guard++ < 4) { prefixKey = g.chessOf; g = CARD_GRIDS[g.chessOf]; }
+    }
+    let prefix = prefixMap[prefixKey];
     if (!prefix) {
       // Custom grid — use z.GridName format
       const gridDef = CARD_GRIDS[gridKey];
@@ -5428,25 +5466,34 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     },
     // Measurement precision from PROVENANCE (the pin's source uncertainty), routed
     // through formatLength (metric/US). This is what the PRECISION readout shows —
-    // the resolution of the underlying measurement, NOT any single card's cell size.
-    // Returns '' if there's no pin yet. Mirrors buildUncertaintyLine's getExact path.
-    getSourceResolutionText() {
+    // the resolution of the underlying MEASUREMENT, NOT any single card's cell size,
+    // in every mode (Auto/Human/Custom). Live-updates as the pin/fix is refined.
+    getUncertainty() {
       try {
         const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
           ? GeosonifyMain.getExact
           : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
         const pt = getEx ? getEx() : null;
+        if (!pt) return null;
         let u = null;
-        if (pt) {
-          if (typeof pt.uncertaintyMetres === 'function') u = pt.uncertaintyMetres();
-          else if (pt.meta && pt.meta.uncertaintyMetres != null) u = pt.meta.uncertaintyMetres;
-        }
-        if (u == null || !isFinite(u) || u <= 0) return '';
-        return formatLength(u);
-      } catch (e) { return ''; }
+        if (typeof pt.uncertaintyMetres === 'function') u = pt.uncertaintyMetres();
+        else if (pt.meta && pt.meta.uncertaintyMetres != null) u = pt.meta.uncertaintyMetres;
+        if (u == null || !isFinite(u) || u <= 0) return null;
+        const basis = (pt.meta && pt.meta.basis) ? pt.meta.basis : null;
+        const value = formatLength(u);                       // unit-toggled
+        return {
+          metres: u,
+          value: value,                                      // e.g. "±-free" → "5.4 cm"
+          basis: basis,                                      // e.g. "map pin @ z21"
+          line: 'Measurement uncertainty: ±' + value + (basis ? ' (' + basis + ')' : '')
+        };
+      } catch (e) { return null; }
     },
-    // Back-compat alias (older callers); now also returns the source resolution so
-    // the readout is consistent everywhere.
+    getSourceResolutionText() {
+      const u = this.getUncertainty();
+      return u ? u.value : '';
+    },
+    // Back-compat alias (older callers); returns the source resolution value.
     getActiveResolutionText() { return this.getSourceResolutionText(); },
 
     /**
