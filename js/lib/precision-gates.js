@@ -291,8 +291,27 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
       }
     }
     if (!readoutOk) detail = (detail ? detail + '; ' : '') + 'readout=' + JSON.stringify(u);
+    // Basis that bakes in the magnitude must be de-duplicated: "device fix ±183 m"
+    // → "(device fix)", "GPS ±3.2 m" → "(GPS)". Descriptive bases stay intact.
+    if (readoutOk) {
+      const stripCases = [
+        { u: 183, basis: 'device fix ±183 m', wantBasis: 'device fix' },
+        { u: 3.2, basis: 'GPS ±3.2 m', wantBasis: 'GPS' },
+        { u: 0.054, basis: 'map pin @ z21', wantBasis: 'map pin @ z21' },
+        { u: 1.6, basis: 'typed, 6 dp', wantBasis: 'typed, 6 dp' },
+        { u: 12, basis: 'code, 8 digits', wantBasis: 'code, 8 digits' }
+      ];
+      if (AppState) AppState.set('encoding.unitSystem', 'metric');
+      for (const c of stripCases) {
+        ctx.GeosonifyMain = { getExact: () => ({ meta: { uncertaintyMetres: c.u, basis: c.basis }, uncertaintyMetres: () => c.u }) };
+        const r = CardRenderer.getUncertainty();
+        if (!r || r.basis !== c.wantBasis) { readoutOk = false; detail = (detail ? detail + '; ' : '') + 'basis "' + c.basis + '"→"' + (r && r.basis) + '" (want "' + c.wantBasis + '")'; break; }
+        // line must NOT contain the magnitude twice
+        if (/±[\d.,]+\s*[a-zµμ]+.*±/i.test(r.line)) { readoutOk = false; detail = 'duplicated magnitude in: ' + r.line; break; }
+      }
+    }
   } catch (e) { readoutOk = false; detail += ' readout-threw:' + e.message; }
-  gate('Gate 8 (NEW: Human=fixed presets, lat-independent, BIP39=4 words; readout=provenance value+basis all modes)', ok && readoutOk, detail);
+  gate('Gate 8 (NEW: Human=fixed presets, lat-independent, BIP39=4 words; readout=provenance value+basis, no redundant magnitude)', ok && readoutOk, detail);
 })();
 
 // ---- Gate I (correction): units default from device locale on first run, but a
@@ -318,6 +337,43 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
     if (AppState.get('encoding.unitSystem') !== 'metric') { ok = false; detail = 'user metric choice overridden by en-US locale'; }
   }
   gate('Gate 9 (NEW: units default from device locale; explicit user choice respected)', ok, detail);
+})();
+
+// ---- Gate J (correction): hpchessboard shares like hphex --------------------
+// hpchessboard (chessOf→hphex) must resolve to the SAME share param as hphex, and
+// the value (with @k suffix when ambiguous) must round-trip through HealpixGrids.
+(() => {
+  if (!HealpixGrids) { gate('Gate 10 (hpchessboard shares like hphex)', false, 'no HealpixGrids'); return; }
+  let ok = true, detail = '';
+  // param resolution: both resolve to healpix 'hphex'
+  function resolveHealpix(gridKey) {
+    let pk = gridKey, g = CARD_GRIDS[gridKey], guard = 0;
+    while (g && g.chessOf && guard++ < 4) { pk = g.chessOf; g = CARD_GRIDS[pk]; }
+    const sib = CARD_GRIDS[pk];
+    return (sib && sib.healpix) ? sib.healpix : null;
+  }
+  if (resolveHealpix('hpchessboard') !== 'hphex') { ok = false; detail = 'hpchessboard param=' + resolveHealpix('hpchessboard') + ' (want hphex)'; }
+  if (ok && resolveHealpix('hphex') !== 'hphex') { ok = false; detail = 'hphex param=' + resolveHealpix('hphex'); }
+  // @k suffix + round-trip (mirrors shareCard's logic)
+  if (ok) {
+    const lat = -43.53, lon = 172.63;
+    const shareValue = (hp, code, k) =>
+      ((hp === 'hphex' || hp === 'hp64') && code.indexOf('@') === -1 && HealpixGrids.inferOrder(hp, code) !== k)
+        ? code + '@' + k : code;
+    for (const k of [20, 21, 22, 23, 24]) {
+      const enc = HealpixGrids.encode('hphex', lat, lon, k, {});
+      const code = (typeof enc === 'string') ? enc : (enc && enc.str) ? enc.str : null;
+      if (!code) { ok = false; detail = 'encode failed @' + k; break; }
+      const sv = shareValue('hphex', code, k);
+      const dec = HealpixGrids.decode('hphex', sv, null);
+      const back = Array.isArray(dec) ? dec : (dec && dec.lat != null ? [dec.lat, dec.lon] : null);
+      if (!back) { ok = false; detail = 'decode failed @' + k + ' sv=' + sv; break; }
+      const cell = Math.max(...Object.values(HealpixGrids.SCHEMES.hphex.cellMetres(k)));
+      const dist = Math.hypot((back[0] - lat) * 111320, (back[1] - lon) * 111320 * Math.cos(lat * Math.PI / 180));
+      if (dist > cell) { ok = false; detail = '@' + k + ' decErr ' + dist.toFixed(2) + 'm > cell ' + cell.toFixed(2) + 'm'; break; }
+    }
+  }
+  gate('Gate 10 (NEW: hpchessboard shares like hphex — same param + @k round-trip)', ok, detail);
 })();
 
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
