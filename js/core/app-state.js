@@ -59,7 +59,9 @@
       lenExt: false,
       addChecksum: false,
       precisionMode: 'custom',  // 'auto' | 'human' | 'custom' — drives per-card iteration selection
-      unitSystem: 'metric'      // 'metric' | 'us' — global resolution display units
+      unitSystem: 'metric',     // 'metric' | 'us' — global resolution display units
+      unitSystemUserSet: false  // true once the user explicitly toggles units; until then
+                                // the unit is derived from device locale on first run
     },
     
     // Current shape (rectangle, circle, path, etc.)
