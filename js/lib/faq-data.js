@@ -100,7 +100,7 @@
           {
             id: 'the-tabs',
             q: 'How is the app laid out?',
-            a: `<p>There are four tabs. <strong>geosonify!</strong> is the main map view: tap anywhere on the map to drop a point, and the coordinate is encoded straight away in the vocabularies you have chosen. From here you can also click the star on a card to switch which grid is displayed (alphanumeric, words, colours, music, and so on), turn on obfuscation, set a passphrase, or start GPS tracking. It is meant to be self-explanatory, so just tap the map and watch the codes appear.</p>
+            a: `<p>There are four tabs. <strong>geosonify!</strong> is the main map view: tap anywhere on the map to drop a point, and the coordinate is encoded straight away in the vocabularies you have chosen. From here you can also click the star on a card to switch which grid is displayed (alphanumeric, words, colours, music, and so on), turn on obfuscation, set a passphrase, choose how precisely the codes pin the location with the <strong>Precision</strong> control, or start GPS tracking. It is meant to be self-explanatory, so just tap the map and watch the codes appear.</p>
 <p>The other three tabs are <strong>Shape</strong> (for building rectangles, paths, polygons, and for importing real-world boundaries), <strong>Output</strong> (for choosing how a code is written and shared), and <strong>FAQ</strong> (this page). The two below explain the Shape and Output tabs in more detail.</p>`
           },
 
@@ -118,6 +118,25 @@
             a: `<p>The Output tab controls how the current location or shape is written down and shared. The encoding on the map does not change; only its presentation does.</p>
 <p>Pick a representation from the codec selector: <strong>Raw</strong> (human-readable), <strong>Base36</strong>, <strong>Base64url</strong>, or <strong>Emoji</strong>. For a path or polygon you can switch on <strong>delta compression</strong> to shorten the code while keeping full precision. A <strong>checksum</strong> option adds a verification character so a recipient can tell whether the code was copied correctly, and a <strong>rounded</strong> option produces tidier values.</p>
 <p>When the code looks right, use <strong>Copy</strong> to copy the code itself, <strong>Share URL</strong> to copy a link that reopens the location, or <strong>Visit</strong> to open that link. For a private link, switch on <strong>hard encrypt URL</strong>, which wraps everything in AES-256 so the recipient needs the passphrase to see anything. The tab also offers GPX and KML export, marker visibility, path reversal, and a few smaller tools.</p>`
+          },
+
+          {
+            id: 'precision-control',
+            q: 'What does the Precision control do?',
+            a: `<p>Next to <strong>Encoding Mode</strong> on the main view sits the <strong>Precision</strong> control. Every card encodes the same point, but each can do so at a different level of detail - a longer code pins the location more tightly. The Precision button decides how that level of detail is chosen, and it rotates through three modes each time you tap it: <strong>Match</strong>, <strong>Human</strong>, and <strong>Custom</strong>.</p>
+<p>Beside the button is a small live readout of your <strong>measurement uncertainty</strong> - how precisely the current point is actually known, drawn from where it came from (a GPS fix, a map tap, typed coordinates, or a decoded code). It might read something like <em>Measurement uncertainty: ±5.4 cm (map pin @ z21)</em> or <em>±183.0 m (device fix)</em>, and it updates by itself as a GPS fix sharpens. Tap the value to switch between metric and US units; that single tap also flips the units shown on every card and in the ℹ️ box.</p>
+<p>In short: <strong>Match</strong> tracks how precisely you actually know the point, <strong>Human</strong> uses friendly human-scale presets, and <strong>Custom</strong> hands each card its own <code>+/-</code> stepper so you can dial them in yourself.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;How the three modes differ</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p><strong>Match</strong> sets every adjustable card to the finest resolution that still covers your measurement - never finer than you genuinely know the point to be, and never needlessly coarser. Drop a pin from a phone GPS that's good to ±3 m and the cards settle around that 3 m; refine the fix and the cards follow it down, redrawing the grid on the map as they go. There's no sense claiming centimetre precision for a location you only know to a few metres, and Match keeps the codes honest about that.</p>
+<p><strong>Human</strong> ignores the measurement and instead uses a fixed, hand-picked level per card - roughly the size of a person with their arms outstretched, a metre or two, comfortable for reading aloud or jotting down. These presets don't drift with where you are on the globe; the metres shown might wobble a little by latitude, but the level of detail stays put. A couple of cards have their own sensible quirk - the music card opens a touch coarser so a melody stays singable, and the BIP39 word cards always land on <strong>four words</strong>, because four words is the friendly unit for saying a place out loud.</p>
+<p><strong>Custom</strong> is the hands-on mode: each adjustable card shows a <code>+/-</code> stepper beside its resolution, and you set each one wherever you like. Match and Human hide those steppers (the level is chosen for you); Custom brings them back. When you first ever open Geosonify it starts in Custom, already set to the Human presets, so you get sensible codes straight away with the steppers right there to adjust.</p>
+<p>One card sits out of all this: <strong>ChromaCoord</strong> has a fixed resolution by design, so it shows its level in every mode but never takes a stepper and is never changed by Match or Human. Chess boards aren't adjusted directly either - each mirrors a sibling card (the standard board follows the hex card, the HEALPix board follows HEALPix-hex), so setting the sibling sets the board for free.</p>
+<p>Your chosen mode and units are remembered between visits. If you reload while in Match, the cards recompute against wherever your point is then; in Custom, your exact per-card settings come back as you left them.</p>
+</div>
+</details>`
           },
 
           {
