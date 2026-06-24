@@ -1431,10 +1431,17 @@
   //   • HEALPix / GIS → walk cellMetres({w,h}) over [min,max] (discrete standards;
   //     a card pinned at its max may be COARSER than target — that's correct, the
   //     standard simply can't express finer, exactly like HexByte's even-length cap)
-  function resolutionToIterations(gridKey, targetMetres) {
+  function resolutionToIterations(gridKey, targetMetres, rounding) {
+    // rounding: 'cover' (default) = fewest iters whose cell ≤ target (never coarser
+    //   than target) — used by AUTO so it never coarsens below source provenance.
+    // 'nearest' = the step whose cell is CLOSEST to target (in log-space, since
+    //   steps are multiplicative) — used by HUMAN so coarse-stepped grids (BIP39,
+    //   45× per step) land on the human-friendly nearby step instead of overshooting
+    //   far finer. May come out slightly coarser than target; that's intended.
+    rounding = (rounding === 'nearest') ? 'nearest' : 'cover';
     const gd = CARD_GRIDS[gridKey];
     if (!gd) return 1;
-    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres);
+    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres, rounding);
     // Fixed-iteration cards (ChromaCoord) are never re-iterated by Auto/Human:
     // the invert returns their immutable count regardless of target. applyPrecisionMode
     // also skips them (not adjustable), but guarding here makes the function itself
@@ -1479,13 +1486,20 @@
         : null;
     if (ladder) {
       const EPS_L = 1e-9;
-      let chosen = ladder.max;          // default: finest the standard offers
+      const lnT = Math.log(targetMetres);
+      let chosenCover = ladder.max;     // finest that still covers (≤ target)
+      let chosenNearest = ladder.min, bestDist = Infinity;
+      let foundCover = false;
       for (let it = ladder.min; it <= ladder.max; it++) {
         const d = ladder.cell(it);
         const side = Math.max(d.w, d.h);
-        if (side <= targetMetres * (1 + EPS_L)) { chosen = it; break; }  // finest that covers source
+        // nearest: track min |ln(side) − ln(target)|
+        const dist = Math.abs(Math.log(side) - lnT);
+        if (dist < bestDist) { bestDist = dist; chosenNearest = it; }
+        // cover: first (coarsest) iter whose side ≤ target
+        if (!foundCover && side <= targetMetres * (1 + EPS_L)) { chosenCover = it; foundCover = true; }
       }
-      return clamp(chosen);
+      return clamp(rounding === 'nearest' ? chosenNearest : chosenCover);
     }
 
     // Vocabulary grids: closed-form inverse of
@@ -1506,7 +1520,11 @@
     const itLat = (Math.log(180 * mPerDegLat) - lnTarget) / Math.log(rows);
     const itLon = (Math.log(360 * mPerDegLon) - lnTarget) / Math.log(cols);
     const EPS = 1e-9;
-    let iters = Math.ceil(Math.max(itLat, itLon) - EPS);  // fewest iters with both axes ≤ target
+    const binding = Math.max(itLat, itLon);   // larger axis governs
+    // cover: ceil (fewest iters with both axes ≤ target). nearest: round to the
+    // closest step (the binding-axis fractional position maps directly to log-
+    // distance, so plain rounding gives the nearest cell size).
+    let iters = (rounding === 'nearest') ? Math.round(binding) : Math.ceil(binding - EPS);
     if (!isFinite(iters)) iters = cMin;
     return clamp(iters);
   }
@@ -1554,8 +1572,12 @@
       const gd = CARD_GRIDS[key];
       if (!isAdjustableCard(gd)) return;            // ChromaCoord & non-steppable skip
       const humanTarget = isBip39Card(gd) ? HUMAN_TARGET_BIP39_M : HUMAN_TARGET_M;
-      const target = (mode === 'auto' && autoTarget != null) ? autoTarget : humanTarget;
-      cardState.iterations[key] = resolutionToIterations(key, target);
+      const useAuto = (mode === 'auto' && autoTarget != null);
+      const target = useAuto ? autoTarget : humanTarget;
+      // Auto must never coarsen below source → 'cover'. Human wants the friendly
+      // nearby step → 'nearest' (matters on coarse grids like BIP39).
+      const rounding = useAuto ? 'cover' : 'nearest';
+      cardState.iterations[key] = resolutionToIterations(key, target, rounding);
     });
     saveCardState();
     renderCards();
@@ -5404,18 +5426,28 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       this.setUnitSystem(getUnitSystem() === 'metric' ? 'us' : 'metric');
       return getUnitSystem();
     },
-    // Resolution text for the currently-active card at its current iteration,
-    // routed through formatLength (metric/US). Returns '' if no active card.
-    // Used by the PRECISION readout so it never has to reach into private state.
-    getActiveResolutionText() {
-      const key = cardState.active;
-      if (!key || !CARD_GRIDS[key] || !currentCardCoord) return '';
-      const gd = CARD_GRIDS[key];
-      const it = gd.fixedIterations !== undefined ? gd.fixedIterations
-               : (gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : gd.defaultIterations)
-               : (cardState.iterations[key] || gd.defaultIterations));
-      return getPrecisionText(key, it);
+    // Measurement precision from PROVENANCE (the pin's source uncertainty), routed
+    // through formatLength (metric/US). This is what the PRECISION readout shows —
+    // the resolution of the underlying measurement, NOT any single card's cell size.
+    // Returns '' if there's no pin yet. Mirrors buildUncertaintyLine's getExact path.
+    getSourceResolutionText() {
+      try {
+        const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
+          ? GeosonifyMain.getExact
+          : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
+        const pt = getEx ? getEx() : null;
+        let u = null;
+        if (pt) {
+          if (typeof pt.uncertaintyMetres === 'function') u = pt.uncertaintyMetres();
+          else if (pt.meta && pt.meta.uncertaintyMetres != null) u = pt.meta.uncertaintyMetres;
+        }
+        if (u == null || !isFinite(u) || u <= 0) return '';
+        return formatLength(u);
+      } catch (e) { return ''; }
     },
+    // Back-compat alias (older callers); now also returns the source resolution so
+    // the readout is consistent everywhere.
+    getActiveResolutionText() { return this.getSourceResolutionText(); },
 
     /**
      * Set a card's iteration count, persist it, and re-render. Used by
