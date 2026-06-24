@@ -1958,7 +1958,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // dash when there's no pin/active card yet.
         function refreshReadout() {
           try {
-            const txt = CardRenderer.getActiveResolutionText ? CardRenderer.getActiveResolutionText() : '';
+            const txt = CardRenderer.getSourceResolutionText ? CardRenderer.getSourceResolutionText() : '';
             readout.textContent = (txt && txt.length) ? txt : '—';
           } catch (e) { readout.textContent = '—'; }
         }
