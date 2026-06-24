@@ -4234,13 +4234,48 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       qrhex: 'h', datamatrix: 'h'  // barcode hex cards use hexbyte param
     };
     // Chess cards are a PRESENTATION of a sibling's hex code (chessOf), so they
-    // share with the SIBLING's param, not raw. chessboard→hexbyte ('h'); a HEALPix
-    // chess card follows hphex if/when that gains a param. Resolve recursively.
+    // share with the SIBLING's param, not raw. chessboard→hexbyte ('h');
+    // hpchessboard→hphex (HEALPix). Resolve the sibling recursively.
     let prefixKey = gridKey;
     {
       let g = CARD_GRIDS[gridKey], guard = 0;
       while (g && g.chessOf && guard++ < 4) { prefixKey = g.chessOf; g = CARD_GRIDS[g.chessOf]; }
     }
+
+    // HEALPix-backed card (e.g. hphex itself, or hpchessboard via chessOf→hphex):
+    // share exactly as the main app does — the param IS the healpix key, with the
+    // 'o' obfuscation flag, and an "@k" order suffix appended when the code's length
+    // alone can't recover the order (hphex/hp64 left-pad on packing). Mirrors
+    // index.html's getURLParamForActiveCard + withHealpixOrder so the URL decodes.
+    const sibDef = CARD_GRIDS[prefixKey];
+    if (sibDef && sibDef.healpix) {
+      let hp = sibDef.healpix;                 // 'hphex' | 'hpquad' | 'hp64'
+      let value = code;
+      try {
+        if ((hp === 'hphex' || hp === 'hp64') &&
+            typeof value === 'string' &&
+            value.indexOf('@') === -1 && value.indexOf('~') === -1 && value.indexOf(',') === -1) {
+          const k = cardState.iterations[prefixKey] ||
+                    cardState.iterations[gridKey] ||
+                    (CARD_GRIDS[prefixKey] && CARD_GRIDS[prefixKey].defaultIterations);
+          if (k && typeof HealpixGrids !== 'undefined' && HealpixGrids.inferOrder &&
+              HealpixGrids.inferOrder(hp, value) !== k) {
+            value = value + '@' + k;           // append only when ambiguous
+          }
+        }
+      } catch (e) {}
+      let hpPrefix = hp + (obfuscated ? 'o' : '');
+      const hpBase = window.location.origin + window.location.pathname;
+      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}`;
+      if (navigator.share) {
+        navigator.share({ title: 'Geosonify Location', url: hpURL })
+          .catch(() => navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed')));
+      } else {
+        navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed'));
+      }
+      return;
+    }
+
     let prefix = prefixMap[prefixKey];
     if (!prefix) {
       // Custom grid — use z.GridName format
@@ -5520,12 +5555,21 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         if (typeof pt.uncertaintyMetres === 'function') u = pt.uncertaintyMetres();
         else if (pt.meta && pt.meta.uncertaintyMetres != null) u = pt.meta.uncertaintyMetres;
         if (u == null || !isFinite(u) || u <= 0) return null;
-        const basis = (pt.meta && pt.meta.basis) ? pt.meta.basis : null;
-        const value = formatLength(u);                       // unit-toggled
+        let basis = (pt.meta && pt.meta.basis) ? pt.meta.basis : null;
+        const value = formatLength(u);                       // unit-toggled, e.g. "183.0 m"
+        // Some bases bake the magnitude in ("device fix ±183 m", "GPS ±3.2 m"),
+        // which then reads redundantly beside the value: "±183.0 m (device fix ±183 m)".
+        // Strip a trailing ±<number><unit> from the basis so it shows just the source
+        // ("device fix", "GPS"). Only strips the magnitude tail; descriptive bases that
+        // don't repeat the value ("map pin @ z21", "typed, 6 dp") are left untouched.
+        if (basis) {
+          const stripped = basis.replace(/\s*[±\u00b1~]\s*[\d.,]+\s*[a-zµμ]*\.?$/i, '').trim();
+          if (stripped) basis = stripped;
+        }
         return {
           metres: u,
-          value: value,                                      // e.g. "±-free" → "5.4 cm"
-          basis: basis,                                      // e.g. "map pin @ z21"
+          value: value,
+          basis: basis,                                      // e.g. "device fix", "map pin @ z21"
           line: 'Measurement uncertainty: ±' + value + (basis ? ' (' + basis + ')' : '')
         };
       } catch (e) { return null; }
