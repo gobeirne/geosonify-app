@@ -28,6 +28,21 @@
 (function(global) {
   'use strict';
 
+  // ============== CARD ACTION ICONS ==============
+  // Inline SVG line icons, matching the app's native tab-bar style
+  // (viewBox 0 0 24 24, fill:none, stroke:currentColor) so they inherit the
+  // button's white colour and stay crisp at any scale — replacing the old emoji
+  // glyphs (📤📋📷🖼️🔗) which rendered inconsistently across platforms.
+  const _svg = (paths) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">${paths}</svg>`;
+  const ICONS = {
+    share:  _svg('<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/>'),
+    copy:   _svg('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
+    camera: _svg('<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>'),
+    image:  _svg('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>'),
+    link:   _svg('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'),
+    decode: _svg('<circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>')
+  };
+
   // ============== GRID DEFINITIONS ==============
   
   const CARD_GRIDS = {
@@ -2439,10 +2454,10 @@
                 `<a class="chess-label chess-fen-link" href="${lichess}" target="_blank" rel="noopener" title="Open in lichess board editor">FEN ↗</a>` +
                 `<code class="chess-fen">${fen}</code>` +
                 `<button class="card-btn chess-edit-fen" title="Edit / paste a FEN to decode">✎</button>` +
-                `<button class="card-btn chess-copy-fen" title="Copy FEN">📋</button></div>` +
+                `<button class="card-btn chess-copy-fen" title="Copy FEN">${ICONS.copy}</button></div>` +
               `<div class="chess-row">` +
                 `<button class="chess-label chess-ascii-toggle" title="Show / hide ASCII board">ASCII ▾</button>` +
-                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">📋</button></div>` +
+                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">${ICONS.copy}</button></div>` +
               `<pre class="chess-ascii-pre" style="display:none;">${ascii}</pre>` +
             `</div></div>`;
         }
@@ -2454,24 +2469,24 @@
       }
       
       const chromaActions = isChroma ? `
-        <button class="card-btn camera-btn" title="Scan with camera">📷</button>
-        <button class="card-btn photo-btn" title="Decode from image">🖼️</button>
+        <button class="card-btn camera-btn" title="Scan with camera">${ICONS.camera}</button>
+        <button class="card-btn photo-btn" title="Decode from image">${ICONS.image}</button>
       ` : '';
       
       const barcodeActions = isBarcode ? `
-        <button class="card-btn bc-camera-btn" title="Scan with camera">📷</button>
-        <button class="card-btn bc-photo-btn" title="Decode from image">🖼️</button>
+        <button class="card-btn bc-camera-btn" title="Scan with camera">${ICONS.camera}</button>
+        <button class="card-btn bc-photo-btn" title="Decode from image">${ICONS.image}</button>
       ` : '';
       
       const chessActions = (gridDef.display === 'chessboard') ? `
-        <button class="card-btn card-btn-wide chess-decode-btn" title="Decode a board (FEN or ASCII) to its code"><span class="card-btn-icon">⌖</span><span class="card-btn-text">DECODE</span></button>
+        <button class="card-btn card-btn-wide chess-decode-btn" title="Decode a board (FEN or ASCII) to its code"><span class="card-btn-icon">${ICONS.decode}</span><span class="card-btn-text">DECODE</span></button>
       ` : '';
 
       const checksumBtn = supportsChecksum ? `
         <button class="card-btn checksum-btn ${checksumOn ? 'checksum-active' : ''}" title="Toggle checksum word">✓</button>
       ` : '';
       
-      const linkIcon = gridDef.link ? `<a href="${gridDef.link}" target="_blank" rel="noopener" style="text-decoration:none;opacity:0.6;margin-left:4px;" title="About ${gridDef.name}">🔗</a>` : '';
+      const linkIcon = gridDef.link ? `<a href="${gridDef.link}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none;opacity:0.6;margin-left:4px;color:currentColor;" title="About ${gridDef.name}">${ICONS.link}</a>` : '';
       
       card.innerHTML = `
         <div class="card-header-row">
@@ -2486,8 +2501,8 @@
             ${barcodeActions}
             ${chessActions}
             ${checksumBtn}
-            <button class="card-btn share-btn" title="Share">📤</button>
-            <button class="card-btn copy-btn" title="Copy">📋</button>
+            <button class="card-btn share-btn" title="Share">${ICONS.share}</button>
+            <button class="card-btn copy-btn" title="Copy">${ICONS.copy}</button>
             <button class="card-btn close-btn" title="Hide">×</button>
           </div>
         </div>
