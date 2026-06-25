@@ -2361,6 +2361,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           updateCoordDisplay();
           updateMapPin();
           renderCards();
+          // Stamp provenance from the decoded URL code so Match (if active) tracks
+          // the code's precision and the ℹ️ readout reads "decoded code".
+          if (CardRenderer.stampDecodedProvenance) {
+            try { CardRenderer.stampDecodedProvenance(paramName, decodedVal, coord[0], coord[1]); } catch (e) {}
+          }
           if (map && currentCardCoord) {
             map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
@@ -2651,6 +2656,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               // shapes draw their own centroid marker via drawPathPolyOnMap
               if (!(hasTilde && shapeSuffix)) {
                 updateMapPin();
+                // Stamp provenance from the decoded URL code (plain points only;
+                // shapes carry their own precision semantics). Match (if active)
+                // then tracks the code's precision; readout shows "decoded code".
+                if (CardRenderer.stampDecodedProvenance) {
+                  try { CardRenderer.stampDecodedProvenance(config.grid, centroidCode, result[0], result[1]); } catch (e) {}
+                }
               }
               renderCards();
               
