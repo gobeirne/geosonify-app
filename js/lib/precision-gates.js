@@ -409,5 +409,76 @@ console.log('testable here (' + testableKeys.length + '); skipped (grid data not
   gate('Gate 11 (NEW: first-run = Custom seeded w/ Human presets; cycle Custom→Match→Human→Custom)', ok, detail);
 })();
 
+// ---- Gate L (correction): pasting/decoding a code stamps provenance FROM the
+// code (basis "decoded code"), and in Match mode re-matches every card to it. -----
+(() => {
+  if (!AppState || !ctx.GeoPrecision || ctx.GeoPrecision._unavailable) {
+    gate('Gate 12 (paste/URL decode → code provenance + re-Match)', false, 'GeoPrecision not live in harness');
+    return;
+  }
+  const GP = ctx.GeoPrecision, G = CARD_GRIDS, H = HealpixGrids;
+  let _pt = null;
+  ctx.GeosonifyMain = { setCoordinate(l, o, m) { _pt = (m && m.exactPoint) ? m.exactPoint : null; }, getExact() { return _pt; } };
+  CardRenderer.setCoordinate(-43.53, 172.63);
+  AppState.set('encoding.precisionMode', 'auto');
+
+  let ok = true, detail = '';
+  // (a) longer code ⇒ finer provenance ⇒ finer card iterations. Walk lengths.
+  function makeVocabCode(k, n) { const flat = G[k].grid.flat(); let c = ''; for (let i = 0; i < n; i++) c += flat[(i * 13 + 5) % flat.length]; return c; }
+  let prevU = Infinity, prevIter = -1;
+  for (const n of [3, 6, 9]) {
+    const okStamp = CardRenderer.stampDecodedProvenance('alphanumeric', makeVocabCode('alphanumeric', n), -43.53, 172.63);
+    const ex = ctx.GeosonifyMain.getExact();
+    if (!okStamp || !ex || !ex.meta) { ok = false; detail = 'stamp failed @n=' + n; break; }
+    if (ex.meta.basis !== 'decoded code') { ok = false; detail = 'basis="' + ex.meta.basis + '" (want "decoded code") @n=' + n; break; }
+    const u = ex.meta.uncertaintyMetres;
+    if (!(u < prevU)) { ok = false; detail = 'provenance not finer as code lengthened: ' + u + ' vs ' + prevU; break; }
+    const iter = CardRenderer.getCardState().iterations.hexbyte;
+    if (prevIter >= 0 && !(iter >= prevIter)) { ok = false; detail = 'cards not re-matched finer @n=' + n; break; }
+    prevU = u; prevIter = iter;
+  }
+  // (b) HEALPix code path stamps too.
+  if (ok) {
+    const hp = H.encode('hphex', -43.53, 172.63, 22, {});
+    const hpCode = (typeof hp === 'string') ? hp : hp.str;
+    const okHp = CardRenderer.stampDecodedProvenance('hphex', hpCode, -43.53, 172.63);
+    const ex = ctx.GeosonifyMain.getExact();
+    if (!okHp || !ex || ex.meta.basis !== 'decoded code') { ok = false; detail = 'HEALPix stamp failed: ' + (ex && ex.meta && ex.meta.basis); }
+  }
+  // (c) Custom mode: stamp updates provenance but does NOT change iterations.
+  if (ok) {
+    AppState.set('encoding.precisionMode', 'custom');
+    const before = JSON.stringify(CardRenderer.getCardState().iterations);
+    CardRenderer.stampDecodedProvenance('alphanumeric', makeVocabCode('alphanumeric', 9), -43.53, 172.63);
+    const after = JSON.stringify(CardRenderer.getCardState().iterations);
+    if (before !== after) { ok = false; detail = 'Custom mode: stamp changed iterations'; }
+    AppState.set('encoding.precisionMode', 'auto');
+  }
+  gate('Gate 12 (NEW: paste/URL decode → "decoded code" provenance; Match re-matches; Custom no-op)', ok, detail);
+})();
+
+// ---- Gate M (correction): the ℹ️ info-box formatters honour the unit toggle ----
+// (the reported "inches mode still shows cm" bug). Vocab dimsText, GIS precisionText,
+// and HEALPix precisionText must all flip to imperial in US mode.
+(() => {
+  if (!AppState) { gate('Gate 13 (info-box units flip)', false, 'no AppState'); return; }
+  let ok = true, detail = '';
+  const coord = { lat: -43.53, lon: 172.63 };
+  AppState.set('encoding.unitSystem', 'us');
+  const usHex = CardRenderer.getPrecisionText('hexbyte', 6);          // vocab (proxy for dimsText funnel)
+  const usGis = GISGrids.precisionText('pluscode', 6, coord);
+  const usHpx = HealpixGrids.precisionText('hphex', 22, coord);
+  AppState.set('encoding.unitSystem', 'metric');
+  const mHex = CardRenderer.getPrecisionText('hexbyte', 6);
+  const mGis = GISGrids.precisionText('pluscode', 6, coord);
+  const mHpx = HealpixGrids.precisionText('hphex', 22, coord);
+  const isImperial = s => /\b(ft|in|mi|thou|µin|yd)\b/.test(s);
+  const isMetric = s => /\b(m|km|cm|mm|µm|nm)\b/.test(s);
+  if (!(isImperial(usHex) && isMetric(mHex))) { ok = false; detail = 'vocab: us=' + usHex + ' m=' + mHex; }
+  else if (!(isImperial(usGis) && isMetric(mGis))) { ok = false; detail = 'GIS: us=' + usGis + ' m=' + mGis; }
+  else if (!(isImperial(usHpx) && isMetric(mHpx))) { ok = false; detail = 'HEALPix: us=' + usHpx + ' m=' + mHpx; }
+  gate('Gate 13 (NEW: ℹ️ info-box formatters flip metric⇄US — vocab, GIS, HEALPix)', ok, detail);
+})();
+
 console.log('\n=== ' + pass + ' passed, ' + fail + ' failed ===\n');
 process.exit(fail ? 1 : 0);

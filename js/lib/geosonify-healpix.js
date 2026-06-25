@@ -534,6 +534,7 @@ const HealpixGrids = (function () {
     // lands in a readable range; sub-attometre falls back to scientific metres.
     const f = m => {
       if (!isFinite(m) || m <= 0) return '0';
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.formatLength) return CardRenderer.formatLength(m);
       if (m >= 1000)   return (m / 1000).toFixed(1) + ' km';
       if (m >= 1)      return m.toFixed(1) + ' m';
       if (m >= 1e-3)   return (m * 1e3).toFixed(1) + ' mm';

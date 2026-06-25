@@ -510,6 +510,9 @@ const GISGrids = (function () {
   }
 
   function fmtMetres(m) {
+    // Honour the global metric⇄US toggle when CardRenderer is present, so the ℹ️
+    // popup flips units with everything else. Falls back to metric standalone.
+    if (typeof CardRenderer !== 'undefined' && CardRenderer.formatLength) return CardRenderer.formatLength(m);
     if (m >= 1000) return (m / 1000).toFixed(m >= 10000 ? 0 : 1) + ' km';
     if (m >= 1) return (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)) + ' m';
     if (m >= 0.01) return (m * 100).toFixed(0) + ' cm';
@@ -712,6 +715,7 @@ const GISGrids = (function () {
     const lat = coord ? coord.lat : 0, lon = coord ? coord.lon : 0;
     const d = s.cellMetres(iterations, lat, lon);
     const f = m => {
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.formatLength) return CardRenderer.formatLength(m);
       if (m >= 1000) return (m / 1000).toFixed(1) + ' km';
       if (m >= 1) return m.toFixed(1) + ' m';
       if (m >= 0.001) return (m * 1000).toFixed(1) + ' mm';
@@ -743,6 +747,7 @@ const GISGrids = (function () {
   const ENUMERABLE = { pluscode: true, geohash: true, mgrs: true, bng: true };
 
   function fmtMetricFull(m) {
+    if (typeof CardRenderer !== 'undefined' && CardRenderer.formatLength) return CardRenderer.formatLength(m);
     if (m >= 1000) return (m / 1000).toFixed(m >= 10000 ? 0 : 2) + ' km';
     if (m >= 1) return m.toFixed(2) + ' m';
     if (m >= 0.01) return (m * 100).toFixed(1) + ' cm';
