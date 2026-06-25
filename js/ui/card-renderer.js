@@ -2605,20 +2605,15 @@
         if (disp && disp.dataset.code !== code) {
           const fmt = disp.dataset.fmt || gridDef.chessFormat || 'standard';
           disp.dataset.code = code;
-          const fenEl = card.querySelector('.chess-fen');
           const linkEl = card.querySelector('.chess-fen-link');
-          const asciiEl = card.querySelector('.chess-ascii-pre');
           const ctrEl = card.querySelector('.chess-board-container');
           try {
             const fen = ChessboardLib.toFEN(code, fmt);
-            if (fenEl) fenEl.textContent = fen;
             if (linkEl) linkEl.setAttribute('href', 'https://lichess.org/editor/' + fen);
-            if (asciiEl) asciiEl.textContent = ChessboardLib.toASCII(code, fmt);
             if (ctrEl) ChessboardLib.renderBoard(code, ctrEl, { format: fmt, letters: chessUseLetters });
             disp.classList.remove('chess-toobig');
           } catch (e) {
             if (ctrEl) ctrEl.innerHTML = '';
-            if (fenEl) fenEl.textContent = '(code too precise — reduce precision)';
             if (linkEl) linkEl.removeAttribute('href');
           }
         }
@@ -2744,13 +2739,12 @@
             `<div class="chess-textforms">` +
               `<div class="chess-row">` +
                 `<a class="chess-label chess-fen-link" href="${lichess}" target="_blank" rel="noopener" title="Open in lichess board editor">FEN ↗</a>` +
-                `<code class="chess-fen">${fen}</code>` +
+                `<button class="card-btn chess-copy-fen" title="Copy FEN">${ICONS.copy}</button>` +
                 `<button class="card-btn chess-edit-fen" title="Edit / paste a FEN to decode">✎</button>` +
-                `<button class="card-btn chess-copy-fen" title="Copy FEN">${ICONS.copy}</button></div>` +
-              `<div class="chess-row">` +
-                `<button class="chess-label chess-ascii-toggle" title="Show / hide ASCII board">ASCII ▾</button>` +
-                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">${ICONS.copy}</button></div>` +
-              `<pre class="chess-ascii-pre" style="display:none;">${ascii}</pre>` +
+                `<span class="chess-label chess-ascii-label" title="ASCII board">ASCII</span>` +
+                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">${ICONS.copy}</button>` +
+                `<button class="card-btn chess-edit-ascii" title="Edit / paste an ASCII board to decode">✎</button>` +
+              `</div>` +
             `</div></div>`;
         }
       } else if (gisRedacted) {
@@ -2770,9 +2764,7 @@
         <button class="card-btn bc-photo-btn" title="Decode from image">${ICONS.image}</button>
       ` : '';
       
-      const chessActions = (gridDef.display === 'chessboard') ? `
-        <button class="card-btn card-btn-wide chess-decode-btn" title="Decode a board (FEN or ASCII) to its code"><span class="card-btn-icon">${ICONS.decode}</span><span class="card-btn-text">DECODE</span></button>
-      ` : '';
+      const chessActions = '';
 
       const checksumBtn = supportsChecksum ? `
         <button class="card-btn checksum-btn ${checksumOn ? 'checksum-active' : ''}" title="Toggle checksum word">✓</button>
@@ -3255,26 +3247,18 @@
           try { await navigator.clipboard.writeText(ChessboardLib.toASCII(code, fmt)); showToast("Copied!"); }
           catch (err) { /* clipboard unavailable */ }
         });
-        // Decode a pasted board (FEN or ASCII) back to its hex code, then jump the map there.
-        card.querySelector('.chess-decode-btn')?.addEventListener('click', (e) => {
-          e.stopPropagation();
-          showChessDecodeModal(gridKey);
-        });
-        // Edit/paste FEN (the ✎ button) — opens the same decode modal, pre-seeded with the FEN.
+        // Edit/paste FEN (the ✎ button) — opens the decode modal, pre-seeded with the FEN.
         card.querySelector('.chess-edit-fen')?.addEventListener('click', (e) => {
           e.stopPropagation();
           let seed = ''; try { seed = ChessboardLib.toFEN(code, fmt); } catch (_) {}
           showChessDecodeModal(gridKey, seed);
         });
-        // ASCII show/hide toggle (inline, never below the card edge)
-        card.querySelector('.chess-ascii-toggle')?.addEventListener('click', (e) => {
+        // Edit/paste ASCII (the ✎ button) — opens the decode modal, pre-seeded with the
+        // current ASCII board. The modal already accepts either FEN or ASCII.
+        card.querySelector('.chess-edit-ascii')?.addEventListener('click', (e) => {
           e.stopPropagation();
-          const pre = card.querySelector('.chess-ascii-pre');
-          const btn = e.currentTarget;
-          if (!pre) return;
-          const showing = pre.style.display !== 'none';
-          pre.style.display = showing ? 'none' : 'block';
-          btn.textContent = showing ? 'ASCII ▾' : 'ASCII ▴';
+          let seed = ''; try { seed = ChessboardLib.toASCII(code, fmt); } catch (_) {}
+          showChessDecodeModal(gridKey, seed);
         });
         // Symbols / Letters toggle (applies to all chess cards at once)
         card.querySelector('.chess-letters-btn')?.addEventListener('click', (e) => {
@@ -4145,7 +4129,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       const cLat = (b.latMin + b.latMax) / 2;
       const h = (b.latMax - b.latMin) * 111319.9;
       const w = (b.lonMax - b.lonMin) * 111319.9 * Math.cos(cLat * Math.PI / 180);
-      return `${formatMetric(w)} × ${formatMetric(h)}`;
+      return `${formatLength(w)} × ${formatLength(h)}`;
     }
 
     // Build the ladder: a window of levels around the current one.
@@ -4393,6 +4377,10 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
         setCoordinate(result[0], result[1]);
+        // Stamp provenance FROM the pasted code (must run after setCoordinate, whose
+        // onCoordChange bridge would otherwise overwrite it with typed-precision).
+        // In Match mode this also re-runs Match against the code's precision.
+        stampDecodedProvenance(gridKey, code, result[0], result[1]);
         const map = callbacks.getMap ? callbacks.getMap() : null;
         if (map) map.panTo([result[0], result[1]]);
         modal.remove();
@@ -4424,6 +4412,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
         setCoordinate(result[0], result[1]);
+        stampDecodedProvenance(gridKey, code, result[0], result[1]);
         const map = callbacks.getMap ? callbacks.getMap() : null;
         if (map) map.panTo([result[0], result[1]]);
         modal.remove();
@@ -4751,6 +4740,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       msg.style.color = '#2a7';
       if (callbacks.onUserInteraction) callbacks.onUserInteraction();
       setCoordinate(coord[0], coord[1]);
+      // Stamp provenance from the decoded code (res.hex is the sibling hex). In
+      // Match mode this re-runs Match against the board's precision.
+      stampDecodedProvenance(gridKey, res.hex, coord[0], coord[1]);
       // Move the map to the decoded location (setCoordinate only drops the pin /
       // updates the marker; it does NOT recenter the viewport). Match the other
       // code-decode paths which setView at zoom 15.
@@ -5361,7 +5353,46 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   }
 
   // ============== COORDINATE MANAGEMENT ==============
-  
+
+  // When a code is pasted/decoded (or arrives via URL), the code IS the source of
+  // truth — its precision is its own cell size at that depth. Build an exact point
+  // FROM the code so getExact().meta.uncertaintyMetres reflects the pasted code's
+  // length, stamp it through GeosonifyMain (the provenance store), and — if the
+  // user is in Match mode — re-run Match so every card tracks the decoded precision.
+  // basis is normalised to "decoded code" for the readout. Safe no-op if the
+  // precision stack isn't loaded. gridKey may be a chess card (resolved to sibling).
+  function stampDecodedProvenance(gridKey, code, lat, lon) {
+    try {
+      let gd = CARD_GRIDS[gridKey];
+      while (gd && gd.chessOf) { gridKey = gd.chessOf; gd = CARD_GRIDS[gridKey]; }
+      if (typeof GeoPrecision === 'undefined' || GeoPrecision._unavailable) return false;
+      let pt = null;
+      if (gd && gd.healpix && GeoPrecision.fromHealpixCode) {
+        const ord = cardState.iterations[gridKey] || (gd.defaultIterations);
+        pt = GeoPrecision.fromHealpixCode(code, gd.healpix, ord);
+      } else if (gd && gd.gis) {
+        // GIS schemes are externally-defined; fall back to lat/lon-derived point
+        // but tag basis as decoded code (uncertainty ≈ the scheme cell at its iters).
+        pt = GeoPrecision.fromLatLon(lat, lon, {});
+        if (pt && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis]) {
+          const it = cardState.iterations[gridKey] || gd.defaultIterations;
+          const d = GISGrids.SCHEMES[gd.gis].cellMetres(it, lat, lon);
+          if (pt.meta) { pt.meta.uncertaintyMetres = Math.max(d.w, d.h); }
+        }
+      } else if (gd && gd.grid && GeoPrecision.fromGeosonifyCode) {
+        pt = GeoPrecision.fromGeosonifyCode(code, gd.grid);
+      }
+      if (!pt) return false;
+      if (pt.meta) pt.meta.basis = 'decoded code';   // normalise the readout source label
+      if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.setCoordinate) {
+        GeosonifyMain.setCoordinate(lat, lon, { exactPoint: pt, quiet: true });
+      }
+      // If in Match mode, recompute every card from the freshly-stamped provenance.
+      if (getPrecisionMode() === 'auto') applyPrecisionMode();
+      return true;
+    } catch (e) { return false; }
+  }
+
   function setCoordinate(lat, lon) {
     currentCardCoord = { lat, lon };
     
@@ -5493,6 +5524,10 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      * Re-render all cards
      */
     render: renderCards,
+
+    // Stamp provenance from a decoded code (paste or URL), set basis "decoded code",
+    // and re-run Match if active. Call after the coordinate is set from a URL code.
+    stampDecodedProvenance: stampDecodedProvenance,
 
     // --- Precision control surface (used by the PRECISION control + gates) ---
     // Pure math (exposed for the precision round-trip gate):
