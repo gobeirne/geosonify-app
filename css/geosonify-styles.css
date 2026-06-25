@@ -1197,11 +1197,11 @@ select {
   background:var(--ios-light-gray,#f2f2f7); color:var(--ios-text,#000);
   padding:5px 8px; border-radius:6px;
 }
-.chess-edit-fen, .chess-copy-fen, .chess-copy-ascii { flex:none; }
+.chess-edit-fen, .chess-copy-fen, .chess-edit-ascii, .chess-copy-ascii { flex:none; }
 /* These buttons live in the light card BODY, not the dark header, so the inherited
    .card-btn styling (white icon on translucent-white) rendered them invisible. Override
    to a dark icon on a light-grey chip, matching the FEN code field beside them. */
-.chess-edit-fen.card-btn, .chess-copy-fen.card-btn, .chess-copy-ascii.card-btn {
+.chess-edit-fen.card-btn, .chess-copy-fen.card-btn, .chess-edit-ascii.card-btn, .chess-copy-ascii.card-btn {
   background:var(--ios-light-gray,#f2f2f7);
   color:var(--ios-text,#333);
 }
