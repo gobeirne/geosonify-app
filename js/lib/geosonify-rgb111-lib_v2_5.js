@@ -70,6 +70,13 @@
     var bgBlack = opts.background !== 'white';
     var showChecksum = opts.showChecksum !== false;
     var compact = !!opts.compact;
+    // Codec variant marker. 'healpix' draws a solid black diamond at the grid
+    // centre — the only black in the data area (K/W cells render as diagonal
+    // colour splits, never literal black), so it reads unambiguously as "not
+    // data" and identifies the swatch as a HEALPix ChromaCoord (order-22 hphex)
+    // rather than a standard one. Costs zero payload/notch bits; the diamond sits
+    // at the four-cell junction, clear of every cell-centre sampling point.
+    var variant = opts.variant || 'standard';
     if (compact) { borderWidth = 0.25; showChecksum = false; }
 
     var hex = (hexString || '000000000000').toUpperCase().replace(/[^0-9A-F]/g, '').padEnd(12, '0').slice(0, 12);
@@ -191,6 +198,25 @@
       }
       drawNotch('top', notches.top); drawNotch('right', notches.right); drawNotch('bottom', notches.bottom); drawNotch('left', notches.left);
     }
+
+    // HEALPix variant marker: solid black diamond at the exact grid centre.
+    // Half-diagonal tied to the notch base (cellSize * notchSize, default 0.5
+    // cell) so it shares the notches' dimension; full diagonal ≈ one cell. The
+    // grid centre is the meeting point of the four inner cells and is rotation-
+    // invariant, so the mark survives the notch-based rotation search and is read
+    // by a single centre-pixel sample at decode time.
+    if (variant === 'healpix') {
+      var diamondR = cellSize * notchSize;           // half-diagonal (≈0.5 cell)
+      var dcx = gridLeft + 2 * cellSize, dcy = gridTop + 2 * cellSize;
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.moveTo(dcx, dcy - diamondR);
+      ctx.lineTo(dcx + diamondR, dcy);
+      ctx.lineTo(dcx, dcy + diamondR);
+      ctx.lineTo(dcx - diamondR, dcy);
+      ctx.closePath();
+      ctx.fill();
+    }
     return canvas;
   }
 
@@ -274,12 +300,37 @@
     return nearestColorIndex(pixel[0], pixel[1], pixel[2]);
   }
 
+  // Sample the exact grid centre. On a HEALPix card a solid black diamond sits
+  // there; on a standard card the centre is the seam where four data cells meet
+  // (never black, since K/W render as colour-split diagonals — the data area
+  // contains no black). So black-at-centre ⇒ HEALPix. Sample a small cluster and
+  // require the majority to be near-black, for robustness against JPEG ringing.
+  function detectCentreVariant(canvas, bounds) {
+    try {
+      var ctx = canvas.getContext('2d');
+      var cx = Math.floor(bounds.left + bounds.width / 2);
+      var cy = Math.floor(bounds.top + bounds.height / 2);
+      var span = Math.max(1, Math.floor(Math.min(bounds.width, bounds.height) * 0.015));
+      var offs = [[0, 0], [span, 0], [-span, 0], [0, span], [0, -span]];
+      var blackHits = 0, total = 0;
+      for (var i = 0; i < offs.length; i++) {
+        var px = ctx.getImageData(cx + offs[i][0], cy + offs[i][1], 1, 1).data;
+        total++;
+        if (px[0] < 60 && px[1] < 60 && px[2] < 60) blackHits++;
+      }
+      return (blackHits >= Math.ceil(total / 2)) ? 'healpix' : 'standard';
+    } catch (e) {
+      return 'standard';
+    }
+  }
+
   function decodeFromCanvas(canvas, options) {
     options = options || {};
     var gridSize = options.gridSize || 4;
     
     try {
       var bounds = detectGridBounds(canvas);
+      var variant = detectCentreVariant(canvas, bounds);
       
       // Read all cells
       var bits = '';
@@ -302,11 +353,11 @@
       // Validate and try rotations
       var result = findCorrectRotation(hex, { top: 0, right: 0, bottom: 0, left: 0 });
       if (result.valid) {
-        return { hex: result.hex, rotation: result.rotation, valid: true };
+        return { hex: result.hex, rotation: result.rotation, valid: true, variant: variant };
       }
       
       // Try without checksum validation
-      return { hex: hex, rotation: 0, valid: false, raw: true };
+      return { hex: hex, rotation: 0, valid: false, raw: true, variant: variant };
     } catch (e) {
       return null;
     }
