@@ -445,16 +445,36 @@
     var query = url.slice(qIdx + 1);
     var params = query.split('&');
 
+    // Recognised single-point params → which barcode CODEC decodes them, and
+    // whether the value is obfuscated. h/oh are the legacy Geosonify-hex forms
+    // (standard Data Matrix codec). HEALPix uses base + suffix flags, matching the
+    // app's own convention: hphex / hphexo (obfuscated) / hp64 / hp64o / hpquad /
+    // hpquado — the trailing 'o' is the obfuscation flag (same as ?ao=…). These
+    // route to the hpmatrix codec, not the byte model, since hphex is length-self-
+    // describing and order ≠ length/2. The caller uses .gridKey to pick the
+    // decoder and .obfuscated to set mode.
+    var HP_BASES = ['hphex', 'hp64', 'hpquad'];
+
     for (var i = 0; i < params.length; i++) {
       var parts = params[i].split('=');
       var key = decodeURIComponent(parts[0] || '');
       var val = decodeURIComponent(parts[1] || '');
 
-      if (key === 'oh') {
-        return { hex: val, obfuscated: true };
-      }
-      if (key === 'h') {
-        return { hex: val, obfuscated: false };
+      // Legacy Geosonify hex (standard Data Matrix codec).
+      if (key === 'h')  return { hex: val, obfuscated: false, gridKey: 'datamatrix' };
+      if (key === 'oh') return { hex: val, obfuscated: true,  gridKey: 'datamatrix' };
+
+      // HEALPix: base + optional [o] flag suffix → hpmatrix codec.
+      for (var b = 0; b < HP_BASES.length; b++) {
+        var base = HP_BASES[b];
+        if (key === base || (key.indexOf(base) === 0)) {
+          var suffix = key.slice(base.length);
+          // Only the obfuscation flag is meaningful for a single-point scan;
+          // accept o/d/r in any order (no repeats) as the app does, read 'o'.
+          if (/^[odr]{0,3}$/.test(suffix) && new Set(suffix.split('')).size === suffix.length) {
+            return { hex: val, obfuscated: suffix.indexOf('o') !== -1, gridKey: 'hpmatrix' };
+          }
+        }
       }
     }
 
@@ -464,7 +484,8 @@
       if (parsed && parsed.shape && parsed.shape.coordCode) {
         return {
           hex: parsed.shape.coordCode,
-          obfuscated: !!parsed.obfuscated
+          obfuscated: !!parsed.obfuscated,
+          gridKey: 'datamatrix'
         };
       }
     }
