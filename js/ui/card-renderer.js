@@ -272,6 +272,61 @@
     }
   };
 
+  // ============== DATA MATRIX MODE SIGNIFIERS ==============
+  // A bare-hex Data Matrix carries only "4789F820EB4C" — no URL, no param name,
+  // so a COLD scan (no card context) can't tell which codec/obfuscation produced
+  // it. We prepend ONE leading letter from outside the hex alphabet (hex uses
+  // 0-9A-F, so G-Z are unambiguous) as a self-describing mode signifier. One
+  // character = one DM codeword, the cheapest envelope that fits (a ?hphex= param
+  // would cost ~2 size tiers; see the capacity analysis). This is DM-LOCAL and is
+  // deliberately NOT the URL param vocabulary (?h=/?hphex=) — different carrier,
+  // different cost structure — but both must resolve to the same internal codec,
+  // which is what SIGNIFIER_TO_MODE centralises.
+  //
+  // Backward-compat: a bare hex with NO signifier is treated as standard
+  // Geosonify hex (the historical default), so codes printed before this change
+  // keep working. The signifier is purely additive.
+  //
+  // mode = { gridKey, obf }. gridKey picks the codec card; obf says the hex is in
+  // obfuscated form and must be de-obfuscated on decode (mirrors ?oh=).
+  const MODE_TO_SIGNIFIER = {
+    'datamatrix|false': 'G',   // Geosonify hex (standard)
+    'datamatrix|true' : 'O',   // Geosonify obfuscated hex
+    'hpmatrix|false'  : 'H',   // HEALPix hex
+    'hpmatrix|true'   : 'P'    // HEALPix obfuscated hex
+    // future families: Q, R, S, … (any unused G-Z letter)
+  };
+  const SIGNIFIER_TO_MODE = {
+    'G': { gridKey: 'datamatrix', obf: false },
+    'O': { gridKey: 'datamatrix', obf: true  },
+    'H': { gridKey: 'hpmatrix',   obf: false },
+    'P': { gridKey: 'hpmatrix',   obf: true  }
+  };
+
+  // Prepend the mode signifier to a Data-Matrix code at GENERATE time. Applied
+  // OUTSIDE withHealpixBarcodeOrder, so the full envelope is [sig][hex][@order].
+  // Only the two matrix cards get a signifier; other barcodes are untouched.
+  function withMatrixSignifier(gridKey, code) {
+    if (typeof code !== 'string' || !code) return code;
+    if (gridKey !== 'datamatrix' && gridKey !== 'hpmatrix') return code;
+    const sig = MODE_TO_SIGNIFIER[gridKey + '|' + (obfuscated ? 'true' : 'false')];
+    return sig ? sig + code : code;
+  }
+
+  // Read a leading signifier off a scanned Data-Matrix string. Returns the
+  // resolved { gridKey, obf, code } with the signifier stripped, or null if the
+  // string carries no recognised signifier (caller then falls back to the
+  // scanning card's context + current obfuscation state — the legacy path).
+  function readMatrixSignifier(rawText) {
+    if (typeof rawText !== 'string') return null;
+    // Tolerate leading quiet-zone noise before the signifier letter.
+    const m = rawText.match(/^\s*([G-Z])(.*)$/i);
+    if (!m) return null;
+    const mode = SIGNIFIER_TO_MODE[m[1].toUpperCase()];
+    if (!mode) return null;
+    return { gridKey: mode.gridKey, obf: mode.obf, code: m[2] };
+  }
+
   // ============== INTERNAL STATE ==============
   
   let cardState = {
@@ -648,6 +703,34 @@
       }
       if (!cardState.order.includes(key)) cardState.order.push(key);
     }
+
+    // HEALPix ChromaCoord — an RGB111 colour swatch that PRESENTS an hphex code
+    // (chromaOf: 'hphex'), exactly as the HEALPix Chessboard presents one as a
+    // board. RGB111 is rigidly 48 bits = 12 hex chars (4×4 grid × 3 bits). The
+    // only hphex order whose hex form is exactly 12 chars is order 22 (face nibble
+    // + ceil(22/2)=11 body chars), and a bare 12-char hphex string length-infers
+    // back to order 22 — so the swatch needs no "@k" order suffix and is a clean
+    // fixed-resolution (~1.6 m equal-area cell) bijection. fixedIterations pins
+    // the order; the +/- stepper doesn't apply (it's a fixed-precision card, like
+    // the standard ChromaCoord). The standard ChromaCoord stays a real hexByte
+    // encoder; only this HEALPix one is a presentation.
+    if (typeof RGB111Lib !== 'undefined' && typeof HealpixGrids !== 'undefined') {
+      CARD_GRIDS.hpchromacoord = {
+        name: 'HEALPix · ChromaCoord',
+        chromaOf: 'hphex',
+        healpixLabel: true,
+        grid: null,
+        fixedIterations: 22,
+        display: 'chroma',
+        link: (HealpixGrids.cardDefs && HealpixGrids.cardDefs().hphex)
+          ? HealpixGrids.cardDefs().hphex.link : null,
+        isEmoji: false
+      };
+      if (cardState.iterations.hpchromacoord === undefined) {
+        cardState.iterations.hpchromacoord = CARD_GRIDS.hpchromacoord.fixedIterations;
+      }
+      if (!cardState.order.includes('hpchromacoord')) cardState.order.push('hpchromacoord');
+    }
   }
 
   // One-time: surface the HEALPix hex card by default (incl. existing users
@@ -755,18 +838,6 @@
             cardState.order.push(key);
           }
         });
-      } else {
-        // FIRST-EVER RUN (no saved state): seed every adjustable card with its
-        // human-scale preset, so the app opens at sensible ~human resolutions.
-        // Mode stays 'custom' (the default) — so steppers show and the user owns
-        // these values — it just happens to start at the Human presets, not the
-        // raw defaultIterations. ChromaCoord/fixed cards untouched.
-        Object.keys(CARD_GRIDS).forEach(key => {
-          const gd = CARD_GRIDS[key];
-          if (isAdjustableCard(gd)) {
-            cardState.iterations[key] = humanIterationsFor(key);
-          }
-        });
       }
       
       // Default speaker (per-word) view OFF for BIP39 grids, so cards open in
@@ -869,16 +940,32 @@
   }
 
   // ============== ENCODING/DECODING ==============
-  
+
+  // A "presentation" card has no coordinate encoder of its own: it renders a
+  // SIBLING card's hex code in another alphabet (chess board, colour swatch, …).
+  // The sibling key lives in chessOf / chromaOf; this accessor returns it (or
+  // null for a real encoder), so every delegation point treats all presentation
+  // cards uniformly instead of special-casing each field.
+  //   chessOf  → Chessboard / HEALPix-Chessboard (FEN view of a hex)
+  //   chromaOf → HEALPix ChromaCoord (RGB111 swatch view of an hphex code)
+  // The standard ChromaCoord is NOT a presentation — it's a real hexByte encoder
+  // (fixedIterations 6); only the HEALPix one borrows hphex via chromaOf.
+  function presentationOf(gridDef) {
+    if (!gridDef) return null;
+    return gridDef.chessOf || gridDef.chromaOf || null;
+  }
+
   function _encodeCardCoordinateInternal(gridKey, lat, lon, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
-    // Chessboard / HEALPix-Chessboard: a PRESENTATION of a sibling's hex code (chessOf), not a
-    // coordinate encoder of its own. Encode the sibling's hex (reusing its passphrase/obfuscation
-    // pipeline wholesale); the board itself is produced at render time by ChessboardLib. We store
-    // and round-trip the HEX here — the board is a view of it, exactly as hpmatrix is a Data
+    // Presentation card (Chessboard / HEALPix ChromaCoord): a view of a sibling's
+    // hex code (presentationOf), not a coordinate encoder of its own. Encode the
+    // sibling's hex (reusing its passphrase/obfuscation pipeline wholesale); the
+    // board/swatch is produced at render time. We store and round-trip the HEX
+    // here — the presentation is a view of it, exactly as hpmatrix is a Data
     // Matrix view of hphex. iterations is interpreted in the sibling's terms.
-    if (gridDef && gridDef.chessOf) {
-      return _encodeCardCoordinateInternal(gridDef.chessOf, lat, lon, iterations);
+    const _presEnc = presentationOf(gridDef);
+    if (_presEnc) {
+      return _encodeCardCoordinateInternal(_presEnc, lat, lon, iterations);
     }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
@@ -991,8 +1078,9 @@
   
   function decodeCardCoordinate(gridKey, code, iterations) {
     const gridDef = CARD_GRIDS[gridKey];
-    if (gridDef && gridDef.chessOf) {
-      return decodeCardCoordinate(gridDef.chessOf, code, iterations);
+    const _presDec = presentationOf(gridDef);
+    if (_presDec) {
+      return decodeCardCoordinate(_presDec, code, iterations);
     }
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
@@ -1085,8 +1173,9 @@
   
   function decodeCardCode(gridKey, code, deobfuscate) {
     const gridDef = CARD_GRIDS[gridKey];
-    if (gridDef && gridDef.chessOf) {
-      return decodeCardCode(gridDef.chessOf, code, deobfuscate);
+    const _presDC = presentationOf(gridDef);
+    if (_presDC) {
+      return decodeCardCode(_presDC, code, deobfuscate);
     }
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
@@ -1349,28 +1438,6 @@
     if (m >= 1e-18) return (m*1e18).toFixed(1) + ' am';
     return m.toExponential(1) + ' m';
   }
-
-  // Imperial / US-survey ladder, mirroring formatMetric's one-decimal convention.
-  // Thresholds at the canonical unit boundaries: mile (1609.344 m), foot
-  // (0.3048 m), inch (0.0254 m), then thou/mil (1 inch = 1000 thou) and µin for
-  // the micron range. Below that, scientific inches (parallels formatMetric's
-  // toExponential fallback) so deep-iteration cells still render honestly.
-  function formatImperial(m) {
-    if (!isFinite(m) || m <= 0) return '0';
-    const inch = m / 0.0254;
-    if (m >= 1609.344) return (m/1609.344).toFixed(1) + ' mi';
-    if (m >= 0.3048)   return (m/0.3048).toFixed(1) + ' ft';
-    if (m >= 0.0254)   return inch.toFixed(1) + ' in';
-    if (inch >= 1e-3)  return (inch*1e3).toFixed(1) + ' thou';   // 1 in = 1000 thou (mil)
-    if (inch >= 1e-6)  return (inch*1e6).toFixed(1) + ' µin';
-    return inch.toExponential(1) + ' in';
-  }
-
-  // Single funnel for ALL resolution rendering. One toggle (unitSystem) flips the
-  // Precision readout, every card's .precision-display, and the ℹ️ line together.
-  function formatLength(m) {
-    return (getUnitSystem() === 'us') ? formatImperial(m) : formatMetric(m);
-  }
   
   // Build the "Measurement uncertainty" line for the ℹ️ box from the source-of-
   // truth exact point's provenance. Returns null if no exact point / no module,
@@ -1390,20 +1457,7 @@
         console.warn('[provenance] ℹ️ open: no exact point stored yet (drop a pin / get GPS first).');
         return null;
       }
-      // Funnel the ±value through formatLength so the metric⇄US toggle flips the
-      // ℹ️ line too. Rebuild from raw metres + basis rather than the module's own
-      // hard-metric uncertaintyText(). Basis label kept verbatim (it's descriptive,
-      // e.g. "map pin @ z18" / "typed, 6 dp"); only the leading ±metres is reunit-ed.
-      let txt = null;
-      try {
-        const u = (typeof pt.uncertaintyMetres === 'function') ? pt.uncertaintyMetres() : null;
-        if (u != null && isFinite(u) && u > 0) {
-          const basis = (pt.meta && pt.meta.basis) ? ' (' + pt.meta.basis + ')' : '';
-          txt = '±' + formatLength(u) + basis;
-        } else {
-          txt = pt.uncertaintyText();   // fallback to module's own text
-        }
-      } catch (e) { txt = pt.uncertaintyText(); }
+      const txt = pt.uncertaintyText();
       console.log('%c[provenance]%c ℹ️ uncertainty line:', 'color:#ffd54f;font-weight:bold', 'color:inherit', txt);
       return txt ? ('Measurement uncertainty: ' + txt) : null;
     } catch (e) {
@@ -1412,251 +1466,18 @@
     }
   }
 
-  // ---- Precision-control state accessors (backed by AppState.encoding) -------
-  // Safe before AppState exists (Node gate harness) and before any pin: default
-  // to metric / custom so nothing downstream breaks if state isn't ready.
-  function getUnitSystem() {
-    try {
-      if (typeof AppState !== 'undefined') {
-        const u = AppState.get('encoding.unitSystem');
-        if (u === 'us' || u === 'metric') return u;
-      }
-    } catch (e) {}
-    return 'metric';
-  }
-  function getPrecisionMode() {
-    try {
-      if (typeof AppState !== 'undefined') {
-        const m = AppState.get('encoding.precisionMode');
-        if (m === 'auto' || m === 'human' || m === 'custom') return m;
-      }
-    } catch (e) {}
-    return 'custom';
-  }
-
-  // INVERSE of getPrecisionText: target metres → fewest iterations whose cell is
-  // equal-or-finer than target (never coarser than source), clamped to the card's
-  // real [min,max]. "Cell size" = the LARGER of the two axes, so BOTH axes end up
-  // ≤ target. Mirrors getPrecisionText's three families:
-  //   • chess  → delegate to chessOf sibling (board inherits sibling's resolution)
-  //   • vocab  → closed-form log inverse of the base^iterations formula
-  //   • HEALPix / GIS → walk cellMetres({w,h}) over [min,max] (discrete standards;
-  //     a card pinned at its max may be COARSER than target — that's correct, the
-  //     standard simply can't express finer, exactly like HexByte's even-length cap)
-  function resolutionToIterations(gridKey, targetMetres) {
-    // Inverse of getPrecisionText, used by AUTO only: fewest iterations whose cell
-    // is ≤ target (equal-or-finer; never coarser than source provenance), clamped
-    // to the card's real [min,max]. "Cell size" = the LARGER of the two axes so
-    // BOTH axes end up ≤ target. HUMAN does NOT use this — it applies fixed per-card
-    // presets (HUMAN_PRESETS) independent of any metres target.
-    const gd = CARD_GRIDS[gridKey];
-    if (!gd) return 1;
-    if (gd.chessOf) return resolutionToIterations(gd.chessOf, targetMetres);
-    // Fixed-iteration cards (ChromaCoord) are never re-iterated by Auto/Human:
-    // the invert returns their immutable count regardless of target. applyPrecisionMode
-    // also skips them (not adjustable), but guarding here makes the function itself
-    // safe to call on a fixed card.
-    if (gd.fixedIterations !== undefined) return gd.fixedIterations;
-
-    // Effective clamp for this card, computed once so EVERY return path respects it
-    // (incl. garbage targets and the null-grid fallback). Mirrors the per-family
-    // min/max sources used below.
-    let cMin, cMax;
-    if (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix]) {
-      cMin = HealpixGrids.SCHEMES[gd.healpix].minIterations; cMax = HealpixGrids.SCHEMES[gd.healpix].maxIterations;
-    } else if (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis]) {
-      cMin = GISGrids.SCHEMES[gd.gis].minIterations; cMax = GISGrids.SCHEMES[gd.gis].maxIterations;
-    } else {
-      cMin = gd.minIterations || 1;
-      cMax = gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : (gd.maxIterations || cMin))
-                                  : (gd.maxIterations || cMin);
-    }
-    const clamp = (n) => Math.max(cMin, Math.min(cMax, n));
-
-    if (!isFinite(targetMetres) || targetMetres <= 0) {
-      return clamp(gd.defaultIterations || cMin);
-    }
-
-    // HEALPix & GIS: discrete cellMetres({w,h}) ladder — find finest iter whose
-    // larger axis ≤ target; if none qualifies (target finer than the standard),
-    // return max (finest the standard offers). Both expose min/maxIterations on a
-    // per-scheme object, and for HEALPix iterations IS the order (precisionText
-    // does clampOrder(iterations) then cellMetres(order)).
-    const ladder =
-      (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix])
-        ? (() => { const s = HealpixGrids.SCHEMES[gd.healpix];
-            return { min: s.minIterations, max: s.maxIterations,
-                     cell: (it) => s.cellMetres(it) }; })()
-      : (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis])
-        ? (() => { const s = GISGrids.SCHEMES[gd.gis];
-            const lat = currentCardCoord ? currentCardCoord.lat : 0;
-            const lon = currentCardCoord ? currentCardCoord.lon : 0;
-            return { min: s.minIterations, max: s.maxIterations,
-                     cell: (it) => s.cellMetres(it, lat, lon) }; })()
-        : null;
-    if (ladder) {
-      const EPS_L = 1e-9;
-      let chosen = ladder.max;          // default: finest the standard offers
-      for (let it = ladder.min; it <= ladder.max; it++) {
-        const d = ladder.cell(it);
-        const side = Math.max(d.w, d.h);
-        if (side <= targetMetres * (1 + EPS_L)) { chosen = it; break; }  // finest that covers source
-      }
-      return clamp(chosen);
-    }
-
-    // Vocabulary grids: closed-form inverse of
-    //   axisM = exp( ln(span° × m/°) − iterations·ln(base) )
-    // The LARGER cell axis is the binding constraint (if the bigger side ≤ target,
-    // the smaller side is too). Both axes shrink monotonically with iterations, so
-    // the fewest iters with BOTH axes ≤ target is ceil(max(itLat, itLon)). A tiny
-    // epsilon absorbs floating-point error so a target that lands exactly on an
-    // iteration boundary (e.g. itLon = 3.0000000000000004) rounds to that equal
-    // iteration rather than one needlessly-finer step (gate 2 "never needlessly finer").
-    const grid = gd.grid;
-    if (!grid) return clamp(gd.defaultIterations || cMin);   // data not bound: safe clamped default
-    const rows = grid.length, cols = grid[0].length;
-    const lat = currentCardCoord ? currentCardCoord.lat : 0;
-    const mPerDegLat = 111319.9;
-    const mPerDegLon = 111319.9 * Math.cos(lat * Math.PI / 180);
-    const lnTarget = Math.log(targetMetres);
-    const itLat = (Math.log(180 * mPerDegLat) - lnTarget) / Math.log(rows);
-    const itLon = (Math.log(360 * mPerDegLon) - lnTarget) / Math.log(cols);
-    const binding = Math.max(itLat, itLon);   // larger axis governs
-    const EPS = 1e-9;
-    let iters = Math.ceil(binding - EPS);     // fewest iters with both axes ≤ target
-    if (!isFinite(iters)) iters = cMin;
-    return clamp(iters);
-  }
-
-  // HUMAN mode = a FIXED preset of iteration counts per card — "the size of a human
-  // with arms outstretched" (~1–2 m for most), hand-tuned, NOT derived from the pin's
-  // precision. The metres shown drift slightly with latitude; that's fine and intended.
-  // BIP39 is special: always 4 words, because 4 words is the human-communication-
-  // friendly unit (not a metres target). Music is fine sub-metre. Keyed by gridKey;
-  // chess inherits via chessOf so isn't listed. ChromaCoord (fixed) is never included.
-  // Anchors confirmed at ChCh (~-43.5°): alphanumeric→2.0×2.9 m, hex-based→1.2×1.7 m,
-  // music→~0.5–0.7 m, bip39→4 words, hphex→1.6 m.
-  const HUMAN_PRESETS = {
-    // vocabulary grids
-    alphanumeric: 9,   // 6×6  → ~2 m
-    nato:         9,   // 6×6  → ~2 m
-    emoji:        5,   // 28×28→ ~1 m
-    music:        8,   // 7×7  → ~3.5×5 m (8 octaves), confirmed
-    base64:       8,   // 8×8  → ~1–2 m
-    hexbyte:      6,   // 16×16→ ~1.2×1.7 m
-    // BIP39 family — always 4 words (human-communication unit)
-    bip39english: 4, bip39spanish: 4, bip39french: 4, bip39italian: 4,
-    bip39portuguese: 4, bip39czech: 4, bip39japanese: 4, bip39korean: 4,
-    bip39chinesesimplified: 4, bip39chinesetraditional: 4,
-    // barcode cards (16×16 like hexbyte; qrurl is dynamic)
-    qrhex: 6, qrbin: 6, datamatrix: 6, qrurl: 6,
-    // byteword family (grid data not always loaded; safe friendly mid value)
-    bytewords: 4, bytewordsmin: 4, byteemoji: 4,
-    // HEALPix (order) — ~1.6 m
-    hphex: 22, hpquad: 22, hp64: 22, hpmatrix: 22,
-    // GIS — each standard's ~1–2 m level
-    pluscode: 6, mgrs: 6, geohash: 9, utm: 5, nztm: 5, bng: 6, mga: 5, localgrid: 5
-  };
-
-  // A card is ADJUSTABLE if it has a max and is not fixed. ChromaCoord
-  // (fixedIterations) is excluded — Auto/Human never touch it. BIP39 family is
-  // marked by prefixLength (shared by all 10 BIP39 grids, none else).
-  function isAdjustableCard(gd) {
-    return !!gd && gd.fixedIterations === undefined &&
-           (gd.maxIterations !== undefined || gd.dynamicIterations);
-  }
-  function isBip39Card(gd) { return !!gd && gd.prefixLength !== undefined; }
-
-  // Human preset for a card: explicit HUMAN_PRESETS entry, else fall back to the
-  // card's defaultIterations (clamped). Chess delegates to its sibling.
-  function humanIterationsFor(gridKey) {
-    let gd = CARD_GRIDS[gridKey];
-    if (!gd) return 1;
-    if (gd.chessOf) return humanIterationsFor(gd.chessOf);
-    if (gd.fixedIterations !== undefined) return gd.fixedIterations;
-    let n = (HUMAN_PRESETS[gridKey] !== undefined) ? HUMAN_PRESETS[gridKey]
-          : (gd.defaultIterations || gd.minIterations || 1);
-    // clamp to the card's real range
-    const min = gd.minIterations || (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES[gd.healpix] && HealpixGrids.SCHEMES[gd.healpix].minIterations)
-              || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].minIterations) || 1;
-    let max = (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES[gd.healpix] && HealpixGrids.SCHEMES[gd.healpix].maxIterations)
-            || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].maxIterations)
-            || (gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : gd.maxIterations) : gd.maxIterations)
-            || min;
-    return Math.max(min, Math.min(max, n));
-  }
-
-  // Apply the current precision mode to every adjustable card, then re-render.
-  //   custom → no-op on iterations (user-owned); just re-render so steppers show.
-  //   auto   → target = getExact().meta.uncertaintyMetres (fallback Human if no pin).
-  //   human  → per-card named target (BIP39 4 m, else 1.5 m).
-  // Only cardState.iterations is touched; encode/decode/render read from it, so a
-  // re-render flows everything downstream unchanged. defaultIterations is never
-  // mutated (cold-start/Custom starting points stay put).
-  function applyPrecisionMode() {
-    const mode = getPrecisionMode();
-    if (mode === 'custom') { renderCards(); return; }
-
-    // Auto's source resolution from provenance (null-pin → fall back to Human presets).
-    let autoTarget = null;
-    if (mode === 'auto') {
-      try {
-        const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
-          ? GeosonifyMain.getExact
-          : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
-        const pt = getEx ? getEx() : null;
-        const u = pt && pt.meta && pt.meta.uncertaintyMetres;
-        if (isFinite(u) && u > 0) autoTarget = u;
-      } catch (e) {}
-    }
-    const useAuto = (mode === 'auto' && autoTarget != null);
-
-    Object.keys(CARD_GRIDS).forEach(key => {
-      const gd = CARD_GRIDS[key];
-      if (!isAdjustableCard(gd)) return;            // ChromaCoord & non-steppable skip
-      // Auto: finest cell still covering source (never coarser). Human (and Auto's
-      // no-pin fallback): the card's FIXED human preset, latitude-independent.
-      cardState.iterations[key] = useAuto
-        ? resolutionToIterations(key, autoTarget)
-        : humanIterationsFor(key);
-    });
-    saveCardState();
-    renderCards();
-    // Mode change (or, in Match mode, a provenance refinement) can change the
-    // active card's iteration count → redraw its grid overlay on the map, same as
-    // the steppers do. Safe no-op if the active card isn't a hierarchical grid.
-    if (typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
-      try { MapManager.refreshHierarchicalGrid(); } catch (e) {}
-    }
-  }
-
   function getPrecisionText(gridKey, iterations) {
     const gd = CARD_GRIDS[gridKey];
-    // Chess cards are a presentation of a sibling code: their resolution is the sibling's.
-    if (gd && gd.chessOf) {
-      return getPrecisionText(gd.chessOf, iterations);
+    // Presentation cards (Chessboard / HEALPix ChromaCoord) borrow a sibling's
+    // code: their resolution is the sibling's.
+    const _presP = presentationOf(gd);
+    if (_presP) {
+      return getPrecisionText(_presP, iterations);
     }
     if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
-      // Funnel through formatLength (metric/US) instead of the module's own
-      // hard-metric precisionText, so one toggle flips every card. cellMetres
-      // returns {w,h} equal-area side (w===h).
-      const s = HealpixGrids.SCHEMES && HealpixGrids.SCHEMES[gd.healpix];
-      if (s && typeof s.cellMetres === 'function') {
-        const k = (typeof HealpixGrids.clampOrder === 'function') ? HealpixGrids.clampOrder(iterations) : iterations;
-        const d = s.cellMetres(k);
-        return `${formatLength(d.w)} × ${formatLength(d.h)}`;
-      }
       return HealpixGrids.precisionText(gd.healpix, iterations, currentCardCoord);
     }
     if (gd && gd.gis && typeof GISGrids !== 'undefined') {
-      const s = GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis];
-      if (s && typeof s.cellMetres === 'function') {
-        const lat = currentCardCoord ? currentCardCoord.lat : 0;
-        const lon = currentCardCoord ? currentCardCoord.lon : 0;
-        const d = s.cellMetres(iterations, lat, lon);
-        return `${formatLength(d.w)} × ${formatLength(d.h)}`;
-      }
       return GISGrids.precisionText(gd.gis, iterations, currentCardCoord);
     }
     const grid = CARD_GRIDS[gridKey]?.grid;
@@ -1672,7 +1493,7 @@
     const latM = Math.exp(Math.log(180 * metersPerDegLat) - iterations * Math.log(rows));
     const lonM = Math.exp(Math.log(360 * metersPerDegLon) - iterations * Math.log(cols));
 
-    return `${formatLength(latM)} × ${formatLength(lonM)}`;
+    return `${formatMetric(latM)} × ${formatMetric(lonM)}`;
   }
   
   function getActiveEncoding(lat, lon) {
@@ -2007,14 +1828,20 @@
 
   // ============== SPECIAL RENDERERS ==============
   
-  function renderChromaCoord(hexCode, container) {
+  function renderChromaCoord(hexCode, container, variant) {
     if (!container) return;
     container.innerHTML = '';
     if (typeof RGB111Lib !== 'undefined' && RGB111Lib.generateCanvas) {
-      const canvas = RGB111Lib.generateCanvas(hexCode, { size: 120, borderWidth: 0.5, notchSize: 0.5 });
+      const canvas = RGB111Lib.generateCanvas(hexCode, { size: 120, borderWidth: 0.5, notchSize: 0.5, variant: variant || 'standard' });
       canvas.className = 'chroma-canvas';
       container.appendChild(canvas);
     }
+  }
+  // Map a card key to its ChromaCoord variant (the HEALPix ChromaCoord draws the
+  // black centre diamond; the standard one doesn't).
+  function chromaVariantFor(gridKey) {
+    const def = CARD_GRIDS[gridKey];
+    return (def && def.chromaOf === 'hphex') ? 'healpix' : 'standard';
   }
 
   // ============== BARCODE RENDERERS ==============
@@ -2166,6 +1993,32 @@
    * Extracts hex, validates length, decodes coordinate, sets map position
    */
   function decodeBarcodeResult(rawText, gridKey) {
+    // ── Data Matrix mode signifier (cold-scan self-identification) ──
+    // If a scanned DM string carries a leading G/O/H/P signifier, it OVERRIDES
+    // the scanning card's context: the code self-declares its codec + whether
+    // it's obfuscated, so a HEALPix code scanned from the standard card (or with
+    // no card context) still decodes correctly. We strip the signifier, switch
+    // gridKey, and temporarily align the obfuscation state to what the signifier
+    // declares — restored in the finally below so a cold scan never permanently
+    // flips the user's mode. No signifier ⇒ legacy behaviour (card context +
+    // current obfuscation), and a bare hex still reads as standard Geosonify hex.
+    let _obfStateSaved = obfuscated, _obfOverridden = false;
+    if ((gridKey === 'datamatrix' || gridKey === 'hpmatrix') && typeof rawText === 'string') {
+      const sigInfo = readMatrixSignifier(rawText);
+      if (sigInfo) {
+        gridKey = sigInfo.gridKey;
+        rawText = sigInfo.code;
+        if (obfuscated !== sigInfo.obf) { obfuscated = sigInfo.obf; _obfOverridden = true; }
+      }
+    }
+    try {
+      return _decodeBarcodeResultInner(rawText, gridKey);
+    } finally {
+      if (_obfOverridden) obfuscated = _obfStateSaved;
+    }
+  }
+
+  function _decodeBarcodeResultInner(rawText, gridKey) {
     let hex = rawText;
 
     // For QR-URL, extract hex from URL
@@ -2525,7 +2378,7 @@
       const gridKey = card.dataset.gridKey;
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !gridDef.chessOf)) return;
+      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !presentationOf(gridDef))) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
       // HEALPix now transforms properly under both passphrase and obfuscation,
       // so it always re-renders (never skipped for privacy).
@@ -2576,7 +2429,7 @@
           const ctrEl = card.querySelector('.chroma-container');
           if (ctrEl) {
             ctrEl.dataset.code = code;
-            renderChromaCoord(code, ctrEl);
+            renderChromaCoord(code, ctrEl, chromaVariantFor(gridKey));
           }
         }
       } else if (isBarcodeDisplay) {
@@ -2596,7 +2449,7 @@
                 : code;
               renderBarcodeQR(qrUrlContent, ctrEl, 'qrurl');
             } else if (gridDef.display === 'datamatrix') {
-              renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), ctrEl);
+              renderBarcodeDataMatrix(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, code)), ctrEl);
             }
           }
         }
@@ -2605,15 +2458,20 @@
         if (disp && disp.dataset.code !== code) {
           const fmt = disp.dataset.fmt || gridDef.chessFormat || 'standard';
           disp.dataset.code = code;
+          const fenEl = card.querySelector('.chess-fen');
           const linkEl = card.querySelector('.chess-fen-link');
+          const asciiEl = card.querySelector('.chess-ascii-pre');
           const ctrEl = card.querySelector('.chess-board-container');
           try {
             const fen = ChessboardLib.toFEN(code, fmt);
+            if (fenEl) fenEl.textContent = fen;
             if (linkEl) linkEl.setAttribute('href', 'https://lichess.org/editor/' + fen);
+            if (asciiEl) asciiEl.textContent = ChessboardLib.toASCII(code, fmt);
             if (ctrEl) ChessboardLib.renderBoard(code, ctrEl, { format: fmt, letters: chessUseLetters });
             disp.classList.remove('chess-toobig');
           } catch (e) {
             if (ctrEl) ctrEl.innerHTML = '';
+            if (fenEl) fenEl.textContent = '(code too precise — reduce precision)';
             if (linkEl) linkEl.removeAttribute('href');
           }
         }
@@ -2647,7 +2505,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || CARD_GRIDS[k].chessOf)
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || presentationOf(CARD_GRIDS[k]))
     );
     
     container.innerHTML = '';
@@ -2739,12 +2597,13 @@
             `<div class="chess-textforms">` +
               `<div class="chess-row">` +
                 `<a class="chess-label chess-fen-link" href="${lichess}" target="_blank" rel="noopener" title="Open in lichess board editor">FEN ↗</a>` +
-                `<button class="card-btn chess-copy-fen" title="Copy FEN">${ICONS.copy}</button>` +
+                `<code class="chess-fen">${fen}</code>` +
                 `<button class="card-btn chess-edit-fen" title="Edit / paste a FEN to decode">✎</button>` +
-                `<span class="chess-label chess-ascii-label" title="ASCII board">ASCII</span>` +
-                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">${ICONS.copy}</button>` +
-                `<button class="card-btn chess-edit-ascii" title="Edit / paste an ASCII board to decode">✎</button>` +
-              `</div>` +
+                `<button class="card-btn chess-copy-fen" title="Copy FEN">${ICONS.copy}</button></div>` +
+              `<div class="chess-row">` +
+                `<button class="chess-label chess-ascii-toggle" title="Show / hide ASCII board">ASCII ▾</button>` +
+                `<button class="card-btn chess-copy-ascii" title="Copy ASCII board">${ICONS.copy}</button></div>` +
+              `<pre class="chess-ascii-pre" style="display:none;">${ascii}</pre>` +
             `</div></div>`;
         }
       } else if (gisRedacted) {
@@ -2764,7 +2623,9 @@
         <button class="card-btn bc-photo-btn" title="Decode from image">${ICONS.image}</button>
       ` : '';
       
-      const chessActions = '';
+      const chessActions = (gridDef.display === 'chessboard') ? `
+        <button class="card-btn card-btn-wide chess-decode-btn" title="Decode a board (FEN or ASCII) to its code"><span class="card-btn-icon">${ICONS.decode}</span><span class="card-btn-text">DECODE</span></button>
+      ` : '';
 
       const checksumBtn = supportsChecksum ? `
         <button class="card-btn checksum-btn ${checksumOn ? 'checksum-active' : ''}" title="Toggle checksum word">✓</button>
@@ -2794,7 +2655,7 @@
         <div class="card-footer-row">
           <div class="precision-row">
             <span class="precision-display">${precision}</span>
-            ${(isFixed || getPrecisionMode() !== 'custom') ? '' : `
+            ${isFixed ? '' : `
               <div class="precision-controls">
                 <button class="precision-btn minus-btn" ${iterations <= (gridDef.minIterations || 1) ? 'disabled' : ''}>−</button>
                 <button class="precision-btn plus-btn" ${iterations >= (gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations) ? 'disabled' : ''}>+</button>
@@ -2853,7 +2714,7 @@
           return;
         }
         if (gridDef?.display === 'chroma' && typeof RGB111Lib !== 'undefined') {
-          const canvas = RGB111Lib.generateCanvas(code, { size: 400, borderWidth: 0.5, notchSize: 0.5 });
+          const canvas = RGB111Lib.generateCanvas(code, { size: 400, borderWidth: 0.5, notchSize: 0.5, variant: chromaVariantFor(gridKey) });
           const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
           
           if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
@@ -2898,7 +2759,7 @@
           try {
             if (gridDef.display === 'datamatrix') {
               await BarcodeLib.ensureBwipLoaded();
-              bcCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, code), { size: 1024 });
+              bcCanvas = BarcodeLib.generateDataMatrixCanvas(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, code)), { size: 1024 });
             } else {
               await BarcodeLib.ensureQRGenLoaded();
               let content = code;
@@ -2997,9 +2858,11 @@
         // point's provenance (scheme-independent, invariant across cards). Shown
         // in the ℹ️ box only; the clicker stays clean (cell size only).
         const uncertaintyLine = buildUncertaintyLine();
-        // Chess cards present a sibling code — show the sibling's info (HEALPix dialog or cell info).
-        const infoDef = (gridDef.chessOf && CARD_GRIDS[gridDef.chessOf]) ? CARD_GRIDS[gridDef.chessOf] : gridDef;
-        const infoKey = gridDef.chessOf || gridKey;
+        // Presentation cards (Chessboard / HEALPix ChromaCoord) show the sibling's
+        // info (HEALPix dialog or cell info) since they borrow its resolution.
+        const _presInfo = presentationOf(gridDef);
+        const infoDef = (_presInfo && CARD_GRIDS[_presInfo]) ? CARD_GRIDS[_presInfo] : gridDef;
+        const infoKey = _presInfo || gridKey;
         if (infoDef.healpix && typeof HealpixGrids !== 'undefined') {
           let compareLine = null;
           const activeKey = cardState.active;
@@ -3025,7 +2888,12 @@
           }
           GISGrids.showInfo(infoDef.gis, iterations, currentCardCoord, { compareLine, uncertaintyLine });
         } else {
-          showCellInfo(infoKey, code, iterations, uncertaintyLine);
+          // When the info is shown on behalf of a presentation card (e.g. the
+          // standard Chessboard, backed by HexByte), pass the presentation's
+          // display so the note can add the "the board itself isn't a visual
+          // hierarchy" caveat — the hex is hierarchical, the rendering isn't.
+          const presentDisplay = _presInfo ? gridDef.display : null;
+          showCellInfo(infoKey, code, iterations, uncertaintyLine, presentDisplay);
         }
       };
       
@@ -3213,7 +3081,7 @@
       
       // Render special displays
       if (gridDef.display === 'chroma') {
-        renderChromaCoord(code, card.querySelector('.chroma-container'));
+        renderChromaCoord(code, card.querySelector('.chroma-container'), chromaVariantFor(gridKey));
       } else if (gridDef.display === 'music') {
         renderMusicNotation(code, card.querySelector('.music-notation'));
       } else if (gridDef.display === 'qrhex') {
@@ -3227,7 +3095,7 @@
           : code;
         renderBarcodeQR(qrUrlContent, card.querySelector('.barcode-container'), 'qrurl');
       } else if (gridDef.display === 'datamatrix') {
-        renderBarcodeDataMatrix(withHealpixBarcodeOrder(gridKey, code), card.querySelector('.barcode-container'));
+        renderBarcodeDataMatrix(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, code)), card.querySelector('.barcode-container'));
       } else if (gridDef.display === 'chessboard') {
         const fmt = gridDef.chessFormat || 'standard';
         const ctrEl = card.querySelector('.chess-board-container');
@@ -3247,18 +3115,26 @@
           try { await navigator.clipboard.writeText(ChessboardLib.toASCII(code, fmt)); showToast("Copied!"); }
           catch (err) { /* clipboard unavailable */ }
         });
-        // Edit/paste FEN (the ✎ button) — opens the decode modal, pre-seeded with the FEN.
+        // Decode a pasted board (FEN or ASCII) back to its hex code, then jump the map there.
+        card.querySelector('.chess-decode-btn')?.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showChessDecodeModal(gridKey);
+        });
+        // Edit/paste FEN (the ✎ button) — opens the same decode modal, pre-seeded with the FEN.
         card.querySelector('.chess-edit-fen')?.addEventListener('click', (e) => {
           e.stopPropagation();
           let seed = ''; try { seed = ChessboardLib.toFEN(code, fmt); } catch (_) {}
           showChessDecodeModal(gridKey, seed);
         });
-        // Edit/paste ASCII (the ✎ button) — opens the decode modal, pre-seeded with the
-        // current ASCII board. The modal already accepts either FEN or ASCII.
-        card.querySelector('.chess-edit-ascii')?.addEventListener('click', (e) => {
+        // ASCII show/hide toggle (inline, never below the card edge)
+        card.querySelector('.chess-ascii-toggle')?.addEventListener('click', (e) => {
           e.stopPropagation();
-          let seed = ''; try { seed = ChessboardLib.toASCII(code, fmt); } catch (_) {}
-          showChessDecodeModal(gridKey, seed);
+          const pre = card.querySelector('.chess-ascii-pre');
+          const btn = e.currentTarget;
+          if (!pre) return;
+          const showing = pre.style.display !== 'none';
+          pre.style.display = showing ? 'none' : 'block';
+          btn.textContent = showing ? 'ASCII ▾' : 'ASCII ▴';
         });
         // Symbols / Letters toggle (applies to all chess cards at once)
         card.querySelector('.chess-letters-btn')?.addEventListener('click', (e) => {
@@ -3310,11 +3186,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           }
         }
       }
-    }
-    // Keep the PRECISION readout in sync with whatever just re-rendered (stepper
-    // change, mode switch, pin move). Hook is installed by the control wiring.
-    if (typeof window !== 'undefined' && typeof window.refreshPrecisionReadout === 'function') {
-      try { window.refreshPrecisionReadout(); } catch (e) {}
     }
   }
 
@@ -3457,7 +3328,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           const vmin = Math.min(window.innerWidth, window.innerHeight);
           const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
           fsCanvas = RGB111Lib.generateCanvas(displayCode, { 
-            size: displaySize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true
+            size: displaySize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true, variant: chromaVariantFor(gridKey)
           });
           codeEl.appendChild(fsCanvas);
         }
@@ -3467,7 +3338,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
         if (typeof BarcodeLib !== 'undefined') {
           if (gridDef?.display === 'datamatrix') {
-            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: displaySize });
+            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, displayCode)), { size: displaySize });
           } else if (gridDef?.display === 'qrbin') {
             fsCanvas = BarcodeLib.generateQRBinaryCanvas(displayCode, { size: displaySize, eccLevel: 'L' });
           } else {
@@ -3541,7 +3412,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           const vmin = Math.min(window.innerWidth, window.innerHeight);
           const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
           fsCanvas = RGB111Lib.generateCanvas(displayCode, { 
-            size: displaySize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true
+            size: displaySize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true, variant: chromaVariantFor(gridKey)
           });
           codeEl.appendChild(fsCanvas);
         }
@@ -3557,7 +3428,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         const displaySize = Math.min(Math.floor(vmin * 0.8), 600);
         if (gridDef?.display === 'datamatrix') {
           if (typeof BarcodeLib !== 'undefined') {
-            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: displaySize });
+            fsCanvas = BarcodeLib.generateDataMatrixCanvas(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, displayCode)), { size: displaySize });
             fsCanvas.style.borderRadius = '8px';
             codeEl.appendChild(fsCanvas);
           }
@@ -3666,7 +3537,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         if (gridDef?.display === 'chroma' && fsCanvas && typeof RGB111Lib !== 'undefined') {
           try {
             const hiResCanvas = RGB111Lib.generateCanvas(displayCode, { 
-              size: 1024, borderWidth: 0.5, notchSize: 0.5, showChecksum: true 
+              size: 1024, borderWidth: 0.5, notchSize: 0.5, showChecksum: true, variant: chromaVariantFor(gridKey)
             });
             hiResCanvas.toBlob(async (blob) => {
               if (blob) {
@@ -3688,7 +3559,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             let hiResCanvas;
             if (gridDef?.display === 'datamatrix') {
               await BarcodeLib.ensureBwipLoaded();
-              hiResCanvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, displayCode), { size: 1024 });
+              hiResCanvas = BarcodeLib.generateDataMatrixCanvas(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, displayCode)), { size: 1024 });
             } else if (gridDef?.display === 'qrbin') {
               await BarcodeLib.ensureQRGenLoaded();
               hiResCanvas = BarcodeLib.generateQRBinaryCanvas(displayCode, { size: 1024, eccLevel: 'L' });
@@ -3829,7 +3700,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         if (isChroma && typeof RGB111Lib !== 'undefined' && RGB111Lib.generateCanvas) {
           const cellSize = Math.floor(gridSize / 3 - 6);
           const canvas = RGB111Lib.generateCanvas(item.code, {
-            size: cellSize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true
+            size: cellSize, borderWidth: 0.5, notchSize: 0.5, showChecksum: true, variant: chromaVariantFor(gridKey)
           });
           canvas.style.width = '100%';
           canvas.style.height = '100%';
@@ -3839,7 +3710,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           const cellSize = Math.floor(gridSize / 3 - 6);
           let canvas;
           if (gridDef?.display === 'datamatrix') {
-            canvas = BarcodeLib.generateDataMatrixCanvas(withHealpixBarcodeOrder(gridKey, item.code), { size: cellSize });
+            canvas = BarcodeLib.generateDataMatrixCanvas(withMatrixSignifier(gridKey, withHealpixBarcodeOrder(gridKey, item.code)), { size: cellSize });
           } else if (gridDef?.display === 'qrbin') {
             canvas = BarcodeLib.generateQRBinaryCanvas(item.code, { size: cellSize, eccLevel: 'L' });
           } else {
@@ -4093,7 +3964,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     return encodeCardCoordinate(gridKey, clampedLat, wrappedLon, tokens.length);
   }
   
-  function showCellInfo(gridKey, code, iterations, uncertaintyLine) {
+  function showCellInfo(gridKey, code, iterations, uncertaintyLine, presentDisplay) {
     const gridDef = CARD_GRIDS[gridKey];
     if (!gridDef || !gridDef.grid || !currentCardCoord) return;
 
@@ -4129,7 +4000,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       const cLat = (b.latMin + b.latMax) / 2;
       const h = (b.latMax - b.latMin) * 111319.9;
       const w = (b.lonMax - b.lonMin) * 111319.9 * Math.cos(cLat * Math.PI / 180);
-      return `${formatLength(w)} × ${formatLength(h)}`;
+      return `${formatMetric(w)} × ${formatMetric(h)}`;
     }
 
     // Build the ladder: a window of levels around the current one.
@@ -4179,9 +4050,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     };
 
     if (typeof GISGrids !== 'undefined' && GISGrids.renderResolutionPopup) {
+      const hierNote = 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).';
+      // A chessboard PRESENTS this hex as a position: the hex is hierarchical (so
+      // the +/− stepper refines the cell), but the board is not a visual hierarchy
+      // — a finer code re-ranks the whole position rather than refining one corner.
+      const chessHierNote = 'The underlying hex code is hierarchical — each character refines the cell, which is what the +/− stepper changes. The board itself isn\u2019t a visual hierarchy: it re-ranks as a whole, so a finer code redraws the whole position rather than refining one corner.';
       const baseNote = isFixedPrecision
           ? 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).'
-          : 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).';
+          : (presentDisplay === 'chessboard' ? chessHierNote : hierNote);
       GISGrids.renderResolutionPopup({
         title: gridDef.name,
         subtitle: isFixedPrecision ? 'cell size' : 'resolution levels',
@@ -4229,50 +4105,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       bip39korean: 'bipko', bip39chinesesimplified: 'bipzhs', bip39chinesetraditional: 'bipzht',
       qrhex: 'h', datamatrix: 'h'  // barcode hex cards use hexbyte param
     };
-    // Chess cards are a PRESENTATION of a sibling's hex code (chessOf), so they
-    // share with the SIBLING's param, not raw. chessboard→hexbyte ('h');
-    // hpchessboard→hphex (HEALPix). Resolve the sibling recursively.
-    let prefixKey = gridKey;
-    {
-      let g = CARD_GRIDS[gridKey], guard = 0;
-      while (g && g.chessOf && guard++ < 4) { prefixKey = g.chessOf; g = CARD_GRIDS[g.chessOf]; }
-    }
-
-    // HEALPix-backed card (e.g. hphex itself, or hpchessboard via chessOf→hphex):
-    // share exactly as the main app does — the param IS the healpix key, with the
-    // 'o' obfuscation flag, and an "@k" order suffix appended when the code's length
-    // alone can't recover the order (hphex/hp64 left-pad on packing). Mirrors
-    // index.html's getURLParamForActiveCard + withHealpixOrder so the URL decodes.
-    const sibDef = CARD_GRIDS[prefixKey];
-    if (sibDef && sibDef.healpix) {
-      let hp = sibDef.healpix;                 // 'hphex' | 'hpquad' | 'hp64'
-      let value = code;
-      try {
-        if ((hp === 'hphex' || hp === 'hp64') &&
-            typeof value === 'string' &&
-            value.indexOf('@') === -1 && value.indexOf('~') === -1 && value.indexOf(',') === -1) {
-          const k = cardState.iterations[prefixKey] ||
-                    cardState.iterations[gridKey] ||
-                    (CARD_GRIDS[prefixKey] && CARD_GRIDS[prefixKey].defaultIterations);
-          if (k && typeof HealpixGrids !== 'undefined' && HealpixGrids.inferOrder &&
-              HealpixGrids.inferOrder(hp, value) !== k) {
-            value = value + '@' + k;           // append only when ambiguous
-          }
-        }
-      } catch (e) {}
-      let hpPrefix = hp + (obfuscated ? 'o' : '');
-      const hpBase = window.location.origin + window.location.pathname;
-      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}`;
-      if (navigator.share) {
-        navigator.share({ title: 'Geosonify Location', url: hpURL })
-          .catch(() => navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed')));
-      } else {
-        navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed'));
-      }
-      return;
-    }
-
-    let prefix = prefixMap[prefixKey];
+    let prefix = prefixMap[gridKey];
     if (!prefix) {
       // Custom grid — use z.GridName format
       const gridDef = CARD_GRIDS[gridKey];
@@ -4377,10 +4210,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
         setCoordinate(result[0], result[1]);
-        // Stamp provenance FROM the pasted code (must run after setCoordinate, whose
-        // onCoordChange bridge would otherwise overwrite it with typed-precision).
-        // In Match mode this also re-runs Match against the code's precision.
-        stampDecodedProvenance(gridKey, code, result[0], result[1]);
         const map = callbacks.getMap ? callbacks.getMap() : null;
         if (map) map.panTo([result[0], result[1]]);
         modal.remove();
@@ -4412,7 +4241,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
         setCoordinate(result[0], result[1]);
-        stampDecodedProvenance(gridKey, code, result[0], result[1]);
         const map = callbacks.getMap ? callbacks.getMap() : null;
         if (map) map.panTo([result[0], result[1]]);
         modal.remove();
@@ -4613,16 +4441,19 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
     
     Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      if ((!def.grid && !def.gis && !def.healpix && !def.chessOf) || def.deprecated) return;
+      if ((!def.grid && !def.gis && !def.healpix && !presentationOf(def)) || def.deprecated) return;
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
       const isGis = !!def.gis;
       const isHealpix = !!def.healpix;
       const isChess = !!def.chessOf;
+      // A presentation card backed by an hphex sibling (the HEALPix ChromaCoord)
+      // reads as HEALPix to the user; tag it that way, not "(Chess)".
+      const isHpPresentation = !isChess && def.chromaOf === 'hphex';
       const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
                 : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
                 : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
-                : isHealpix ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>' : '';
+                : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>' : '';
       const label = def.name + tag;
       html += `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
@@ -4738,16 +4569,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       }
       msg.textContent = 'Decoded ' + res.hex + ' → ' + coord[0].toFixed(6) + ', ' + coord[1].toFixed(6);
       msg.style.color = '#2a7';
-      if (callbacks.onUserInteraction) callbacks.onUserInteraction();
       setCoordinate(coord[0], coord[1]);
-      // Stamp provenance from the decoded code (res.hex is the sibling hex). In
-      // Match mode this re-runs Match against the board's precision.
-      stampDecodedProvenance(gridKey, res.hex, coord[0], coord[1]);
-      // Move the map to the decoded location (setCoordinate only drops the pin /
-      // updates the marker; it does NOT recenter the viewport). Match the other
-      // code-decode paths which setView at zoom 15.
-      const _map = callbacks.getMap ? callbacks.getMap() : null;
-      if (_map) { try { _map.setView([coord[0], coord[1]], 15, { animate: true }); } catch (e) {} }
       setTimeout(close, 700);
     };
   }
@@ -5153,7 +4975,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             status.style.color = '#0f0';
             setTimeout(function() {
               modal.remove();
-              decodeChromaResult(hex);
+              decodeChromaResult(hex, result.variant);
             }, 400);
             return true;
           } else {
@@ -5279,7 +5101,10 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             const result = RGB111Lib.decodeFromCanvas(canvas, { gridSize: 4 });
             if (result && result.hex) {
               modal.remove();
-              decodeChromaResult(result.hex);
+              // result.variant ('healpix' if the centre diamond was detected)
+              // routes to the correct codec — HEALPix swatches decode as order-22
+              // hphex, standard ones as hexByte.
+              decodeChromaResult(result.hex, result.variant);
             } else {
               status.textContent = 'Could not decode image';
             }
@@ -5292,7 +5117,39 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     }
   }
   
-  function decodeChromaResult(hexCode) {
+  // Decode a 12-hex code recovered from a scanned RGB111 swatch. `variant`
+  // selects which codec the 48 bits belong to:
+  //   'standard' (default) → standard ChromaCoord (hexByte hierarchical, 6 iters)
+  //   'healpix'            → HEALPix ChromaCoord (the hex IS an order-22 hphex code)
+  // The swatch itself carries no codec marker (a standard and a HEALPix swatch are
+  // 48 raw bits either way), so the caller must decide — intended to come from a
+  // visual cue on the card (e.g. a navy vs black border) once that exists. Until
+  // the scanner reads such a cue it passes 'standard', preserving current behaviour.
+  function decodeChromaResult(hexCode, variant) {
+    variant = variant || 'standard';
+    if (variant === 'healpix') {
+      // The recovered hex is an order-22 hphex code. Route it through the HEALPix
+      // ChromaCoord card so it reuses the hphex engine (and its passphrase/obf
+      // pipeline) — exactly as a ?hpc= URL does.
+      const hpKey = 'hpchromacoord';
+      if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
+      try {
+        const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), obfuscated);
+        if (coord && Array.isArray(coord)) {
+          setCoordinate(coord[0], coord[1]);
+          const map = callbacks.getMap ? callbacks.getMap() : null;
+          if (map) map.setView([coord[0], coord[1]], 16, { animate: true });
+          showToast('Decoded: ' + hexCode);
+          showDecodeBanner(hpKey, hexCode, coord[0], coord[1]);
+          return;
+        }
+        showToast('Invalid HEALPix ChromaCoord');
+      } catch (e) {
+        console.error('[CardRenderer] HEALPix ChromaCoord decode error:', e);
+        showToast('Decode error');
+      }
+      return;
+    }
     const gridKey = 'chromacoord';
     const gridDef = CARD_GRIDS[gridKey];
     if (!gridDef) {
@@ -5353,46 +5210,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   }
 
   // ============== COORDINATE MANAGEMENT ==============
-
-  // When a code is pasted/decoded (or arrives via URL), the code IS the source of
-  // truth — its precision is its own cell size at that depth. Build an exact point
-  // FROM the code so getExact().meta.uncertaintyMetres reflects the pasted code's
-  // length, stamp it through GeosonifyMain (the provenance store), and — if the
-  // user is in Match mode — re-run Match so every card tracks the decoded precision.
-  // basis is normalised to "decoded code" for the readout. Safe no-op if the
-  // precision stack isn't loaded. gridKey may be a chess card (resolved to sibling).
-  function stampDecodedProvenance(gridKey, code, lat, lon) {
-    try {
-      let gd = CARD_GRIDS[gridKey];
-      while (gd && gd.chessOf) { gridKey = gd.chessOf; gd = CARD_GRIDS[gridKey]; }
-      if (typeof GeoPrecision === 'undefined' || GeoPrecision._unavailable) return false;
-      let pt = null;
-      if (gd && gd.healpix && GeoPrecision.fromHealpixCode) {
-        const ord = cardState.iterations[gridKey] || (gd.defaultIterations);
-        pt = GeoPrecision.fromHealpixCode(code, gd.healpix, ord);
-      } else if (gd && gd.gis) {
-        // GIS schemes are externally-defined; fall back to lat/lon-derived point
-        // but tag basis as decoded code (uncertainty ≈ the scheme cell at its iters).
-        pt = GeoPrecision.fromLatLon(lat, lon, {});
-        if (pt && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES && GISGrids.SCHEMES[gd.gis]) {
-          const it = cardState.iterations[gridKey] || gd.defaultIterations;
-          const d = GISGrids.SCHEMES[gd.gis].cellMetres(it, lat, lon);
-          if (pt.meta) { pt.meta.uncertaintyMetres = Math.max(d.w, d.h); }
-        }
-      } else if (gd && gd.grid && GeoPrecision.fromGeosonifyCode) {
-        pt = GeoPrecision.fromGeosonifyCode(code, gd.grid);
-      }
-      if (!pt) return false;
-      if (pt.meta) pt.meta.basis = 'decoded code';   // normalise the readout source label
-      if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.setCoordinate) {
-        GeosonifyMain.setCoordinate(lat, lon, { exactPoint: pt, quiet: true });
-      }
-      // If in Match mode, recompute every card from the freshly-stamped provenance.
-      if (getPrecisionMode() === 'auto') applyPrecisionMode();
-      return true;
-    } catch (e) { return false; }
-  }
-
+  
   function setCoordinate(lat, lon) {
     currentCardCoord = { lat, lon };
     
@@ -5524,109 +5342,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
      * Re-render all cards
      */
     render: renderCards,
-
-    // Stamp provenance from a decoded code (paste or URL), set basis "decoded code",
-    // and re-run Match if active. Call after the coordinate is set from a URL code.
-    stampDecodedProvenance: stampDecodedProvenance,
-
-    // --- Precision control surface (used by the PRECISION control + gates) ---
-    // Pure math (exposed for the precision round-trip gate):
-    getPrecisionText: getPrecisionText,
-    resolutionToIterations: resolutionToIterations,
-    // Length formatting funnel (one toggle drives metric/US everywhere):
-    formatLength: formatLength,
-    formatMetric: formatMetric,
-    formatImperial: formatImperial,
-    getUnitSystem: getUnitSystem,
-    getPrecisionMode: getPrecisionMode,
-    // Apply the current precision mode: repopulate cardState.iterations for every
-    // ADJUSTABLE card from the mode's target, then re-render. Custom = no-op
-    // (leaves user-set iterations; just re-renders so steppers reappear). Auto
-    // uses the pin's source resolution; Human uses named human-friendly targets.
-    applyPrecisionMode: applyPrecisionMode,
-    setPrecisionMode(mode) {
-      if (mode !== 'auto' && mode !== 'human' && mode !== 'custom') return;
-      if (typeof AppState !== 'undefined') AppState.set('encoding.precisionMode', mode);
-      applyPrecisionMode();
-    },
-    setUnitSystem(sys) {
-      if (sys !== 'metric' && sys !== 'us') return;
-      if (typeof AppState !== 'undefined') {
-        AppState.set('encoding.unitSystem', sys);
-        AppState.set('encoding.unitSystemUserSet', true);  // explicit choice; locale no longer overrides
-      }
-      renderCards();   // re-render flips every .precision-display through formatLength
-    },
-    toggleUnitSystem() {
-      this.setUnitSystem(getUnitSystem() === 'metric' ? 'us' : 'metric');
-      return getUnitSystem();
-    },
-    // First-run only: if the user hasn't explicitly chosen units, derive from the
-    // device locale. The three measurement-system holdouts are US, Liberia (LR),
-    // Myanmar (MM); everyone else is metric. Respects a prior explicit choice and
-    // never overrides it. Call once at startup (after state restore).
-    initUnitsFromLocale() {
-      try {
-        if (typeof AppState === 'undefined') return;
-        if (AppState.get('encoding.unitSystemUserSet')) return;   // user already chose
-        let region = '';
-        try {
-          const loc = (typeof Intl !== 'undefined' && Intl.NumberFormat)
-            ? Intl.NumberFormat().resolvedOptions().locale : '';
-          const fromNav = (typeof navigator !== 'undefined' && (navigator.language || (navigator.languages && navigator.languages[0]))) || '';
-          const tag = (loc || fromNav || '').toUpperCase();
-          // region subtag after '-' (e.g. en-US → US); fall back to whole tag
-          const parts = tag.split('-');
-          region = parts.length > 1 ? parts[parts.length - 1] : '';
-          // some tags are just language; also catch 'EN-US' style and bare 'US'
-          if (!region && (tag === 'US' || tag === 'LR' || tag === 'MM')) region = tag;
-        } catch (e) {}
-        const us = (region === 'US' || region === 'LR' || region === 'MM');
-        AppState.set('encoding.unitSystem', us ? 'us' : 'metric');
-        // NOTE: do NOT set unitSystemUserSet — this is a locale default, still
-        // overridable silently if the locale changes before any manual toggle.
-      } catch (e) {}
-    },
-    // Measurement precision from PROVENANCE (the pin's source uncertainty), routed
-    // through formatLength (metric/US). This is what the PRECISION readout shows —
-    // the resolution of the underlying MEASUREMENT, NOT any single card's cell size,
-    // in every mode (Auto/Human/Custom). Live-updates as the pin/fix is refined.
-    getUncertainty() {
-      try {
-        const getEx = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact)
-          ? GeosonifyMain.getExact
-          : (typeof geosonify !== 'undefined' && geosonify.getExact ? geosonify.getExact : null);
-        const pt = getEx ? getEx() : null;
-        if (!pt) return null;
-        let u = null;
-        if (typeof pt.uncertaintyMetres === 'function') u = pt.uncertaintyMetres();
-        else if (pt.meta && pt.meta.uncertaintyMetres != null) u = pt.meta.uncertaintyMetres;
-        if (u == null || !isFinite(u) || u <= 0) return null;
-        let basis = (pt.meta && pt.meta.basis) ? pt.meta.basis : null;
-        const value = formatLength(u);                       // unit-toggled, e.g. "183.0 m"
-        // Some bases bake the magnitude in ("device fix ±183 m", "GPS ±3.2 m"),
-        // which then reads redundantly beside the value: "±183.0 m (device fix ±183 m)".
-        // Strip a trailing ±<number><unit> from the basis so it shows just the source
-        // ("device fix", "GPS"). Only strips the magnitude tail; descriptive bases that
-        // don't repeat the value ("map pin @ z21", "typed, 6 dp") are left untouched.
-        if (basis) {
-          const stripped = basis.replace(/\s*[±\u00b1~]\s*[\d.,]+\s*[a-zµμ]*\.?$/i, '').trim();
-          if (stripped) basis = stripped;
-        }
-        return {
-          metres: u,
-          value: value,
-          basis: basis,                                      // e.g. "device fix", "map pin @ z21"
-          line: 'Measurement uncertainty: ±' + value + (basis ? ' (' + basis + ')' : '')
-        };
-      } catch (e) { return null; }
-    },
-    getSourceResolutionText() {
-      const u = this.getUncertainty();
-      return u ? u.value : '';
-    },
-    // Back-compat alias (older callers); returns the source resolution value.
-    getActiveResolutionText() { return this.getSourceResolutionText(); },
 
     /**
      * Set a card's iteration count, persist it, and re-render. Used by
