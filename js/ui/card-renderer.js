@@ -1993,28 +1993,28 @@
    * Extracts hex, validates length, decodes coordinate, sets map position
    */
   function decodeBarcodeResult(rawText, gridKey) {
-    // ── Data Matrix mode signifier (cold-scan self-identification) ──
-    // If a scanned DM string carries a leading G/O/H/P signifier, it OVERRIDES
-    // the scanning card's context: the code self-declares its codec + whether
-    // it's obfuscated, so a HEALPix code scanned from the standard card (or with
-    // no card context) still decodes correctly. We strip the signifier, switch
-    // gridKey, and temporarily align the obfuscation state to what the signifier
-    // declares — restored in the finally below so a cold scan never permanently
-    // flips the user's mode. No signifier ⇒ legacy behaviour (card context +
-    // current obfuscation), and a bare hex still reads as standard Geosonify hex.
-    let _obfStateSaved = obfuscated, _obfOverridden = false;
+    // ── Cold-scan codec/obfuscation overrides ──
+    // A scanned symbol can self-declare its codec and obfuscation, overriding the
+    // scanning card's context:
+    //   • Data Matrix: a leading G/O/H/P mode signifier (readMatrixSignifier).
+    //   • QR-URL: the URL param name (?h=/?oh=/?hphex=/… via parseGeosonifyURL).
+    // Either may temporarily flip the module obfuscation state so the correct
+    // de-obfuscation runs; we ALWAYS restore it in the finally so a cold scan
+    // never permanently changes the user's mode. No marker ⇒ legacy behaviour
+    // (card context + current obfuscation); a bare hex still reads as standard.
+    const _obfStateSaved = obfuscated;
     if ((gridKey === 'datamatrix' || gridKey === 'hpmatrix') && typeof rawText === 'string') {
       const sigInfo = readMatrixSignifier(rawText);
       if (sigInfo) {
         gridKey = sigInfo.gridKey;
         rawText = sigInfo.code;
-        if (obfuscated !== sigInfo.obf) { obfuscated = sigInfo.obf; _obfOverridden = true; }
+        obfuscated = sigInfo.obf;
       }
     }
     try {
       return _decodeBarcodeResultInner(rawText, gridKey);
     } finally {
-      if (_obfOverridden) obfuscated = _obfStateSaved;
+      obfuscated = _obfStateSaved;
     }
   }
 
@@ -2026,8 +2026,15 @@
       if (typeof BarcodeLib !== 'undefined') {
         const parsed = BarcodeLib.parseGeosonifyURL(rawText);
         if (!parsed) { showToast('Not a Geosonify URL'); return; }
+        // The URL param names the codec (?h= standard, ?hphex= HEALPix, etc).
+        // Switch to that codec and adopt its obfuscation so the right decoder
+        // runs — the outer finally restores the user's mode afterwards. A HEALPix
+        // URL routes to the hpmatrix branch below (rawText carries the code, incl.
+        // any @order suffix); a standard URL continues to the byte model.
+        if (parsed.gridKey) gridKey = parsed.gridKey;
+        if (typeof parsed.obfuscated === 'boolean') obfuscated = parsed.obfuscated;
         hex = parsed.hex;
-        // Note: parsed.obfuscated could be used to auto-toggle, but we rely on current state
+        rawText = parsed.hex;
       } else {
         showToast('BarcodeLib not loaded'); return;
       }
