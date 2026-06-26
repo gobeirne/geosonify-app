@@ -167,29 +167,13 @@
         <button class="track-btn" id="trackBtn">📍 Track</button>
       </div>
       
-      <!-- Control row: Encoding Mode + Precision side-by-side when wide, stacked when narrow -->
-      <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:stretch;">
-        <!-- Encoding mode controls -->
-        <div class="card" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Encoding Mode</div>
-          <div class="card-body">
-            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
-              <button class="btn btn-secondary" id="obfuscateBtn" style="flex:0 0 auto;">🔀 Hierarchical</button>
-              <button class="btn btn-secondary" id="passphraseBtn" style="flex:0 0 auto;">🔓 Passphrase</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Precision controls (sibling of Encoding Mode) -->
-        <div class="card" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Precision</div>
-          <div class="card-body">
-            <div style="display:flex; gap:8px; align-items:center;">
-              <button class="btn btn-secondary" id="precisionModeBtn" style="flex:0 0 auto;" title="Match = track the measurement precision (redraws as your pin/fix refines) · Human = fixed human-scale presets · Custom = per-card steppers">🎯 Custom</button>
-              <div id="precisionUncertainty" title="Tap the value to switch metric ⇄ US units" style="flex:1 1 auto; min-width:0; font-size:0.78em; opacity:0.7; line-height:1.3;">
-                <span id="precisionUncLabel">Measurement uncertainty: </span><span id="precisionUncValue" style="cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; white-space:nowrap;">—</span><span id="precisionUncBasis"></span>
-              </div>
-            </div>
+      <!-- Encoding mode controls -->
+      <div class="card">
+        <div class="card-header">Encoding Mode</div>
+        <div class="card-body">
+          <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+            <button class="btn btn-secondary" id="obfuscateBtn" style="flex:0 0 auto;">🔀 Hierarchical</button>
+            <button class="btn btn-secondary" id="passphraseBtn" style="flex:0 0 auto;">🔓 Passphrase</button>
           </div>
         </div>
       </div>
@@ -1945,87 +1929,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.getElementById('copyURLBtn').addEventListener('click', copyShareURL);
       document.getElementById('visitURLBtn').addEventListener('click', visitShareURL);
 
-      // ---- PRECISION control (Auto / Human / Custom + live uncertainty line) --
-      (function wirePrecisionControl() {
-        const modeBtn = document.getElementById('precisionModeBtn');
-        const uncValue = document.getElementById('precisionUncValue');
-        const uncBasis = document.getElementById('precisionUncBasis');
-        const uncLabel = document.getElementById('precisionUncLabel');
-        if (!modeBtn || !uncValue || typeof CardRenderer === 'undefined') return;
-
-        const MODE_LABEL = { auto: '🎯 Match', human: '🎯 Human', custom: '🎯 Custom' };
-        const NEXT_MODE  = { auto: 'human', human: 'custom', custom: 'auto' };
-
-        function refreshModeLabel() {
-          const m = CardRenderer.getPrecisionMode ? CardRenderer.getPrecisionMode() : 'custom';
-          modeBtn.textContent = MODE_LABEL[m] || MODE_LABEL.custom;
-        }
-        // The readout shows MEASUREMENT UNCERTAINTY from provenance — same in every
-        // mode, live-updating as the pin/fix is refined. Value is unit-toggleable;
-        // basis (e.g. "map pin @ z21", "device fix", "typed, 5 dp") shown alongside.
-        function refreshReadout() {
-          try {
-            const u = CardRenderer.getUncertainty ? CardRenderer.getUncertainty() : null;
-            if (!u) { uncValue.textContent = '—'; uncBasis.textContent = ''; if (uncLabel) uncLabel.textContent = 'Measurement uncertainty: '; return; }
-            uncValue.textContent = '±' + u.value;
-            uncBasis.textContent = u.basis ? (' (' + u.basis + ')') : '';
-            if (uncLabel) uncLabel.textContent = 'Measurement uncertainty: ';
-          } catch (e) { uncValue.textContent = '—'; uncBasis.textContent = ''; }
-        }
-        function refreshAll() { refreshModeLabel(); refreshReadout(); }
-
-        modeBtn.addEventListener('click', () => {
-          const cur = CardRenderer.getPrecisionMode ? CardRenderer.getPrecisionMode() : 'custom';
-          const next = NEXT_MODE[cur] || 'auto';
-          CardRenderer.setPrecisionMode(next);   // applies mode + re-renders cards
-          refreshAll();
-        });
-        uncValue.addEventListener('click', () => {
-          if (CardRenderer.toggleUnitSystem) CardRenderer.toggleUnitSystem();  // re-renders cards (flips all .precision-display too)
-          refreshReadout();
-        });
-
-        // Keep the uncertainty line fresh whenever the pin/fix changes (live refine).
-        // Auto recomputes card iterations on pin change; Human/Custom leave iterations
-        // alone but the uncertainty line still updates.
-        if (typeof AppState !== 'undefined') {
-          const onPin = () => { if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() === 'auto') CardRenderer.applyPrecisionMode(); refreshReadout(); };
-          AppState.subscribe('coordinate', onPin);
-          AppState.subscribe('exact', onPin);
-          AppState.subscribe('cards.active', refreshReadout);
-          // Re-sync the button label if the mode is changed/restored elsewhere
-          // (e.g. main.js restoreState() runs AFTER this wiring — DOMContentLoaded
-          // handler order isn't guaranteed — so the label must follow state, not
-          // a one-shot read at wiring time).
-          AppState.subscribe('encoding.precisionMode', refreshModeLabel);
-          AppState.subscribe('encoding.unitSystem', refreshReadout);
-        }
-        // Expose a refresh hook so card re-render / stepper changes can nudge it.
-        window.refreshPrecisionReadout = refreshReadout;
-
-        // First-run: derive units from device locale (US/LR/MM → US) unless the
-        // user has already toggled. Respects prior explicit choice.
-        if (CardRenderer.initUnitsFromLocale) { try { CardRenderer.initUnitsFromLocale(); } catch (e) {} }
-
-        // Cold load: if the restored mode is Auto/Human, apply it now (Custom keeps
-        // restored per-card values).
-        if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') {
-          try { CardRenderer.applyPrecisionMode(); } catch (e) {}
-        }
-        refreshAll();
-        // restoreState() in main.js may run AFTER this wiring and restores state with
-        // notify=false (so no subscription fires). Once the current task settles,
-        // re-sync the label/readout AND re-apply the mode if it restored to Auto/Human
-        // (the earlier cold-load apply above may have run while mode still read the
-        // default 'custom'). Idempotent; Custom stays a no-op on iterations.
-        setTimeout(() => {
-          if (CardRenderer.getPrecisionMode && CardRenderer.getPrecisionMode() !== 'custom') {
-            try { CardRenderer.applyPrecisionMode(); } catch (e) {}
-          }
-          refreshAll();
-        }, 0);
-      })();
-
       // Display-share panel wiring
       (function wireDisplaySharePanel() {
         const toggle = document.getElementById('shareDisplayMode');
@@ -2361,11 +2264,138 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           updateCoordDisplay();
           updateMapPin();
           renderCards();
-          // Stamp provenance from the decoded URL code so Match (if active) tracks
-          // the code's precision and the ℹ️ readout reads "decoded code".
-          if (CardRenderer.stampDecodedProvenance) {
-            try { CardRenderer.stampDecodedProvenance(paramName, decodedVal, coord[0], coord[1]); } catch (e) {}
+          if (map && currentCardCoord) {
+            map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
+          switchToTab('home');
+          setTimeout(() => { _suppressURLUpdate = false; }, 500);
+        }, 200);
+        return;
+      }
+      
+      // ── Chessboard share params (?chs=, ?hpchs=, +obfuscated) ──
+      // A chessboard card has no coordinate encoder of its own: it PRESENTS a
+      // sibling hex (chessOf) as a legal-looking position. These params carry the
+      // board's FEN *placement field* so the link opens AS A CHESSBOARD (a plain
+      // ?h= / ?hphex= would open the hex card instead). Structurally this mirrors
+      // the GIS loop above: a foreign textual form → recovered hex → coordinate.
+      //
+      //   chs    → standard Chessboard  (sibling hexbyte)
+      //   hpchs  → HEALPix Chessboard   (sibling hphex)
+      //   chso / hpchso → same, but the recovered hex was obfuscated before being
+      //            handed to the board, so deobfuscate it before the grid decode
+      //            (the board itself has no "obfuscated mode" — it just portrays a
+      //            different hex). Matches the 'o'-flag convention on every card.
+      //
+      // No "@k" order suffix: ChessboardLib.scan recovers the hex purely from the
+      // 64 squares, and decodeCardCode lets the HEALPix sibling infer order from
+      // length — exactly what the in-app decode modal already does. If length is
+      // genuinely ambiguous, share the hphex link (which carries @k) instead.
+      const CHESS_PARAM_MAP = {
+        chs:    { card: 'chessboard',   obf: false },
+        chso:   { card: 'chessboard',   obf: true  },
+        hpchs:  { card: 'hpchessboard', obf: false },
+        hpchso: { card: 'hpchessboard', obf: true  }
+      };
+      for (const [paramName, paramValue] of urlParams.entries()) {
+        if (!paramValue) continue;
+        const chessCfg = CHESS_PARAM_MAP[paramName];
+        if (!chessCfg) continue;
+        if (typeof ChessboardLib === 'undefined' || !CARD_GRIDS[chessCfg.card]) {
+          setTimeout(() => showToast('Chessboard support not loaded', 'error'), 200);
+          return;
+        }
+        const gridDef = CARD_GRIDS[chessCfg.card];
+        const fmt = gridDef.chessFormat || 'standard';
+        // Strip anything from the first space/'+' onward, so a whole Lichess FEN
+        // pasted into a URL ("…K1 w - - 0 1") loses its trailing fields cleanly —
+        // the space would otherwise %20-encode or truncate the link in some
+        // clients. fenToBoard ignores the tail anyway; this protects the URL layer
+        // (which scan can't see) and also handles '+'-as-space encodings.
+        const fenField = decodeURIComponent(paramValue).trim().split(/[ +]/)[0];
+        let res;
+        try { res = ChessboardLib.scan(fenField, fmt); }
+        catch (e) { res = { ok: false, reason: e.message }; }
+        if (!res || !res.ok) {
+          setTimeout(() => showToast(res && res.reason ? res.reason : 'Invalid chessboard in URL', 'error'), 200);
+          return;
+        }
+        // res.hex is the recovered Geosonify hex. Deobfuscate first for the
+        // obfuscated variants, then decode to a coordinate via the sibling engine.
+        const coord = decodeCardCode(chessCfg.card, res.hex, chessCfg.obf);
+        if (!coord || !Array.isArray(coord)) {
+          setTimeout(() => showToast('Recovered ' + res.hex + ' but could not decode to a location', 'error'), 200);
+          return;
+        }
+        setTimeout(() => {
+          _suppressURLUpdate = true;
+          currentCardCoord = { lat: coord[0], lon: coord[1] };
+          cardState.active = chessCfg.card;
+          if (!cardState.visible.includes(chessCfg.card)) cardState.visible.push(chessCfg.card);
+          if (chessCfg.obf) { obfuscated = true; }
+          saveCardState();
+          updateCoordDisplay();
+          updateMapPin();
+          renderCards();
+          if (map && currentCardCoord) {
+            map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
+          }
+          switchToTab('home');
+          setTimeout(() => { _suppressURLUpdate = false; }, 500);
+        }, 200);
+        return;
+      }
+      
+      // ── HEALPix ChromaCoord share params (?hpc=, ?hpco=) ──────
+      // The HEALPix ChromaCoord is a presentation of an order-22 hphex code as an
+      // RGB111 colour swatch. The share value is the swatch's INK colour-string
+      // (16 letters from KBGCRMYW — URL-safe; the slash form is display-only), the
+      // chroma equivalent of the chessboard's FEN. We convert it back to the
+      // 12-char hex, then decode via the hpchromacoord card (chromaOf → hphex,
+      // order 22 inferred from length — no "@k" needed). ?hpco= deobfuscates the
+      // recovered hex before the grid decode, same convention as every 'o' param.
+      // A bare 12-char hphex hex is also accepted (in case someone hand-builds the
+      // URL from the hex rather than the swatch letters).
+      const CHROMA_PARAM_MAP = {
+        hpc:  { card: 'hpchromacoord', obf: false },
+        hpco: { card: 'hpchromacoord', obf: true  }
+      };
+      for (const [paramName, paramValue] of urlParams.entries()) {
+        if (!paramValue) continue;
+        const chromaCfg = CHROMA_PARAM_MAP[paramName];
+        if (!chromaCfg) continue;
+        if (typeof RGB111Lib === 'undefined' || !CARD_GRIDS[chromaCfg.card]) {
+          setTimeout(() => showToast('ChromaCoord support not loaded', 'error'), 200);
+          return;
+        }
+        const val = decodeURIComponent(paramValue).trim();
+        // Accept either the ink colour-string (16 letters) or a bare 12-char hex.
+        let hex = null;
+        if (RGB111Lib.colorStringToHex) {
+          hex = RGB111Lib.colorStringToHex(val);   // null if not a 16-symbol colour string
+        }
+        if (!hex && /^[0-9A-Fa-f]{12}$/.test(val)) {
+          hex = val.toUpperCase();
+        }
+        if (!hex) {
+          setTimeout(() => showToast('Invalid ChromaCoord value in URL', 'error'), 200);
+          return;
+        }
+        const coord = decodeCardCode(chromaCfg.card, hex, chromaCfg.obf);
+        if (!coord || !Array.isArray(coord)) {
+          setTimeout(() => showToast('Recovered ' + hex + ' but could not decode to a location', 'error'), 200);
+          return;
+        }
+        setTimeout(() => {
+          _suppressURLUpdate = true;
+          currentCardCoord = { lat: coord[0], lon: coord[1] };
+          cardState.active = chromaCfg.card;
+          if (!cardState.visible.includes(chromaCfg.card)) cardState.visible.push(chromaCfg.card);
+          if (chromaCfg.obf) { obfuscated = true; }
+          saveCardState();
+          updateCoordDisplay();
+          updateMapPin();
+          renderCards();
           if (map && currentCardCoord) {
             map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
@@ -2557,7 +2587,19 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         const code = paramValue;
         if (code) {
           setTimeout(() => {
-            const decoded = decodeURIComponent(code);
+            let decoded = decodeURIComponent(code);
+            
+            // ChromaCoord (?c=) accepts EITHER a 12-char hex OR an ink/slash
+            // colour-string (e.g. MWWMMCMCCGCBWRGY). Normalise a colour-string to
+            // hex up front so the rest of the point-decode path is unchanged. Only
+            // for a single point value (no ~ / , shape or multi separators).
+            if (CARD_GRIDS[config.grid] && CARD_GRIDS[config.grid].display === 'chroma' &&
+                typeof RGB111Lib !== 'undefined' && RGB111Lib.looksLikeColorString &&
+                decoded.indexOf('~') === -1 && decoded.indexOf(',') === -1 &&
+                RGB111Lib.looksLikeColorString(decoded)) {
+              const asHex = RGB111Lib.colorStringToHex(decoded);
+              if (asHex) decoded = asHex;
+            }
             
             // Check if this is a shape - look for ~ separator OR any non-grid emoji as separator
             let tildeIdx = decoded.indexOf('~');
@@ -2656,12 +2698,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               // shapes draw their own centroid marker via drawPathPolyOnMap
               if (!(hasTilde && shapeSuffix)) {
                 updateMapPin();
-                // Stamp provenance from the decoded URL code (plain points only;
-                // shapes carry their own precision semantics). Match (if active)
-                // then tracks the code's precision; readout shows "decoded code".
-                if (CardRenderer.stampDecodedProvenance) {
-                  try { CardRenderer.stampDecodedProvenance(config.grid, centroidCode, result[0], result[1]); } catch (e) {}
-                }
               }
               renderCards();
               
@@ -2850,6 +2886,27 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return param;
       }
 
+      // Chessboard card — share AS A CHESSBOARD so the link opens the board,
+      // not the sibling hex card. Param name encodes which board + obfuscation:
+      //   chessboard   → chs  / chso   (sibling hexbyte)
+      //   hpchessboard → hpchs / hpchso (sibling hphex)
+      // The VALUE is the board's FEN placement field, produced by withChessFEN()
+      // from the compact hex output (the seam parallel to withHealpixOrder).
+      if (gridDef && gridDef.display === 'chessboard') {
+        const isHp = (gridDef.chessOf === 'hphex');
+        let param = isHp ? 'hpchs' : 'chs';
+        if (obfuscated) param += 'o';
+        return param;
+      }
+
+      // HEALPix ChromaCoord — presentation of an order-22 hphex code as an RGB111
+      // swatch. Share AS A CHROMACOORD (param hpc / hpco) so the link opens the
+      // swatch, not the hphex card. The VALUE is the ink colour-string, produced
+      // by withChromaInk() from the compact hex output.
+      if (gridDef && gridDef.display === 'chroma' && gridDef.chromaOf) {
+        return obfuscated ? 'hpco' : 'hpc';
+      }
+
       // GIS card — param name IS the scheme key, bare (no o/d/r flags;
       // GIS formats can't obfuscate or delta-encode).
       if (gridDef && gridDef.gis) {
@@ -2877,7 +2934,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const encoded = document.getElementById('compactOutput').textContent;
       if (encoded && !encoded.startsWith('ERR')) {
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
-        const newURL = `${window.location.pathname}?${param}=${withHealpixOrder(param, encoded)}`;
+        const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}`;
         window.history.replaceState({}, '', newURL);
       }
     }
@@ -2909,6 +2966,63 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       return encoded;
     }
 
+    // Chess share params carry the board's FEN *placement field*, not the hex.
+    // The compact output is the sibling hex (that's what the card renders from),
+    // so for chs/chso/hpchs/hpchso we convert hex → FEN here. Obfuscation is
+    // already baked into `encoded` (the card's output respects obfuscated mode),
+    // so the FEN we emit is the obfuscated board for chso/hpchso — symmetric with
+    // the decode loop, which scans the FEN back to that same (obfuscated) hex and
+    // deobfuscates. Only a single bare point code converts; a shape/delta/multi
+    // value (~ or , present) has no single board, so it's left as-is.
+    function withChessFEN(param, encoded) {
+      try {
+        if ((param === 'chs' || param === 'chso' || param === 'hpchs' || param === 'hpchso') &&
+            typeof encoded === 'string' && !encoded.startsWith('ERR') &&
+            encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1 &&
+            typeof ChessboardLib !== 'undefined') {
+          const fmt = (param === 'hpchs' || param === 'hpchso') ? 'healpix' : 'standard';
+          // Strip any stray "@k" the value might carry (it shouldn't for chess,
+          // but be defensive): the FEN encodes the board exactly, no order needed.
+          const hex = encoded.split('@')[0];
+          const fen = ChessboardLib.toFEN(hex, fmt);
+          return fen || encoded;
+        }
+      } catch (e) { /* fall through to bare hex */ }
+      return encoded;
+    }
+
+    // ChromaCoord share params carry the swatch's INK colour-string, not the hex.
+    // Applies to BOTH the standard ChromaCoord (c / co) and the HEALPix one
+    // (hpc / hpco): the compact output is a 12-char hex either way, which we
+    // convert to the 16-letter ink colour-string (URL-safe; the default 'slash'
+    // style uses \ and / and would break in a URL, so 'ink' is mandatory). The
+    // decode side accepts either form, so this is purely a prettier emit.
+    // Obfuscation is already baked into `encoded`. A shape/delta/multi value
+    // (~ or , present) has no single swatch, so it's left as-is.
+    function withChromaInk(param, encoded) {
+      try {
+        if ((param === 'c' || param === 'co' || param === 'hpc' || param === 'hpco') &&
+            typeof encoded === 'string' && !encoded.startsWith('ERR') &&
+            encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1 &&
+            typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString) {
+          const hex = encoded.split('@')[0];   // defensive: drop any stray "@k"
+          if (/^[0-9A-Fa-f]{12}$/.test(hex)) {
+            const ink = RGB111Lib.hexToColorString(hex, 'ink');
+            return ink || encoded;
+          }
+        }
+      } catch (e) { /* fall through to bare hex */ }
+      return encoded;
+    }
+
+    // Single seam every share-URL builder uses: apply whichever value transform
+    // the param needs (HEALPix "@k" order, chess hex→FEN, or chroma hex→ink).
+    // They're mutually exclusive, so order doesn't matter; each is a no-op on a
+    // param it doesn't own.
+    function encodeShareValue(param, encoded) {
+      return withChromaInk(param, withChessFEN(param, withHealpixOrder(param, encoded)));
+    }
+
     // Build the base shareable URL (shape or encrypted blob) from the current
     // compact output. Returns null with an alert if there's nothing to share.
     function buildBaseShareURL() {
@@ -2921,7 +3035,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
       }
       const param = getURLParamForActiveCard(_currentOutputIsDelta);
-      return `${window.location.origin}${window.location.pathname}?${param}=${withHealpixOrder(param, encoded)}`;
+      return `${window.location.origin}${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}`;
     }
 
     // Read the display-share panel and assemble the ?display… params. Returns
@@ -7440,7 +7554,7 @@ function encodeRaw(sol) {
         const useDelta = document.getElementById('useDeltaCompression')?.checked ?? true;
         const isDelta = isPathOrPoly && useDelta && !rawModeActive;
         const param = getURLParamForActiveCard(isDelta);
-        return `${window.location.origin}${window.location.pathname}?${param}=${s}`;
+        return `${window.location.origin}${window.location.pathname}?${param}=${encodeShareValue(param, s)}`;
       } catch (e) {
         console.warn('[geosonify] _encodeSolutionURL failed:', e && e.message, '| sol.type=', sol && sol.type);
         return null;
