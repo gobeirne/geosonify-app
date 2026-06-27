@@ -159,6 +159,30 @@
     return Math.sqrt(Math.pow(c1[0]-c2[0],2) + Math.pow(c1[1]-c2[1],2) + Math.pow(c1[2]-c2[2],2));
   }
 
+  // Detect the HEALPix ChromaCoord's centre black diamond on a perspective-
+  // corrected swatch. The diamond is the only black in the data area (K/W cells
+  // render as colour-split diagonals, never flat black), so a near-black centre
+  // ⇒ HEALPix variant; anything else ⇒ standard. Sample a small cluster at the
+  // exact centre and require the majority near-black, robust to JPEG ringing.
+  // Returns 'healpix' or 'standard'.
+  function detectCentreVariant(imageData) {
+    try {
+      var w = imageData.width, h = imageData.height;
+      var cx = Math.floor(w / 2), cy = Math.floor(h / 2);
+      var span = Math.max(1, Math.floor(Math.min(w, h) * 0.015));
+      var offs = [[0,0],[span,0],[-span,0],[0,span],[0,-span]];
+      var blackHits = 0, total = 0;
+      for (var i = 0; i < offs.length; i++) {
+        var c = sampleRegion(imageData, cx + offs[i][0], cy + offs[i][1], 2);
+        total++;
+        if (c[0] < 60 && c[1] < 60 && c[2] < 60) blackHits++;
+      }
+      return (blackHits >= Math.ceil(total / 2)) ? 'healpix' : 'standard';
+    } catch (e) {
+      return 'standard';
+    }
+  }
+
   // ========== RAY CASTING ==========
   
   function castRays(imageData, cx, cy, numRays) {
@@ -844,7 +868,7 @@
 
   // ========== DIAGONAL DETECTION ==========
   
-  function detectDiagonal(imageData, cx, cy, cellSize) {
+  function detectDiagonal(imageData, cx, cy, cellSize, isInner, row, col) {
     var margin = 0.3;
     var sR = Math.max(3, cellSize * 0.12);
     var offset = cellSize * (0.5 - margin);
@@ -853,6 +877,20 @@
     var tr = sampleRegion(imageData, cx + offset, cy - offset, sR);
     var bl = sampleRegion(imageData, cx - offset, cy + offset, sR);
     var br = sampleRegion(imageData, cx + offset, cy + offset, sR);
+    
+    // For an inner cell of a HEALPix swatch, the corner facing the grid centre
+    // lands inside the black diamond and would fake a dark corner. Replace that
+    // one corner with its diagonal opposite — a true K/W split is symmetric across
+    // the centre, so the opposite corner carries the same colour — keeping the
+    // diagonal test honest without diamond contamination. (row,col passed so we
+    // know which corner faces in.)
+    if (isInner) {
+      var towardRight = col < 1.5, towardBottom = row < 1.5;
+      if (towardRight && towardBottom) br = tl;        // BR faces centre
+      else if (!towardRight && towardBottom) bl = tr;  // BL faces centre
+      else if (towardRight && !towardBottom) tr = bl;  // TR faces centre
+      else tl = br;                                    // TL faces centre
+    }
     
     var tlbrDist = colorDistance(tl, br);
     var trblDist = colorDistance(tr, bl);
@@ -1220,11 +1258,26 @@
     
     for (var row = 0; row < 4; row++) {
       for (var col = 0; col < 4; col++) {
-        var cx = (col + 0.5) * cellSize;
-        var cy = (row + 0.5) * cellSize;
-        var color = sampleRegion(imageData, cx, cy, cellSize * 0.2);
-        var diagonal = detectDiagonal(imageData, cx, cy, cellSize);
-        samples.push({ row: row, col: col, cx: cx, cy: cy, r: color[0], g: color[1], b: color[2], diagonal: diagonal });
+        // Inner four cells: bias the colour sample OUTWARD (toward the cell's
+        // outer corner), away from the grid centre where the HEALPix ChromaCoord's
+        // black diamond sits. A centred sample/diagonal-check on an inner cell
+        // catches the diamond and corrupts the read, which can stop the notch-CRC
+        // from locking onto a valid rotation. detectDiagonal gets the TRUE centre
+        // plus isInner so it can ignore the diamond-facing corner. Outer cells and
+        // standard (no-diamond) cards are unaffected.
+        var isInner = (row === 1 || row === 2) && (col === 1 || col === 2);
+        var fx = col + 0.5, fy = row + 0.5;
+        if (isInner) {
+          fx += (col < 1.5 ? -1 : 1) * 0.22;
+          fy += (row < 1.5 ? -1 : 1) * 0.22;
+        }
+        var cx = fx * cellSize;
+        var cy = fy * cellSize;
+        var trueCx = (col + 0.5) * cellSize;
+        var trueCy = (row + 0.5) * cellSize;
+        var color = sampleRegion(imageData, cx, cy, cellSize * (isInner ? 0.14 : 0.2));
+        var diagonal = detectDiagonal(imageData, trueCx, trueCy, cellSize, isInner, row, col);
+        samples.push({ row: row, col: col, cx: trueCx, cy: trueCy, r: color[0], g: color[1], b: color[2], diagonal: diagonal });
       }
     }
     
@@ -1633,6 +1686,12 @@
     var result = null;
     var firstResult = null;
     var currentData = correctedImageData;
+    // The centre black diamond (if any) is rotation-invariant, so detect it once
+    // on the original corrected image and stamp every returned result. This tells
+    // the app to decode the hex as a HEALPix ChromaCoord (order-22 hphex) rather
+    // than the standard hexByte codec — without it, a correct hex is decoded by
+    // the wrong codec and the pin lands in the wrong place.
+    var variant = detectCentreVariant(correctedImageData);
     
     for (var rotation = 0; rotation < 360; rotation += 90) {
       if (rotation > 0) {
@@ -1647,6 +1706,7 @@
       if (result.valid) {
         result.rotation = rotation;
         result.hex = bitsToHex(result.bits);
+        result.variant = variant;
         return result;
       }
     }
@@ -1654,6 +1714,7 @@
     log('No valid rotation found, returning to original orientation');
     firstResult.rotation = 0;
     firstResult.hex = bitsToHex(firstResult.bits);
+    firstResult.variant = variant;
     return firstResult;
   }
   
