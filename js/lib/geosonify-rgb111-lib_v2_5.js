@@ -292,9 +292,21 @@
     var cellW = bounds.width / gridSize;
     var cellH = bounds.height / gridSize;
     
-    // Sample center of cell
-    var cx = Math.floor(bounds.left + (col + 0.5) * cellW);
-    var cy = Math.floor(bounds.top + (row + 0.5) * cellH);
+    // Sample center of cell — but for the four INNER cells, bias the point
+    // outward (toward the cell's outer corner), away from the grid centre where
+    // the HEALPix ChromaCoord's black diamond sits. A centred sample on an inner
+    // cell sits right at the diamond's reach; the outward bias gives clean cell
+    // colour with margin. Outer cells unaffected; standard (no-diamond) cards are
+    // unharmed since the biased point stays well within the cell.
+    var mid = (gridSize - 1) / 2;
+    var fx = col + 0.5, fy = row + 0.5;
+    var inner = (gridSize === 4) && (row === 1 || row === 2) && (col === 1 || col === 2);
+    if (inner) {
+      fx += (col < mid ? -1 : 1) * 0.22;
+      fy += (row < mid ? -1 : 1) * 0.22;
+    }
+    var cx = Math.floor(bounds.left + fx * cellW);
+    var cy = Math.floor(bounds.top + fy * cellH);
     
     var pixel = ctx.getImageData(cx, cy, 1, 1).data;
     return nearestColorIndex(pixel[0], pixel[1], pixel[2]);
@@ -385,7 +397,7 @@
 
   // hex (12 chars) -> colour string. style 'slash' (default) uses \ and /,
   // style 'ink' uses K and W (use 'ink' anywhere the string goes in a URL).
-  function hexToColorString(hexString, style) {
+  function hexToColorString(hexString, style, group) {
     var hex = (hexString || '').toUpperCase().replace(/[^0-9A-F]/g, '').padEnd(12, '0').slice(0, 12);
     var bits = hexToBits(hex);
     var useSlash = style !== 'ink';
@@ -396,6 +408,10 @@
       else if (useSlash && idx === 7) out += '/';
       else out += COLOR_LETTERS[idx];
     }
+    // Optional readability grouping: "RMGW YYWW GMKB RCYK". Strictly cosmetic —
+    // colorStringToHex / looksLikeColorString already strip whitespace, and URL
+    // emit must pass group=false so links stay space-free.
+    if (group) out = out.replace(/(.{4})(?=.)/g, '$1 ');
     return out;
   }
 
