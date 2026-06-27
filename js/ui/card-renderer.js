@@ -2700,7 +2700,7 @@
       } else if (gridDef.display === 'chroma') {
         const hexEl = card.querySelector('.chroma-hex');
         const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
-          ? RGB111Lib.hexToColorString(code, 'ink') : code;
+          ? RGB111Lib.hexToColorString(code, 'ink', true) : code;
         if (hexEl && hexEl.dataset.code !== code) {
           hexEl.dataset.code = code;
           hexEl.innerHTML = checksumValue
@@ -2841,7 +2841,7 @@
         // it's the natural way to read the colours in and out. Hex still lives
         // in data-code / URLs. Fall back to hex if the lib isn't present.
         const chromaStr = (typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString)
-          ? RGB111Lib.hexToColorString(code, 'ink') : code;
+          ? RGB111Lib.hexToColorString(code, 'ink', true) : code;
         const chromaText = checksumValue
           ? `${chromaStr}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
           : chromaStr;
@@ -4286,7 +4286,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // ChromaCoord displays the colour-string spelling, not hex — match it here.
       if (gridDef.display === 'chroma' && typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString
           && /^[0-9A-Fa-f]{12}$/.test((sample || '').split('.')[0])) {
-        sample = RGB111Lib.hexToColorString(sample.split('.')[0], 'ink');
+        sample = RGB111Lib.hexToColorString(sample.split('.')[0], 'ink', true);
       }
       levels.push({
         label: `${it} char${it === 1 ? '' : 's'}`,
