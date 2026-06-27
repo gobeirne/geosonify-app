@@ -461,13 +461,33 @@
     const samples = [];
     const cellSize = size / GRID_SIZE;
     const sampleRadius = cellSize * SAMPLE_RADIUS_RATIO;
-    
+    const mid = (GRID_SIZE - 1) / 2;   // 1.5 for a 4×4 grid
+
     for (let row = 0; row < GRID_SIZE; row++) {
       for (let col = 0; col < GRID_SIZE; col++) {
-        const cx = (col + 0.5) * cellSize;
-        const cy = (row + 0.5) * cellSize;
+        let cx = (col + 0.5) * cellSize;
+        let cy = (row + 0.5) * cellSize;
+
+        // The HEALPix ChromaCoord draws a black diamond at the GRID CENTRE (the
+        // junction of the four inner cells). A centred sample disc on an inner
+        // cell sits only ~0.2 cell clear of that diamond in ideal geometry, and
+        // perspective-warp slop + camera blur on the black edge can push the disc
+        // onto black — poisoning the adaptive classifier and scrambling the whole
+        // read. So for the inner cells, bias the sample point OUTWARD (toward the
+        // cell's outer corner, away from the centre), where the colour is clean
+        // and no diamond can reach. Outer/edge cells are unaffected. Standard
+        // ChromaCoords have no diamond, but the outward bias is still safely
+        // within-cell, so this is applied uniformly (variant-agnostic).
+        const isInner = (row === 1 || row === 2) && (col === 1 || col === 2);
+        if (isInner) {
+          const ox = (col < mid ? -1 : 1);   // push toward outer corner in x
+          const oy = (row < mid ? -1 : 1);   // and y
+          cx += ox * cellSize * 0.22;
+          cy += oy * cellSize * 0.22;
+        }
+
         const color = sampleRegion(imageData, cx, cy, sampleRadius);
-        
+
         samples.push({
           row, col,
           cx, cy,
@@ -477,7 +497,7 @@
         });
       }
     }
-    
+
     return samples;
   }
 
