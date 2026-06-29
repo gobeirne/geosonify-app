@@ -161,23 +161,30 @@
 
   // Detect the HEALPix ChromaCoord's centre black diamond on a perspective-
   // corrected swatch. The diamond is the only black in the data area (K/W cells
-  // render as colour-split diagonals, never flat black), so a near-black centre
-  // ⇒ HEALPix variant; anything else ⇒ standard. Sample a small cluster at the
-  // exact centre and require the majority near-black, robust to JPEG ringing.
-  // Returns 'healpix' or 'standard'.
+  // render as colour-split diagonals, never flat black), so black ⇒ HEALPix,
+  // else standard. We must NOT sample the dead centre: the scanner overlays a
+  // targeting dot there, and the swatch can have a notch line crossing it, so the
+  // exact centre is often non-black even on a HEALPix card. Instead sample four
+  // points partway out along the diagonals — inside the diamond body, clear of
+  // the centre dot and the diamond's edges. Diamond half-diagonal ≈ size/8
+  // (cellSize*notchSize = (size/4)*0.5); sample at ~45% of that.
   function detectCentreVariant(imageData) {
     try {
       var w = imageData.width, h = imageData.height;
-      var cx = Math.floor(w / 2), cy = Math.floor(h / 2);
-      var span = Math.max(1, Math.floor(Math.min(w, h) * 0.015));
-      var offs = [[0,0],[span,0],[-span,0],[0,span],[0,-span]];
+      var cx = w / 2, cy = h / 2;
+      var halfDiag = Math.min(w, h) / 8;       // diamond half-diagonal
+      var r = halfDiag * 0.45;                 // sample inside the body
+      var pr = Math.max(2, Math.floor(Math.min(w, h) * 0.01));
+      var offs = [[r, 0], [-r, 0], [0, r], [0, -r]];  // the four lobes along the axes
       var blackHits = 0, total = 0;
       for (var i = 0; i < offs.length; i++) {
-        var c = sampleRegion(imageData, cx + offs[i][0], cy + offs[i][1], 2);
+        var c = sampleRegion(imageData, Math.floor(cx + offs[i][0]), Math.floor(cy + offs[i][1]), pr);
         total++;
-        if (c[0] < 60 && c[1] < 60 && c[2] < 60) blackHits++;
+        if (c[0] < 70 && c[1] < 70 && c[2] < 70) blackHits++;
       }
-      return (blackHits >= Math.ceil(total / 2)) ? 'healpix' : 'standard';
+      // Diamond present if most lobes are black. (A standard swatch's centre is a
+      // 4-cell junction of vivid colours — essentially never black on all lobes.)
+      return (blackHits >= 3) ? 'healpix' : 'standard';
     } catch (e) {
       return 'standard';
     }

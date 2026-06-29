@@ -774,9 +774,13 @@
 
   // ========== DIAGONAL DETECTION ==========
   
-  function detectDiagonal(imageData, cx, cy, cellSize) {
-    var margin = 0.3;
-    var sR = Math.max(3, cellSize * 0.12);
+  function detectDiagonal(imageData, cx, cy, cellSize, isInner) {
+    // For inner cells of a HEALPix swatch, the corner nearest the grid centre can
+    // land inside the black diamond and fake a "black diagonal". Nudge the corner
+    // offset in slightly so it clears the diamond, keeping a usable window. Outer
+    // cells keep the original geometry exactly.
+    var margin = isInner ? 0.34 : 0.3;
+    var sR = Math.max(3, cellSize * (isInner ? 0.10 : 0.12));
     var offset = cellSize * (0.5 - margin);
     
     var tl = sampleRegion(imageData, cx - offset, cy - offset, sR);
@@ -1129,10 +1133,23 @@
     
     for (var row = 0; row < 4; row++) {
       for (var col = 0; col < 4; col++) {
-        var cx = (col + 0.5) * cellSize;
-        var cy = (row + 0.5) * cellSize;
-        var color = sampleRegion(imageData, cx, cy, cellSize * 0.2);
-        var diagonal = detectDiagonal(imageData, cx, cy, cellSize);
+        // Inner four cells: bias the sample point OUTWARD (toward the cell's outer
+        // corner), away from the grid centre where the HEALPix ChromaCoord's black
+        // diamond sits. A centred sample on an inner cell overlaps the diamond
+        // (its half-diagonal = 0.5 cell), contaminating both the colour read and
+        // detectDiagonal — which poisons the colour clustering board-wide. Outer
+        // cells are untouched; standard (no-diamond) cards are unaffected because
+        // the biased point stays well within the cell.
+        var fx = col + 0.5, fy = row + 0.5;
+        var isInner = (row === 1 || row === 2) && (col === 1 || col === 2);
+        if (isInner) {
+          fx += (col < 1.5 ? -1 : 1) * 0.22;
+          fy += (row < 1.5 ? -1 : 1) * 0.22;
+        }
+        var cx = fx * cellSize;
+        var cy = fy * cellSize;
+        var color = sampleRegion(imageData, cx, cy, cellSize * (isInner ? 0.14 : 0.2));
+        var diagonal = detectDiagonal(imageData, cx, cy, cellSize, isInner);
         samples.push({ row: row, col: col, cx: cx, cy: cy, r: color[0], g: color[1], b: color[2], diagonal: diagonal });
       }
     }

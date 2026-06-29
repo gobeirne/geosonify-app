@@ -320,17 +320,27 @@
   function detectCentreVariant(canvas, bounds) {
     try {
       var ctx = canvas.getContext('2d');
-      var cx = Math.floor(bounds.left + bounds.width / 2);
-      var cy = Math.floor(bounds.top + bounds.height / 2);
-      var span = Math.max(1, Math.floor(Math.min(bounds.width, bounds.height) * 0.015));
-      var offs = [[0, 0], [span, 0], [-span, 0], [0, span], [0, -span]];
-      var blackHits = 0, total = 0;
-      for (var i = 0; i < offs.length; i++) {
-        var px = ctx.getImageData(cx + offs[i][0], cy + offs[i][1], 1, 1).data;
-        total++;
-        if (px[0] < 60 && px[1] < 60 && px[2] < 60) blackHits++;
+      var cx = bounds.left + bounds.width / 2;
+      var cy = bounds.top + bounds.height / 2;
+      // Sample the diamond's four body lobes along the axes, NOT the dead centre
+      // (a targeting dot / notch line can sit there and read non-black even on a
+      // HEALPix card). Diamond half-diagonal ≈ gridSize/8; sample at ~45% of it.
+      var halfDiag = Math.min(bounds.width, bounds.height) / 8;
+      var r = halfDiag * 0.45;
+      function blackAt(x, y) {
+        var px = ctx.getImageData(Math.floor(x), Math.floor(y), 1, 1).data;
+        return px[0] < 70 && px[1] < 70 && px[2] < 70;
       }
-      return (blackHits >= Math.ceil(total / 2)) ? 'healpix' : 'standard';
+      var hits = 0;
+      var s1 = blackAt(cx + r, cy), s2 = blackAt(cx - r, cy), s3 = blackAt(cx, cy + r), s4 = blackAt(cx, cy - r);
+      hits = (s1?1:0) + (s2?1:0) + (s3?1:0) + (s4?1:0);
+      try {
+        var dbg = function(x,y){ var p=ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data; return '['+p[0]+','+p[1]+','+p[2]+']'; };
+        console.log('[RGB111 variant] bounds c=('+Math.round(cx)+','+Math.round(cy)+') r='+r.toFixed(1)+
+          ' lobes E'+dbg(cx+r,cy)+' W'+dbg(cx-r,cy)+' S'+dbg(cx,cy+r)+' N'+dbg(cx,cy-r)+
+          ' centre'+dbg(cx,cy)+' -> hits='+hits+' => '+((hits>=3)?'healpix':'standard'));
+      } catch(e){}
+      return (hits >= 3) ? 'healpix' : 'standard';
     } catch (e) {
       return 'standard';
     }
