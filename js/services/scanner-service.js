@@ -321,15 +321,29 @@
 
   // ============== DIAGONAL DETECTION ==============
 
-  function detectDiagonal(imageData, cx, cy, cellSize) {
+  function detectDiagonal(imageData, cx, cy, cellSize, isInner, row, col) {
     // Check if cell has a diagonal pattern (black or white)
     const sampleSize = cellSize * 0.3;
     
     // Sample corners of the cell
-    const topLeft = sampleRegion(imageData, cx - sampleSize, cy - sampleSize, 3);
-    const topRight = sampleRegion(imageData, cx + sampleSize, cy - sampleSize, 3);
-    const bottomLeft = sampleRegion(imageData, cx - sampleSize, cy + sampleSize, 3);
-    const bottomRight = sampleRegion(imageData, cx + sampleSize, cy + sampleSize, 3);
+    let topLeft = sampleRegion(imageData, cx - sampleSize, cy - sampleSize, 3);
+    let topRight = sampleRegion(imageData, cx + sampleSize, cy - sampleSize, 3);
+    let bottomLeft = sampleRegion(imageData, cx - sampleSize, cy + sampleSize, 3);
+    let bottomRight = sampleRegion(imageData, cx + sampleSize, cy + sampleSize, 3);
+    
+    // For an inner cell of a HEALPix swatch, the corner facing the grid centre
+    // lands inside the black diamond and would fake a dark corner. Replace that
+    // one corner with its diagonal opposite (a true K/W split is symmetric across
+    // the centre, so the opposite corner carries the same colour). This keeps the
+    // diagonal test honest without the diamond contaminating it.
+    if (isInner) {
+      const towardCentreRight = col < 1.5;   // inner corner is on the +x side if cell is left-of-centre
+      const towardCentreBottom = row < 1.5;  // and +y side if above centre
+      if (towardCentreRight && towardCentreBottom) bottomRight = topLeft;       // BR faces centre
+      else if (!towardCentreRight && towardCentreBottom) bottomLeft = topRight; // BL faces centre
+      else if (towardCentreRight && !towardCentreBottom) topRight = bottomLeft; // TR faces centre
+      else topLeft = bottomRight;                                              // TL faces centre
+    }
     
     const lumTL = 0.299 * topLeft[0] + 0.587 * topLeft[1] + 0.114 * topLeft[2];
     const lumTR = 0.299 * topRight[0] + 0.587 * topRight[1] + 0.114 * topRight[2];
@@ -397,7 +411,7 @@
     const cellSize = size / GRID_SIZE;
     
     samples.forEach(s => {
-      const diag = detectDiagonal(imageData, s.cx, s.cy, cellSize);
+      const diag = detectDiagonal(imageData, s.trueCx, s.trueCy, cellSize, s.isInner, s.row, s.col);
       if (diag.type === 'white') {
         s.bits = '111';
         s.name = 'White';
@@ -464,13 +478,27 @@
     
     for (let row = 0; row < GRID_SIZE; row++) {
       for (let col = 0; col < GRID_SIZE; col++) {
-        const cx = (col + 0.5) * cellSize;
-        const cy = (row + 0.5) * cellSize;
-        const color = sampleRegion(imageData, cx, cy, sampleRadius);
+        // Inner four cells: bias the sample point OUTWARD (toward the cell's outer
+        // corner), away from the grid centre where the HEALPix ChromaCoord's black
+        // diamond sits. A centred sample/diagonal-check on an inner cell catches the
+        // diamond and corrupts the read, which poisons colour classification
+        // board-wide. Outer cells and standard (no-diamond) cards are unaffected.
+        const isInner = (row === 1 || row === 2) && (col === 1 || col === 2);
+        let fx = col + 0.5, fy = row + 0.5;
+        if (isInner) {
+          fx += (col < 1.5 ? -1 : 1) * 0.22;
+          fy += (row < 1.5 ? -1 : 1) * 0.22;
+        }
+        const cx = fx * cellSize;
+        const cy = fy * cellSize;
+        const trueCx = (col + 0.5) * cellSize;
+        const trueCy = (row + 0.5) * cellSize;
+        const color = sampleRegion(imageData, cx, cy, isInner ? cellSize * 0.14 : sampleRadius);
         
         samples.push({
           row, col,
           cx, cy,
+          trueCx, trueCy, isInner,
           r: color[0],
           g: color[1],
           b: color[2]
