@@ -5398,6 +5398,28 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         modal.remove();
       };
     } else {
+      // FILE / SAVED-IMAGE PATH.
+      // Delegate to ScannerUI.showPhotoScanner — the SAME clustering engine the
+      // live camera path uses (ray-cast corners → OpenCV perspective-correct →
+      // colour clustering → notch/CRC validation → rotation → detectCentreVariant).
+      // The old code here called RGB111Lib.decodeFromCanvas, a naive
+      // single-pixel-per-cell sampler that cannot read ChromaCoord's split-diagonal
+      // cells, notch markers, or the HEALPix centre diamond — it returned garbage
+      // hex (standard swatch "failed", HEALPix swatch decoded to the wrong place).
+      // RGB111Lib.decodeFromCanvas remains only as a last-ditch fallback below.
+      if (typeof ScannerUI !== 'undefined' && ScannerUI.showPhotoScanner && ScannerUI.onDecode) {
+        // showPhotoScanner builds its own modal; don't show ours.
+        // Results are delivered via the onDecode-registered callback.
+        ScannerUI.onDecode(function(hex, result) {
+          if (hex) {
+            decodeChromaResult(hex, result && result.variant);
+          }
+        });
+        ScannerUI.showPhotoScanner();
+        return;
+      }
+
+      // Fallback only if ScannerUI is unavailable.
       modal.innerHTML = `
         <div style="color:white;text-align:center;margin-bottom:16px;">Select ChromaCoord image</div>
         <input type="file" id="chromaFileInput" accept="image/*" style="display:none;">
