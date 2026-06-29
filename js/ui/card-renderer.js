@@ -5057,38 +5057,51 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // Detect mobile for camera-lock strategy
       var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } })
-        .then(s => {
-          stream = s;
-          video.srcObject = stream;
-          video.onloadedmetadata = () => {
-            if (cvReady) {
-              status.textContent = 'Scanning — or tap the code to decode';
-            } else {
-              status.textContent = 'Loading perspective engine... point camera at code';
-            }
-            
-            // On mobile: let auto-exposure settle, then lock camera settings.
-            // Scanning starts immediately (no blocking delay) but camera lock 
-            // helps stabilize colors once the auto-exposure has adapted.
-            // On desktop: skip entirely (USB cameras don't benefit from this).
-            if (isMobile) {
-              cameraSettled = false;
-              setTimeout(function() {
-                cameraSettled = true;
-                var videoTrack = stream.getVideoTracks()[0];
-                if (videoTrack) tryLockCameraSettings(videoTrack);
-                console.log('[ChromaScan] Camera settled after ' + SETTLE_MS + 'ms — exposure locked');
-              }, SETTLE_MS);
-            } else {
-              cameraSettled = true; // desktop: no settle needed
-            }
-            
-            autoScanLoop();
-          };
-        })
+      // Camera start. The barcode scanner (which works) requests only
+      // { facingMode: 'environment' }; adding width/height ideal constraints here
+      // caused "Timeout starting video source" on some devices because the source
+      // renegotiates resolution. Request the simple constraints first; only if that
+      // somehow fails do we retry with an even barer constraint.
+      function onStream(s) {
+        stream = s;
+        video.srcObject = stream;
+        video.onloadedmetadata = () => {
+          if (cvReady) {
+            status.textContent = 'Scanning — or tap the code to decode';
+          } else {
+            status.textContent = 'Loading perspective engine... point camera at code';
+          }
+          
+          // On mobile: let auto-exposure settle, then lock camera settings.
+          // Scanning starts immediately (no blocking delay) but camera lock 
+          // helps stabilize colors once the auto-exposure has adapted.
+          // On desktop: skip entirely (USB cameras don't benefit from this).
+          if (isMobile) {
+            cameraSettled = false;
+            setTimeout(function() {
+              cameraSettled = true;
+              var videoTrack = stream.getVideoTracks()[0];
+              if (videoTrack) tryLockCameraSettings(videoTrack);
+              console.log('[ChromaScan] Camera settled after ' + SETTLE_MS + 'ms — exposure locked');
+            }, SETTLE_MS);
+          } else {
+            cameraSettled = true; // desktop: no settle needed
+          }
+          
+          autoScanLoop();
+        };
+      }
+      
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+        .then(onStream)
         .catch(err => {
-          status.textContent = 'Camera error: ' + err.message;
+          console.warn('[ChromaScan] environment camera failed (' + err.message + '), retrying with any camera');
+          // Fallback: any available camera, no facing/resolution constraints.
+          navigator.mediaDevices.getUserMedia({ video: true })
+            .then(onStream)
+            .catch(err2 => {
+              status.textContent = 'Camera error: ' + err2.message;
+            });
         });
       
       var recentDecodes = []; // rolling window for confidence tracking
@@ -5474,61 +5487,71 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   // diamond detected at scan time. Until detected it passes 'standard'.
   function decodeChromaResult(hexCode, variant) {
     variant = variant || 'standard';
-    if (variant === 'healpix') {
-      const hpKey = 'hpchromacoord';
-      if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
-      try {
-        const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), obfuscated);
-        if (coord && Array.isArray(coord)) {
-          setCoordinate(coord[0], coord[1]);
-          const map = callbacks.getMap ? callbacks.getMap() : null;
-          if (map) map.setView([coord[0], coord[1]], 16, { animate: true });
-          showToast('Decoded: ' + hexCode);
-          showDecodeBanner(hpKey, hexCode, coord[0], coord[1]);
-          return;
+    // A scanned swatch is a FINISHED artifact: the hex it carries is final, and
+    // the swatch carries no obfuscation marker. The live `obfuscated` UI toggle
+    // describes how the user is currently VIEWING the card — it must not be applied
+    // to a scanned image, or a correct bare code gets de-obfuscated into a wrong one
+    // (e.g. 957DBDF2103C → BF20281FC49A → wrong location). Decode literally: force
+    // obfuscation OFF for the duration of the decode, then restore the UI state.
+    // (An intentionally-obfuscated swatch is the rare case and would need its own
+    // marker; the common swatch is bare hex.)
+    const _obfSaved = obfuscated;
+    obfuscated = false;
+    try {
+      if (variant === 'healpix') {
+        const hpKey = 'hpchromacoord';
+        if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
+        try {
+          const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), false);
+          if (coord && Array.isArray(coord)) {
+            setCoordinate(coord[0], coord[1]);
+            const map = callbacks.getMap ? callbacks.getMap() : null;
+            if (map) map.setView([coord[0], coord[1]], 16, { animate: true });
+            showToast('Decoded: ' + hexCode);
+            showDecodeBanner(hpKey, hexCode, coord[0], coord[1]);
+            return;
+          }
+          showToast('Invalid HEALPix ChromaCoord');
+        } catch (e) {
+          console.error('[CardRenderer] HEALPix ChromaCoord decode error:', e);
+          showToast('Decode error');
         }
-        showToast('Invalid HEALPix ChromaCoord');
+        return;
+      }
+      const gridKey = 'chromacoord';
+      const gridDef = CARD_GRIDS[gridKey];
+      if (!gridDef) {
+        showToast('ChromaCoord not configured');
+        return;
+      }
+      
+      try {
+        const shuffled = getShuffledGrid(gridKey);
+        const grid2D = shuffled.grid;
+        
+        let workingCode = hexCode.toUpperCase();
+        // No de-obfuscation: scanned swatch is decoded as-is (see note above).
+        
+        if (typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
+          const result = GeoCodec.decodeHierarchical(workingCode, grid2D, gridDef.fixedIterations || gridDef.defaultIterations || 6);
+          if (result) {
+            setCoordinate(result[0], result[1]);
+            
+            const map = callbacks.getMap ? callbacks.getMap() : null;
+            if (map) map.setView([result[0], result[1]], 16, { animate: true });
+            
+            showToast('Decoded: ' + hexCode);
+            showDecodeBanner(gridKey, hexCode, result[0], result[1]);
+            return;
+          }
+        }
+        showToast('Invalid ChromaCoord');
       } catch (e) {
-        console.error('[CardRenderer] HEALPix ChromaCoord decode error:', e);
+        console.error('[CardRenderer] ChromaCoord decode error:', e);
         showToast('Decode error');
       }
-      return;
-    }
-    const gridKey = 'chromacoord';
-    const gridDef = CARD_GRIDS[gridKey];
-    if (!gridDef) {
-      showToast('ChromaCoord not configured');
-      return;
-    }
-    
-    try {
-      const shuffled = getShuffledGrid(gridKey);
-      const grid2D = shuffled.grid;
-      const flat = grid2D.flat();
-      
-      let workingCode = hexCode.toUpperCase();
-      
-      if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
-        workingCode = GeoCodec.applyObfuscation('decode', workingCode, flat);
-      }
-      
-      if (typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
-        const result = GeoCodec.decodeHierarchical(workingCode, grid2D, gridDef.fixedIterations || gridDef.defaultIterations || 6);
-        if (result) {
-          setCoordinate(result[0], result[1]);
-          
-          const map = callbacks.getMap ? callbacks.getMap() : null;
-          if (map) map.setView([result[0], result[1]], 16, { animate: true });
-          
-          showToast('Decoded: ' + hexCode);
-          showDecodeBanner(gridKey, hexCode, result[0], result[1]);
-          return;
-        }
-      }
-      showToast('Invalid ChromaCoord');
-    } catch (e) {
-      console.error('[CardRenderer] ChromaCoord decode error:', e);
-      showToast('Decode error');
+    } finally {
+      obfuscated = _obfSaved;
     }
   }
 
