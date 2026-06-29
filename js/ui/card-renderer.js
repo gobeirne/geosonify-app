@@ -4321,8 +4321,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // the +/− stepper refines the cell), but the board is not a visual hierarchy
       // — a finer code re-ranks the whole position rather than refining one corner.
       const chessHierNote = 'The underlying hex code is hierarchical — each character refines the cell, which is what the +/− stepper changes. The board itself isn\u2019t a visual hierarchy: it re-ranks as a whole, so a finer code redraws the whole position rather than refining one corner.';
+      // RGB111 ChromaCoord: 16 cells, each a 3-bit RGB primary (8 colours), so
+      // 48 bits total — NOT "256 colours / N cells". The generic fixed-precision
+      // wording (rows*cols colours) is wrong for chroma, so give it its own note.
+      const isChromaDisplay = (gridDef && gridDef.display === 'chroma') || presentDisplay === 'chroma';
+      const chromaFixedNote = 'Fixed precision — 16 RGB111 cells, each one of 8 colours (3 bits), for 48 bits total. The whole swatch encodes the location at once; it isn\u2019t a hierarchy, so there\u2019s no +/− refinement.';
       const baseNote = isFixedPrecision
-          ? 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).'
+          ? (isChromaDisplay ? chromaFixedNote
+             : 'Fixed precision — ' + (rows * cols) + ' colours, ' + iterations + ' cells. Each cell refines the location ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).')
           : (presentDisplay === 'chessboard' ? chessHierNote
              : 'Hierarchical — each character refines the cell ' + (rows * cols) + '× (a ' + cols + '×' + rows + ' split).');
       GISGrids.renderResolutionPopup({
