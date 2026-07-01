@@ -5487,71 +5487,66 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   // diamond detected at scan time. Until detected it passes 'standard'.
   function decodeChromaResult(hexCode, variant) {
     variant = variant || 'standard';
-    // A scanned swatch is a FINISHED artifact: the hex it carries is final, and
-    // the swatch carries no obfuscation marker. The live `obfuscated` UI toggle
-    // describes how the user is currently VIEWING the card — it must not be applied
-    // to a scanned image, or a correct bare code gets de-obfuscated into a wrong one
-    // (e.g. 957DBDF2103C → BF20281FC49A → wrong location). Decode literally: force
-    // obfuscation OFF for the duration of the decode, then restore the UI state.
-    // (An intentionally-obfuscated swatch is the rare case and would need its own
-    // marker; the common swatch is bare hex.)
-    const _obfSaved = obfuscated;
-    obfuscated = false;
-    try {
-      if (variant === 'healpix') {
-        const hpKey = 'hpchromacoord';
-        if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
-        try {
-          const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), false);
-          if (coord && Array.isArray(coord)) {
-            setCoordinate(coord[0], coord[1]);
-            const map = callbacks.getMap ? callbacks.getMap() : null;
-            if (map) map.setView([coord[0], coord[1]], 16, { animate: true });
-            showToast('Decoded: ' + hexCode);
-            showDecodeBanner(hpKey, hexCode, coord[0], coord[1]);
-            return;
-          }
-          showToast('Invalid HEALPix ChromaCoord');
-        } catch (e) {
-          console.error('[CardRenderer] HEALPix ChromaCoord decode error:', e);
-          showToast('Decode error');
-        }
-        return;
-      }
-      const gridKey = 'chromacoord';
-      const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef) {
-        showToast('ChromaCoord not configured');
-        return;
-      }
-      
+    // The swatch carries no obfuscation marker, so the live `obfuscated` toggle is
+    // the user's declaration of how to read it: with obfuscation ON, a scanned
+    // swatch is de-obfuscated (the deliberate "scan something I know is obfuscated"
+    // use case); with it OFF, the hex is read literally. This mirrors how typing a
+    // code behaves, so scan and type stay consistent.
+    if (variant === 'healpix') {
+      const hpKey = 'hpchromacoord';
+      if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
       try {
-        const shuffled = getShuffledGrid(gridKey);
-        const grid2D = shuffled.grid;
-        
-        let workingCode = hexCode.toUpperCase();
-        // No de-obfuscation: scanned swatch is decoded as-is (see note above).
-        
-        if (typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
-          const result = GeoCodec.decodeHierarchical(workingCode, grid2D, gridDef.fixedIterations || gridDef.defaultIterations || 6);
-          if (result) {
-            setCoordinate(result[0], result[1]);
-            
-            const map = callbacks.getMap ? callbacks.getMap() : null;
-            if (map) map.setView([result[0], result[1]], 16, { animate: true });
-            
-            showToast('Decoded: ' + hexCode);
-            showDecodeBanner(gridKey, hexCode, result[0], result[1]);
-            return;
-          }
+        const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), obfuscated);
+        if (coord && Array.isArray(coord)) {
+          setCoordinate(coord[0], coord[1]);
+          const map = callbacks.getMap ? callbacks.getMap() : null;
+          if (map) map.setView([coord[0], coord[1]], 16, { animate: true });
+          showToast('Decoded: ' + hexCode);
+          showDecodeBanner(hpKey, hexCode, coord[0], coord[1]);
+          return;
         }
-        showToast('Invalid ChromaCoord');
+        showToast('Invalid HEALPix ChromaCoord');
       } catch (e) {
-        console.error('[CardRenderer] ChromaCoord decode error:', e);
+        console.error('[CardRenderer] HEALPix ChromaCoord decode error:', e);
         showToast('Decode error');
       }
-    } finally {
-      obfuscated = _obfSaved;
+      return;
+    }
+    const gridKey = 'chromacoord';
+    const gridDef = CARD_GRIDS[gridKey];
+    if (!gridDef) {
+      showToast('ChromaCoord not configured');
+      return;
+    }
+    
+    try {
+      const shuffled = getShuffledGrid(gridKey);
+      const grid2D = shuffled.grid;
+      const flat = grid2D.flat();
+      
+      let workingCode = hexCode.toUpperCase();
+      
+      if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+        workingCode = GeoCodec.applyObfuscation('decode', workingCode, flat);
+      }
+      
+      if (typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
+        const result = GeoCodec.decodeHierarchical(workingCode, grid2D, gridDef.fixedIterations || gridDef.defaultIterations || 6);
+        if (result) {
+          setCoordinate(result[0], result[1]);
+          
+          const map = callbacks.getMap ? callbacks.getMap() : null;
+          if (map) map.setView([result[0], result[1]], 16, { animate: true });
+          
+          showToast('Decoded: ' + hexCode);
+          showDecodeBanner(gridKey, hexCode, result[0], result[1]);
+          return;
+        }
+      }
+      showToast('Invalid ChromaCoord');
+    } catch (e) {
+      console.error('[CardRenderer] ChromaCoord decode error:', e);
+      showToast('Decode error');
     }
   }
 
