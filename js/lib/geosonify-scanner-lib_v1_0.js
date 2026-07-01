@@ -875,7 +875,7 @@
 
   // ========== DIAGONAL DETECTION ==========
   
-  function detectDiagonal(imageData, cx, cy, cellSize, isInner, row, col) {
+  function detectDiagonal(imageData, cx, cy, cellSize, isInner, row, col, isHealpix) {
     var margin = 0.3;
     var sR = Math.max(3, cellSize * 0.12);
     var offset = cellSize * (0.5 - margin);
@@ -891,7 +891,12 @@
     // the centre, so the opposite corner carries the same colour — keeping the
     // diagonal test honest without diamond contamination. (row,col passed so we
     // know which corner faces in.)
-    if (isInner) {
+    // CRITICAL: only do this for HEALPix swatches, which actually HAVE the diamond.
+    // On a STANDARD swatch there is no diamond, and overwriting a real corner with
+    // its opposite collapses a genuine K/W diagonal into a false "solid" — e.g.
+    // Prague cell[1,2] (a K split cyan/yellow) was read as solid C. Standard inner
+    // cells must keep all four real corners.
+    if (isInner && isHealpix) {
       var towardRight = col < 1.5, towardBottom = row < 1.5;
       if (towardRight && towardBottom) br = tl;        // BR faces centre
       else if (!towardRight && towardBottom) bl = tr;  // BL faces centre
@@ -1259,8 +1264,9 @@
 
   // ========== GRID DECODING ==========
   
-  function decodeGridWithValidation(imageData, size) {
+  function decodeGridWithValidation(imageData, size, variant) {
     var cellSize = size / 4;
+    var isHealpix = (variant === 'healpix');
     var samples = [];
     
     for (var row = 0; row < 4; row++) {
@@ -1283,7 +1289,7 @@
         var trueCx = (col + 0.5) * cellSize;
         var trueCy = (row + 0.5) * cellSize;
         var color = sampleRegion(imageData, cx, cy, cellSize * (isInner ? 0.14 : 0.2));
-        var diagonal = detectDiagonal(imageData, trueCx, trueCy, cellSize, isInner, row, col);
+        var diagonal = detectDiagonal(imageData, trueCx, trueCy, cellSize, isInner, row, col, isHealpix);
         samples.push({ row: row, col: col, cx: trueCx, cy: trueCy, r: color[0], g: color[1], b: color[2], diagonal: diagonal });
       }
     }
@@ -1706,7 +1712,7 @@
         currentData = rotateImageData90(currentData);
       }
       
-      result = decodeGridWithValidation(currentData, size);
+      result = decodeGridWithValidation(currentData, size, variant);
       
       if (rotation === 0) firstResult = result;
       
