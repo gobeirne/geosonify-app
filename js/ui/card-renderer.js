@@ -4378,13 +4378,19 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       bip39korean: 'bipko', bip39chinesesimplified: 'bipzhs', bip39chinesetraditional: 'bipzht',
       qrhex: 'h', datamatrix: 'h'  // barcode hex cards use hexbyte param
     };
-    // Chess cards are a PRESENTATION of a sibling's hex code (chessOf), so they
-    // share with the SIBLING's param, not raw. chessboard→hexbyte ('h');
-    // hpchessboard→hphex (HEALPix). Resolve the sibling recursively.
+    // Chess AND Chroma cards are a PRESENTATION of a sibling's code (chessOf /
+    // chromaOf), so they share with the SIBLING's param, not raw. chessboard→hexbyte
+    // ('h'); hpchessboard→hphex; chromacoord→hexbyte; hpchromacoord→hphex (HEALPix).
+    // Resolve the sibling recursively through whichever presentation link exists.
+    // (hpchromacoord used chromaOf:'hphex' but only chessOf was followed here, so it
+    // missed the HEALPix branch below and fell through to prefix='r' → ?r=<hphex>.)
     let prefixKey = gridKey;
     {
       let g = CARD_GRIDS[gridKey], guard = 0;
-      while (g && g.chessOf && guard++ < 4) { prefixKey = g.chessOf; g = CARD_GRIDS[g.chessOf]; }
+      while (g && (g.chessOf || g.chromaOf) && guard++ < 4) {
+        prefixKey = g.chessOf || g.chromaOf;
+        g = CARD_GRIDS[prefixKey];
+      }
     }
 
     // HEALPix-backed card (e.g. hphex itself, or hpchessboard via chessOf→hphex):
@@ -5494,9 +5500,24 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     // code behaves, so scan and type stay consistent.
     if (variant === 'healpix') {
       const hpKey = 'hpchromacoord';
-      if (!CARD_GRIDS[hpKey]) { showToast('HEALPix ChromaCoord not configured'); return; }
+      const hpDef = CARD_GRIDS[hpKey];
+      if (!hpDef) { showToast('HEALPix ChromaCoord not configured'); return; }
       try {
-        const coord = decodeCardCode(hpKey, hexCode.toUpperCase(), obfuscated);
+        // A HEALPix ChromaCoord swatch is ALWAYS an order-22 hphex (its
+        // fixedIterations). Decode at that fixed order — do NOT route through
+        // decodeCardCode, which inherits cardState.iterations[hpKey] (the card's
+        // live stepper). On a scan that stepper is whatever the card was last left
+        // at, so a correctly-read hex (e.g. 0B2F28FDD22E) would decode at the wrong
+        // order and land in the wrong place — exactly the reported bug, and why
+        // TYPING into the card (order already correct) worked while scanning didn't.
+        const scheme = hpDef.healpix || 'hphex';
+        const order = hpDef.fixedIterations || 22;
+        const opt = {};
+        if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
+        if (obfuscated) { opt.obf = true; }
+        const coord = (typeof HealpixGrids !== 'undefined')
+          ? HealpixGrids.decode(scheme, hexCode.toUpperCase(), order, opt)
+          : null;
         if (coord && Array.isArray(coord)) {
           setCoordinate(coord[0], coord[1]);
           const map = callbacks.getMap ? callbacks.getMap() : null;
