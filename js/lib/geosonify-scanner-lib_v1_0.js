@@ -27,7 +27,7 @@
 (function(global) {
   'use strict';
   
-  var __SCANNER_VERSION__ = 'v2.8';
+  var __SCANNER_VERSION__ = 'v2.9';
   
   // Logging function - can be overridden
   var _logFn = function(msg) { 
@@ -157,6 +157,85 @@
   
   function colorDistance(c1, c2) {
     return Math.sqrt(Math.pow(c1[0]-c2[0],2) + Math.pow(c1[1]-c2[1],2) + Math.pow(c1[2]-c2[2],2));
+  }
+
+  // ========== COLOUR NORMALIZATION (camera white-balance / exposure fix) ==========
+  //
+  // Camera auto-white-balance and auto-exposure desaturate the swatch: blacks
+  // lift, whites compress, and a colour cast scales the channels unevenly. The
+  // 8 target colours then collapse toward each other in Lab space and the
+  // clustering can no longer separate them (the "one giant cluster of 9 cells
+  // all assigned Y" failure). The swatch itself is the calibration target: by
+  // construction every palette colour has each RGB channel at 0 or 255, so a
+  // 16-cell grid almost always contains both extremes of every channel.
+  // Stretching each channel so its observed low/high percentiles map back to
+  // 0/255 simultaneously undoes the black lift, the gain loss, AND the
+  // per-channel white-balance cast. On an already-clean image the percentiles
+  // are already ~0/255 so the stretch is a near-identity (safe to run always).
+  function normalizeSwatchColors(imageData) {
+    var d = imageData.data;
+    var n = imageData.width * imageData.height;
+    // Build per-channel histograms (sampled) and take robust percentiles.
+    var hist = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
+    var step = n > 40000 ? 2 : 1; // sample every 2nd pixel on big images
+    var count = 0;
+    for (var i = 0; i < n; i += step) {
+      var p = i * 4;
+      hist[0][d[p]]++; hist[1][d[p + 1]]++; hist[2][d[p + 2]]++;
+      count++;
+    }
+    var lo = [0, 0, 0], hi = [255, 255, 255];
+    var loTarget = count * 0.02, hiTarget = count * 0.98;
+    for (var ch = 0; ch < 3; ch++) {
+      var acc = 0;
+      for (var v = 0; v < 256; v++) {
+        acc += hist[ch][v];
+        if (acc >= loTarget) { lo[ch] = v; break; }
+      }
+      acc = 0;
+      for (var v2 = 0; v2 < 256; v2++) {
+        acc += hist[ch][v2];
+        if (acc >= hiTarget) { hi[ch] = v2; break; }
+      }
+      // Guard degenerate channels (nearly flat) — leave them untouched.
+      if (hi[ch] - lo[ch] < 30) { lo[ch] = 0; hi[ch] = 255; }
+    }
+    // Near-identity? Skip the copy.
+    if (lo[0] < 8 && lo[1] < 8 && lo[2] < 8 && hi[0] > 247 && hi[1] > 247 && hi[2] > 247) {
+      return null; // caller treats null as "already canonical"
+    }
+    log('Normalizing colours: R[' + lo[0] + '-' + hi[0] + '] G[' + lo[1] + '-' + hi[1] + '] B[' + lo[2] + '-' + hi[2] + '] → [0-255]');
+    var out = new ImageData(new Uint8ClampedArray(d), imageData.width, imageData.height);
+    var od = out.data;
+    var scale = [255 / (hi[0] - lo[0]), 255 / (hi[1] - lo[1]), 255 / (hi[2] - lo[2])];
+    for (var j = 0; j < n; j++) {
+      var q = j * 4;
+      od[q]     = Math.max(0, Math.min(255, (od[q]     - lo[0]) * scale[0]));
+      od[q + 1] = Math.max(0, Math.min(255, (od[q + 1] - lo[1]) * scale[1]));
+      od[q + 2] = Math.max(0, Math.min(255, (od[q + 2] - lo[2]) * scale[2]));
+    }
+    return out;
+  }
+
+  // Average N same-size ImageData frames (temporal fusion). Auto-exposure
+  // varies frame to frame, so per-pixel sensor noise and exposure flicker
+  // average out; a cell ambiguous in one frame is clear in the mean.
+  function averageImageData(frames) {
+    if (!frames || frames.length === 0) return null;
+    if (frames.length === 1) return frames[0];
+    var w = frames[0].width, h = frames[0].height;
+    var acc = new Float32Array(w * h * 4);
+    var used = 0;
+    for (var f = 0; f < frames.length; f++) {
+      if (!frames[f] || frames[f].width !== w || frames[f].height !== h) continue;
+      var d = frames[f].data;
+      for (var i = 0; i < acc.length; i++) acc[i] += d[i];
+      used++;
+    }
+    if (used === 0) return null;
+    var out = new ImageData(w, h);
+    for (var j = 0; j < acc.length; j++) out.data[j] = acc[j] / used;
+    return out;
   }
 
   // Detect the HEALPix ChromaCoord's centre black diamond on a perspective-
@@ -1223,21 +1302,55 @@
         });
       });
       
+      // Per-cell ranked candidates from the CELL'S OWN Lab value (not just the
+      // cluster centroid). Inside a big desaturated cluster the centroid hides
+      // per-cell differences: a cell can sit much closer to a different target
+      // than its cluster does. These per-cell rankings — assigned colour first,
+      // then nearest others with distances — feed the confidence-ranked bounded
+      // search, so an ambiguous cell has real, individual alternatives instead
+      // of one shared cluster-level guess.
+      function rankOwnCandidates(lab, assignedColor) {
+        var ranked = [];
+        Object.keys(TARGET_COLORS_LAB).forEach(function(colorName) {
+          ranked.push({ color: colorName, dist: labDistance(lab, TARGET_COLORS_LAB[colorName]) });
+        });
+        ranked.sort(function(a, b) { return a.dist - b.dist; });
+        var assignedDist = null;
+        ranked.forEach(function(r) { if (r.color === assignedColor) assignedDist = r.dist; });
+        var others = ranked.filter(function(r) { return r.color !== assignedColor; });
+        return {
+          ranked: ranked,
+          assignedDist: assignedDist !== null ? assignedDist : ranked[0].dist,
+          // margin: how much farther the best NON-assigned colour is. Small or
+          // negative margin = low confidence in the assignment.
+          margin: (others[0] ? others[0].dist : 999) - (assignedDist !== null ? assignedDist : ranked[0].dist),
+          alternatives: others.slice(0, 2).filter(function(r) { return r.dist < 120; })
+        };
+      }
+      
       if (myCluster) {
+        var ownC = rankOwnCandidates(ls.lab, myCluster.assignedColor);
+        var clusterAlts = (myCluster.alternatives || []).slice();
+        // Merge cluster-level alternatives with per-cell nearest colours
+        ownC.alternatives.forEach(function(a) {
+          if (clusterAlts.indexOf(a.color) === -1) clusterAlts.push(a.color);
+        });
         return {
           sample: ls.sample,
           lab: ls.lab,
           color: myCluster.assignedColor,
           bits: COLOR_TO_BITS[myCluster.assignedColor],
           confidence: 100 - myCluster.avgDistFromIdeal,
-          ambiguous: myCluster.ambiguous || false,
-          alternatives: myCluster.alternatives || []
+          margin: ownC.margin,
+          ambiguous: myCluster.ambiguous || ownC.margin < 20,
+          alternatives: clusterAlts.slice(0, 2),
+          altDetail: ownC.alternatives
         };
       }
       
-      var best = findNearestColor(ls.lab);
-      var secondBest = findSecondNearestColor(ls.lab, best.color);
-      var isAmbiguous = (secondBest && (secondBest.dist - best.dist) < 20);
+      var ownB = rankOwnCandidates(ls.lab, null);
+      var best = ownB.ranked[0];
+      var isAmbiguous = (ownB.ranked[1] && (ownB.ranked[1].dist - best.dist) < 20);
       
       return {
         sample: ls.sample,
@@ -1245,16 +1358,22 @@
         color: best.color,
         bits: COLOR_TO_BITS[best.color],
         confidence: 100 - best.dist,
+        margin: ownB.ranked[1] ? ownB.ranked[1].dist - best.dist : 999,
         ambiguous: isAmbiguous,
-        alternatives: isAmbiguous && secondBest ? [secondBest.color] : []
+        alternatives: ownB.ranked.slice(1, 3).filter(function(r) { return r.dist < 120; }).map(function(r) { return r.color; }),
+        altDetail: ownB.ranked.slice(1, 3)
       };
     });
     
-    log('=== Final Assignments ===');
+    log('=== Final Assignments (per-cell confidence) ===');
     assignments.forEach(function(a, idx) {
       if (!labSamples[idx].isDiagonal) {
         var row = Math.floor(idx / 4), col = idx % 4;
-        log('Cell [' + row + ',' + col + ']: ' + a.color + ' (' + a.bits + ')' + 
+        var altStr = (a.altDetail || []).map(function(r) { return r.color + '@' + r.dist.toFixed(0); }).join(' ');
+        log('Cell [' + row + ',' + col + ']: ' + a.color + ' (' + a.bits + ')' +
+            ' L=' + a.lab[0].toFixed(0) + ' a=' + a.lab[1].toFixed(0) + ' b=' + a.lab[2].toFixed(0) +
+            ' margin=' + (a.margin !== undefined ? a.margin.toFixed(0) : '—') +
+            (altStr ? ' alt: ' + altStr : '') +
             (a.ambiguous ? ' ⚠️' : ''));
       }
     });
@@ -1264,7 +1383,17 @@
 
   // ========== GRID DECODING ==========
   
-  function decodeGridWithValidation(imageData, size, variant) {
+  function decodeGridWithValidation(imageData, size, variant, options) {
+    options = options || {};
+    // allowRecovery gates the CRC-guided flip searches. Default TRUE (single
+    // deliberate images: photo upload / manual tap — one shot, result shown to
+    // the user, flagged bruteForced/crcCorrected). The live auto-scan loop
+    // passes FALSE: measured across simulated camera streams, the recovery
+    // search contributed zero additional correct locks there (the normalized /
+    // fused passes always lock within a few frames) while being the only
+    // remaining source of systematically-repeatable WRONG locks under extreme
+    // degradation. On a many-frames-per-second loop, patience beats guessing.
+    var allowRecovery = options.allowRecovery !== false;
     var cellSize = size / 4;
     var isHealpix = (variant === 'healpix');
     var samples = [];
@@ -1310,9 +1439,12 @@
       if (!samples[idx].isDiagonal) {
         samples[idx].bits = a.bits;
         samples[idx].name = a.color;
+        samples[idx].lab = a.lab;
         samples[idx].confidence = a.confidence;
+        samples[idx].margin = a.margin;
         samples[idx].ambiguous = a.ambiguous;
         samples[idx].alternatives = a.alternatives;
+        samples[idx].altDetail = a.altDetail;
       }
     });
     
@@ -1336,7 +1468,7 @@
         ' B=' + expectedNotches.bottom + ' L=' + expectedNotches.left);
     log('Validation: ' + matches + '/' + comparisons + ' match → ' + (valid ? 'VALID ✓' : 'invalid'));
     
-    if (!valid && comparisons >= 2) {
+    if (!valid && allowRecovery && comparisons >= 2) {
       log('=== Trying alternative assignments ===');
       // Guard: require at least 2 initial notch matches before brute-forcing.
       // With CRC-8 (256 values), each attempt has a 1/256 chance of a false match.
@@ -1344,7 +1476,7 @@
       // to find a false match almost every time. Requiring 2+ initial matches means
       // the clustering is at least partially right, reducing false positive risk.
       if (matches >= 2) {
-        var altResult = tryAlternativeAssignments(samples, notchResult);
+        var altResult = tryAlternativeAssignments(samples, notchResult, matches);
         if (altResult) return altResult;
       } else {
         log('Skipping alternatives — only ' + matches + '/' + comparisons + ' initial notch matches');
@@ -1356,7 +1488,7 @@
     // ~13 cells × 5 colors = 65 per rotation × 4 rotations = 260 attempts.
     // With CRC-8 that's ~100% false positive if notch detection is wrong,
     // so we require 3+ notch matches to ensure notches are reliable.
-    if (!valid && matches >= 3 && comparisons >= 3) {
+    if (!valid && allowRecovery && matches >= 3 && comparisons >= 3) {
       log('=== Trying CRC-guided color correction ===');
       var crcResult = tryCrcGuidedCorrection(samples, notchResult, imageData, size);
       if (crcResult) return crcResult;
@@ -1374,54 +1506,101 @@
     };
   }
   
-  function tryAlternativeAssignments(samples, notchResult) {
+  function tryAlternativeAssignments(samples, notchResult, initialMatches) {
     // First try cluster-level swaps (if an entire cluster is marked ambiguous)
     var clusterResult = tryClusterSwaps(samples, notchResult);
     if (clusterResult) return clusterResult;
     
-    // Then try individual cell alternatives
-    var ambiguousCells = [];
+    // === Confidence-ranked bounded search ===
+    // Replaces the old blind 2^N enumeration that BAILED at >4 ambiguous cells
+    // (exactly when a washed-out camera frame needs help most). Cells are
+    // ranked by confidence margin (distance gap between the assigned colour
+    // and the cell's own best alternative) and flip-combinations are tried in
+    // order of increasing cost.
+    //
+    // FALSE-POSITIVE CALIBRATION (measured, not guessed): the notch CRC-8 has
+    // only 256 values, so with enough flip attempts the search WILL find a
+    // wrong payload whose CRC matches the detected notches — a near-miss wrong
+    // answer that repeats systematically across frames (so cross-frame
+    // confirmation alone cannot catch it). Guards, in proportion to evidence:
+    //   - alternatives must be near-ties (the cell genuinely could be either
+    //     colour: altDist − assignedDist < 30)
+    //   - 1-flip corrections: allowed at ≥2 initial notch matches (≤12
+    //     attempts ≈ 5% FP per reached rotation)
+    //   - 2-flip corrections: only at ≥3 initial notch matches, i.e. the read
+    //     is already almost right (≤24 attempts total)
+    //   - no 3-flip combos: measured to produce wrong-valid results at high
+    //     rate under heavy degradation while contributing no true positives
+    // Results are tagged bruteForced:true so the live-camera path can demand a
+    // confirming read before acting on them.
+    var NEAR_TIE = 30;
+    var candidates = [];
     samples.forEach(function(s, idx) {
-      if (s.ambiguous && s.alternatives && s.alternatives.length > 0) {
-        ambiguousCells.push({ idx: idx, original: s.bits, alternatives: s.alternatives });
+      if (s.isDiagonal) return;
+      var assignedDist = null;
+      if (s.altDetail && s.lab) {
+        assignedDist = labDistance(s.lab, TARGET_COLORS_LAB[s.name] || TARGET_COLORS_LAB.R);
       }
+      var alts = (s.altDetail || [])
+        .filter(function(a) { return assignedDist === null || (a.dist - assignedDist) < NEAR_TIE; })
+        .slice(0, 2);
+      if (alts.length === 0 && s.ambiguous && s.alternatives && s.alternatives.length > 0) {
+        // legacy path: cluster-level alternative without distances
+        alts = [{ color: s.alternatives[0], dist: 0 }];
+      }
+      if (alts.length === 0) return;
+      var margin = (s.margin !== undefined) ? s.margin : 30;
+      if (!s.ambiguous && margin > NEAR_TIE) return;
+      candidates.push({ idx: idx, margin: margin, alternatives: alts });
     });
     
-    if (ambiguousCells.length === 0) {
+    if (candidates.length === 0) {
       log('No ambiguous cells to try');
       return null;
     }
     
-    log('Found ' + ambiguousCells.length + ' ambiguous cells');
+    // Least-confident first; keep at most the 6 shakiest cells in play.
+    candidates.sort(function(a, b) { return a.margin - b.margin; });
+    candidates = candidates.slice(0, 6);
+    log('Bounded search over ' + candidates.length + ' low-confidence cells (margins: ' +
+        candidates.map(function(c) { return '[' + Math.floor(c.idx/4) + ',' + (c.idx%4) + ']' + c.margin.toFixed(0); }).join(' ') + ')');
     
-    // Cap: with CRC-8 (256 values), 2^N attempts per rotation × 4 rotations
-    // must stay well under 256 to avoid false positives.
-    // 4 ambiguous cells = 16 combos × 4 rotations = 64 attempts → ~25% FP rate (acceptable)
-    // 5 ambiguous cells = 32 combos × 4 rotations = 128 attempts → ~50% FP rate (too high)
-    if (ambiguousCells.length > 4) {
-      log('Too many ambiguous cells (' + ambiguousCells.length + ') — skipping brute-force');
-      return null;
+    var combos = [];
+    var n = candidates.length;
+    function altCost(cand, ai) { return Math.max(0, cand.margin) + ai * 15; }
+    for (var i = 0; i < n; i++) {
+      for (var ai = 0; ai < candidates[i].alternatives.length; ai++) {
+        combos.push({ flips: [[i, ai]], cost: altCost(candidates[i], ai) });
+      }
     }
+    if (initialMatches >= 3) {
+      for (var i2 = 0; i2 < n; i2++) for (var j2 = i2 + 1; j2 < n; j2++) {
+        // 2-cell flips: first alternatives only, and only when the read was
+        // already nearly right (3 of 4 notches agreed before any flip)
+        combos.push({ flips: [[i2, 0], [j2, 0]], cost: altCost(candidates[i2], 0) + altCost(candidates[j2], 0) + 10 });
+      }
+    }
+    combos.sort(function(a, b) { return a.cost - b.cost; });
     
-    var maxTries = Math.min(32, Math.pow(2, ambiguousCells.length));
+    var MAX_ATTEMPTS = 24;
+    var attempts = Math.min(MAX_ATTEMPTS, combos.length);
     
-    for (var tryNum = 1; tryNum < maxTries; tryNum++) {
+    for (var t = 0; t < attempts; t++) {
+      var combo = combos[t];
       var testSamples = samples.map(function(s) { return Object.assign({}, s); });
       var changes = [];
+      var ok = true;
       
-      for (var i = 0; i < ambiguousCells.length; i++) {
-        var useAlt = (tryNum >> i) & 1;
-        if (useAlt) {
-          var cell = ambiguousCells[i];
-          var altColor = cell.alternatives[0];
-          var altBits = COLOR_TO_BITS[altColor];
-          if (altBits) {
-            testSamples[cell.idx].bits = altBits;
-            testSamples[cell.idx].name = altColor;
-            changes.push('[' + Math.floor(cell.idx/4) + ',' + (cell.idx%4) + ']→' + altColor);
-          }
-        }
+      for (var f = 0; f < combo.flips.length; f++) {
+        var cand = candidates[combo.flips[f][0]];
+        var alt = cand.alternatives[combo.flips[f][1]];
+        var altBits = COLOR_TO_BITS[alt.color];
+        if (!altBits) { ok = false; break; }
+        testSamples[cand.idx].bits = altBits;
+        testSamples[cand.idx].name = alt.color;
+        changes.push('[' + Math.floor(cand.idx/4) + ',' + (cand.idx%4) + ']→' + alt.color);
       }
+      if (!ok) continue;
       
       var testBits = testSamples.map(function(s) { return s.bits; }).join('');
       var testCrc = crc8(testBits);
@@ -1434,7 +1613,7 @@
       if (notchResult.notches.left >= 0) { testComparisons++; if (notchResult.notches.left === testExpected.left) testMatches++; }
       
       if (testMatches === 4 && testComparisons === 4) {
-        log('✓ Found valid alternative: ' + changes.join(', '));
+        log('✓ Found valid alternative (attempt ' + (t + 1) + '/' + attempts + '): ' + changes.join(', '));
         return {
           bits: testBits,
           samples: testSamples,
@@ -1443,12 +1622,14 @@
           valid: true,
           matches: testMatches,
           comparisons: testComparisons,
-          rotation: 0
+          rotation: 0,
+          bruteForced: true,
+          flippedCells: combo.flips.length
         };
       }
     }
     
-    log('No valid alternatives found');
+    log('No valid alternatives found (' + attempts + ' attempts)');
     return null;
   }
   
@@ -1522,6 +1703,7 @@
           matches: testMatches,
           comparisons: testComparisons,
           rotation: 0,
+          bruteForced: true,
           clusterSwapped: true
         };
       }
@@ -1694,28 +1876,18 @@
 
   // ========== HIGH-LEVEL API ==========
   
-  function decodeFromCorrectedImage(correctedImageData) {
-    var size = correctedImageData.width;
-    var result = null;
+  // One full 4-rotation decode attempt over a single image. Returns the valid
+  // result, or { firstResult } (the rotation-0 attempt) if no rotation passed.
+  function decodeAllRotations(imageData, size, variant, options) {
+    var currentData = imageData;
     var firstResult = null;
-    var currentData = correctedImageData;
-    // The centre black diamond (if any) is rotation-invariant, so detect it once
-    // on the original corrected image and stamp every returned result. This tells
-    // the app to decode the hex as a HEALPix ChromaCoord (order-22 hphex) rather
-    // than the standard hexByte codec — without it, a correct hex is decoded by
-    // the wrong codec and the pin lands in the wrong place.
-    var variant = detectCentreVariant(correctedImageData);
-    
     for (var rotation = 0; rotation < 360; rotation += 90) {
       if (rotation > 0) {
         log('Rotated to ' + rotation + '°');
         currentData = rotateImageData90(currentData);
       }
-      
-      result = decodeGridWithValidation(currentData, size, variant);
-      
+      var result = decodeGridWithValidation(currentData, size, variant, options);
       if (rotation === 0) firstResult = result;
-      
       if (result.valid) {
         result.rotation = rotation;
         result.hex = bitsToHex(result.bits);
@@ -1723,8 +1895,66 @@
         return result;
       }
     }
+    return { valid: false, firstResult: firstResult };
+  }
+
+  function decodeFromCorrectedImage(correctedImageData, options) {
+    options = options || {};
+    var size = correctedImageData.width;
+    
+    // Colour-normalized copy (null if the image is already canonical). Camera
+    // frames are washed out by auto-WB/exposure; the normalized copy restores
+    // the 8 target colours to near-canonical positions in Lab space.
+    var normalized = null;
+    try { normalized = normalizeSwatchColors(correctedImageData); } catch (e) { log('Normalize failed: ' + e.message); }
+    
+    // The centre black diamond (if any) is rotation-invariant, so detect it once
+    // and stamp every returned result. This tells the app to decode the hex as a
+    // HEALPix ChromaCoord (order-22 hphex) rather than the standard hexByte
+    // codec — without it, a correct hex is decoded by the wrong codec and the
+    // pin lands in the wrong place.
+    // IMPORTANT: a washed-out camera frame lifts the diamond's black above the
+    // fixed <70 threshold, so check the raw image AND the normalized copy
+    // (where blacks are restored to ~0). HEALPix wins if either sees the
+    // diamond: a standard swatch's centre is a junction of vivid colours, which
+    // normalization can only make MORE vivid, never black — so a false
+    // healpix-positive is essentially impossible while the false negative from
+    // wash-out was real.
+    var variant = detectCentreVariant(correctedImageData);
+    if (variant !== 'healpix' && normalized) {
+      var variantNorm = detectCentreVariant(normalized);
+      if (variantNorm === 'healpix') {
+        log('Variant: healpix (diamond only visible after normalization — washed-out frame)');
+        variant = 'healpix';
+      }
+    }
+    
+    // PASS 1: the image as delivered. Clean saved images decode here exactly as
+    // before (zero behaviour change for the regression set).
+    var pass1 = decodeAllRotations(correctedImageData, size, variant, options);
+    if (pass1.valid) return pass1;
+    
+    // PASS 2: the colour-normalized copy. This is the camera rescue path: it
+    // re-separates desaturated colours so clustering, diagonal detection, and
+    // colour-based notch detection all get canonical input.
+    if (normalized) {
+      log('=== Pass 1 failed — retrying on colour-normalized image ===');
+      var pass2 = decodeAllRotations(normalized, size, variant, options);
+      if (pass2.valid) {
+        pass2.normalized = true;
+        return pass2;
+      }
+      // Prefer reporting the normalized rotation-0 attempt when it matched more
+      // notches than the raw one (better partial feedback for the UI).
+      if (pass2.firstResult && pass1.firstResult &&
+          (pass2.firstResult.matches || 0) > (pass1.firstResult.matches || 0)) {
+        pass1 = pass2;
+        pass1.firstResult.normalized = true;
+      }
+    }
     
     log('No valid rotation found, returning to original orientation');
+    var firstResult = pass1.firstResult;
     firstResult.rotation = 0;
     firstResult.hex = bitsToHex(firstResult.bits);
     firstResult.variant = variant;
@@ -1862,6 +2092,8 @@
     // Image enhancement
     applyContrastStretch: applyContrastStretch,
     analyzeImageBrightness: analyzeImageBrightness,
+    normalizeSwatchColors: normalizeSwatchColors,
+    averageImageData: averageImageData,
     
     // Low-level utilities
     castRays: castRays,
@@ -1901,6 +2133,6 @@
     disableLogging: function() { _logFn = null; }
   };
   
-  try { console.log('[geosonify] scanner-lib ' + __SCANNER_VERSION__ + ' loaded (smart-enhance + upscale + CRC-guided)'); } catch(e) {}
+  try { console.log('[geosonify] scanner-lib ' + __SCANNER_VERSION__ + ' loaded (colour-normalize + ranked-search + fusion)'); } catch(e) {}
 
 })(typeof window !== 'undefined' ? window : this);
