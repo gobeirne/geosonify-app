@@ -5111,6 +5111,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         });
       
       var recentDecodes = []; // rolling window for confidence tracking
+      var fusedFrames = [];   // last few perspective-corrected frames (temporal fusion)
+      var lastFusedQuad = null; // quad of the previous frame — fusion buffer resets when the pose jumps
       
       function tryDecode(probeX, probeY, isManualTap) {
         if (!scanning) return false;
@@ -5246,9 +5248,51 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           cv.imshow(corrC, dst);
           src.delete(); dst.delete(); srcPts.delete(); dstPts.delete(); M.delete();
           
-          // 5. Decode with CRC-8 validation
+          // 5. Decode with CRC-8 validation.
+          // allowRecovery: the CRC-guided flip searches (bruteForced /
+          // crcCorrected results) are only enabled for deliberate single-shot
+          // reads (manual tap). On the auto loop they measurably add zero
+          // correct locks (normalized/fused passes lock within a few frames
+          // anyway) while being the one source of systematically-repeatable
+          // WRONG locks under heavy degradation — the loop can afford to wait
+          // for a clean read instead of guessing.
           const corrData = corrC.getContext('2d').getImageData(0, 0, outSize, outSize);
-          const result = Scanner.decodeFromCorrectedImage(corrData);
+          let result = Scanner.decodeFromCorrectedImage(corrData, { allowRecovery: !!isManualTap });
+          
+          // Temporal fusion (auto-exposure varies frame to frame, so noise and
+          // exposure flicker average out across frames): keep the last few
+          // perspective-corrected frames and, when a single frame fails, decode
+          // their per-pixel average. The buffer resets whenever the detected
+          // quad jumps (user re-aimed), so only same-pose frames are fused.
+          if (typeof Scanner.averageImageData === 'function') {
+            var quadMoved = false;
+            if (lastFusedQuad) {
+              var maxShift = Math.max(
+                Math.hypot(quad.TL.x - lastFusedQuad.TL.x, quad.TL.y - lastFusedQuad.TL.y),
+                Math.hypot(quad.TR.x - lastFusedQuad.TR.x, quad.TR.y - lastFusedQuad.TR.y),
+                Math.hypot(quad.BR.x - lastFusedQuad.BR.x, quad.BR.y - lastFusedQuad.BR.y),
+                Math.hypot(quad.BL.x - lastFusedQuad.BL.x, quad.BL.y - lastFusedQuad.BL.y)
+              );
+              quadMoved = maxShift > minEdge * 0.15;
+            }
+            if (quadMoved) fusedFrames.length = 0;
+            lastFusedQuad = {
+              TL: { x: quad.TL.x, y: quad.TL.y }, TR: { x: quad.TR.x, y: quad.TR.y },
+              BR: { x: quad.BR.x, y: quad.BR.y }, BL: { x: quad.BL.x, y: quad.BL.y }
+            };
+            fusedFrames.push(corrData);
+            if (fusedFrames.length > 4) fusedFrames.shift();
+            
+            if (!(result && result.valid) && fusedFrames.length >= 2) {
+              var fusedRes = Scanner.decodeFromCorrectedImage(
+                Scanner.averageImageData(fusedFrames), { allowRecovery: false });
+              if (fusedRes && fusedRes.valid) {
+                fusedRes.fused = true;
+                dbg.push('Fused decode over ' + fusedFrames.length + ' frames succeeded');
+                result = fusedRes;
+              }
+            }
+          }
           
           // Build debug info from result
           if (result) {
@@ -5275,7 +5319,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             
             dbg.push('Grid: [' + colorGrid + '] (' + nullCount + ' null, ' + ambigCount + ' ambig)');
             dbg.push('Notch: ' + notchStr + ' → ' + (result.matches || 0) + '/' + (result.comparisons || 0));
-            dbg.push('Hex: ' + (result.hex || '—') + (result.valid ? ' ✓ VALID' : ' ✗ invalid'));
+            dbg.push('Hex: ' + (result.hex || '—') + (result.valid ? ' ✓ VALID' : ' ✗ invalid') +
+                     (result.normalized ? ' [norm]' : '') + (result.fused ? ' [fused]' : '') +
+                     (result.bruteForced ? ' [bruteForced]' : '') + (result.crcCorrected ? ' [crc-fix]' : ''));
             
             // Show top-level Lab values for each cluster (compact)
             if (result.samples) {
@@ -5301,6 +5347,45 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           if (result && result.valid && result.hex) {
             const hex = result.hex;
             const now = Date.now();
+            const via = (result.bruteForced || result.crcCorrected) ? 'recovered'
+                      : result.fused ? 'fused'
+                      : result.normalized ? 'normalized' : 'clean';
+            
+            // Acceptance policy:
+            //  - CLEAN read (raw image validated 4/4 with no correction): accept
+            //    on first read, exactly as before. CRC-8 with 4 notches on an
+            //    un-normalized, un-fused, un-corrected frame is the same gate
+            //    that has always shipped; requiring double-read here caused
+            //    iPhone failures because auto-exposure shifts colors between
+            //    frames. Nothing changes for the good-conditions path.
+            //  - RESCUE-PATH read (needed colour normalization, temporal
+            //    fusion, or a CRC-guided correction): require a second
+            //    identical hex within 4s before accepting. These paths only
+            //    engage on degraded frames, where CRC-8 collisions were
+            //    measured to occasionally validate a wrong grid; demanding the
+            //    same 12-hex payload twice from independent frames makes a
+            //    coincidental collision vanishingly unlikely while costing
+            //    ~one extra frame (~50-100ms) in bad light.
+            const needsConfirm = (via !== 'clean');
+            recentDecodes = recentDecodes.filter(function(d) { return now - d.time < 4000; });
+            const confirmed = !needsConfirm || recentDecodes.some(function(d) { return d.hex === hex; });
+            recentDecodes.push({ hex: hex, time: now, via: via });
+            
+            if (!confirmed) {
+              // First rescue-path read: show progress, keep scanning for the confirm.
+              oCtx.strokeStyle = 'rgba(255,220,0,0.8)';
+              oCtx.lineWidth = 3;
+              oCtx.beginPath();
+              oCtx.moveTo(quad.TL.x, quad.TL.y); oCtx.lineTo(quad.TR.x, quad.TR.y);
+              oCtx.lineTo(quad.BR.x, quad.BR.y); oCtx.lineTo(quad.BL.x, quad.BL.y);
+              oCtx.closePath(); oCtx.stroke();
+              status.textContent = 'Reading ' + hex + '… hold steady to confirm';
+              status.style.color = '#fd0';
+              dbg.push('Valid via ' + via + ' — awaiting confirming read');
+              console.log('[ChromaScan] valid read via ' + via + ' (' + hex + ') — awaiting confirmation');
+              updateDebug(dbg);
+              return false;
+            }
             
             // Show detection feedback — green quad overlay
             oCtx.strokeStyle = 'rgba(0,255,0,0.8)';
@@ -5310,12 +5395,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             oCtx.lineTo(quad.BR.x, quad.BR.y); oCtx.lineTo(quad.BL.x, quad.BL.y);
             oCtx.closePath(); oCtx.stroke();
             
-            // Track for logging but accept on first CRC-valid read.
-            // CRC-8 with 4 notches is already a strong validation gate — 
-            // requiring double-read on top of that causes iPhone failures
-            // because auto-exposure shifts colors between frames.
-            recentDecodes.push({ hex: hex, time: now });
-            console.log('[ChromaScan] CRC-valid decode: ' + hex + 
+            console.log('[ChromaScan] CRC-valid decode: ' + hex + ' via ' + via +
               (recentDecodes.length > 1 ? ' (read #' + recentDecodes.length + ')' : ''));
             
             scanning = false;
