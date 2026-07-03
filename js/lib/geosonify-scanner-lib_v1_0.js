@@ -27,7 +27,7 @@
 (function(global) {
   'use strict';
   
-  var __SCANNER_VERSION__ = 'v2.9';
+  var __SCANNER_VERSION__ = 'v2.10';
   
   // Logging function - can be overridden
   var _logFn = function(msg) { 
@@ -217,6 +217,128 @@
     return out;
   }
 
+  // ========== GRID RE-REGISTRATION (residual geometry fix) ==========
+  //
+  // Corner detection can lock onto a quad that is rotated/offset relative to
+  // the real card (glare and reflections skew the ray-cast hull — observed in
+  // the field on a glossy laptop screen). The perspective warp then faithfully
+  // "corrects" a rotated crop, and every cell sample walks diagonally across
+  // the grid: the reads come out CONFIDENT but sampled from the wrong places.
+  //
+  // The corrected image carries its own alignment truth: the 4×4 cell
+  // boundaries are the strongest colour edges in the image and must lie at
+  // exactly 1/4, 1/2, 3/4 of the width and height. estimateGridResidual
+  // projects colour-gradient magnitude onto axes de-rotated by candidate
+  // angles and finds the angle + offset where the three-line "comb" response
+  // peaks; resampleGrid then undoes that residual so the sampling grid lands
+  // on the real cells.
+  function estimateGridResidual(imageData) {
+    var S = imageData.width;
+    var d = imageData.data;
+    var F = Math.max(1, Math.round(S / 100)); // coarse factor
+    var D = Math.floor(S / F);                // coarse size (~100)
+    // coarse colour image
+    var coarse = new Float32Array(D * D * 3);
+    for (var y = 0; y < D; y++) {
+      for (var x = 0; x < D; x++) {
+        var si = ((y * F) * S + (x * F)) * 4, ci = (y * D + x) * 3;
+        coarse[ci] = d[si]; coarse[ci + 1] = d[si + 1]; coarse[ci + 2] = d[si + 2];
+      }
+    }
+    // gradient magnitudes (colour-sum, so equal-luminance boundaries still count)
+    var gxm = new Float32Array(D * D), gym = new Float32Array(D * D);
+    for (var y2 = 1; y2 < D - 1; y2++) {
+      for (var x2 = 1; x2 < D - 1; x2++) {
+        var i = (y2 * D + x2) * 3;
+        gxm[y2 * D + x2] = Math.abs(coarse[i + 3] - coarse[i - 3]) + Math.abs(coarse[i + 4] - coarse[i - 2]) + Math.abs(coarse[i + 5] - coarse[i - 1]);
+        var up = i - D * 3, dn = i + D * 3;
+        gym[y2 * D + x2] = Math.abs(coarse[dn] - coarse[up]) + Math.abs(coarse[dn + 1] - coarse[up + 1]) + Math.abs(coarse[dn + 2] - coarse[up + 2]);
+      }
+    }
+    var c = D / 2;
+    var maxR = D * 0.48;              // stay inside under rotation
+    var quarter = D / 4;              // boundary spacing
+    var combPos = [-quarter, 0, quarter]; // internal lines relative to centre
+    var maxOff = Math.round(D * 0.15);
+    
+    function combBest(profile) {
+      var best = -1, bestOff = 0;
+      for (var off = -maxOff; off <= maxOff; off++) {
+        var s = 0;
+        for (var k = 0; k < 3; k++) {
+          var p = Math.round(c + combPos[k] + off);
+          for (var w = -1; w <= 1; w++) {
+            var idx = p + w;
+            if (idx >= 0 && idx < D) s += profile[idx];
+          }
+        }
+        if (s > best) { best = s; bestOff = off; }
+      }
+      return { score: best, off: bestOff };
+    }
+    
+    var bestTheta = 0, bestScore = -1, bestDx = 0, bestDy = 0, zeroScore = 0;
+    for (var deg = -18; deg <= 18; deg += 1.5) {
+      var th = deg * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);
+      var rowP = new Float32Array(D), colP = new Float32Array(D);
+      for (var y3 = 1; y3 < D - 1; y3++) {
+        for (var x3 = 1; x3 < D - 1; x3++) {
+          var ux = x3 - c, uy = y3 - c;
+          if (ux * ux + uy * uy > maxR * maxR) continue;
+          // de-rotate the sample position by theta
+          var px = ux * cos + uy * sin;
+          var py = -ux * sin + uy * cos;
+          var bi = y3 * D + x3;
+          var pyi = Math.round(c + py), pxi = Math.round(c + px);
+          if (pyi >= 0 && pyi < D) rowP[pyi] += gym[bi];
+          if (pxi >= 0 && pxi < D) colP[pxi] += gxm[bi];
+        }
+      }
+      var r = combBest(rowP), cl = combBest(colP);
+      var score = r.score + cl.score;
+      if (deg === 0) zeroScore = score;
+      if (score > bestScore) { bestScore = score; bestTheta = deg; bestDy = r.off; bestDx = cl.off; }
+    }
+    
+    var result = {
+      thetaDeg: bestTheta,
+      dx: bestDx * F,   // back to full-resolution pixels
+      dy: bestDy * F,
+      score: bestScore,
+      zeroScore: zeroScore
+    };
+    log('Grid registration estimate: θ=' + bestTheta.toFixed(1) + '° offset=(' + result.dx + ',' + result.dy + ') ' +
+        'score=' + bestScore.toFixed(0) + ' vs aligned=' + zeroScore.toFixed(0));
+    return result;
+  }
+  
+  // Resample so the grid content lands on canonical positions: undo a residual
+  // rotation of thetaDeg (about the image centre) and a translation (dx,dy).
+  function resampleGrid(imageData, thetaDeg, dx, dy) {
+    var S = imageData.width;
+    var d = imageData.data;
+    var out = new ImageData(S, S);
+    var od = out.data;
+    var th = thetaDeg * Math.PI / 180, cos = Math.cos(th), sin = Math.sin(th);
+    var c = S / 2;
+    for (var y = 0; y < S; y++) {
+      var vy = y - c;
+      for (var x = 0; x < S; x++) {
+        var vx = x - c;
+        // inverse map: rotate destination coords by theta, then shift by (dx,dy)
+        var sx = Math.round(c + vx * cos - vy * sin + dx);
+        var sy = Math.round(c + vx * sin + vy * cos + dy);
+        var di = (y * S + x) * 4;
+        if (sx >= 0 && sx < S && sy >= 0 && sy < S) {
+          var si = (sy * S + sx) * 4;
+          od[di] = d[si]; od[di + 1] = d[si + 1]; od[di + 2] = d[si + 2]; od[di + 3] = 255;
+        } else {
+          od[di] = 128; od[di + 1] = 128; od[di + 2] = 128; od[di + 3] = 255;
+        }
+      }
+    }
+    return out;
+  }
   // Average N same-size ImageData frames (temporal fusion). Auto-exposure
   // varies frame to frame, so per-pixel sensor noise and exposure flicker
   // average out; a cell ambiguous in one frame is clear in the mean.
@@ -965,22 +1087,51 @@
     var br = sampleRegion(imageData, cx + offset, cy + offset, sR);
     
     // For an inner cell of a HEALPix swatch, the corner facing the grid centre
-    // lands inside the black diamond and would fake a dark corner. Replace that
-    // one corner with its diagonal opposite — a true K/W split is symmetric across
-    // the centre, so the opposite corner carries the same colour — keeping the
-    // diagonal test honest without diamond contamination. (row,col passed so we
-    // know which corner faces in.)
-    // CRITICAL: only do this for HEALPix swatches, which actually HAVE the diamond.
-    // On a STANDARD swatch there is no diamond, and overwriting a real corner with
-    // its opposite collapses a genuine K/W diagonal into a false "solid" — e.g.
-    // Prague cell[1,2] (a K split cyan/yellow) was read as solid C. Standard inner
-    // cells must keep all four real corners.
+    // lands inside the black diamond and would fake a dark corner. That corner
+    // is genuinely unobservable — the diamond covers it — so classify from the
+    // THREE clean corners instead.
+    //
+    // (The previous approach replaced the contaminated corner with its diagonal
+    // opposite. That is only sound when the contaminated diagonal is the
+    // split's MIXTURE pair. When it is the PURE pair — a W split at [1,1]/[2,2]
+    // or a K split at [1,2]/[2,1] — the swap zeroes the very evidence the
+    // classifier needs, and the cell reads as solid/wrong. Measured on random
+    // hexes this made ~37% of HEALPix cards undecodable even from a PERFECT
+    // image. The 3-corner classifier below has no such blind spot.)
+    //
+    // Geometry: K splits along the main diagonal (tl–br on the boundary; tr,bl
+    // are the two pure colours). W splits along the anti-diagonal (tr,bl on
+    // the boundary; tl,br pure). With contaminated corner X, opposite O, and
+    // the other-diagonal pair A,B (all clean):
+    //   - dist(A,B) large            → pure pair is A–B → boundary is X–O
+    //                                  → K if X∈{tl,br}, W if X∈{tr,bl}
+    //   - dist(O, midpoint(A,B)) large → O pure, A,B mixtures → boundary is A–B
+    //                                  → W if X∈{tl,br}, K if X∈{tr,bl}
+    //   - both small                 → solid
+    // CRITICAL: only for HEALPix swatches, which actually HAVE the diamond.
+    // On a STANDARD swatch there is no diamond and all four corners are real —
+    // e.g. Prague cell[1,2] (a K split) must keep its true corners.
     if (isInner && isHealpix) {
       var towardRight = col < 1.5, towardBottom = row < 1.5;
-      if (towardRight && towardBottom) br = tl;        // BR faces centre
-      else if (!towardRight && towardBottom) bl = tr;  // BL faces centre
-      else if (towardRight && !towardBottom) tr = bl;  // TR faces centre
-      else tl = br;                                    // TL faces centre
+      var xOnMainDiag, O, A, B;
+      if (towardRight && towardBottom)       { xOnMainDiag = true;  O = tl; A = tr; B = bl; } // X = br
+      else if (!towardRight && towardBottom) { xOnMainDiag = false; O = tr; A = tl; B = br; } // X = bl
+      else if (towardRight && !towardBottom) { xOnMainDiag = false; O = bl; A = tl; B = br; } // X = tr
+      else                                   { xOnMainDiag = true;  O = br; A = tr; B = bl; } // X = tl
+      
+      var abDist = colorDistance(A, B);
+      var mid = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2, (A[2] + B[2]) / 2];
+      var oMidDist = colorDistance(O, mid);
+      
+      if (abDist >= 90 && oMidDist < abDist * 0.6) {
+        // A–B is the pure pair → split boundary runs along the X–O diagonal
+        return xOnMainDiag ? { type: 'black' } : { type: 'white' };
+      }
+      if (oMidDist >= 55 && abDist < 55) {
+        // O is pure against A,B mixtures → boundary runs along the A–B diagonal
+        return xOnMainDiag ? { type: 'white' } : { type: 'black' };
+      }
+      return { type: 'solid' };
     }
     
     var tlbrDist = colorDistance(tl, br);
@@ -1953,11 +2104,53 @@
       }
     }
     
+    // PASS 3: grid re-registration. Both passes failing with a coherent image
+    // is the signature of residual GEOMETRY error: the detected quad was
+    // rotated/offset relative to the real card (glare-skewed corners), so the
+    // warp output has the grid boundaries off their canonical 1/4-1/2-3/4
+    // positions and every cell sample lands in the wrong place — confidently.
+    // Estimate the residual from the image's own boundary edges and retry.
+    var gridResidual = null;
+    if (options.allowReRegistration !== false) {
+      try {
+        var regSource = normalized || correctedImageData;
+        var reg = estimateGridResidual(regSource);
+        gridResidual = reg; // attached to the failed result below so callers
+                            // (card-renderer geometry refinement) can re-warp
+                            // without re-estimating
+        if (reg && (Math.abs(reg.thetaDeg) >= 1.4 || Math.abs(reg.dx) >= 3 || Math.abs(reg.dy) >= 3)) {
+          // Only attempt the IN-IMAGE resample at small angles: beyond ~9° a
+          // rotated quad has cut the card's corners off the corrected image,
+          // and the missing wedges land in the notch scan rows — the decode
+          // always fails, wasting a full pass. Larger angles need a re-warp
+          // from the source frame (card-renderer geometry refinement), which
+          // this residual estimate feeds.
+          if (Math.abs(reg.thetaDeg) <= 9) {
+            log('=== Passes 1-2 failed — retrying on re-registered grid (θ=' + reg.thetaDeg.toFixed(1) + '°) ===');
+            var regImg = resampleGrid(regSource, reg.thetaDeg, reg.dx, reg.dy);
+            // variant check once more: re-registration can bring the diamond to centre
+            var v3 = detectCentreVariant(regImg);
+            var variant3 = (variant === 'healpix' || v3 === 'healpix') ? 'healpix' : variant;
+            var pass3 = decodeAllRotations(regImg, size, variant3, options);
+            if (pass3.valid) {
+              pass3.reRegistered = true;
+              if (normalized) pass3.normalized = true;
+              pass3.variant = variant3;
+              return pass3;
+            }
+          } else {
+            log('Residual θ=' + reg.thetaDeg.toFixed(1) + '° too large for in-image resample — deferring to quad re-warp');
+          }
+        }
+      } catch (e) { log('Re-registration failed: ' + e.message); }
+    }
+    
     log('No valid rotation found, returning to original orientation');
     var firstResult = pass1.firstResult;
     firstResult.rotation = 0;
     firstResult.hex = bitsToHex(firstResult.bits);
     firstResult.variant = variant;
+    if (gridResidual) firstResult.gridResidual = gridResidual;
     return firstResult;
   }
   
@@ -2094,6 +2287,8 @@
     analyzeImageBrightness: analyzeImageBrightness,
     normalizeSwatchColors: normalizeSwatchColors,
     averageImageData: averageImageData,
+    estimateGridResidual: estimateGridResidual,
+    resampleGrid: resampleGrid,
     
     // Low-level utilities
     castRays: castRays,
@@ -2133,6 +2328,6 @@
     disableLogging: function() { _logFn = null; }
   };
   
-  try { console.log('[geosonify] scanner-lib ' + __SCANNER_VERSION__ + ' loaded (colour-normalize + ranked-search + fusion)'); } catch(e) {}
+  try { console.log('[geosonify] scanner-lib ' + __SCANNER_VERSION__ + ' loaded (colour-normalize + ranked-search + fusion + grid-reregister)'); } catch(e) {}
 
 })(typeof window !== 'undefined' ? window : this);
