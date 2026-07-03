@@ -5114,6 +5114,59 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       var fusedFrames = [];   // last few perspective-corrected frames (temporal fusion)
       var lastFusedQuad = null; // quad of the previous frame — fusion buffer resets when the pose jumps
       
+      // Warp a source-frame quad to a 400x400 corrected image (OpenCV). Used by
+      // the main decode path and by geometry refinement re-warps.
+      function warpQuadTo400(frameData, q, outSize) {
+        const srcC = document.createElement('canvas');
+        srcC.width = frameData.width; srcC.height = frameData.height;
+        srcC.getContext('2d').putImageData(frameData, 0, 0);
+        const src = cv.imread(srcC);
+        const dst = new cv.Mat();
+        const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          q.TL.x, q.TL.y, q.TR.x, q.TR.y, q.BR.x, q.BR.y, q.BL.x, q.BL.y
+        ]);
+        const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outSize, 0, outSize, outSize, 0, outSize]);
+        const M = cv.getPerspectiveTransform(srcPts, dstPts);
+        cv.warpPerspective(src, dst, M, new cv.Size(outSize, outSize));
+        const corrC = document.createElement('canvas');
+        corrC.width = outSize; corrC.height = outSize;
+        cv.imshow(corrC, dst);
+        src.delete(); dst.delete(); srcPts.delete(); dstPts.delete(); M.delete();
+        return corrC.getContext('2d').getImageData(0, 0, outSize, outSize);
+      }
+      
+      // Adjust a detected quad by the residual measured in corrected-image
+      // space (RGB111Scanner.estimateGridResidual). Corner detection can lock
+      // onto a quad rotated/offset relative to the real card (glare and screen
+      // reflections skew the ray-cast hull — observed in the field on a glossy
+      // laptop display); the warp then faithfully "corrects" a rotated crop
+      // and every cell sample walks diagonally across the grid, reading
+      // confidently from the wrong places. The corrected image betrays the
+      // error: its grid boundaries must sit at exactly 1/4-1/2-3/4. This maps
+      // that residual back onto the source quad: rotate corners about the quad
+      // centroid, then translate via the linearized warp axes. Signs and the
+      // iteration behaviour are validated in tests/geometry.js.
+      function adjustQuadForResidual(q, est, outSize) {
+        function rotPt(p, c, deg) {
+          const t = deg * Math.PI / 180, co = Math.cos(t), si = Math.sin(t);
+          return { x: c.x + (p.x - c.x) * co - (p.y - c.y) * si,
+                   y: c.y + (p.x - c.x) * si + (p.y - c.y) * co };
+        }
+        const c = { x: (q.TL.x + q.TR.x + q.BR.x + q.BL.x) / 4,
+                    y: (q.TL.y + q.TR.y + q.BR.y + q.BL.y) / 4 };
+        const q2 = { TL: rotPt(q.TL, c, est.thetaDeg), TR: rotPt(q.TR, c, est.thetaDeg),
+                     BR: rotPt(q.BR, c, est.thetaDeg), BL: rotPt(q.BL, c, est.thetaDeg) };
+        const ex = { x: (q2.TR.x - q2.TL.x) / outSize, y: (q2.TR.y - q2.TL.y) / outSize };
+        const ey = { x: (q2.BL.x - q2.TL.x) / outSize, y: (q2.BL.y - q2.TL.y) / outSize };
+        const sx = ex.x * est.dx + ey.x * est.dy, sy = ex.y * est.dx + ey.y * est.dy;
+        ['TL', 'TR', 'BR', 'BL'].forEach(function(k) { q2[k].x += sx; q2[k].y += sy; });
+        return q2;
+      }
+      
+      function residualSignificant(est) {
+        return est && (Math.abs(est.thetaDeg) >= 1.4 || Math.abs(est.dx) >= 3 || Math.abs(est.dy) >= 3);
+      }
+      
       function tryDecode(probeX, probeY, isManualTap) {
         if (!scanning) return false;
         if (!video.videoWidth) return false;
@@ -5231,22 +5284,6 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           }
           
           const outSize = 400;
-          const srcC = document.createElement('canvas');
-          srcC.width = imageData.width; srcC.height = imageData.height;
-          srcC.getContext('2d').putImageData(imageData, 0, 0);
-          const src = cv.imread(srcC);
-          const dst = new cv.Mat();
-          const srcPts = cv.matFromArray(4, 1, cv.CV_32FC2, [
-            quad.TL.x, quad.TL.y, quad.TR.x, quad.TR.y,
-            quad.BR.x, quad.BR.y, quad.BL.x, quad.BL.y
-          ]);
-          const dstPts = cv.matFromArray(4, 1, cv.CV_32FC2, [0, 0, outSize, 0, outSize, outSize, 0, outSize]);
-          const M = cv.getPerspectiveTransform(srcPts, dstPts);
-          cv.warpPerspective(src, dst, M, new cv.Size(outSize, outSize));
-          const corrC = document.createElement('canvas');
-          corrC.width = outSize; corrC.height = outSize;
-          cv.imshow(corrC, dst);
-          src.delete(); dst.delete(); srcPts.delete(); dstPts.delete(); M.delete();
           
           // 5. Decode with CRC-8 validation.
           // allowRecovery: the CRC-guided flip searches (bruteForced /
@@ -5256,8 +5293,38 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           // anyway) while being the one source of systematically-repeatable
           // WRONG locks under heavy degradation — the loop can afford to wait
           // for a clean read instead of guessing.
-          const corrData = corrC.getContext('2d').getImageData(0, 0, outSize, outSize);
+          const corrData = warpQuadTo400(imageData, quad, outSize);
           let result = Scanner.decodeFromCorrectedImage(corrData, { allowRecovery: !!isManualTap });
+          
+          // Geometry refinement: if the decode failed and the corrected image's
+          // own grid boundaries sit off their canonical 1/4-1/2-3/4 positions,
+          // the detected quad was rotated/offset relative to the real card.
+          // Adjust the quad by the measured residual and re-warp — the second
+          // warp recovers the actual card pixels a skewed quad had cut off
+          // (in-image resampling alone cannot; validated in tests/geometry.js
+          // at 97% across ±16° rotation and large offsets).
+          if (!(result && result.valid) && typeof Scanner.estimateGridResidual === 'function') {
+            try {
+              let refQuad = quad, refData = corrData;
+              for (let ri = 0; ri < 2; ri++) {
+                // first iteration: reuse the residual the failed decode already
+                // computed (result.gridResidual) rather than re-estimating
+                const est = (ri === 0 && result && result.gridResidual)
+                  ? result.gridResidual
+                  : Scanner.estimateGridResidual(refData);
+                if (!residualSignificant(est)) break;
+                refQuad = adjustQuadForResidual(refQuad, est, outSize);
+                refData = warpQuadTo400(imageData, refQuad, outSize);
+                const refRes = Scanner.decodeFromCorrectedImage(refData, { allowRecovery: !!isManualTap, allowReRegistration: false });
+                dbg.push('Geometry refine #' + (ri + 1) + ': θ=' + est.thetaDeg.toFixed(1) + '° d=(' + est.dx + ',' + est.dy + ') → ' + (refRes && refRes.valid ? 'VALID' : 'invalid'));
+                if (refRes && refRes.valid) {
+                  refRes.reWarped = true;
+                  result = refRes;
+                  break;
+                }
+              }
+            } catch (e) { dbg.push('Geometry refine failed: ' + e.message); }
+          }
           
           // Temporal fusion (auto-exposure varies frame to frame, so noise and
           // exposure flicker average out across frames): keep the last few
@@ -5321,7 +5388,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             dbg.push('Notch: ' + notchStr + ' → ' + (result.matches || 0) + '/' + (result.comparisons || 0));
             dbg.push('Hex: ' + (result.hex || '—') + (result.valid ? ' ✓ VALID' : ' ✗ invalid') +
                      (result.normalized ? ' [norm]' : '') + (result.fused ? ' [fused]' : '') +
-                     (result.bruteForced ? ' [bruteForced]' : '') + (result.crcCorrected ? ' [crc-fix]' : ''));
+                     (result.bruteForced ? ' [bruteForced]' : '') + (result.crcCorrected ? ' [crc-fix]' : '') +
+                     (result.reWarped ? ' [re-warp]' : '') + (result.reRegistered ? ' [re-reg]' : ''));
             
             // Show top-level Lab values for each cluster (compact)
             if (result.samples) {
@@ -5348,7 +5416,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
             const hex = result.hex;
             const now = Date.now();
             const via = (result.bruteForced || result.crcCorrected) ? 'recovered'
+                      : result.reWarped ? 'geometry'
                       : result.fused ? 'fused'
+                      : result.reRegistered ? 'reregistered'
                       : result.normalized ? 'normalized' : 'clean';
             
             // Acceptance policy:
