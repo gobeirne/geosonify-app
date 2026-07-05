@@ -170,8 +170,8 @@
       <!-- Control row: Encoding Mode + Precision side-by-side when wide, stacked when narrow -->
       <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:stretch;">
         <!-- Encoding mode controls -->
-        <div class="card" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Encoding Mode</div>
+        <div class="card collapsible-card" data-collapse-key="encoding" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
+          <div class="card-header">Encoding Mode<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body">
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <button class="btn btn-secondary" id="obfuscateBtn" style="flex:0 0 auto;">🔀 Hierarchical</button>
@@ -181,8 +181,8 @@
         </div>
 
         <!-- Precision controls (sibling of Encoding Mode) -->
-        <div class="card" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Precision</div>
+        <div class="card collapsible-card" data-collapse-key="precision" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
+          <div class="card-header">Precision<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body">
             <div style="display:flex; gap:8px; align-items:center;">
               <button class="btn btn-secondary" id="precisionModeBtn" style="flex:0 0 auto;" title="Match = track the measurement precision (redraws as your pin/fix refines) · Human = fixed human-scale presets · Custom = per-card steppers">🎯 Custom</button>
@@ -1496,6 +1496,33 @@
         // Will be processed by parseURLParameters, then switch to output
         setTimeout(() => switchToTab('output'), 200);
       }
+    });
+
+    // ── Collapsible cards (mobile/tablet only) ────────────────────
+    // Header tap collapses a card's body to claw back vertical space so the
+    // card of interest sits closer to the map on small screens. Default is
+    // expanded; a per-card "collapsed" flag persists in localStorage. Purely
+    // presentational — the CSS keeps everything expanded at >=1024px regardless
+    // of the class, so desktop is untouched.
+    document.addEventListener('DOMContentLoaded', function() {
+      var COLLAPSE_KEY_PREFIX = 'geosonify-collapse-';
+      document.querySelectorAll('.collapsible-card').forEach(function(card) {
+        var key = card.getAttribute('data-collapse-key');
+        var header = card.querySelector('.card-header');
+        if (!key || !header) return;
+
+        var storageKey = COLLAPSE_KEY_PREFIX + key;
+        var stored;
+        try { stored = localStorage.getItem(storageKey); } catch (e) { stored = null; }
+        if (stored === 'collapsed') card.classList.add('is-collapsed');
+
+        header.addEventListener('click', function() {
+          var collapsed = card.classList.toggle('is-collapsed');
+          try {
+            localStorage.setItem(storageKey, collapsed ? 'collapsed' : 'expanded');
+          } catch (e) { /* storage unavailable - collapse still works this session */ }
+        });
+      });
     });
   </script>
   <script>
