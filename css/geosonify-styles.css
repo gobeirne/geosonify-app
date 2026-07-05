@@ -164,6 +164,36 @@ body {
 
 .card-body { padding: 0 16px 16px; }
 
+/* Collapsible cards — active only on the stacked (mobile/tablet) layout,
+   i.e. below the 1024px desktop split-view breakpoint. On desktop these
+   behave as ordinary cards: chevron hidden, header inert, always expanded. */
+.collapse-chevron {
+  display: none;
+}
+@media (max-width: 1023px) {
+  .collapsible-card > .card-header {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .collapsible-card > .card-header .collapse-chevron {
+    display: inline-block;
+    font-size: 15px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: transform 0.18s ease;
+  }
+  .collapsible-card.is-collapsed > .card-header .collapse-chevron {
+    transform: rotate(-90deg);
+  }
+  .collapsible-card.is-collapsed > .card-body {
+    display: none;
+  }
+}
+
 /* iOS-style segmented control */
 .segmented-control {
   display: flex;
