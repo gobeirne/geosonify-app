@@ -1177,6 +1177,18 @@ select {
    glyphs are illegible on a busy board): white = light fill + dark edge, black = dark fill +
    light edge. The never-in-check engine guarantees the position always looks legal. */
 .chess-display { display:flex; flex-direction:column; align-items:center; gap:10px; padding:4px 0; }
+/* The board container must stretch to a real width, not shrink-wrap. Its parent
+   .chess-display is a centered column flex (align-items:center), which makes
+   cross-axis children size to content. Chromium still resolved the inner grid's
+   width:100% against the card, but Firefox sized it to max-content, collapsing
+   the `auto minmax(0,1fr)` + aspect-ratio board into a tall narrow strip. Giving
+   the container an explicit stretched width (capped to the board's own max)
+   gives width:100% a consistent basis in both engines. */
+.chess-board-container {
+  width:100%;
+  max-width:340px;   /* matches .gschess-boardgrid max-width */
+  align-self:stretch;
+}
 .chess-display.chess-toobig { padding:14px; }
 .chess-error { font-size:13px; color:#c0392b; text-align:center; }
 
