@@ -192,7 +192,26 @@ body {
   .collapsible-card.is-collapsed > .card-body {
     display: none;
   }
-}
+
+  /* Collapsed = claw back the vertical band. A collapsed card shrinks to a
+     tight header strip: even 6px padding (no dangling bottom gap from the
+     expanded 12/8 rule) and zero self-margin, so it hugs its neighbours and
+     the map. Expanded cards keep their normal spacing. */
+  .collapsible-card.is-collapsed {
+    margin: 0;
+  }
+  .collapsible-card.is-collapsed > .card-header {
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+  /* When every card in the control row is collapsed, tighten the row's own
+     gap so the two strips sit almost against each other. The :not(:has(open))
+     selector matches only when no child is expanded; if one is open the normal
+     12px gap returns. Where :has is unsupported the row simply keeps its
+     default gap — still fine, just slightly looser. */
+  .collapse-row:not(:has(> .collapsible-card:not(.is-collapsed))) {
+    gap: 4px !important;
+  }
 
 /* iOS-style segmented control */
 .segmented-control {
