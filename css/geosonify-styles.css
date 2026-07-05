@@ -1186,7 +1186,7 @@ select {
    gives width:100% a consistent basis in both engines. */
 .chess-board-container {
   width:100%;
-  max-width:340px;   /* matches .gschess-boardgrid max-width */
+  max-width:260px;   /* matches .gschess-boardgrid max-width */
   align-self:stretch;
 }
 .chess-display.chess-toobig { padding:14px; }
@@ -1200,7 +1200,7 @@ select {
   display:grid;
   grid-template-columns:auto minmax(0, 1fr);   /* rank labels | board */
   gap:5px; align-items:stretch; justify-items:stretch;
-  width:100%; max-width:340px;                  /* cap so it doesn't get silly on wide cards */
+  width:100%; max-width:260px;                  /* cap so it doesn't get silly on wide cards */
   margin:0 auto;
 }
 .gschess-board {
