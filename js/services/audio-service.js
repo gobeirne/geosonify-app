@@ -1,5 +1,17 @@
 /**
- * geosonify-audio-service.js v6.1
+ * geosonify-audio-service.js v6.2
+ * 
+ * v6.2 changes:
+ * - Fixed stationary movement-fade being applied twice (drone faded to silence
+ *   ~2x too fast). Fade is now applied exactly once, inside triggerNote().
+ *   Legacy (non-pattern) path unchanged - it applies the fade once already.
+ * - Default stationary fade timing relaxed to 60s hold / 30s fade (was 10s/15s);
+ *   UI slider ranges extended (hold 5-120s, fade 5-90s).
+ * - Staggered idle entrances (off by default): non-melodic ("idle") octaves can
+ *   enter off the downbeat with evolving, unpredictable offsets. One octave's
+ *   offset re-rolls every 16 bars, always-running (drifts while moving OR
+ *   stationary). At least 2 octaves stay anchored on beat 1. Melodic octaves
+ *   are never touched; flag off = byte-identical to prior behavior.
  * 
  * v6.1 features:
  * - Note Event Bus: onNoteEvent/offNoteEvent for piano roll display and MIDI output
@@ -155,6 +167,13 @@
   // Melodic octave queue - FIFO tracking which octaves have non-default patterns
   let melodicOctaveQueue = [];       // Array of octave numbers in order they became melodic
   
+  // Staggered idle entrances (evolving, unpredictable offsets for non-melodic octaves)
+  const STAGGER_OFFSET_POOL = [0, 1, 1.5, 2, 2.5, 3]; // beats; 0 = on the downbeat
+  const STAGGER_RESHUFFLE_BARS = 16;   // bars between single-octave offset changes
+  const STAGGER_MIN_ANCHORS = 2;       // octaves kept at 0 to hold the downbeat
+  let staggerAssignment = {};          // octave -> offset in beats (only meaningful when enabled)
+  let staggerBarCounter = 0;           // always-running (not gated by movement/evolution)
+  
   // Duration values in beats
   const DURATION_BEATS = {
     whole: 4,
@@ -187,6 +206,7 @@
     droneDecayBars: 8,            // Number of bars for decay
     droneDecayTargetDb: 0,      // Target dB for decayed octaves
     droneMovementFade: true,     // Fade out when stationary
+    staggeredIdleEntrances: false, // Stagger idle-octave entrances (evolving offsets)
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -1031,14 +1051,81 @@
   // ============== PATTERN EVOLUTION SYSTEM ==============
 
   /**
+   * Build a fresh random stagger assignment for octaves 0-9.
+   * Each octave gets an offset from STAGGER_OFFSET_POOL, but at least
+   * STAGGER_MIN_ANCHORS octaves are forced to 0 to hold the downbeat.
+   * Which octaves are offset (and by how much) is randomized every time -
+   * there is deliberately no fixed odd/even rule.
+   */
+  function buildStaggerAssignment() {
+    const assignment = {};
+    for (let oct = 0; oct <= 9; oct++) {
+      assignment[oct] = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
+    }
+    // Guarantee a minimum number of downbeat anchors (offset 0)
+    let anchors = Object.values(assignment).filter(v => v === 0).length;
+    while (anchors < STAGGER_MIN_ANCHORS) {
+      const oct = Math.floor(Math.random() * 10);
+      if (assignment[oct] !== 0) { assignment[oct] = 0; anchors++; }
+    }
+    return assignment;
+  }
+
+  /**
+   * Reshuffle exactly ONE octave's offset (the gradual, per-cadence change).
+   * Respects the anchor floor: won't drop below STAGGER_MIN_ANCHORS downbeats.
+   */
+  function nudgeStaggerAssignment() {
+    const oct = Math.floor(Math.random() * 10);
+    const current = staggerAssignment[oct] ?? 0;
+    let next = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
+    // If moving this octave off 0 would break the anchor floor, keep it at 0
+    if (current === 0 && next !== 0) {
+      const anchors = Object.values(staggerAssignment).filter(v => v === 0).length;
+      if (anchors <= STAGGER_MIN_ANCHORS) next = 0;
+    }
+    staggerAssignment[oct] = next;
+    return { oct, offset: next };
+  }
+
+  /**
+   * Whether an octave is "idle" (eligible for staggering): not melodic AND
+   * still default-shaped. The default-shape test matters because
+   * updatePatternForNoteCount can regenerate an octave to a non-default
+   * shape without ever adding it to melodicOctaveQueue.
+   */
+  function isIdleOctave(octave) {
+    if (melodicOctaveQueue.includes(octave)) return false;
+    const p = octavePatterns[octave];
+    if (!p) return true; // uninitialized = will be built as default
+    return p.lengthBars === p.noteCount &&
+           p.slots.every(s => s.type === 'note' && s.duration === 4);
+  }
+
+  /**
+   * Re-apply the current stagger assignment to all idle octaves by
+   * rebuilding their default patterns. Melodic octaves are untouched.
+   */
+  function applyStaggerToIdleOctaves() {
+    for (let oct = 0; oct <= 9; oct++) {
+      if (!isIdleOctave(oct)) continue;
+      const noteCount = notePool[oct]?.length || 2;
+      octavePatterns[oct] = getDefaultPattern(noteCount, oct);
+    }
+  }
+
+  /**
    * Get the default pattern for a given note count
    * Matches the original drone behavior: one whole note per bar, cycling through notes
    */
-  function getDefaultPattern(noteCount = 3) {
+  function getDefaultPattern(noteCount = 3, octave = null) {
     const count = Math.max(1, Math.min(3, noteCount));
     const slots = [];
     for (let i = 0; i < count; i++) {
-      slots.push({ type: 'note', slotIndex: i, duration: 4, startBeat: 0, bar: i });
+      const startBeat = (settings.staggeredIdleEntrances && octave !== null)
+        ? (staggerAssignment[octave] ?? 0)
+        : 0;
+      slots.push({ type: 'note', slotIndex: i, duration: 4, startBeat, bar: i });
     }
     return {
       slots,
@@ -1056,7 +1143,7 @@
     for (let i = 0; i < 10; i++) {
       // Get note count from notePool if available, otherwise default to 2
       const noteCount = notePool[i]?.length || 2;
-      octavePatterns[i] = getDefaultPattern(noteCount);
+      octavePatterns[i] = getDefaultPattern(noteCount, i);
     }
     lastChangedOctave = Math.floor(Math.random() * 10); // Start with random octave
     evolutionBarCounter = 0;
@@ -1071,7 +1158,7 @@
   function resetAllPatternsToDefault() {
     for (let i = 0; i < 10; i++) {
       const noteCount = notePool[i]?.length || 2;
-      octavePatterns[i] = getDefaultPattern(noteCount);
+      octavePatterns[i] = getDefaultPattern(noteCount, i);
     }
     evolutionBarCounter = 0;
     pendingPatternChange = null;
@@ -1373,7 +1460,7 @@
     // Reset the oldest melodic octave if needed
     if (octaveToReset !== null && octaveToReset !== undefined) {
       const resetNoteCount = notePool[octaveToReset]?.length || 2;
-      octavePatterns[octaveToReset] = getDefaultPattern(resetNoteCount);
+      octavePatterns[octaveToReset] = getDefaultPattern(resetNoteCount, octaveToReset);
       melodicOctaveQueue.shift(); // Remove from front of queue
       console.log('[AudioService] Reset octave', octaveToReset, 'to whole notes (queue full)');
     }
@@ -1499,6 +1586,20 @@
             if (evolutionBarCounter >= settings.patternEvolutionBars) {
               evolutionBarCounter = 0;
               triggerPatternEvolution();
+            }
+          }
+          
+          // Staggered idle entrances: nudge ONE octave's offset every
+          // STAGGER_RESHUFFLE_BARS. Deliberately always-running (not gated
+          // by movement or shouldSkipEvolution) so the texture keeps
+          // drifting whether moving or stationary. Only re-applied to idle
+          // octaves; melodic octaves are never touched.
+          if (settings.staggeredIdleEntrances && settings.patternEvolutionEnabled) {
+            staggerBarCounter++;
+            if (staggerBarCounter >= STAGGER_RESHUFFLE_BARS) {
+              staggerBarCounter = 0;
+              nudgeStaggerAssignment();
+              applyStaggerToIdleOctaves();
             }
           }
         }
@@ -2149,6 +2250,29 @@
     },
 
     /**
+     * Enable/disable staggered idle-octave entrances.
+     * On enable: seed a fresh random assignment and apply it to idle octaves.
+     * On disable: restore beat-1 entrances (byte-identical to original).
+     */
+    setStaggeredIdleEntrances(enabled) {
+      settings.staggeredIdleEntrances = !!enabled;
+      staggerBarCounter = 0;
+      if (enabled) {
+        staggerAssignment = buildStaggerAssignment();
+      }
+      // Re-apply to idle octaves either way: on enable applies the offsets,
+      // on disable rebuilds them flat (getDefaultPattern returns startBeat 0
+      // when the flag is off).
+      if (Object.keys(octavePatterns).length > 0) {
+        applyStaggerToIdleOctaves();
+      }
+    },
+
+    getStaggeredIdleEntrances() {
+      return settings.staggeredIdleEntrances;
+    },
+
+    /**
      * Set number of bars for full decay
      */
     setDroneDecayBars(bars) {
@@ -2284,7 +2408,7 @@
       while (melodicOctaveQueue.length > settings.maxMelodicOctaves) {
         const octaveToReset = melodicOctaveQueue.shift();
         const noteCount = notePool[octaveToReset]?.length || 2;
-        octavePatterns[octaveToReset] = getDefaultPattern(noteCount);
+        octavePatterns[octaveToReset] = getDefaultPattern(noteCount, octaveToReset);
         console.log('[AudioService] Reset octave', octaveToReset, 'to whole notes (limit reduced)');
       }
     },
