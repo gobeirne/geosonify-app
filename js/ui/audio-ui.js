@@ -7,6 +7,8 @@
  * - Stationary-fade sliders now initialize from getStationaryFadeTiming() with
  *   extended ranges (hold 5-120s, fade 5-90s)
  * - "Staggered idle entrances" toggle in Drone Mode Settings
+ * - "Per-octave instruments" section: master toggle, per-octave instrument
+ *   selects, and a live deferral status line
  * 
  * v3.4 features:
  * - Piano roll auto-switch: show roll on play, revert to VexFlow on stop
@@ -620,6 +622,24 @@
       `;
     }
     
+    // Generate per-octave instrument selector rows (matches the 1-8 range the
+    // rest of the octave UI uses; octaves 0 and 9 keep their default mapping).
+    const perOctaveEnabled = AudioService?.getPerOctaveEnabled?.() || false;
+    const octaveInstMap = AudioService?.getOctaveInstrumentMap?.() || {};
+    const presetOptionsFor = (selected) => presets.map(p =>
+      `<option value="${p}" ${p === selected ? 'selected' : ''}>${p}</option>`).join('');
+    let perOctaveRowsHTML = '';
+    for (let oct = 1; oct <= 8; oct++) {
+      perOctaveRowsHTML += `
+        <div class="octave-row" data-octave="${oct}">
+          <span class="octave-label">Oct ${oct}</span>
+          <select class="octave-instrument-select" data-octave="${oct}">
+            ${presetOptionsFor(octaveInstMap[oct])}
+          </select>
+        </div>
+      `;
+    }
+    
     designModal.innerHTML = `
       <div class="audio-design-panel">
         <div class="audio-design-title">🎛️ Sound Design</div>
@@ -982,6 +1002,19 @@
           </div>
         </div>
         
+        <!-- PER-OCTAVE INSTRUMENTS -->
+        <div class="audio-design-section" id="perOctaveSection">
+          <div class="audio-design-section-title">🎹 Per-octave instruments</div>
+          <label class="drone-toggle-label">
+            <input type="checkbox" id="perOctaveEnabled" ${perOctaveEnabled ? 'checked' : ''}>
+            <span>Enable per-octave instruments</span>
+          </label>
+          <div class="per-octave-status" id="perOctaveStatus" style="font-size:12px;opacity:0.7;margin:4px 0 8px;"></div>
+          <div class="per-octave-container" id="perOctaveControls" style="opacity:${perOctaveEnabled ? '1' : '0.5'};">
+            ${perOctaveRowsHTML}
+          </div>
+        </div>
+        
         <!-- GPS STATUS -->
         <div class="audio-design-section">
           <div class="gps-status" id="gpsStatus">
@@ -1237,6 +1270,21 @@
         width: 40px;
         font-size: 12px;
         color: #888;
+      }
+      .per-octave-container {
+        background: rgba(0,0,0,0.3);
+        border-radius: 8px;
+        padding: 8px;
+        transition: opacity 0.2s;
+      }
+      .octave-instrument-select {
+        flex: 1;
+        background: rgba(0,0,0,0.4);
+        color: #ddd;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 6px;
+        padding: 4px 8px;
+        font-size: 12px;
       }
       .octave-controls {
         flex: 1;
@@ -1828,6 +1876,22 @@
       AudioService?.setStaggeredIdleEntrances(this.checked);
     };
     
+    // Per-octave instruments: master toggle
+    designModal.querySelector('#perOctaveEnabled').onchange = async function() {
+      const on = this.checked;
+      const container = designModal.querySelector('#perOctaveControls');
+      if (container) container.style.opacity = on ? '1' : '0.5';
+      await AudioService?.setPerOctaveEnabled(on);
+    };
+    
+    // Per-octave instruments: per-octave instrument selects
+    designModal.querySelectorAll('.octave-instrument-select').forEach(sel => {
+      sel.onchange = async function() {
+        const oct = parseInt(this.getAttribute('data-octave'), 10);
+        await AudioService?.setOctaveInstrument(oct, this.value);
+      };
+    });
+    
     // Stationary start delay slider
     designModal.querySelector('#droneStationaryStartSlider').oninput = function() {
       designModal.querySelector('#droneStationaryStartValue').textContent = this.value + 's';
@@ -2068,6 +2132,24 @@
         const xfade = AudioService.getCrossfade();
         crossfadeSlider.value = Math.round(xfade * 100);
         designModal.querySelector('#crossfadeValue').textContent = Math.round(xfade * 100) + '%';
+      }
+      
+      // Per-octave instruments deferral status
+      const poStatus = designModal.querySelector('#perOctaveStatus');
+      const poContainer = designModal.querySelector('#perOctaveControls');
+      if (poStatus && AudioService?.getPerOctaveEnabled?.()) {
+        const journeyOn = window.JourneyService?.isActive?.();
+        const xfade = AudioService.getCrossfade?.() ?? 0;
+        const midCrossfade = xfade > 0.01 && xfade < 0.99;
+        if (journeyOn || midCrossfade) {
+          poStatus.textContent = '⏸ deferring to journey/crossfade — using A/B';
+          if (poContainer) poContainer.style.opacity = '0.4';
+        } else {
+          poStatus.textContent = '● active';
+          if (poContainer) poContainer.style.opacity = '1';
+        }
+      } else if (poStatus) {
+        poStatus.textContent = '';
       }
     }, 500);
     
