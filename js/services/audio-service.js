@@ -2,6 +2,10 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
+ * - Per-octave instruments (off by default): each octave can route through its
+ *   own preset chain instead of the shared A/B pair. Stateless per-trigger
+ *   gating yields to journeys and mid-crossfade automatically. Enable state +
+ *   octave->instrument map persist under geosonify_octave_instruments.
  * - Fixed stationary movement-fade being applied twice (drone faded to silence
  *   ~2x too fast). Fade is now applied exactly once, inside triggerNote().
  *   Legacy (non-pattern) path unchanged - it applies the fade once already.
@@ -69,6 +73,11 @@
   
   // Master output
   let masterVolume = null;
+
+  // Per-octave instrument chains (optional; off by default)
+  let octaveChains = {};          // octave -> { synth, hpFilter, lpFilter, reverb, volume, params, preset }
+  let octaveInstrumentMap = {};   // octave -> presetName (user overrides of the default mapping)
+  const OCTAVE_INSTRUMENTS_KEY = 'geosonify_octave_instruments';
 
   // ============== CROSSFADE STATE ==============
   
@@ -207,6 +216,7 @@
     droneDecayTargetDb: 0,      // Target dB for decayed octaves
     droneMovementFade: true,     // Fade out when stationary
     staggeredIdleEntrances: false, // Stagger idle-octave entrances (evolving offsets)
+    perOctaveEnabled: false,     // Route each octave through its own instrument chain
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -334,7 +344,37 @@
     }
   }
 
+  // Per-octave instruments persist BOTH the enable flag and the assignment map
+  // under one key (option chosen deliberately; assignments are hand-tuned and
+  // worth keeping across reloads).
+  function loadOctaveInstruments() {
+    try {
+      const stored = localStorage.getItem(OCTAVE_INSTRUMENTS_KEY);
+      if (stored) {
+        const data = JSON.parse(stored);
+        if (data && typeof data === 'object') {
+          octaveInstrumentMap = data.map && typeof data.map === 'object' ? data.map : {};
+          settings.perOctaveEnabled = !!data.enabled;
+        }
+      }
+    } catch (e) {
+      console.warn('[AudioService] Failed to load octave instruments:', e);
+    }
+  }
+
+  function saveOctaveInstruments() {
+    try {
+      localStorage.setItem(OCTAVE_INSTRUMENTS_KEY, JSON.stringify({
+        enabled: !!settings.perOctaveEnabled,
+        map: octaveInstrumentMap
+      }));
+    } catch (e) {
+      console.warn('[AudioService] Failed to save octave instruments:', e);
+    }
+  }
+
   loadUserPresets();
+  loadOctaveInstruments();
 
   // ============== OSCILLATOR TYPES ==============
   
@@ -477,13 +517,13 @@
     return { type: oscSettings.type };
   }
 
-  async function createSynthChain(preset, label) {
+  async function createSynthChain(preset, label, maxPolyphony = 64) {
     const p = getPreset(preset);
     
     const synth = new Tone.PolySynth(Tone.Synth, {
       oscillator: createOscillatorConfig(p.oscillator || { type: 'sine' }),
       envelope: p.envelope || { attack: 0.3, decay: 0.5, sustain: 0.7, release: 3.0 },
-      maxPolyphony: 64  // Increased from 32 to handle dual chains
+      maxPolyphony: maxPolyphony  // 64 for A/B dual chains; lower for per-octave chains
     });
     
     const hpFilter = new Tone.Filter(p.hpFreq || 80, 'highpass');
@@ -548,6 +588,87 @@
     applyCrossfadeVolumes();
   }
 
+  // ============== PER-OCTAVE INSTRUMENT CHAINS ==============
+
+  /**
+   * Default octave->preset mapping when the user hasn't overridden an octave.
+   * 0-2 -> meditation (dark/slow sub bed), 3-6 -> snapshot of presetA at build
+   * time (keeps the loved center timbre), 7-9 -> crystal (bell-like top).
+   */
+  function resolveOctavePreset(octave) {
+    if (octaveInstrumentMap[octave]) return octaveInstrumentMap[octave];
+    if (octave <= 2) return 'meditation';
+    if (octave <= 6) return presetA;
+    return 'crystal';
+  }
+
+  /**
+   * Whether per-octave routing is active for THIS trigger. Stateless and
+   * evaluated per note so journeys/crossfades reclaim A/B routing instantly
+   * and hand it back on completion. Yields whenever a journey is active or
+   * the crossfade is anywhere mid-range.
+   */
+  function perOctaveActive() {
+    return settings.perOctaveEnabled &&
+           (crossfade <= 0.01 || crossfade >= 0.99) &&
+           !(global.JourneyService && global.JourneyService.isActive && global.JourneyService.isActive());
+  }
+
+  /**
+   * Build all ten per-octave chains lazily. Tolerates Tone === null (pre-init):
+   * if Tone isn't ready, do nothing now - buildOctaveChains is called again on
+   * the next enable after initialize.
+   */
+  async function buildOctaveChains() {
+    if (typeof Tone === 'undefined' || Tone === null) return;
+    disposeOctaveChains(); // ensure clean slate
+    for (let oct = 0; oct <= 9; oct++) {
+      const preset = resolveOctavePreset(oct);
+      const chain = await createSynthChain(preset, 'oct' + oct, 8);
+      // Per-octave chains have no crossfade; lift out of the -60 start volume.
+      chain.volume.volume.value = chain.params.volume || 0;
+      chain.preset = preset;
+      octaveChains[oct] = chain;
+    }
+    console.log('[AudioService] Built per-octave instrument chains');
+  }
+
+  /**
+   * Dispose all per-octave chains (mirrors rebuildChain's dispose ordering).
+   */
+  function disposeOctaveChains() {
+    for (const oct of Object.keys(octaveChains)) {
+      const c = octaveChains[oct];
+      if (!c) continue;
+      try { c.synth?.dispose(); } catch (e) {}
+      try { c.hpFilter?.dispose(); } catch (e) {}
+      try { c.lpFilter?.dispose(); } catch (e) {}
+      try { c.reverb?.dispose(); } catch (e) {}
+      try { c.volume?.dispose(); } catch (e) {}
+    }
+    octaveChains = {};
+  }
+
+  /**
+   * Rebuild a single octave's chain (used when its instrument is reassigned).
+   */
+  async function rebuildOctaveChain(octave) {
+    if (typeof Tone === 'undefined' || Tone === null) return;
+    const existing = octaveChains[octave];
+    if (existing) {
+      try { existing.synth?.dispose(); } catch (e) {}
+      try { existing.hpFilter?.dispose(); } catch (e) {}
+      try { existing.lpFilter?.dispose(); } catch (e) {}
+      try { existing.reverb?.dispose(); } catch (e) {}
+      try { existing.volume?.dispose(); } catch (e) {}
+    }
+    const preset = resolveOctavePreset(octave);
+    const chain = await createSynthChain(preset, 'oct' + octave, 8);
+    chain.volume.volume.value = chain.params.volume || 0;
+    chain.preset = preset;
+    octaveChains[octave] = chain;
+  }
+
   // ============== NOTE TRIGGERING ==============
 
   /**
@@ -564,6 +685,20 @@
     // Apply stationary volume reduction if movement fade is enabled
     const stationaryMod = settings.droneMovementFade ? currentDroneVolumeReduction : 0;
     const adjustedVelocity = velocity * Math.pow(10, stationaryMod / 20);
+    
+    // Per-octave instrument routing: if active and this note carries an octave
+    // that maps to a built chain, play it there INSTEAD of A/B, then emit and
+    // return. All other paths (no meta, mid-crossfade, journeys) fall through
+    // to the unchanged A/B block below.
+    if (perOctaveActive() && meta && meta.octave !== undefined && octaveChains[meta.octave]) {
+      try {
+        octaveChains[meta.octave].synth.triggerAttackRelease(note, duration, t, adjustedVelocity);
+      } catch (e) {
+        // Note already playing or other issue
+      }
+      emitNoteEvent(note, duration, adjustedVelocity, t, meta);
+      return;
+    }
     
     // Trigger on A if audible
     if (crossfade < 0.99 && synthA) {
@@ -1140,6 +1275,11 @@
    */
   function initializeOctavePatterns() {
     octavePatterns = {};
+    // Seed the stagger assignment before building patterns (getDefaultPattern
+    // reads it). Seed only if empty so an in-progress drift survives re-init.
+    if (Object.keys(staggerAssignment).length === 0) {
+      staggerAssignment = buildStaggerAssignment();
+    }
     for (let i = 0; i < 10; i++) {
       // Get note count from notePool if available, otherwise default to 2
       const noteCount = notePool[i]?.length || 2;
@@ -1731,6 +1871,9 @@
     try {
       synthA?.releaseAll();
       synthB?.releaseAll();
+      for (const oct of Object.keys(octaveChains)) {
+        try { octaveChains[oct]?.synth?.releaseAll(); } catch (e) {}
+      }
     } catch (e) {}
     
     // Clear all tracking state
@@ -1792,6 +1935,14 @@
       
       isInitialized = true;
       console.log('[AudioService] Dual-synth initialized. A:', presetA, 'B:', presetB);
+      
+      // If per-octave instruments were left enabled (persisted), build the
+      // chains now that Tone and A/B exist.
+      if (settings.perOctaveEnabled) {
+        try { await buildOctaveChains(); } catch (e) {
+          console.warn('[AudioService] Failed to build octave chains at init:', e);
+        }
+      }
     },
 
     async play() {
@@ -2270,6 +2421,54 @@
 
     getStaggeredIdleEntrances() {
       return settings.staggeredIdleEntrances;
+    },
+
+    /**
+     * Enable/disable per-octave instruments. Builds chains lazily on enable
+     * (tolerates Tone not yet loaded - chains build on the next enable after
+     * initialize). Disposes chains on disable. Persists enable state + map.
+     */
+    async setPerOctaveEnabled(enabled) {
+      settings.perOctaveEnabled = !!enabled;
+      saveOctaveInstruments();
+      if (enabled) {
+        await buildOctaveChains();
+      } else {
+        disposeOctaveChains();
+      }
+    },
+
+    getPerOctaveEnabled() {
+      return settings.perOctaveEnabled;
+    },
+
+    /**
+     * Assign an instrument (preset name) to an octave. Persists, and if chains
+     * are currently built, rebuilds just that octave's chain.
+     */
+    async setOctaveInstrument(octave, presetName) {
+      const oct = Math.max(0, Math.min(9, octave));
+      octaveInstrumentMap[oct] = presetName;
+      saveOctaveInstruments();
+      if (octaveChains[oct]) {
+        await rebuildOctaveChain(oct);
+      }
+    },
+
+    /**
+     * Get the effective instrument for an octave (user override or default).
+     */
+    getOctaveInstrument(octave) {
+      return resolveOctavePreset(Math.max(0, Math.min(9, octave)));
+    },
+
+    /**
+     * Get the full effective octave->instrument map (0-9).
+     */
+    getOctaveInstrumentMap() {
+      const map = {};
+      for (let oct = 0; oct <= 9; oct++) map[oct] = resolveOctavePreset(oct);
+      return map;
     },
 
     /**
