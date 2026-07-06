@@ -1,7 +1,12 @@
 /**
- * geosonify-audio-ui.js v3.4
+ * geosonify-audio-ui.js v3.5
  * 
  * Audio playback controls for BPM-clock-driven location sonification.
+ * 
+ * v3.5 features:
+ * - Stationary-fade sliders now initialize from getStationaryFadeTiming() with
+ *   extended ranges (hold 5-120s, fade 5-90s)
+ * - "Staggered idle entrances" toggle in Drone Mode Settings
  * 
  * v3.4 features:
  * - Piano roll auto-switch: show roll on play, revert to VexFlow on stop
@@ -859,6 +864,13 @@
               <input type="range" class="audio-design-slider" id="droneStationaryFadeSlider" 
                      min="5" max="90" value="${fadeS}" step="5">
             </div>
+          </div>
+          
+          <div class="drone-setting-row">
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="droneStaggeredIdle" ${AudioService?.getStaggeredIdleEntrances?.() ? 'checked' : ''}>
+              <span>🌊 Staggered idle entrances</span>
+            </label>
           </div>
           
           <!-- Pattern Evolution (only visible when BPM sync enabled) -->
@@ -1809,6 +1821,11 @@
     designModal.querySelector('#droneMovementFade').onchange = function() {
       AudioService?.setDroneMovementFade(this.checked);
       designModal.querySelector('#droneMovementDetail').style.display = this.checked ? 'block' : 'none';
+    };
+    
+    // Staggered idle entrances toggle
+    designModal.querySelector('#droneStaggeredIdle').onchange = function() {
+      AudioService?.setStaggeredIdleEntrances(this.checked);
     };
     
     // Stationary start delay slider
