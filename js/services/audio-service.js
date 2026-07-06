@@ -102,8 +102,8 @@
   let lastCoordChangeTime = 0;  // Track when coordinates last changed
   let lastCoordString = '';      // Track last coordinate string to detect changes
   let movementThresholdMeters = 2; // Minimum movement to count as "moving"
-  let stationaryFadeStartMs = 10000; // Start fading after 10 seconds stationary
-  let stationaryFadeTimeMs = 15000; // Fully faded after additional 15 seconds
+  let stationaryFadeStartMs = 60000; // Start fading after 60 seconds stationary
+  let stationaryFadeTimeMs = 30000; // Fully faded after additional 30 seconds
   let currentDroneVolumeReduction = 0; // dB reduction due to being stationary
 
   // ============== NOTE EVENT BUS ==============
@@ -832,12 +832,9 @@
       initializeOctavePatterns();
     }
     
-    // Calculate stationary volume reduction (only if movement fade enabled)
-    let stationaryMod = 1.0;
-    if (settings.droneMovementFade) {
-      const stationaryDb = calculateStationaryVolumeReduction();
-      stationaryMod = Math.pow(10, stationaryDb / 20);
-    }
+    // Refresh currentDroneVolumeReduction; the fade itself is
+    // applied exactly once, inside triggerNote()
+    if (settings.droneMovementFade) calculateStationaryVolumeReduction();
     
     // Current beat position (0, 1, 2, 3 in quarter note resolution)
     const currentBeat = getCurrentBeatInBar();
@@ -865,7 +862,7 @@
       const intensityDb = octaveSettings.intensity || 0;
       const decayDb = getOctaveDecayDb(octave);
       const totalDb = intensityDb + decayDb;
-      const octaveVelocity = 0.6 * Math.pow(10, totalDb / 20) * stationaryMod;
+      const octaveVelocity = 0.6 * Math.pow(10, totalDb / 20);
       const velocity = Math.max(0.05, Math.min(1, octaveVelocity));
       
       // Find slots that should trigger RIGHT NOW
@@ -1546,12 +1543,9 @@
     // Current position is X.5 beats (the "and")
     const currentBeat = droneBeatCount + 0.5;
     
-    // Calculate stationary modifier
-    let stationaryMod = 1.0;
-    if (settings.droneMovementFade) {
-      const stationaryDb = calculateStationaryVolumeReduction();
-      stationaryMod = Math.pow(10, stationaryDb / 20);
-    }
+    // Refresh currentDroneVolumeReduction; the fade itself is
+    // applied exactly once, inside triggerNote()
+    if (settings.droneMovementFade) calculateStationaryVolumeReduction();
     
     // Process each octave looking for eighth-note slots or triplets on the "and"
     for (let octave = 0; octave < notePool.length; octave++) {
@@ -1568,7 +1562,7 @@
       const intensityDb = octaveSettings.intensity || 0;
       const decayDb = getOctaveDecayDb(octave);
       const totalDb = intensityDb + decayDb;
-      const octaveVelocity = 0.6 * Math.pow(10, totalDb / 20) * stationaryMod;
+      const octaveVelocity = 0.6 * Math.pow(10, totalDb / 20);
       const velocity = Math.max(0.05, Math.min(1, octaveVelocity));
       
       // Find slots that should trigger on this eighth-note tick
