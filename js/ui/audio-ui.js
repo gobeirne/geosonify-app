@@ -572,6 +572,8 @@
     const displayAttack = AudioService?.getAttack?.() ?? 0.3;
     const displayRelease = AudioService?.getRelease?.() ?? 3.0;
     const currentCrossfade = params.crossfade ?? 0;
+    const ft = AudioService?.getStationaryFadeTiming?.() || { startMs: 60000, fadeMs: 30000 };
+    const startS = Math.round(ft.startMs / 1000), fadeS = Math.round(ft.fadeMs / 1000);
     
     const presets = AudioService?.getPresets() || ['crystal', 'ambient', 'warm', 'pad', 'frenetic', 'meditation', 'glitch', 'ethereal'];
     
@@ -846,16 +848,16 @@
             <div class="drone-setting-detail" id="droneMovementDetail" style="display:${params.droneMovementFade ? 'block' : 'none'};">
               <div class="audio-design-label">
                 <span>Start fade after</span>
-                <span id="droneStationaryStartValue">10s</span>
+                <span id="droneStationaryStartValue">${startS}s</span>
               </div>
               <input type="range" class="audio-design-slider" id="droneStationaryStartSlider" 
-                     min="1" max="10" value="10" step="1">
+                     min="5" max="120" value="${startS}" step="5">
               <div class="audio-design-label" style="margin-top:8px;">
                 <span>Fade duration</span>
-                <span id="droneStationaryFadeValue">15s</span>
+                <span id="droneStationaryFadeValue">${fadeS}s</span>
               </div>
               <input type="range" class="audio-design-slider" id="droneStationaryFadeSlider" 
-                     min="1" max="15" value="15" step="1">
+                     min="5" max="90" value="${fadeS}" step="5">
             </div>
           </div>
           
