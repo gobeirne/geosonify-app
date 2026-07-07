@@ -2,6 +2,11 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
+ * - Retro drum track (off by default): kick/snare/hat on the drone's own eighth
+ *   clock (no second transport). Three kits (arcade 4-bar, boombap 3-bar,
+ *   minimal 2-bar) phase differently against octave cycles. Density follows
+ *   movement, the kit ebbs with the stationary fade, and one optional hit flips
+ *   every 8 bars. All drum settings persist under geosonify_drums.
  * - Per-octave instruments (off by default): each octave can route through its
  *   own preset chain instead of the shared A/B pair. Stateless per-trigger
  *   gating yields to journeys and mid-crossfade automatically. Enable state +
@@ -78,6 +83,12 @@
   let octaveChains = {};          // octave -> { synth, hpFilter, lpFilter, reverb, volume, params, preset }
   let octaveInstrumentMap = {};   // octave -> presetName (user overrides of the default mapping)
   const OCTAVE_INSTRUMENTS_KEY = 'geosonify_octave_instruments';
+
+  // Retro drum track (optional; off by default)
+  let drumKick = null, drumSnare = null, drumHat = null, drumVolume = null;
+  let drumMutations = new Set();  // hitKeys whose optional-state is currently flipped
+  let drumEvolveCounter = 0;      // bars since last evolution flip
+  const DRUM_SETTINGS_KEY = 'geosonify_drums';
 
   // ============== CROSSFADE STATE ==============
   
@@ -217,6 +228,11 @@
     droneMovementFade: true,     // Fade out when stationary
     staggeredIdleEntrances: false, // Stagger idle-octave entrances (evolving offsets)
     perOctaveEnabled: false,     // Route each octave through its own instrument chain
+    drumEnabled: false,          // Retro drum track (off by default)
+    drumKit: 'arcade',           // 'arcade' | 'boombap' | 'minimal'
+    drumVolumeDb: -10,           // drumVolume node level
+    drumFollowMovement: true,    // density + volume follow movement/stationary state
+    drumEvolveEnabled: true,     // flip one optional hit every 8 bars
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -373,8 +389,43 @@
     }
   }
 
+  // Drums persist everything (enable + kit + volume + follow/evolve toggles)
+  // under one key, matching the per-octave persistence choice.
+  function loadDrumSettings() {
+    try {
+      const stored = localStorage.getItem(DRUM_SETTINGS_KEY);
+      if (stored) {
+        const d = JSON.parse(stored);
+        if (d && typeof d === 'object') {
+          if (typeof d.enabled === 'boolean') settings.drumEnabled = d.enabled;
+          if (typeof d.kit === 'string') settings.drumKit = d.kit;
+          if (typeof d.volumeDb === 'number') settings.drumVolumeDb = d.volumeDb;
+          if (typeof d.followMovement === 'boolean') settings.drumFollowMovement = d.followMovement;
+          if (typeof d.evolveEnabled === 'boolean') settings.drumEvolveEnabled = d.evolveEnabled;
+        }
+      }
+    } catch (e) {
+      console.warn('[AudioService] Failed to load drum settings:', e);
+    }
+  }
+
+  function saveDrumSettings() {
+    try {
+      localStorage.setItem(DRUM_SETTINGS_KEY, JSON.stringify({
+        enabled: !!settings.drumEnabled,
+        kit: settings.drumKit,
+        volumeDb: settings.drumVolumeDb,
+        followMovement: !!settings.drumFollowMovement,
+        evolveEnabled: !!settings.drumEvolveEnabled
+      }));
+    } catch (e) {
+      console.warn('[AudioService] Failed to save drum settings:', e);
+    }
+  }
+
   loadUserPresets();
   loadOctaveInstruments();
+  loadDrumSettings();
 
   // ============== OSCILLATOR TYPES ==============
   
@@ -667,6 +718,174 @@
     chain.volume.volume.value = chain.params.volume || 0;
     chain.preset = preset;
     octaveChains[octave] = chain;
+  }
+
+  // ============== RETRO DRUM TRACK ==============
+
+  /**
+   * Drum patterns as data. beat values are on the eighth grid (0,0.5,...,3.5).
+   * Downbeat kicks (beat 0) are never optional. Pattern length per kit is the
+   * phasing knob: 4-bar arcade locks with 4-bar octave cycles; 3-bar boombap
+   * drifts and realigns every 12 bars; 2-bar minimal is a sparse kick+hat.
+   */
+  const DRUM_KITS = {
+    arcade: {
+      lengthBars: 4,
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 0, beat: 1, vel: 0.5 },
+        { inst: 'snare',bar: 0, beat: 2, vel: 0.8 },
+        { inst: 'hat',  bar: 0, beat: 3, vel: 0.5 },
+        { inst: 'hat',  bar: 0, beat: 1.5, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 1, beat: 1, vel: 0.5 },
+        { inst: 'snare',bar: 1, beat: 2, vel: 0.8 },
+        { inst: 'hat',  bar: 1, beat: 3, vel: 0.5 },
+        { inst: 'kick', bar: 1, beat: 2.5, vel: 0.7, optional: true },
+        { inst: 'kick', bar: 2, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 2, beat: 1, vel: 0.5 },
+        { inst: 'snare',bar: 2, beat: 2, vel: 0.8 },
+        { inst: 'hat',  bar: 2, beat: 3, vel: 0.5 },
+        { inst: 'hat',  bar: 2, beat: 3.5, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 3, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 3, beat: 1, vel: 0.5 },
+        { inst: 'snare',bar: 3, beat: 2, vel: 0.8 },
+        { inst: 'snare',bar: 3, beat: 3.5, vel: 0.6, optional: true },
+        { inst: 'hat',  bar: 3, beat: 3, vel: 0.5 }
+      ]
+    },
+    boombap: {
+      lengthBars: 3,
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'snare',bar: 0, beat: 2, vel: 0.9 },
+        { inst: 'hat',  bar: 0, beat: 0.5, vel: 0.4 },
+        { inst: 'hat',  bar: 0, beat: 1.5, vel: 0.4 },
+        { inst: 'hat',  bar: 0, beat: 2.5, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 0, beat: 2.5, vel: 0.7, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 0.5, vel: 0.6, optional: true },
+        { inst: 'snare',bar: 1, beat: 2, vel: 0.9 },
+        { inst: 'hat',  bar: 1, beat: 1, vel: 0.4 },
+        { inst: 'hat',  bar: 1, beat: 3, vel: 0.4 },
+        { inst: 'kick', bar: 2, beat: 0, vel: 1.0 },
+        { inst: 'snare',bar: 2, beat: 2, vel: 0.9 },
+        { inst: 'snare',bar: 2, beat: 3.5, vel: 0.5, optional: true },
+        { inst: 'hat',  bar: 2, beat: 1.5, vel: 0.4 },
+        { inst: 'hat',  bar: 2, beat: 2.5, vel: 0.4, optional: true }
+      ]
+    },
+    minimal: {
+      lengthBars: 2,
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 0, beat: 2, vel: 0.5 },
+        { inst: 'hat',  bar: 0, beat: 3, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 1, beat: 2, vel: 0.5 },
+        { inst: 'kick', bar: 1, beat: 2.5, vel: 0.6, optional: true }
+      ]
+    }
+  };
+
+  /**
+   * Voicing per kit. Guarded on Tone === null by the caller.
+   */
+  function buildDrums() {
+    if (typeof Tone === 'undefined' || Tone === null) return;
+    disposeDrums();
+    drumVolume = new Tone.Volume(settings.drumVolumeDb).connect(masterVolume);
+
+    const kit = settings.drumKit;
+    if (kit === 'boombap') {
+      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 5, envelope: { attack: 0.001, decay: 0.4, sustain: 0 } }).connect(drumVolume);
+      drumSnare = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } }).connect(drumVolume);
+      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08, release: 0.02 }, harmonicity: 5.1, resonance: 4000 }).connect(drumVolume);
+    } else if (kit === 'minimal') {
+      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.04, octaves: 6, envelope: { attack: 0.001, decay: 0.3, sustain: 0 } }).connect(drumVolume);
+      drumSnare = null; // minimal is kick + hat only
+      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, harmonicity: 5.1, resonance: 5000 }).connect(drumVolume);
+    } else { // arcade (default)
+      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } }).connect(drumVolume);
+      drumSnare = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } }).connect(drumVolume);
+      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, harmonicity: 5.1, resonance: 6000 }).connect(drumVolume);
+    }
+    console.log('[AudioService] Built drum kit:', kit);
+  }
+
+  function disposeDrums() {
+    try { drumKick?.dispose(); } catch (e) {}
+    try { drumSnare?.dispose(); } catch (e) {}
+    try { drumHat?.dispose(); } catch (e) {}
+    try { drumVolume?.dispose(); } catch (e) {}
+    drumKick = drumSnare = drumHat = drumVolume = null;
+  }
+
+  /**
+   * Density gate: when movement-follow is on, drop optional hits while quiet.
+   * Returns true if the (optional) hit should sound this cycle.
+   */
+  function drumDensityAllows() {
+    if (!settings.drumFollowMovement) return true;
+    // Floor hard when stationary (past the fade-start threshold)
+    if (Date.now() - lastCoordChangeTime > stationaryFadeStartMs) return false;
+    const density = Math.max(0, Math.min(1, 0.5 + getAcceleration() * settings.accelerationSensitivity));
+    return Math.random() < density;
+  }
+
+  /**
+   * Fire one drum instrument.
+   */
+  function fireDrum(inst, time, vel) {
+    try {
+      if (inst === 'kick' && drumKick) drumKick.triggerAttackRelease('C1', '8n', time, vel);
+      else if (inst === 'snare' && drumSnare) drumSnare.triggerAttackRelease('8n', time, vel);
+      else if (inst === 'hat' && drumHat) drumHat.triggerAttackRelease('C4', '32n', time, vel);
+    } catch (e) {}
+  }
+
+  /**
+   * Called once per eighth from the drone clock. subBeat is 0,0.5,...,3.5.
+   * No second transport - rides the drone clock's sample-accurate time.
+   */
+  function drumTick(time, subBeat) {
+    if (!settings.drumEnabled || !drumKick) return;
+    const kit = DRUM_KITS[settings.drumKit] || DRUM_KITS.arcade;
+    const patternBar = droneCurrentBar % kit.lengthBars;
+
+    for (const hit of kit.hits) {
+      if (hit.bar !== patternBar || hit.beat !== subBeat) continue;
+      // Effective optional-state: base optional flipped if this hit is mutated
+      const hitKey = hit.inst + ':' + hit.bar + ':' + hit.beat;
+      const effectiveOptional = drumMutations.has(hitKey) ? !hit.optional : hit.optional;
+      if (effectiveOptional && !drumDensityAllows()) continue;
+      fireDrum(hit.inst, time, hit.vel);
+    }
+
+    // Bar-boundary housekeeping: run once, on the downbeat.
+    if (subBeat === 0) {
+      // Ebb drums with the drone when stationary (once per bar)
+      if (drumVolume) {
+        const ebb = settings.drumFollowMovement ? currentDroneVolumeReduction : 0;
+        drumVolume.volume.rampTo(settings.drumVolumeDb + ebb, 0.5);
+      }
+      // Evolution: flip one optional hit every 8 bars, skipped while stationary
+      if (settings.drumEvolveEnabled) {
+        drumEvolveCounter++;
+        if (drumEvolveCounter >= 8) {
+          drumEvolveCounter = 0;
+          if (!shouldSkipEvolution()) {
+            const optionalHits = kit.hits.filter(h => h.optional);
+            if (optionalHits.length > 0) {
+              const pick = optionalHits[Math.floor(Math.random() * optionalHits.length)];
+              const key = pick.inst + ':' + pick.bar + ':' + pick.beat;
+              if (drumMutations.has(key)) drumMutations.delete(key);
+              else drumMutations.add(key);
+            }
+          }
+        }
+      }
+    }
   }
 
   // ============== NOTE TRIGGERING ==============
@@ -1763,7 +1982,16 @@
         // Eighth note boundary (odd eighths) - check for eighth-note slots
         droneIsEighth = true;
         updateDroneNotesEighths();
+      } else {
+        // Pattern evolution off: still mark the "and" so drums can hit it
+        droneIsEighth = true;
       }
+      
+      // Retro drum track: one call per eighth. subBeat is the current beat on
+      // the eighth grid - droneBeatCount already reflects the increment/barline
+      // wrap on downbeats; +0.5 on the "and". No second transport.
+      const drumSubBeat = droneIsEighth ? droneBeatCount + 0.5 : droneBeatCount;
+      drumTick(time, drumSubBeat);
       
       // Update BPM smoothly if it changed
       const targetBPM = getCurrentBPM();
@@ -1941,6 +2169,13 @@
       if (settings.perOctaveEnabled) {
         try { await buildOctaveChains(); } catch (e) {
           console.warn('[AudioService] Failed to build octave chains at init:', e);
+        }
+      }
+      
+      // If drums were left enabled (persisted), build the kit now.
+      if (settings.drumEnabled) {
+        try { buildDrums(); } catch (e) {
+          console.warn('[AudioService] Failed to build drums at init:', e);
         }
       }
     },
@@ -2469,6 +2704,64 @@
       const map = {};
       for (let oct = 0; oct <= 9; oct++) map[oct] = resolveOctavePreset(oct);
       return map;
+    },
+
+    // ===== RETRO DRUMS =====
+
+    setDrumEnabled(enabled) {
+      settings.drumEnabled = !!enabled;
+      saveDrumSettings();
+      if (enabled) buildDrums();
+      else disposeDrums();
+    },
+
+    getDrumEnabled() {
+      return settings.drumEnabled;
+    },
+
+    setDrumKit(kit) {
+      if (!DRUM_KITS[kit]) return;
+      settings.drumKit = kit;
+      drumMutations = new Set(); // fresh phasing on kit change
+      drumEvolveCounter = 0;
+      saveDrumSettings();
+      if (settings.drumEnabled) buildDrums(); // rebuild voicing for the new kit
+    },
+
+    getDrumKit() {
+      return settings.drumKit;
+    },
+
+    getDrumKitNames() {
+      return Object.keys(DRUM_KITS);
+    },
+
+    setDrumVolume(db) {
+      settings.drumVolumeDb = Math.max(-30, Math.min(0, db));
+      saveDrumSettings();
+      if (drumVolume) drumVolume.volume.rampTo(settings.drumVolumeDb, 0.1);
+    },
+
+    getDrumVolume() {
+      return settings.drumVolumeDb;
+    },
+
+    setDrumFollowMovement(enabled) {
+      settings.drumFollowMovement = !!enabled;
+      saveDrumSettings();
+    },
+
+    getDrumFollowMovement() {
+      return settings.drumFollowMovement;
+    },
+
+    setDrumEvolveEnabled(enabled) {
+      settings.drumEvolveEnabled = !!enabled;
+      saveDrumSettings();
+    },
+
+    getDrumEvolveEnabled() {
+      return settings.drumEvolveEnabled;
     },
 
     /**
