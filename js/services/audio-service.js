@@ -2,7 +2,11 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
- * - Retro drum track (off by default): kick/snare/hat on the drone's own eighth
+ * - New 'sub-bass' preset built on Tone.MonoSynth with a per-note filter
+ *   envelope (defined low end for the bottom octaves). createSynthChain now
+ *   honors an optional synthType:'mono' field; presets without it are
+ *   unchanged. Default per-octave mapping routes octaves 0-1 to sub-bass.
+ * - Retro drum track (ON by default): kick/snare/hat on the drone's own eighth
  *   clock (no second transport). Three kits (arcade 4-bar, boombap 3-bar,
  *   minimal 2-bar) phase differently against octave cycles. Density follows
  *   movement, the kit ebbs with the stationary fade, and one optional hit flips
@@ -228,7 +232,7 @@
     droneMovementFade: true,     // Fade out when stationary
     staggeredIdleEntrances: false, // Stagger idle-octave entrances (evolving offsets)
     perOctaveEnabled: false,     // Route each octave through its own instrument chain
-    drumEnabled: false,          // Retro drum track (off by default)
+    drumEnabled: true,           // Retro drum track (on by default)
     drumKit: 'arcade',           // 'arcade' | 'boombap' | 'minimal'
     drumVolumeDb: -10,           // drumVolume node level
     drumFollowMovement: true,    // density + volume follow movement/stationary state
@@ -336,6 +340,18 @@
       envelope: { attack: 0.8, decay: 1.2, sustain: 0.6, release: 5.0 },
       hpFreq: 20, lpFreq: 20000, reverbDecay: 6.0, reverbWet: 0.55, volume: -10,
       bpm: 75, humanize: 0.08, timeSignature: [6, 8]
+    },
+    'sub-bass': {
+      synthType: 'mono',
+      oscillator: { type: 'triangle' },
+      envelope: { attack: 0.02, decay: 0.35, sustain: 0.85, release: 1.4 },
+      filter: { Q: 3, type: 'lowpass', rolloff: -24 },
+      filterEnvelope: {
+        attack: 0.04, baseFrequency: 50, octaves: 3.2,
+        decay: 0.5, sustain: 0.35, release: 1.2, exponent: 2
+      },
+      hpFreq: 20, lpFreq: 1200, reverbDecay: 2.0, reverbWet: 0.15, volume: -4,
+      bpm: 80, humanize: 0.05, timeSignature: [4, 4]
     }
   };
 
@@ -571,11 +587,29 @@
   async function createSynthChain(preset, label, maxPolyphony = 64) {
     const p = getPreset(preset);
     
-    const synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: createOscillatorConfig(p.oscillator || { type: 'sine' }),
-      envelope: p.envelope || { attack: 0.3, decay: 0.5, sustain: 0.7, release: 3.0 },
-      maxPolyphony: maxPolyphony  // 64 for A/B dual chains; lower for per-octave chains
-    });
+    // Most presets are plain Synth (oscillator + amp envelope). A preset may
+    // opt into MonoSynth by setting synthType:'mono', which adds a per-note
+    // filter envelope (a "filter sweep") - the key to defined bass. Presets
+    // without synthType take the original Synth path unchanged (byte-identical).
+    let synth;
+    if (p.synthType === 'mono') {
+      synth = new Tone.PolySynth(Tone.MonoSynth, {
+        oscillator: createOscillatorConfig(p.oscillator || { type: 'triangle' }),
+        envelope: p.envelope || { attack: 0.02, decay: 0.3, sustain: 0.8, release: 1.5 },
+        filter: p.filter || { Q: 2, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: p.filterEnvelope || {
+          attack: 0.03, baseFrequency: 60, octaves: 3.5,
+          decay: 0.4, sustain: 0.4, release: 1.2, exponent: 2
+        },
+        maxPolyphony: maxPolyphony
+      });
+    } else {
+      synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: createOscillatorConfig(p.oscillator || { type: 'sine' }),
+        envelope: p.envelope || { attack: 0.3, decay: 0.5, sustain: 0.7, release: 3.0 },
+        maxPolyphony: maxPolyphony  // 64 for A/B dual chains; lower for per-octave chains
+      });
+    }
     
     const hpFilter = new Tone.Filter(p.hpFreq || 80, 'highpass');
     const lpFilter = new Tone.Filter(p.lpFreq || 8000, 'lowpass');
@@ -648,7 +682,8 @@
    */
   function resolveOctavePreset(octave) {
     if (octaveInstrumentMap[octave]) return octaveInstrumentMap[octave];
-    if (octave <= 2) return 'meditation';
+    if (octave <= 1) return 'sub-bass';
+    if (octave === 2) return 'meditation';
     if (octave <= 6) return presetA;
     return 'crystal';
   }
