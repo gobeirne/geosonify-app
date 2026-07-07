@@ -9,6 +9,8 @@
  * - "Staggered idle entrances" toggle in Drone Mode Settings
  * - "Per-octave instruments" section: master toggle, per-octave instrument
  *   selects, and a live deferral status line
+ * - "Retro drums" section: enable toggle, kit select, volume, follow-movement
+ *   and evolve toggles
  * 
  * v3.4 features:
  * - Piano roll auto-switch: show roll on play, revert to VexFlow on stop
@@ -640,6 +642,16 @@
       `;
     }
     
+    // Retro drums UI data
+    const drumEnabled = AudioService?.getDrumEnabled?.() || false;
+    const drumKit = AudioService?.getDrumKit?.() || 'arcade';
+    const drumVolumeDb = AudioService?.getDrumVolume?.() ?? -10;
+    const drumFollow = AudioService?.getDrumFollowMovement?.() ?? true;
+    const drumEvolve = AudioService?.getDrumEvolveEnabled?.() ?? true;
+    const drumKitNames = AudioService?.getDrumKitNames?.() || ['arcade', 'boombap', 'minimal'];
+    const drumKitOptions = drumKitNames.map(k =>
+      `<option value="${k}" ${k === drumKit ? 'selected' : ''}>${k}</option>`).join('');
+    
     designModal.innerHTML = `
       <div class="audio-design-panel">
         <div class="audio-design-title">🎛️ Sound Design</div>
@@ -1012,6 +1024,34 @@
           <div class="per-octave-status" id="perOctaveStatus" style="font-size:12px;opacity:0.7;margin:4px 0 8px;"></div>
           <div class="per-octave-container" id="perOctaveControls" style="opacity:${perOctaveEnabled ? '1' : '0.5'};">
             ${perOctaveRowsHTML}
+          </div>
+        </div>
+        
+        <!-- RETRO DRUMS -->
+        <div class="audio-design-section" id="drumSection">
+          <div class="audio-design-section-title">🥁 Retro drums</div>
+          <label class="drone-toggle-label">
+            <input type="checkbox" id="drumEnabled" ${drumEnabled ? 'checked' : ''}>
+            <span>Enable drum track</span>
+          </label>
+          <div class="drum-controls" id="drumControls" style="opacity:${drumEnabled ? '1' : '0.5'};margin-top:8px;">
+            <div class="audio-design-label" style="margin-top:8px;"><span>Kit</span></div>
+            <select id="drumKitSelect" class="octave-instrument-select" style="width:100%;">
+              ${drumKitOptions}
+            </select>
+            <div class="audio-design-label" style="margin-top:8px;">
+              <span>Volume</span><span id="drumVolumeValue">${drumVolumeDb}dB</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="drumVolumeSlider"
+                   min="-30" max="0" value="${drumVolumeDb}" step="1">
+            <label class="drone-toggle-label" style="margin-top:8px;">
+              <input type="checkbox" id="drumFollowMovement" ${drumFollow ? 'checked' : ''}>
+              <span>Follow movement (density + ebb)</span>
+            </label>
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="drumEvolveEnabled" ${drumEvolve ? 'checked' : ''}>
+              <span>Evolve (flip one hit every 8 bars)</span>
+            </label>
           </div>
         </div>
         
@@ -1891,6 +1931,36 @@
         await AudioService?.setOctaveInstrument(oct, this.value);
       };
     });
+    
+    // Retro drums handlers
+    const drumEnabledEl = designModal.querySelector('#drumEnabled');
+    if (drumEnabledEl) {
+      drumEnabledEl.onchange = function() {
+        const on = this.checked;
+        const container = designModal.querySelector('#drumControls');
+        if (container) container.style.opacity = on ? '1' : '0.5';
+        AudioService?.setDrumEnabled(on);
+      };
+    }
+    const drumKitSelect = designModal.querySelector('#drumKitSelect');
+    if (drumKitSelect) {
+      drumKitSelect.onchange = function() { AudioService?.setDrumKit(this.value); };
+    }
+    const drumVolumeSlider = designModal.querySelector('#drumVolumeSlider');
+    if (drumVolumeSlider) {
+      drumVolumeSlider.oninput = function() {
+        designModal.querySelector('#drumVolumeValue').textContent = this.value + 'dB';
+        AudioService?.setDrumVolume(parseInt(this.value, 10));
+      };
+    }
+    const drumFollowEl = designModal.querySelector('#drumFollowMovement');
+    if (drumFollowEl) {
+      drumFollowEl.onchange = function() { AudioService?.setDrumFollowMovement(this.checked); };
+    }
+    const drumEvolveEl = designModal.querySelector('#drumEvolveEnabled');
+    if (drumEvolveEl) {
+      drumEvolveEl.onchange = function() { AudioService?.setDrumEvolveEnabled(this.checked); };
+    }
     
     // Stationary start delay slider
     designModal.querySelector('#droneStationaryStartSlider').oninput = function() {
