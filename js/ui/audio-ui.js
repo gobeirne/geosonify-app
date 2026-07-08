@@ -11,6 +11,11 @@
  *   selects, and a live deferral status line
  * - "Retro drums" section: enable toggle, kit select, volume, follow-movement
  *   and evolve toggles
+ * - "Sub-bass tuning" controls (sweep depth, base freq, attack, low-pass)
+ * - Stagger count + rotate-interval sliders; drum drop-out toggle + interval;
+ *   random per-octave instrument-swap toggle + period/duration sliders
+ * - Fix: per-octave instrument rows no longer collide with the octave
+ *   intensity/fraction binding loop (which had left the Close button unbound)
  * 
  * v3.4 features:
  * - Piano roll auto-switch: show roll on play, revert to VexFlow on stop
@@ -633,7 +638,7 @@
     let perOctaveRowsHTML = '';
     for (let oct = 1; oct <= 8; oct++) {
       perOctaveRowsHTML += `
-        <div class="octave-row" data-octave="${oct}">
+        <div class="octave-instrument-row" data-octave="${oct}">
           <span class="octave-label">Oct ${oct}</span>
           <select class="octave-instrument-select" data-octave="${oct}">
             ${presetOptionsFor(octaveInstMap[oct])}
@@ -651,6 +656,20 @@
     const drumKitNames = AudioService?.getDrumKitNames?.() || ['arcade', 'boombap', 'minimal'];
     const drumKitOptions = drumKitNames.map(k =>
       `<option value="${k}" ${k === drumKit ? 'selected' : ''}>${k}</option>`).join('');
+    
+    // Sub-bass tuning params
+    const sb = AudioService?.getSubBassParams?.() || { baseFrequency: 50, octaves: 3.2, attack: 0.04, lpFreq: 1200 };
+    
+    // Stagger controls
+    const staggerCount = AudioService?.getStaggerCount?.() ?? 1;
+    const staggerBars = AudioService?.getStaggerReshuffleBars?.() ?? 16;
+    // Drum dropout
+    const drumDropout = AudioService?.getDrumDropoutEnabled?.() ?? true;
+    const drumDropoutBars = AudioService?.getDrumDropoutBars?.() ?? 64;
+    // Octave swap
+    const octaveSwap = AudioService?.getOctaveSwapEnabled?.() ?? false;
+    const octaveSwapPeriod = AudioService?.getOctaveSwapPeriodBars?.() ?? 32;
+    const octaveSwapDuration = AudioService?.getOctaveSwapDurationBars?.() ?? 8;
     
     designModal.innerHTML = `
       <div class="audio-design-panel">
@@ -903,6 +922,14 @@
               <input type="checkbox" id="droneStaggeredIdle" ${AudioService?.getStaggeredIdleEntrances?.() ? 'checked' : ''}>
               <span>🌊 Staggered idle entrances</span>
             </label>
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Octaves staggered at once</span><span id="staggerCountValue">${staggerCount}</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="staggerCountSlider" min="0" max="5" value="${staggerCount}" step="1">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Rotate every</span><span id="staggerBarsValue">${staggerBars} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="staggerBarsSlider" min="4" max="64" value="${staggerBars}" step="4">
           </div>
           
           <!-- Pattern Evolution (only visible when BPM sync enabled) -->
@@ -1025,6 +1052,39 @@
           <div class="per-octave-container" id="perOctaveControls" style="opacity:${perOctaveEnabled ? '1' : '0.5'};">
             ${perOctaveRowsHTML}
           </div>
+          <div class="subbass-tuning" style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);">
+            <div class="audio-design-label"><span>🔊 Sub-bass tuning</span></div>
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Sweep depth</span><span id="sbOctavesValue">${sb.octaves}</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="sbOctavesSlider" min="0.5" max="6" value="${sb.octaves}" step="0.1">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Base frequency</span><span id="sbBaseFreqValue">${sb.baseFrequency}Hz</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="sbBaseFreqSlider" min="20" max="200" value="${sb.baseFrequency}" step="1">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Attack</span><span id="sbAttackValue">${sb.attack}s</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="sbAttackSlider" min="0.005" max="1" value="${sb.attack}" step="0.005">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Low-pass ceiling</span><span id="sbLpFreqValue">${sb.lpFreq}Hz</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="sbLpFreqSlider" min="200" max="4000" value="${sb.lpFreq}" step="50">
+          </div>
+          <div class="octave-swap-tuning" style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);">
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="octaveSwapEnabled" ${octaveSwap ? 'checked' : ''}>
+              <span>🎷 Instrument solos (melodic octave)</span>
+            </label>
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Swap every</span><span id="octaveSwapPeriodValue">${octaveSwapPeriod} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="octaveSwapPeriodSlider" min="8" max="128" value="${octaveSwapPeriod}" step="8">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Swap lasts</span><span id="octaveSwapDurationValue">${octaveSwapDuration} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="octaveSwapDurationSlider" min="2" max="32" value="${octaveSwapDuration}" step="2">
+          </div>
         </div>
         
         <!-- RETRO DRUMS -->
@@ -1052,6 +1112,14 @@
               <input type="checkbox" id="drumEvolveEnabled" ${drumEvolve ? 'checked' : ''}>
               <span>Evolve (flip one hit every 8 bars)</span>
             </label>
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="drumDropoutEnabled" ${drumDropout ? 'checked' : ''}>
+              <span>Drop out &amp; return busier</span>
+            </label>
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Drop out every</span><span id="drumDropoutBarsValue">${drumDropoutBars} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="drumDropoutBarsSlider" min="8" max="128" value="${drumDropoutBars}" step="8">
           </div>
         </div>
         
@@ -1316,6 +1384,16 @@
         border-radius: 8px;
         padding: 8px;
         transition: opacity 0.2s;
+      }
+      .octave-instrument-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+      }
+      .octave-instrument-row:last-child {
+        border-bottom: none;
       }
       .octave-instrument-select {
         flex: 1;
@@ -1915,6 +1993,49 @@
     designModal.querySelector('#droneStaggeredIdle').onchange = function() {
       AudioService?.setStaggeredIdleEntrances(this.checked);
     };
+    const staggerCountSlider = designModal.querySelector('#staggerCountSlider');
+    if (staggerCountSlider) {
+      staggerCountSlider.oninput = function() {
+        designModal.querySelector('#staggerCountValue').textContent = this.value;
+        AudioService?.setStaggerCount(parseInt(this.value, 10));
+      };
+    }
+    const staggerBarsSlider = designModal.querySelector('#staggerBarsSlider');
+    if (staggerBarsSlider) {
+      staggerBarsSlider.oninput = function() {
+        designModal.querySelector('#staggerBarsValue').textContent = this.value + ' bars';
+        AudioService?.setStaggerReshuffleBars(parseInt(this.value, 10));
+      };
+    }
+    const drumDropoutEl = designModal.querySelector('#drumDropoutEnabled');
+    if (drumDropoutEl) {
+      drumDropoutEl.onchange = function() { AudioService?.setDrumDropoutEnabled(this.checked); };
+    }
+    const drumDropoutBarsSlider = designModal.querySelector('#drumDropoutBarsSlider');
+    if (drumDropoutBarsSlider) {
+      drumDropoutBarsSlider.oninput = function() {
+        designModal.querySelector('#drumDropoutBarsValue').textContent = this.value + ' bars';
+        AudioService?.setDrumDropoutBars(parseInt(this.value, 10));
+      };
+    }
+    const octaveSwapEl = designModal.querySelector('#octaveSwapEnabled');
+    if (octaveSwapEl) {
+      octaveSwapEl.onchange = async function() { await AudioService?.setOctaveSwapEnabled(this.checked); };
+    }
+    const octaveSwapPeriodSlider = designModal.querySelector('#octaveSwapPeriodSlider');
+    if (octaveSwapPeriodSlider) {
+      octaveSwapPeriodSlider.oninput = function() {
+        designModal.querySelector('#octaveSwapPeriodValue').textContent = this.value + ' bars';
+        AudioService?.setOctaveSwapPeriodBars(parseInt(this.value, 10));
+      };
+    }
+    const octaveSwapDurationSlider = designModal.querySelector('#octaveSwapDurationSlider');
+    if (octaveSwapDurationSlider) {
+      octaveSwapDurationSlider.oninput = function() {
+        designModal.querySelector('#octaveSwapDurationValue').textContent = this.value + ' bars';
+        AudioService?.setOctaveSwapDurationBars(parseInt(this.value, 10));
+      };
+    }
     
     // Per-octave instruments: master toggle
     designModal.querySelector('#perOctaveEnabled').onchange = async function() {
@@ -1960,6 +2081,36 @@
     const drumEvolveEl = designModal.querySelector('#drumEvolveEnabled');
     if (drumEvolveEl) {
       drumEvolveEl.onchange = function() { AudioService?.setDrumEvolveEnabled(this.checked); };
+    }
+    
+    // Sub-bass tuning sliders (guarded; rebuild chains using sub-bass on change)
+    const sbOctavesSlider = designModal.querySelector('#sbOctavesSlider');
+    if (sbOctavesSlider) {
+      sbOctavesSlider.oninput = function() {
+        designModal.querySelector('#sbOctavesValue').textContent = this.value;
+        AudioService?.setSubBassParam('octaves', parseFloat(this.value));
+      };
+    }
+    const sbBaseFreqSlider = designModal.querySelector('#sbBaseFreqSlider');
+    if (sbBaseFreqSlider) {
+      sbBaseFreqSlider.oninput = function() {
+        designModal.querySelector('#sbBaseFreqValue').textContent = this.value + 'Hz';
+        AudioService?.setSubBassParam('baseFrequency', parseFloat(this.value));
+      };
+    }
+    const sbAttackSlider = designModal.querySelector('#sbAttackSlider');
+    if (sbAttackSlider) {
+      sbAttackSlider.oninput = function() {
+        designModal.querySelector('#sbAttackValue').textContent = this.value + 's';
+        AudioService?.setSubBassParam('attack', parseFloat(this.value));
+      };
+    }
+    const sbLpFreqSlider = designModal.querySelector('#sbLpFreqSlider');
+    if (sbLpFreqSlider) {
+      sbLpFreqSlider.oninput = function() {
+        designModal.querySelector('#sbLpFreqValue').textContent = this.value + 'Hz';
+        AudioService?.setSubBassParam('lpFreq', parseFloat(this.value));
+      };
     }
     
     // Stationary start delay slider
