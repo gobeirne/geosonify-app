@@ -2,10 +2,23 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
+ * - Stagger reworked to a rotating active set: at most staggerCount idle
+ *   octaves are staggered at once (default 1), rotating every
+ *   staggerReshuffleBars (default 16); promoting a new octave demotes the
+ *   oldest back to the downbeat. Both settable.
+ * - Drums: periodic drop-out (drumDropoutBars, default 64) - 1-2 silent bars
+ *   then a 4-bar busier fill (extra hats on the off-beats) and re-rolled
+ *   mutations. Settable; skipped while stationary.
+ * - Per-octave: optional random instrument "solo" (octaveSwapEnabled) routes a
+ *   MELODIC octave (an evolving-pattern voice) to a pre-built spare chain for
+ *   octaveSwapDurationBars every octaveSwapPeriodBars (default 48, sparing),
+ *   then reverts. Skips when no octave is melodic. Click-free (pointer swap,
+ *   no rebuild); yields to journeys/crossfade via perOctaveActive().
  * - New 'sub-bass' preset built on Tone.MonoSynth with a per-note filter
  *   envelope (defined low end for the bottom octaves). createSynthChain now
  *   honors an optional synthType:'mono' field; presets without it are
- *   unchanged. Default per-octave mapping routes octaves 0-1 to sub-bass.
+ * *   unchanged. Default per-octave mapping routes octaves 0-1 to sub-bass.
+ *   getSubBassParams/setSubBassParam expose live filter-envelope tuning.
  * - Retro drum track (ON by default): kick/snare/hat on the drone's own eighth
  *   clock (no second transport). Three kits (arcade 4-bar, boombap 3-bar,
  *   minimal 2-bar) phase differently against octave cycles. Density follows
@@ -88,10 +101,22 @@
   let octaveInstrumentMap = {};   // octave -> presetName (user overrides of the default mapping)
   const OCTAVE_INSTRUMENTS_KEY = 'geosonify_octave_instruments';
 
+  // Temporary per-octave instrument swap (idea 3): pre-built spare chains keyed
+  // by preset name, so a swap is a routing-pointer change (click-free) rather
+  // than an audio-graph rebuild. octaveSwap holds the currently swapped octave.
+  const OCTAVE_SWAP_PRESETS = ['crystal', 'glitch', 'ethereal']; // contrasting swap-in voices
+  let octaveSwapChains = {};      // presetName -> chain (spare pool)
+  let octaveSwap = null;          // { octave, preset } or null
+  let octaveSwapBarsLeft = 0;     // bars remaining before revert
+  let octaveSwapCounter = 0;      // bars since last swap event
+
   // Retro drum track (optional; off by default)
   let drumKick = null, drumSnare = null, drumHat = null, drumVolume = null;
   let drumMutations = new Set();  // hitKeys whose optional-state is currently flipped
   let drumEvolveCounter = 0;      // bars since last evolution flip
+  let drumDropoutCounter = 0;     // bars since last dropout event
+  let drumDropoutBarsLeft = 0;    // bars remaining in the current silent dropout
+  let drumFillBarsLeft = 0;       // bars remaining in the post-dropout busy fill
   const DRUM_SETTINGS_KEY = 'geosonify_drums';
 
   // ============== CROSSFADE STATE ==============
@@ -192,11 +217,10 @@
   let melodicOctaveQueue = [];       // Array of octave numbers in order they became melodic
   
   // Staggered idle entrances (evolving, unpredictable offsets for non-melodic octaves)
-  const STAGGER_OFFSET_POOL = [0, 1, 1.5, 2, 2.5, 3]; // beats; 0 = on the downbeat
-  const STAGGER_RESHUFFLE_BARS = 16;   // bars between single-octave offset changes
-  const STAGGER_MIN_ANCHORS = 2;       // octaves kept at 0 to hold the downbeat
-  let staggerAssignment = {};          // octave -> offset in beats (only meaningful when enabled)
-  let staggerBarCounter = 0;           // always-running (not gated by movement/evolution)
+  const STAGGER_OFFSET_POOL = [1, 1.5, 2, 2.5, 3]; // nonzero beats; a staggered octave picks one
+  let staggerActive = [];              // ordered octaves currently staggered (oldest first); max = settings.staggerCount
+  let staggerOffsets = {};             // octave -> offset in beats (only for octaves in staggerActive)
+  let staggerBarCounter = 0;           // bars since last rotation
   
   // Duration values in beats
   const DURATION_BEATS = {
@@ -230,13 +254,20 @@
     droneDecayBars: 8,            // Number of bars for decay
     droneDecayTargetDb: 0,      // Target dB for decayed octaves
     droneMovementFade: true,     // Fade out when stationary
-    staggeredIdleEntrances: false, // Stagger idle-octave entrances (evolving offsets)
+    staggeredIdleEntrances: false, // Stagger idle-octave entrances (rotating active set)
+    staggerCount: 1,             // how many idle octaves are staggered at once
+    staggerReshuffleBars: 16,    // bars between rotations (promote new, demote oldest)
     perOctaveEnabled: false,     // Route each octave through its own instrument chain
+    octaveSwapEnabled: false,    // Occasionally give a melodic octave a "solo" in a new instrument
+    octaveSwapPeriodBars: 48,    // bars between solos (sparing by default)
+    octaveSwapDurationBars: 8,   // how long a solo lasts before reverting
     drumEnabled: true,           // Retro drum track (on by default)
     drumKit: 'arcade',           // 'arcade' | 'boombap' | 'minimal'
     drumVolumeDb: -10,           // drumVolume node level
     drumFollowMovement: true,    // density + volume follow movement/stationary state
     drumEvolveEnabled: true,     // flip one optional hit every 8 bars
+    drumDropoutEnabled: true,    // periodic drop-out + busier return
+    drumDropoutBars: 64,         // period between drop-outs
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -387,6 +418,9 @@
         if (data && typeof data === 'object') {
           octaveInstrumentMap = data.map && typeof data.map === 'object' ? data.map : {};
           settings.perOctaveEnabled = !!data.enabled;
+          if (typeof data.swapEnabled === 'boolean') settings.octaveSwapEnabled = data.swapEnabled;
+          if (typeof data.swapPeriodBars === 'number') settings.octaveSwapPeriodBars = data.swapPeriodBars;
+          if (typeof data.swapDurationBars === 'number') settings.octaveSwapDurationBars = data.swapDurationBars;
         }
       }
     } catch (e) {
@@ -398,7 +432,10 @@
     try {
       localStorage.setItem(OCTAVE_INSTRUMENTS_KEY, JSON.stringify({
         enabled: !!settings.perOctaveEnabled,
-        map: octaveInstrumentMap
+        map: octaveInstrumentMap,
+        swapEnabled: !!settings.octaveSwapEnabled,
+        swapPeriodBars: settings.octaveSwapPeriodBars,
+        swapDurationBars: settings.octaveSwapDurationBars
       }));
     } catch (e) {
       console.warn('[AudioService] Failed to save octave instruments:', e);
@@ -418,6 +455,8 @@
           if (typeof d.volumeDb === 'number') settings.drumVolumeDb = d.volumeDb;
           if (typeof d.followMovement === 'boolean') settings.drumFollowMovement = d.followMovement;
           if (typeof d.evolveEnabled === 'boolean') settings.drumEvolveEnabled = d.evolveEnabled;
+          if (typeof d.dropoutEnabled === 'boolean') settings.drumDropoutEnabled = d.dropoutEnabled;
+          if (typeof d.dropoutBars === 'number') settings.drumDropoutBars = d.dropoutBars;
         }
       }
     } catch (e) {
@@ -432,7 +471,9 @@
         kit: settings.drumKit,
         volumeDb: settings.drumVolumeDb,
         followMovement: !!settings.drumFollowMovement,
-        evolveEnabled: !!settings.drumEvolveEnabled
+        evolveEnabled: !!settings.drumEvolveEnabled,
+        dropoutEnabled: !!settings.drumDropoutEnabled,
+        dropoutBars: settings.drumDropoutBars
       }));
     } catch (e) {
       console.warn('[AudioService] Failed to save drum settings:', e);
@@ -755,6 +796,76 @@
     octaveChains[octave] = chain;
   }
 
+  /**
+   * Build the spare swap-chain pool (one chain per OCTAVE_SWAP_PRESETS entry).
+   * These sit idle until a swap routes an octave's triggers to one, making the
+   * swap a pointer change rather than a rebuild (click-free).
+   */
+  async function buildOctaveSwapChains() {
+    if (typeof Tone === 'undefined' || Tone === null) return;
+    disposeOctaveSwapChains();
+    for (const preset of OCTAVE_SWAP_PRESETS) {
+      const chain = await createSynthChain(preset, 'swap-' + preset, 8);
+      chain.volume.volume.value = chain.params.volume || 0;
+      chain.preset = preset;
+      octaveSwapChains[preset] = chain;
+    }
+    console.log('[AudioService] Built octave swap spare pool');
+  }
+
+  function disposeOctaveSwapChains() {
+    for (const preset of Object.keys(octaveSwapChains)) {
+      const c = octaveSwapChains[preset];
+      if (!c) continue;
+      try { c.synth?.dispose(); } catch (e) {}
+      try { c.hpFilter?.dispose(); } catch (e) {}
+      try { c.lpFilter?.dispose(); } catch (e) {}
+      try { c.reverb?.dispose(); } catch (e) {}
+      try { c.volume?.dispose(); } catch (e) {}
+    }
+    octaveSwapChains = {};
+    octaveSwap = null;
+    octaveSwapBarsLeft = 0;
+  }
+
+  /**
+   * Bar-boundary swap scheduler. Runs only when per-octave routing is active.
+   * Picks a random idle octave whose normal preset differs from the swap-in,
+   * routes it to a spare chain for octaveSwapDurationBars, then reverts.
+   */
+  function tickOctaveSwap() {
+    if (!settings.octaveSwapEnabled || !perOctaveActive()) {
+      // If routing isn't active (journey/crossfade) drop any pending swap so we
+      // don't resume a stale one later.
+      octaveSwap = null;
+      octaveSwapBarsLeft = 0;
+      return;
+    }
+    if (octaveSwapBarsLeft > 0) {
+      octaveSwapBarsLeft--;
+      if (octaveSwapBarsLeft === 0) octaveSwap = null; // revert to default chain
+      return;
+    }
+    octaveSwapCounter++;
+    if (octaveSwapCounter < Math.max(4, settings.octaveSwapPeriodBars | 0)) return;
+    octaveSwapCounter = 0;
+    // Choose a MELODIC octave (one playing an evolving pattern - the "soloist")
+    // so the swap reads like a lead voice stepping forward in a new timbre.
+    // Falls through silently if nothing is melodic yet.
+    const candidates = [];
+    for (const oct of melodicOctaveQueue) {
+      if (octaveChains[oct]) candidates.push(oct);
+    }
+    if (candidates.length === 0) return;
+    const octave = candidates[Math.floor(Math.random() * candidates.length)];
+    const normal = resolveOctavePreset(octave);
+    const options = OCTAVE_SWAP_PRESETS.filter(p => p !== normal && octaveSwapChains[p]);
+    if (options.length === 0) return;
+    const preset = options[Math.floor(Math.random() * options.length)];
+    octaveSwap = { octave, preset };
+    octaveSwapBarsLeft = Math.max(1, settings.octaveSwapDurationBars | 0);
+  }
+
   // ============== RETRO DRUM TRACK ==============
 
   /**
@@ -888,13 +999,27 @@
     const kit = DRUM_KITS[settings.drumKit] || DRUM_KITS.arcade;
     const patternBar = droneCurrentBar % kit.lengthBars;
 
-    for (const hit of kit.hits) {
-      if (hit.bar !== patternBar || hit.beat !== subBeat) continue;
-      // Effective optional-state: base optional flipped if this hit is mutated
-      const hitKey = hit.inst + ':' + hit.bar + ':' + hit.beat;
-      const effectiveOptional = drumMutations.has(hitKey) ? !hit.optional : hit.optional;
-      if (effectiveOptional && !drumDensityAllows()) continue;
-      fireDrum(hit.inst, time, hit.vel);
+    // During a drop-out, suppress ALL hits (silent bar or two).
+    const inDropout = drumDropoutBarsLeft > 0;
+    const inFill = drumFillBarsLeft > 0;
+
+    if (!inDropout) {
+      for (const hit of kit.hits) {
+        if (hit.bar !== patternBar || hit.beat !== subBeat) continue;
+        const hitKey = hit.inst + ':' + hit.bar + ':' + hit.beat;
+        const effectiveOptional = drumMutations.has(hitKey) ? !hit.optional : hit.optional;
+        // In the post-dropout fill, optional hits ignore the density gate so
+        // the return feels busier; otherwise gate optional hits on movement.
+        if (effectiveOptional && !inFill && !drumDensityAllows()) continue;
+        fireDrum(hit.inst, time, hit.vel);
+      }
+      // Fill injection: add an extra hat on any off-beat ("and") that the
+      // pattern didn't already hit, giving "more eighths among the hi-hats".
+      if (inFill && (subBeat % 1 === 0.5)) {
+        const alreadyHatHere = kit.hits.some(h =>
+          h.inst === 'hat' && h.bar === patternBar && h.beat === subBeat);
+        if (!alreadyHatHere) fireDrum('hat', time, 0.35);
+      }
     }
 
     // Bar-boundary housekeeping: run once, on the downbeat.
@@ -904,8 +1029,41 @@
         const ebb = settings.drumFollowMovement ? currentDroneVolumeReduction : 0;
         drumVolume.volume.rampTo(settings.drumVolumeDb + ebb, 0.5);
       }
+
+      // Decrement active dropout/fill windows
+      if (drumDropoutBarsLeft > 0) {
+        drumDropoutBarsLeft--;
+        if (drumDropoutBarsLeft === 0) {
+          // Dropout just ended -> start the busy fill and re-roll mutations
+          // so the kit comes back "a bit different".
+          drumFillBarsLeft = 4;
+          drumMutations = new Set();
+          const optionalHits = kit.hits.filter(h => h.optional);
+          // Bias a couple of optional hits on for the return
+          for (let k = 0; k < Math.min(2, optionalHits.length); k++) {
+            const pick = optionalHits[Math.floor(Math.random() * optionalHits.length)];
+            drumMutations.add(pick.inst + ':' + pick.bar + ':' + pick.beat);
+          }
+        }
+      } else if (drumFillBarsLeft > 0) {
+        drumFillBarsLeft--;
+      }
+
+      // Dropout scheduler: every drumDropoutBars, trigger a 1-2 bar dropout.
+      // Skipped while stationary (nothing much is playing anyway).
+      if (settings.drumDropoutEnabled && !inFill && drumDropoutBarsLeft === 0) {
+        drumDropoutCounter++;
+        if (drumDropoutCounter >= Math.max(4, settings.drumDropoutBars | 0)) {
+          drumDropoutCounter = 0;
+          if (!shouldSkipEvolution()) {
+            drumDropoutBarsLeft = 1 + Math.floor(Math.random() * 2); // 1 or 2 bars
+          }
+        }
+      }
+
       // Evolution: flip one optional hit every 8 bars, skipped while stationary
-      if (settings.drumEvolveEnabled) {
+      // and paused during dropout/fill so the two systems don't fight.
+      if (settings.drumEvolveEnabled && !inDropout && !inFill) {
         drumEvolveCounter++;
         if (drumEvolveCounter >= 8) {
           drumEvolveCounter = 0;
@@ -945,8 +1103,12 @@
     // return. All other paths (no meta, mid-crossfade, journeys) fall through
     // to the unchanged A/B block below.
     if (perOctaveActive() && meta && meta.octave !== undefined && octaveChains[meta.octave]) {
+      // If this octave is currently swapped, route to the spare chain instead.
+      const swapChain = (octaveSwap && octaveSwap.octave === meta.octave)
+        ? octaveSwapChains[octaveSwap.preset] : null;
+      const target = swapChain || octaveChains[meta.octave];
       try {
-        octaveChains[meta.octave].synth.triggerAttackRelease(note, duration, t, adjustedVelocity);
+        target.synth.triggerAttackRelease(note, duration, t, adjustedVelocity);
       } catch (e) {
         // Note already playing or other issue
       }
@@ -1440,41 +1602,37 @@
   // ============== PATTERN EVOLUTION SYSTEM ==============
 
   /**
-   * Build a fresh random stagger assignment for octaves 0-9.
-   * Each octave gets an offset from STAGGER_OFFSET_POOL, but at least
-   * STAGGER_MIN_ANCHORS octaves are forced to 0 to hold the downbeat.
-   * Which octaves are offset (and by how much) is randomized every time -
-   * there is deliberately no fixed odd/even rule.
+   * Rotate the stagger set: promote one new idle octave to a random nonzero
+   * offset, and if the active set now exceeds settings.staggerCount, demote the
+   * oldest (revert it to the downbeat). "In moderation" - at most staggerCount
+   * octaves are ever off the beat, and the set rotates every reshuffle period.
    */
-  function buildStaggerAssignment() {
-    const assignment = {};
+  function rotateStagger() {
+    // Eligible = idle octaves not already staggered
+    const eligible = [];
     for (let oct = 0; oct <= 9; oct++) {
-      assignment[oct] = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
+      if (isIdleOctave(oct) && !staggerActive.includes(oct)) eligible.push(oct);
     }
-    // Guarantee a minimum number of downbeat anchors (offset 0)
-    let anchors = Object.values(assignment).filter(v => v === 0).length;
-    while (anchors < STAGGER_MIN_ANCHORS) {
-      const oct = Math.floor(Math.random() * 10);
-      if (assignment[oct] !== 0) { assignment[oct] = 0; anchors++; }
+    if (eligible.length > 0) {
+      const oct = eligible[Math.floor(Math.random() * eligible.length)];
+      staggerOffsets[oct] = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
+      staggerActive.push(oct);
     }
-    return assignment;
+    // Demote oldest until within the count limit
+    const limit = Math.max(0, settings.staggerCount | 0);
+    while (staggerActive.length > limit) {
+      const demoted = staggerActive.shift();
+      delete staggerOffsets[demoted];
+    }
   }
 
   /**
-   * Reshuffle exactly ONE octave's offset (the gradual, per-cadence change).
-   * Respects the anchor floor: won't drop below STAGGER_MIN_ANCHORS downbeats.
+   * Clear all stagger state (used on disable and re-seed).
    */
-  function nudgeStaggerAssignment() {
-    const oct = Math.floor(Math.random() * 10);
-    const current = staggerAssignment[oct] ?? 0;
-    let next = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
-    // If moving this octave off 0 would break the anchor floor, keep it at 0
-    if (current === 0 && next !== 0) {
-      const anchors = Object.values(staggerAssignment).filter(v => v === 0).length;
-      if (anchors <= STAGGER_MIN_ANCHORS) next = 0;
-    }
-    staggerAssignment[oct] = next;
-    return { oct, offset: next };
+  function clearStagger() {
+    staggerActive = [];
+    staggerOffsets = {};
+    staggerBarCounter = 0;
   }
 
   /**
@@ -1492,8 +1650,9 @@
   }
 
   /**
-   * Re-apply the current stagger assignment to all idle octaves by
-   * rebuilding their default patterns. Melodic octaves are untouched.
+   * Re-apply the current stagger offsets to all idle octaves by rebuilding
+   * their default patterns. Melodic octaves are untouched. Octaves not in the
+   * active set rebuild flat (offset 0).
    */
   function applyStaggerToIdleOctaves() {
     for (let oct = 0; oct <= 9; oct++) {
@@ -1512,7 +1671,7 @@
     const slots = [];
     for (let i = 0; i < count; i++) {
       const startBeat = (settings.staggeredIdleEntrances && octave !== null)
-        ? (staggerAssignment[octave] ?? 0)
+        ? (staggerOffsets[octave] ?? 0)
         : 0;
       slots.push({ type: 'note', slotIndex: i, duration: 4, startBeat, bar: i });
     }
@@ -1529,11 +1688,6 @@
    */
   function initializeOctavePatterns() {
     octavePatterns = {};
-    // Seed the stagger assignment before building patterns (getDefaultPattern
-    // reads it). Seed only if empty so an in-progress drift survives re-init.
-    if (Object.keys(staggerAssignment).length === 0) {
-      staggerAssignment = buildStaggerAssignment();
-    }
     for (let i = 0; i < 10; i++) {
       // Get note count from notePool if available, otherwise default to 2
       const noteCount = notePool[i]?.length || 2;
@@ -1983,18 +2137,23 @@
             }
           }
           
-          // Staggered idle entrances: nudge ONE octave's offset every
-          // STAGGER_RESHUFFLE_BARS. Deliberately always-running (not gated
-          // by movement or shouldSkipEvolution) so the texture keeps
-          // drifting whether moving or stationary. Only re-applied to idle
-          // octaves; melodic octaves are never touched.
+          // Staggered idle entrances: rotate the active set every
+          // settings.staggerReshuffleBars. Promotes one new idle octave and
+          // demotes the oldest, keeping at most settings.staggerCount off the
+          // beat. Always-running (not gated by movement) so it keeps rotating
+          // whether moving or stationary. Melodic octaves are never touched.
           if (settings.staggeredIdleEntrances && settings.patternEvolutionEnabled) {
             staggerBarCounter++;
-            if (staggerBarCounter >= STAGGER_RESHUFFLE_BARS) {
+            if (staggerBarCounter >= Math.max(1, settings.staggerReshuffleBars | 0)) {
               staggerBarCounter = 0;
-              nudgeStaggerAssignment();
+              rotateStagger();
               applyStaggerToIdleOctaves();
             }
+          }
+          
+          // Temporary per-octave instrument swap (once per bar)
+          if (settings.octaveSwapEnabled) {
+            tickOctaveSwap();
           }
         }
         
@@ -2137,6 +2296,9 @@
       for (const oct of Object.keys(octaveChains)) {
         try { octaveChains[oct]?.synth?.releaseAll(); } catch (e) {}
       }
+      for (const p of Object.keys(octaveSwapChains)) {
+        try { octaveSwapChains[p]?.synth?.releaseAll(); } catch (e) {}
+      }
     } catch (e) {}
     
     // Clear all tracking state
@@ -2204,6 +2366,11 @@
       if (settings.perOctaveEnabled) {
         try { await buildOctaveChains(); } catch (e) {
           console.warn('[AudioService] Failed to build octave chains at init:', e);
+        }
+        if (settings.octaveSwapEnabled) {
+          try { await buildOctaveSwapChains(); } catch (e) {
+            console.warn('[AudioService] Failed to build octave swap pool at init:', e);
+          }
         }
       }
       
@@ -2672,18 +2839,15 @@
 
     /**
      * Enable/disable staggered idle-octave entrances.
-     * On enable: seed a fresh random assignment and apply it to idle octaves.
-     * On disable: restore beat-1 entrances (byte-identical to original).
+     * On enable: start with a clean set and immediately stagger one octave.
+     * On disable: clear the set and rebuild idle octaves flat (byte-identical).
      */
     setStaggeredIdleEntrances(enabled) {
       settings.staggeredIdleEntrances = !!enabled;
-      staggerBarCounter = 0;
+      clearStagger();
       if (enabled) {
-        staggerAssignment = buildStaggerAssignment();
+        rotateStagger(); // seed with the first staggered octave right away
       }
-      // Re-apply to idle octaves either way: on enable applies the offsets,
-      // on disable rebuilds them flat (getDefaultPattern returns startBeat 0
-      // when the flag is off).
       if (Object.keys(octavePatterns).length > 0) {
         applyStaggerToIdleOctaves();
       }
@@ -2691,6 +2855,30 @@
 
     getStaggeredIdleEntrances() {
       return settings.staggeredIdleEntrances;
+    },
+
+    setStaggerCount(n) {
+      settings.staggerCount = Math.max(0, Math.min(9, n | 0));
+      // Trim the active set down immediately if the new limit is lower
+      while (staggerActive.length > settings.staggerCount) {
+        const demoted = staggerActive.shift();
+        delete staggerOffsets[demoted];
+      }
+      if (settings.staggeredIdleEntrances && Object.keys(octavePatterns).length > 0) {
+        applyStaggerToIdleOctaves();
+      }
+    },
+
+    getStaggerCount() {
+      return settings.staggerCount;
+    },
+
+    setStaggerReshuffleBars(bars) {
+      settings.staggerReshuffleBars = Math.max(1, Math.min(128, bars | 0));
+    },
+
+    getStaggerReshuffleBars() {
+      return settings.staggerReshuffleBars;
     },
 
     /**
@@ -2703,13 +2891,56 @@
       saveOctaveInstruments();
       if (enabled) {
         await buildOctaveChains();
+        if (settings.octaveSwapEnabled) await buildOctaveSwapChains();
       } else {
         disposeOctaveChains();
+        disposeOctaveSwapChains();
       }
     },
 
     getPerOctaveEnabled() {
       return settings.perOctaveEnabled;
+    },
+
+    async setOctaveSwapEnabled(enabled) {
+      settings.octaveSwapEnabled = !!enabled;
+      octaveSwapCounter = 0;
+      saveOctaveInstruments();
+      if (enabled) {
+        // Build the spare pool if per-octave is already running; otherwise it
+        // builds when per-octave is enabled.
+        if (settings.perOctaveEnabled && Object.keys(octaveSwapChains).length === 0) {
+          await buildOctaveSwapChains();
+        }
+      } else {
+        // Revert any active swap immediately; keep the spare pool (cheap) unless
+        // per-octave is off.
+        octaveSwap = null;
+        octaveSwapBarsLeft = 0;
+        if (!settings.perOctaveEnabled) disposeOctaveSwapChains();
+      }
+    },
+
+    getOctaveSwapEnabled() {
+      return settings.octaveSwapEnabled;
+    },
+
+    setOctaveSwapPeriodBars(bars) {
+      settings.octaveSwapPeriodBars = Math.max(4, Math.min(256, bars | 0));
+      saveOctaveInstruments();
+    },
+
+    getOctaveSwapPeriodBars() {
+      return settings.octaveSwapPeriodBars;
+    },
+
+    setOctaveSwapDurationBars(bars) {
+      settings.octaveSwapDurationBars = Math.max(1, Math.min(64, bars | 0));
+      saveOctaveInstruments();
+    },
+
+    getOctaveSwapDurationBars() {
+      return settings.octaveSwapDurationBars;
     },
 
     /**
@@ -2797,6 +3028,57 @@
 
     getDrumEvolveEnabled() {
       return settings.drumEvolveEnabled;
+    },
+
+    setDrumDropoutEnabled(enabled) {
+      settings.drumDropoutEnabled = !!enabled;
+      saveDrumSettings();
+    },
+
+    getDrumDropoutEnabled() {
+      return settings.drumDropoutEnabled;
+    },
+
+    setDrumDropoutBars(bars) {
+      settings.drumDropoutBars = Math.max(4, Math.min(256, bars | 0));
+      saveDrumSettings();
+    },
+
+    getDrumDropoutBars() {
+      return settings.drumDropoutBars;
+    },
+
+    // ===== SUB-BASS TWEAKS =====
+    // Live-edit the built-in 'sub-bass' preset's filter-envelope character and
+    // rebuild any octave chains currently using it. These mutate audio params
+    // only - no frozen format or decode path is involved.
+
+    getSubBassParams() {
+      const p = PRESETS['sub-bass'];
+      return {
+        baseFrequency: p.filterEnvelope.baseFrequency,
+        octaves: p.filterEnvelope.octaves,
+        attack: p.filterEnvelope.attack,
+        lpFreq: p.lpFreq
+      };
+    },
+
+    async setSubBassParam(key, value) {
+      const p = PRESETS['sub-bass'];
+      if (key === 'baseFrequency') p.filterEnvelope.baseFrequency = Math.max(20, Math.min(200, value));
+      else if (key === 'octaves') p.filterEnvelope.octaves = Math.max(0.5, Math.min(6, value));
+      else if (key === 'attack') p.filterEnvelope.attack = Math.max(0.005, Math.min(1, value));
+      else if (key === 'lpFreq') p.lpFreq = Math.max(200, Math.min(4000, value));
+      else return;
+      // Rebuild any per-octave chains that resolve to sub-bass so the change is audible
+      for (let oct = 0; oct <= 9; oct++) {
+        if (octaveChains[oct] && resolveOctavePreset(oct) === 'sub-bass') {
+          await rebuildOctaveChain(oct);
+        }
+      }
+      // If A or B is currently sub-bass, rebuild that chain too
+      if (presetA === 'sub-bass') await rebuildChain('A', 'sub-bass');
+      if (presetB === 'sub-bass') await rebuildChain('B', 'sub-bass');
     },
 
     /**
