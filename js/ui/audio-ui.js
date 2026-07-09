@@ -14,6 +14,8 @@
  * - "Sub-bass tuning" controls (sweep depth, base freq, attack, low-pass)
  * - Stagger count + rotate-interval sliders; drum drop-out toggle + interval;
  *   random per-octave instrument-swap toggle + period/duration sliders
+ * - Drum kit selector includes "randomize" (default); return busy-ness slider.
+ *   10 kits total.
  * - Fix: per-octave instrument rows no longer collide with the octave
  *   intensity/fraction binding loop (which had left the Close button unbound)
  * 
@@ -656,6 +658,7 @@
     const drumKitNames = AudioService?.getDrumKitNames?.() || ['arcade', 'boombap', 'minimal'];
     const drumKitOptions = drumKitNames.map(k =>
       `<option value="${k}" ${k === drumKit ? 'selected' : ''}>${k}</option>`).join('');
+    const drumFillStart = AudioService?.getDrumFillStart?.() ?? 3;
     
     // Sub-bass tuning params
     const sb = AudioService?.getSubBassParams?.() || { baseFrequency: 50, octaves: 3.2, attack: 0.04, lpFreq: 1200 };
@@ -1120,6 +1123,13 @@
               <span>Drop out every</span><span id="drumDropoutBarsValue">${drumDropoutBars} bars</span>
             </div>
             <input type="range" class="audio-design-slider" id="drumDropoutBarsSlider" min="8" max="128" value="${drumDropoutBars}" step="8">
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Return busy-ness</span><span id="drumFillStartValue">${drumFillStart} extra hats</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="drumFillStartSlider" min="0" max="8" value="${drumFillStart}" step="1">
+            <div class="audio-design-hint" style="font-size:11px;opacity:0.6;margin-top:6px;">
+              Kit "randomize" switches to a different kit on each return.
+            </div>
           </div>
         </div>
         
@@ -2016,6 +2026,13 @@
       drumDropoutBarsSlider.oninput = function() {
         designModal.querySelector('#drumDropoutBarsValue').textContent = this.value + ' bars';
         AudioService?.setDrumDropoutBars(parseInt(this.value, 10));
+      };
+    }
+    const drumFillStartSlider = designModal.querySelector('#drumFillStartSlider');
+    if (drumFillStartSlider) {
+      drumFillStartSlider.oninput = function() {
+        designModal.querySelector('#drumFillStartValue').textContent = this.value + ' extra hats';
+        AudioService?.setDrumFillStart(parseInt(this.value, 10));
       };
     }
     const octaveSwapEl = designModal.querySelector('#octaveSwapEnabled');
