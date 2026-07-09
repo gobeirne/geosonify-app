@@ -470,7 +470,24 @@
     const CARD_GRIDS = callbacks.getGridDefinitions ? callbacks.getGridDefinitions() : null;
     if (!CARD_GRIDS || !CARD_GRIDS[gridKey]) return;
     
-    const gridConfig = CARD_GRIDS[gridKey];
+    let gridConfig = CARD_GRIDS[gridKey];
+
+    // Presentation cards (Chessboard, HEALPix Chessboard, HEALPix ChromaCoord)
+    // have no cell geometry of their own: they render a SIBLING codec's code
+    // (chessOf / chromaOf) as a board or swatch. The `iterations` passed in is
+    // already in the sibling's terms (see _encodeCardCoordinateInternal), so we
+    // resolve to the sibling's grid config here and draw ITS footprint. Without
+    // this the sibling's grid:null falls through to the generic 6×6 world-subdiv
+    // fallback below — drawing a ~430×620 m box for a 1.2×1.7 m HexByte cell, and
+    // a microscopic 6^36-subdivision speck for a HEALPix order-36 diamond. Mirrors
+    // the presentationOf() delegation card-renderer uses for precision/info/encode.
+    // Chained just in case a sibling is itself a presentation (guarded).
+    let _presGuard = 0;
+    while (gridConfig && (gridConfig.chessOf || gridConfig.chromaOf) && _presGuard++ < 4) {
+      const sibKey = gridConfig.chessOf || gridConfig.chromaOf;
+      if (!CARD_GRIDS[sibKey]) break;
+      gridConfig = CARD_GRIDS[sibKey];
+    }
 
     // HEALPix cards: the cell boundary is a curved equal-area diamond, not a
     // lat/lon box. Draw the current order PLUS up to 5 parent orders, each at
