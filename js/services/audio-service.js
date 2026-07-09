@@ -6,9 +6,11 @@
  *   octaves are staggered at once (default 1), rotating every
  *   staggerReshuffleBars (default 16); promoting a new octave demotes the
  *   oldest back to the downbeat. Both settable.
- * - Drums: periodic drop-out (drumDropoutBars, default 64) - 1-2 silent bars
- *   then a 4-bar busier fill (extra hats on the off-beats) and re-rolled
- *   mutations. Settable; skipped while stationary.
+ * - Drums: 7 kits now (added techno, breakbeat, chiptune, lofi); voicings are
+ *   data-driven per kit. Periodic drop-out (drumDropoutBars) returns with a
+ *   TAPERING fill - drumFillStart extra hats/bar shedding one per bar to zero -
+ *   and optionally switches to a different kit on return (never repeats).
+ * - Stagger now ON by default: 2 octaves, rotating every 16 bars.
  * - Per-octave: optional random instrument "solo" (octaveSwapEnabled) routes a
  *   MELODIC octave (an evolving-pattern voice) to a pre-built spare chain for
  *   octaveSwapDurationBars every octaveSwapPeriodBars (default 48, sparing),
@@ -116,7 +118,8 @@
   let drumEvolveCounter = 0;      // bars since last evolution flip
   let drumDropoutCounter = 0;     // bars since last dropout event
   let drumDropoutBarsLeft = 0;    // bars remaining in the current silent dropout
-  let drumFillBarsLeft = 0;       // bars remaining in the post-dropout busy fill
+  let drumFillBarsLeft = 0;       // bars remaining in the post-dropout busy fill (= extra hats/bar this bar)
+  let drumFillHatsThisBar = 0;    // extra hats already injected in the current fill bar
   const DRUM_SETTINGS_KEY = 'geosonify_drums';
 
   // ============== CROSSFADE STATE ==============
@@ -254,8 +257,8 @@
     droneDecayBars: 8,            // Number of bars for decay
     droneDecayTargetDb: 0,      // Target dB for decayed octaves
     droneMovementFade: true,     // Fade out when stationary
-    staggeredIdleEntrances: false, // Stagger idle-octave entrances (rotating active set)
-    staggerCount: 1,             // how many idle octaves are staggered at once
+    staggeredIdleEntrances: true, // Stagger idle-octave entrances (rotating active set)
+    staggerCount: 2,             // how many idle octaves are staggered at once
     staggerReshuffleBars: 16,    // bars between rotations (promote new, demote oldest)
     perOctaveEnabled: false,     // Route each octave through its own instrument chain
     octaveSwapEnabled: false,    // Occasionally give a melodic octave a "solo" in a new instrument
@@ -268,6 +271,8 @@
     drumEvolveEnabled: true,     // flip one optional hit every 8 bars
     drumDropoutEnabled: true,    // periodic drop-out + busier return
     drumDropoutBars: 64,         // period between drop-outs
+    drumFillStart: 3,            // extra hats/bar at the start of the return (tapers -1/bar to 0)
+    drumSwitchKitOnReturn: true, // pick a different kit when coming back from a drop-out
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -457,6 +462,8 @@
           if (typeof d.evolveEnabled === 'boolean') settings.drumEvolveEnabled = d.evolveEnabled;
           if (typeof d.dropoutEnabled === 'boolean') settings.drumDropoutEnabled = d.dropoutEnabled;
           if (typeof d.dropoutBars === 'number') settings.drumDropoutBars = d.dropoutBars;
+          if (typeof d.fillStart === 'number') settings.drumFillStart = d.fillStart;
+          if (typeof d.switchKitOnReturn === 'boolean') settings.drumSwitchKitOnReturn = d.switchKitOnReturn;
         }
       }
     } catch (e) {
@@ -473,7 +480,9 @@
         followMovement: !!settings.drumFollowMovement,
         evolveEnabled: !!settings.drumEvolveEnabled,
         dropoutEnabled: !!settings.drumDropoutEnabled,
-        dropoutBars: settings.drumDropoutBars
+        dropoutBars: settings.drumDropoutBars,
+        fillStart: settings.drumFillStart,
+        switchKitOnReturn: settings.drumSwitchKitOnReturn
       }));
     } catch (e) {
       console.warn('[AudioService] Failed to save drum settings:', e);
@@ -877,6 +886,11 @@
   const DRUM_KITS = {
     arcade: {
       lengthBars: 4,
+      voicing: {
+        kick: { pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } },
+        snare: { noise: 'white', envelope: { attack: 0.001, decay: 0.15, sustain: 0 } },
+        hat: { decay: 0.05, release: 0.01, harmonicity: 5.1, resonance: 6000 }
+      },
       hits: [
         { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
         { inst: 'hat',  bar: 0, beat: 1, vel: 0.5 },
@@ -902,6 +916,11 @@
     },
     boombap: {
       lengthBars: 3,
+      voicing: {
+        kick: { pitchDecay: 0.05, octaves: 5, envelope: { attack: 0.001, decay: 0.4, sustain: 0 } },
+        snare: { noise: 'pink', envelope: { attack: 0.001, decay: 0.25, sustain: 0 } },
+        hat: { decay: 0.08, release: 0.02, harmonicity: 5.1, resonance: 4000 }
+      },
       hits: [
         { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
         { inst: 'snare',bar: 0, beat: 2, vel: 0.9 },
@@ -923,6 +942,11 @@
     },
     minimal: {
       lengthBars: 2,
+      voicing: {
+        kick: { pitchDecay: 0.04, octaves: 6, envelope: { attack: 0.001, decay: 0.3, sustain: 0 } },
+        snare: null,
+        hat: { decay: 0.05, release: 0.01, harmonicity: 5.1, resonance: 5000 }
+      },
       hits: [
         { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
         { inst: 'hat',  bar: 0, beat: 2, vel: 0.5 },
@@ -931,32 +955,155 @@
         { inst: 'hat',  bar: 1, beat: 2, vel: 0.5 },
         { inst: 'kick', bar: 1, beat: 2.5, vel: 0.6, optional: true }
       ]
+    },
+    // ---- Genre kits ----
+    techno: {
+      lengthBars: 2,
+      voicing: {
+        kick: { pitchDecay: 0.03, octaves: 4, envelope: { attack: 0.001, decay: 0.35, sustain: 0 } },
+        snare: { noise: 'white', envelope: { attack: 0.001, decay: 0.1, sustain: 0 } },
+        hat: { decay: 0.03, release: 0.005, harmonicity: 5.1, resonance: 8000 }
+      },
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'kick', bar: 0, beat: 1, vel: 1.0 },
+        { inst: 'kick', bar: 0, beat: 2, vel: 1.0 },
+        { inst: 'kick', bar: 0, beat: 3, vel: 1.0 },
+        { inst: 'hat',  bar: 0, beat: 0.5, vel: 0.5 },
+        { inst: 'hat',  bar: 0, beat: 1.5, vel: 0.5 },
+        { inst: 'hat',  bar: 0, beat: 2.5, vel: 0.5 },
+        { inst: 'hat',  bar: 0, beat: 3.5, vel: 0.5, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 1, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 2, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 3, vel: 1.0 },
+        { inst: 'snare',bar: 1, beat: 2, vel: 0.7, optional: true },
+        { inst: 'hat',  bar: 1, beat: 0.5, vel: 0.5 },
+        { inst: 'hat',  bar: 1, beat: 1.5, vel: 0.5 },
+        { inst: 'hat',  bar: 1, beat: 2.5, vel: 0.5 },
+        { inst: 'hat',  bar: 1, beat: 3.5, vel: 0.5, optional: true }
+      ]
+    },
+    breakbeat: {
+      lengthBars: 2,
+      voicing: {
+        kick: { pitchDecay: 0.04, octaves: 5, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } },
+        snare: { noise: 'white', envelope: { attack: 0.001, decay: 0.18, sustain: 0 } },
+        hat: { decay: 0.04, release: 0.01, harmonicity: 4.8, resonance: 7000 }
+      },
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'snare',bar: 0, beat: 1, vel: 0.85 },
+        { inst: 'hat',  bar: 0, beat: 0.5, vel: 0.4 },
+        { inst: 'kick', bar: 0, beat: 1.5, vel: 0.7, optional: true },
+        { inst: 'snare',bar: 0, beat: 2.5, vel: 0.8 },
+        { inst: 'hat',  bar: 0, beat: 2, vel: 0.4 },
+        { inst: 'snare',bar: 0, beat: 3, vel: 0.6, optional: true },
+        { inst: 'hat',  bar: 0, beat: 3.5, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 0.5, vel: 0.6, optional: true },
+        { inst: 'snare',bar: 1, beat: 1, vel: 0.85 },
+        { inst: 'hat',  bar: 1, beat: 1.5, vel: 0.4 },
+        { inst: 'snare',bar: 1, beat: 2.5, vel: 0.8 },
+        { inst: 'kick', bar: 1, beat: 3, vel: 0.7, optional: true },
+        { inst: 'hat',  bar: 1, beat: 3.5, vel: 0.4, optional: true }
+      ]
+    },
+    // ---- Retro flavors ----
+    chiptune: {
+      lengthBars: 4,
+      voicing: {
+        kick: { pitchDecay: 0.02, octaves: 8, envelope: { attack: 0.001, decay: 0.12, sustain: 0 } },
+        snare: { noise: 'white', envelope: { attack: 0.001, decay: 0.08, sustain: 0 } },
+        hat: { decay: 0.02, release: 0.005, harmonicity: 6.0, resonance: 9000 }
+      },
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 1.0 },
+        { inst: 'hat',  bar: 0, beat: 0.5, vel: 0.4 },
+        { inst: 'snare',bar: 0, beat: 2, vel: 0.7 },
+        { inst: 'hat',  bar: 0, beat: 2.5, vel: 0.4 },
+        { inst: 'hat',  bar: 0, beat: 3.5, vel: 0.3, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 1.0 },
+        { inst: 'kick', bar: 1, beat: 1.5, vel: 0.6, optional: true },
+        { inst: 'snare',bar: 1, beat: 2, vel: 0.7 },
+        { inst: 'hat',  bar: 1, beat: 0.5, vel: 0.4 },
+        { inst: 'hat',  bar: 1, beat: 3, vel: 0.4 },
+        { inst: 'kick', bar: 2, beat: 0, vel: 1.0 },
+        { inst: 'snare',bar: 2, beat: 2, vel: 0.7 },
+        { inst: 'hat',  bar: 2, beat: 1, vel: 0.4 },
+        { inst: 'hat',  bar: 2, beat: 3, vel: 0.4, optional: true },
+        { inst: 'kick', bar: 3, beat: 0, vel: 1.0 },
+        { inst: 'snare',bar: 3, beat: 2, vel: 0.7 },
+        { inst: 'snare',bar: 3, beat: 3, vel: 0.5, optional: true },
+        { inst: 'hat',  bar: 3, beat: 3.5, vel: 0.4, optional: true }
+      ]
+    },
+    lofi: {
+      lengthBars: 4,
+      voicing: {
+        kick: { pitchDecay: 0.06, octaves: 4, envelope: { attack: 0.002, decay: 0.45, sustain: 0 } },
+        snare: { noise: 'brown', envelope: { attack: 0.002, decay: 0.2, sustain: 0 } },
+        hat: { decay: 0.06, release: 0.03, harmonicity: 3.5, resonance: 3000 }
+      },
+      hits: [
+        { inst: 'kick', bar: 0, beat: 0, vel: 0.9 },
+        { inst: 'snare',bar: 0, beat: 2, vel: 0.75 },
+        { inst: 'hat',  bar: 0, beat: 1, vel: 0.35 },
+        { inst: 'hat',  bar: 0, beat: 3, vel: 0.35 },
+        { inst: 'hat',  bar: 0, beat: 2.5, vel: 0.3, optional: true },
+        { inst: 'kick', bar: 1, beat: 0, vel: 0.9 },
+        { inst: 'kick', bar: 1, beat: 2.5, vel: 0.55, optional: true },
+        { inst: 'snare',bar: 1, beat: 2, vel: 0.75 },
+        { inst: 'hat',  bar: 1, beat: 1, vel: 0.35 },
+        { inst: 'hat',  bar: 1, beat: 3, vel: 0.35 },
+        { inst: 'kick', bar: 2, beat: 0, vel: 0.9 },
+        { inst: 'snare',bar: 2, beat: 2, vel: 0.75 },
+        { inst: 'hat',  bar: 2, beat: 1, vel: 0.35 },
+        { inst: 'hat',  bar: 2, beat: 3, vel: 0.35 },
+        { inst: 'hat',  bar: 2, beat: 1.5, vel: 0.3, optional: true },
+        { inst: 'kick', bar: 3, beat: 0, vel: 0.9 },
+        { inst: 'snare',bar: 3, beat: 2, vel: 0.75 },
+        { inst: 'kick', bar: 3, beat: 3, vel: 0.5, optional: true },
+        { inst: 'hat',  bar: 3, beat: 1, vel: 0.35 }
+      ]
     }
   };
 
   /**
-   * Voicing per kit. Guarded on Tone === null by the caller.
+   * Pick a random kit name different from the current one (never repeats).
+   */
+  function pickDifferentKit() {
+    const names = Object.keys(DRUM_KITS).filter(k => k !== settings.drumKit);
+    if (names.length === 0) return settings.drumKit;
+    return names[Math.floor(Math.random() * names.length)];
+  }
+
+  /**
+   * Voicing per kit, read from the kit's `voicing` data (falls back to arcade's
+   * if absent). Guarded on Tone === null by the caller.
    */
   function buildDrums() {
     if (typeof Tone === 'undefined' || Tone === null) return;
     disposeDrums();
     drumVolume = new Tone.Volume(settings.drumVolumeDb).connect(masterVolume);
 
-    const kit = settings.drumKit;
-    if (kit === 'boombap') {
-      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 5, envelope: { attack: 0.001, decay: 0.4, sustain: 0 } }).connect(drumVolume);
-      drumSnare = new Tone.NoiseSynth({ noise: { type: 'pink' }, envelope: { attack: 0.001, decay: 0.25, sustain: 0 } }).connect(drumVolume);
-      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.08, release: 0.02 }, harmonicity: 5.1, resonance: 4000 }).connect(drumVolume);
-    } else if (kit === 'minimal') {
-      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.04, octaves: 6, envelope: { attack: 0.001, decay: 0.3, sustain: 0 } }).connect(drumVolume);
-      drumSnare = null; // minimal is kick + hat only
-      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, harmonicity: 5.1, resonance: 5000 }).connect(drumVolume);
-    } else { // arcade (default)
-      drumKick = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 6, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } }).connect(drumVolume);
-      drumSnare = new Tone.NoiseSynth({ noise: { type: 'white' }, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } }).connect(drumVolume);
-      drumHat = new Tone.MetalSynth({ envelope: { attack: 0.001, decay: 0.05, release: 0.01 }, harmonicity: 5.1, resonance: 6000 }).connect(drumVolume);
-    }
-    console.log('[AudioService] Built drum kit:', kit);
+    const kitDef = DRUM_KITS[settings.drumKit] || DRUM_KITS.arcade;
+    const v = kitDef.voicing || DRUM_KITS.arcade.voicing;
+
+    drumKick = new Tone.MembraneSynth({
+      pitchDecay: v.kick.pitchDecay, octaves: v.kick.octaves, envelope: v.kick.envelope
+    }).connect(drumVolume);
+
+    drumSnare = v.snare
+      ? new Tone.NoiseSynth({ noise: { type: v.snare.noise }, envelope: v.snare.envelope }).connect(drumVolume)
+      : null;
+
+    drumHat = new Tone.MetalSynth({
+      envelope: { attack: 0.001, decay: v.hat.decay, release: v.hat.release },
+      harmonicity: v.hat.harmonicity, resonance: v.hat.resonance
+    }).connect(drumVolume);
+
+    console.log('[AudioService] Built drum kit:', settings.drumKit);
   }
 
   function disposeDrums() {
@@ -1013,12 +1160,16 @@
         if (effectiveOptional && !inFill && !drumDensityAllows()) continue;
         fireDrum(hit.inst, time, hit.vel);
       }
-      // Fill injection: add an extra hat on any off-beat ("and") that the
-      // pattern didn't already hit, giving "more eighths among the hi-hats".
-      if (inFill && (subBeat % 1 === 0.5)) {
+      // Tapering fill injection: add extra hats on off-beats ("ands"), but only
+      // up to drumFillBarsLeft per bar - which decreases by one each fill bar,
+      // so the return sheds one extra hat per bar until it's back to normal.
+      if (inFill && (subBeat % 1 === 0.5) && drumFillHatsThisBar < drumFillBarsLeft) {
         const alreadyHatHere = kit.hits.some(h =>
           h.inst === 'hat' && h.bar === patternBar && h.beat === subBeat);
-        if (!alreadyHatHere) fireDrum('hat', time, 0.35);
+        if (!alreadyHatHere) {
+          fireDrum('hat', time, 0.35);
+          drumFillHatsThisBar++;
+        }
       }
     }
 
@@ -1034,19 +1185,26 @@
       if (drumDropoutBarsLeft > 0) {
         drumDropoutBarsLeft--;
         if (drumDropoutBarsLeft === 0) {
-          // Dropout just ended -> start the busy fill and re-roll mutations
-          // so the kit comes back "a bit different".
-          drumFillBarsLeft = 4;
-          drumMutations = new Set();
-          const optionalHits = kit.hits.filter(h => h.optional);
-          // Bias a couple of optional hits on for the return
-          for (let k = 0; k < Math.min(2, optionalHits.length); k++) {
-            const pick = optionalHits[Math.floor(Math.random() * optionalHits.length)];
-            drumMutations.add(pick.inst + ':' + pick.bar + ':' + pick.beat);
+          // Dropout just ended. Optionally switch to a different kit so the
+          // return is re-voiced, then start a tapering fill: begin with
+          // drumFillStart extra hats/bar and shed one per bar down to zero.
+          if (settings.drumSwitchKitOnReturn) {
+            const nextKit = pickDifferentKit();
+            if (nextKit !== settings.drumKit) {
+              settings.drumKit = nextKit;
+              drumMutations = new Set(); // patterns differ; old mutation keys are meaningless
+              saveDrumSettings();
+              buildDrums(); // rebuild voicing for the new kit (happens during silence)
+            }
+          } else {
+            drumMutations = new Set();
           }
+          drumFillBarsLeft = Math.max(0, settings.drumFillStart | 0);
+          drumFillHatsThisBar = 0;
         }
       } else if (drumFillBarsLeft > 0) {
         drumFillBarsLeft--;
+        drumFillHatsThisBar = 0; // reset per-bar injected-hat count
       }
 
       // Dropout scheduler: every drumDropoutBars, trigger a 1-2 bar dropout.
@@ -1688,10 +1846,18 @@
    */
   function initializeOctavePatterns() {
     octavePatterns = {};
+    // Build the pattern for octave 0 first (needed so isIdleOctave sees defaults
+    // during seeding below), then seed the stagger set to staggerCount octaves
+    // so a default-on stagger is active from the very start rather than waiting
+    // for the first rotation. Seed only if empty (survives re-init mid-drift).
     for (let i = 0; i < 10; i++) {
-      // Get note count from notePool if available, otherwise default to 2
       const noteCount = notePool[i]?.length || 2;
       octavePatterns[i] = getDefaultPattern(noteCount, i);
+    }
+    if (settings.staggeredIdleEntrances && staggerActive.length === 0) {
+      const target = Math.max(0, settings.staggerCount | 0);
+      for (let k = 0; k < target; k++) rotateStagger();
+      applyStaggerToIdleOctaves(); // rebuild the seeded octaves with their offsets
     }
     lastChangedOctave = Math.floor(Math.random() * 10); // Start with random octave
     evolutionBarCounter = 0;
@@ -3046,6 +3212,24 @@
 
     getDrumDropoutBars() {
       return settings.drumDropoutBars;
+    },
+
+    setDrumFillStart(n) {
+      settings.drumFillStart = Math.max(0, Math.min(8, n | 0));
+      saveDrumSettings();
+    },
+
+    getDrumFillStart() {
+      return settings.drumFillStart;
+    },
+
+    setDrumSwitchKitOnReturn(enabled) {
+      settings.drumSwitchKitOnReturn = !!enabled;
+      saveDrumSettings();
+    },
+
+    getDrumSwitchKitOnReturn() {
+      return settings.drumSwitchKitOnReturn;
     },
 
     // ===== SUB-BASS TWEAKS =====
