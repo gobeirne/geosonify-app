@@ -16,8 +16,9 @@
  *   random per-octave instrument-swap toggle + period/duration sliders
  * - Drum kit selector includes "randomize" (default); return busy-ness slider.
  *   10 kits total.
- * - "Lead voice" section: enable, style, voice engine, walk path, replace/layer
- *   mode, octave-step interval, volume, follow-movement
+ * - "Lead voice" section: enable, style (flowing/sparse/rhythmic/lyrical),
+ *   voice (80s/theremin/FM/mono), replace/layer, phrase/rest/intro bars,
+ *   volume, follow-movement, fade-when-stationary
  * - Fix: per-octave instrument rows no longer collide with the octave
  *   intensity/fraction binding loop (which had left the Close button unbound)
  * 
@@ -661,20 +662,22 @@
     const drumKitOptions = drumKitNames.map(k =>
       `<option value="${k}" ${k === drumKit ? 'selected' : ''}>${k}</option>`).join('');
     const drumFillStart = AudioService?.getDrumFillStart?.() ?? 3;
-    // Lead / arranger prep
+    // Lead / melody composer prep
     const leadEnabled = AudioService?.getLeadEnabled?.() ?? false;
-    const leadEngine = AudioService?.getLeadEngine?.() ?? 'fm';
-    const leadEngineNames = AudioService?.getLeadEngineNames?.() ?? ['fm', 'duo', 'mono'];
-    const leadStyle = AudioService?.getLeadStyle?.() ?? 'ambient';
-    const leadStyleNames = AudioService?.getLeadStyleNames?.() ?? ['ambient', 'melodic', 'cinematic', 'lofi'];
-    const leadWalk = AudioService?.getLeadWalk?.() ?? 'pingpong';
-    const leadMode = AudioService?.getLeadMode?.() ?? 'replace';
-    const leadBarsPerStep = AudioService?.getLeadBarsPerStep?.() ?? 4;
-    const leadVolumeDb = AudioService?.getLeadVolume?.() ?? -8;
+    const leadEngine = AudioService?.getLeadEngine?.() ?? 'eighties';
+    const leadEngineNames = AudioService?.getLeadEngineNames?.() ?? ['eighties', 'theremin', 'fm', 'mono'];
+    const leadStyle = AudioService?.getLeadStyle?.() ?? 'flowing';
+    const leadStyleNames = AudioService?.getLeadStyleNames?.() ?? ['flowing', 'sparse', 'rhythmic', 'lyrical'];
+    const leadMode = AudioService?.getLeadMode?.() ?? 'layer';
+    const leadPhraseBars = AudioService?.getLeadPhraseBars?.() ?? 4;
+    const leadRestBars = AudioService?.getLeadRestBars?.() ?? 4;
+    const leadIntroBars = AudioService?.getLeadIntroBars?.() ?? 4;
+    const leadVolumeDb = AudioService?.getLeadVolume?.() ?? -6;
     const leadFollow = AudioService?.getLeadFollowMovement?.() ?? true;
-    const leadEngineOpts = leadEngineNames.map(e => `<option value="${e}" ${e === leadEngine ? 'selected' : ''}>${e.toUpperCase()}</option>`).join('');
+    const leadFadeStationary = AudioService?.getLeadFadeWhenStationary?.() ?? false;
+    const leadEngineLabels = { eighties: '80s Lead', theremin: 'Theremin', fm: 'FM Bell', mono: 'Analog Mono' };
+    const leadEngineOpts = leadEngineNames.map(e => `<option value="${e}" ${e === leadEngine ? 'selected' : ''}>${leadEngineLabels[e] || e.toUpperCase()}</option>`).join('');
     const leadStyleOpts = leadStyleNames.map(s => `<option value="${s}" ${s === leadStyle ? 'selected' : ''}>${s}</option>`).join('');
-    const walkOpts = ['ascending', 'descending', 'pingpong', 'randomwalk', 'pedal'].map(w => `<option value="${w}" ${w === leadWalk ? 'selected' : ''}>${w}</option>`).join('');
     
     // Sub-bass tuning params
     const sb = AudioService?.getSubBassParams?.() || { baseFrequency: 50, octaves: 3.2, attack: 0.04, lpFreq: 1200 };
@@ -1161,8 +1164,6 @@
             <select id="leadStyleSelect" class="octave-instrument-select" style="width:100%;">${leadStyleOpts}</select>
             <div class="audio-design-label" style="margin-top:8px;"><span>Voice</span></div>
             <select id="leadEngineSelect" class="octave-instrument-select" style="width:100%;">${leadEngineOpts}</select>
-            <div class="audio-design-label" style="margin-top:8px;"><span>Walk across octaves</span></div>
-            <select id="leadWalkSelect" class="octave-instrument-select" style="width:100%;">${walkOpts}</select>
             <div class="audio-design-label" style="margin-top:8px;">
               <span>Mode</span>
             </div>
@@ -1171,9 +1172,17 @@
               <label class="drone-toggle-label" style="margin:0;"><input type="radio" name="leadMode" value="layer" ${leadMode === 'layer' ? 'checked' : ''}> <span>Layer</span></label>
             </div>
             <div class="audio-design-label" style="margin-top:8px;">
-              <span>Octave step every</span><span id="leadBarsValue">${leadBarsPerStep} bars</span>
+              <span>Phrase length</span><span id="leadPhraseBarsValue">${leadPhraseBars} bars</span>
             </div>
-            <input type="range" class="audio-design-slider" id="leadBarsSlider" min="1" max="16" value="${leadBarsPerStep}" step="1">
+            <input type="range" class="audio-design-slider" id="leadPhraseBarsSlider" min="1" max="16" value="${leadPhraseBars}" step="1">
+            <div class="audio-design-label" style="margin-top:8px;">
+              <span>Rest between phrases</span><span id="leadRestBarsValue">${leadRestBars} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="leadRestBarsSlider" min="0" max="16" value="${leadRestBars}" step="1">
+            <div class="audio-design-label" style="margin-top:8px;">
+              <span>Enter after</span><span id="leadIntroBarsValue">${leadIntroBars} bars</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="leadIntroBarsSlider" min="0" max="16" value="${leadIntroBars}" step="1">
             <div class="audio-design-label" style="margin-top:8px;">
               <span>Volume</span><span id="leadVolumeValue">${leadVolumeDb}dB</span>
             </div>
@@ -1181,6 +1190,10 @@
             <label class="drone-toggle-label" style="margin-top:6px;">
               <input type="checkbox" id="leadFollowMovement" ${leadFollow ? 'checked' : ''}>
               <span>Phrasing follows movement</span>
+            </label>
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="leadFadeWhenStationary" ${leadFadeStationary ? 'checked' : ''}>
+              <span>Fade out when stationary</span>
             </label>
             <div class="audio-design-hint" style="font-size:11px;opacity:0.6;margin-top:6px;">
               Pitches always come from the place; the lead composes their timing.
@@ -2104,16 +2117,28 @@
     if (leadStyleSelect) leadStyleSelect.onchange = function() { AudioService?.setLeadStyle(this.value); };
     const leadEngineSelect = designModal.querySelector('#leadEngineSelect');
     if (leadEngineSelect) leadEngineSelect.onchange = async function() { await AudioService?.setLeadEngine(this.value); };
-    const leadWalkSelect = designModal.querySelector('#leadWalkSelect');
-    if (leadWalkSelect) leadWalkSelect.onchange = function() { AudioService?.setLeadWalk(this.value); };
     designModal.querySelectorAll('input[name="leadMode"]').forEach(radio => {
       radio.onchange = function() { if (this.checked) AudioService?.setLeadMode(this.value); };
     });
-    const leadBarsSlider = designModal.querySelector('#leadBarsSlider');
-    if (leadBarsSlider) {
-      leadBarsSlider.oninput = function() {
-        designModal.querySelector('#leadBarsValue').textContent = this.value + ' bars';
-        AudioService?.setLeadBarsPerStep(parseInt(this.value, 10));
+    const leadPhraseBarsSlider = designModal.querySelector('#leadPhraseBarsSlider');
+    if (leadPhraseBarsSlider) {
+      leadPhraseBarsSlider.oninput = function() {
+        designModal.querySelector('#leadPhraseBarsValue').textContent = this.value + ' bars';
+        AudioService?.setLeadPhraseBars(parseInt(this.value, 10));
+      };
+    }
+    const leadRestBarsSlider = designModal.querySelector('#leadRestBarsSlider');
+    if (leadRestBarsSlider) {
+      leadRestBarsSlider.oninput = function() {
+        designModal.querySelector('#leadRestBarsValue').textContent = this.value + ' bars';
+        AudioService?.setLeadRestBars(parseInt(this.value, 10));
+      };
+    }
+    const leadIntroBarsSlider = designModal.querySelector('#leadIntroBarsSlider');
+    if (leadIntroBarsSlider) {
+      leadIntroBarsSlider.oninput = function() {
+        designModal.querySelector('#leadIntroBarsValue').textContent = this.value + ' bars';
+        AudioService?.setLeadIntroBars(parseInt(this.value, 10));
       };
     }
     const leadVolumeSlider = designModal.querySelector('#leadVolumeSlider');
@@ -2125,6 +2150,8 @@
     }
     const leadFollowEl = designModal.querySelector('#leadFollowMovement');
     if (leadFollowEl) leadFollowEl.onchange = function() { AudioService?.setLeadFollowMovement(this.checked); };
+    const leadFadeEl = designModal.querySelector('#leadFadeWhenStationary');
+    if (leadFadeEl) leadFadeEl.onchange = function() { AudioService?.setLeadFadeWhenStationary(this.checked); };
     const octaveSwapEl = designModal.querySelector('#octaveSwapEnabled');
     if (octaveSwapEl) {
       octaveSwapEl.onchange = async function() { await AudioService?.setOctaveSwapEnabled(this.checked); };
