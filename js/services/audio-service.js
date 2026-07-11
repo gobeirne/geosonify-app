@@ -2,6 +2,14 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
+ * - Lead / Arranger layer (off by default): a monophonic foreground voice
+ *   (FM/Duo/Mono, with glide) that WALKS across octaves and PHRASES the place's
+ *   notes - selection + rhythm + rests - so the piece reads as composed rather
+ *   than noodling. Pitches ALWAYS come from notePool (never invented). Four
+ *   phrasing styles (ambient/melodic/cinematic/lofi), five walk paths, and
+ *   replace-vs-layer routing. Rides the drone clock; yields to journeys like the
+ *   other features. Persisted under geosonify_lead. Background is byte-identical
+ *   when the lead is off.
  * - Stagger reworked to a rotating active set: at most staggerCount idle
  *   octaves are staggered at once (default 1), rotating every
  *   staggerReshuffleBars (default 16); promoting a new octave demotes the
@@ -113,6 +121,21 @@
   let octaveSwap = null;          // { octave, preset } or null
   let octaveSwapBarsLeft = 0;     // bars remaining before revert
   let octaveSwapCounter = 0;      // bars since last swap event
+
+  // ============== LEAD / ARRANGER LAYER ==============
+  // A monophonic foreground voice that walks across octaves and PHRASES the
+  // place's notes (selection + rhythm + rests) to read as music rather than
+  // noodling. Pitches ALWAYS come from notePool - the arranger never invents
+  // pitch. Off by default; the crystal background is untouched unless enabled.
+  let leadSynth = null;           // bare monophonic Tone synth (FM/Duo/Mono) - glides via portamento
+  let leadHp = null, leadLp = null, leadReverb = null, leadVolume = null;
+  let leadCursorOctave = 5;       // which octave the lead is currently "in"
+  let leadWalkDir = 1;            // +1 / -1 for ping-pong & directional walks
+  let leadBarCounter = 0;         // bars since last octave step
+  let leadPhrasePos = 0;          // index into the current phrasing cycle
+  let leadMotif = null;           // cached motif (array of note-name indices) for repeat-based rulesets
+  let leadMotifAge = 0;           // bars since motif was (re)generated
+  const LEAD_SETTINGS_KEY = 'geosonify_lead';
 
   // Retro drum track (optional; off by default)
   let drumKick = null, drumSnare = null, drumHat = null, drumVolume = null;
@@ -275,6 +298,17 @@
     drumDropoutEnabled: true,    // periodic drop-out + busier return
     drumDropoutBars: 64,         // period between drop-outs
     drumFillStart: 3,            // extra hats/bar at the start of the return (tapers -1/bar to 0)
+    // Lead / arranger (off by default; place-fixed pitches, composed timing)
+    leadEnabled: false,          // master toggle for the foreground lead voice
+    leadEngine: 'fm',            // 'fm' | 'duo' | 'mono'
+    leadStyle: 'ambient',        // phrasing ruleset: 'ambient'|'melodic'|'cinematic'|'lofi'
+    leadWalk: 'pingpong',        // 'ascending'|'descending'|'pingpong'|'randomwalk'|'pedal'
+    leadBarsPerStep: 4,          // bars before the lead moves to the next octave
+    leadMode: 'replace',         // 'replace' (suppress octave's note) | 'layer' (play on top)
+    leadVolumeDb: -8,            // lead output level
+    leadOctaveLow: 3,            // lowest octave the walk visits
+    leadOctaveHigh: 8,           // highest octave the walk visits
+    leadFollowMovement: true,    // busier phrasing when accelerating, sparser when still
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -493,9 +527,52 @@
     }
   }
 
+  function loadLeadSettings() {
+    try {
+      const stored = localStorage.getItem(LEAD_SETTINGS_KEY);
+      if (stored) {
+        const d = JSON.parse(stored);
+        if (d && typeof d === 'object') {
+          if (typeof d.enabled === 'boolean') settings.leadEnabled = d.enabled;
+          if (typeof d.engine === 'string') settings.leadEngine = d.engine;
+          if (typeof d.style === 'string') settings.leadStyle = d.style;
+          if (typeof d.walk === 'string') settings.leadWalk = d.walk;
+          if (typeof d.barsPerStep === 'number') settings.leadBarsPerStep = d.barsPerStep;
+          if (typeof d.mode === 'string') settings.leadMode = d.mode;
+          if (typeof d.volumeDb === 'number') settings.leadVolumeDb = d.volumeDb;
+          if (typeof d.octaveLow === 'number') settings.leadOctaveLow = d.octaveLow;
+          if (typeof d.octaveHigh === 'number') settings.leadOctaveHigh = d.octaveHigh;
+          if (typeof d.followMovement === 'boolean') settings.leadFollowMovement = d.followMovement;
+        }
+      }
+    } catch (e) {
+      console.warn('[AudioService] Failed to load lead settings:', e);
+    }
+  }
+
+  function saveLeadSettings() {
+    try {
+      localStorage.setItem(LEAD_SETTINGS_KEY, JSON.stringify({
+        enabled: !!settings.leadEnabled,
+        engine: settings.leadEngine,
+        style: settings.leadStyle,
+        walk: settings.leadWalk,
+        barsPerStep: settings.leadBarsPerStep,
+        mode: settings.leadMode,
+        volumeDb: settings.leadVolumeDb,
+        octaveLow: settings.leadOctaveLow,
+        octaveHigh: settings.leadOctaveHigh,
+        followMovement: !!settings.leadFollowMovement
+      }));
+    } catch (e) {
+      console.warn('[AudioService] Failed to save lead settings:', e);
+    }
+  }
+
   loadUserPresets();
   loadOctaveInstruments();
   loadDrumSettings();
+  loadLeadSettings();
 
   // ============== OSCILLATOR TYPES ==============
   
@@ -655,6 +732,16 @@
           attack: 0.03, baseFrequency: 60, octaves: 3.5,
           decay: 0.4, sustain: 0.4, release: 1.2, exponent: 2
         },
+        maxPolyphony: maxPolyphony
+      });
+    } else if (p.synthType === 'fm') {
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: p.harmonicity || 3,
+        modulationIndex: p.modulationIndex || 10,
+        oscillator: createOscillatorConfig(p.oscillator || { type: 'sine' }),
+        envelope: p.envelope || { attack: 0.02, decay: 0.3, sustain: 0.6, release: 1.2 },
+        modulation: p.modulation || { type: 'square' },
+        modulationEnvelope: p.modulationEnvelope || { attack: 0.05, decay: 0.2, sustain: 0.3, release: 0.5 },
         maxPolyphony: maxPolyphony
       });
     } else {
@@ -877,6 +964,244 @@
     const preset = options[Math.floor(Math.random() * options.length)];
     octaveSwap = { octave, preset };
     octaveSwapBarsLeft = Math.max(1, settings.octaveSwapDurationBars | 0);
+  }
+
+  // ============== LEAD / ARRANGER ==============
+
+  // Bare monophonic voice params per engine. These are NOT poly presets - the
+  // lead is one gliding line, so we build the raw synth for true portamento.
+  const LEAD_ENGINES = {
+    fm: {
+      make: () => new Tone.FMSynth({
+        harmonicity: 3, modulationIndex: 12,
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.02, decay: 0.2, sustain: 0.5, release: 1.4 },
+        modulation: { type: 'triangle' },
+        modulationEnvelope: { attack: 0.06, decay: 0.2, sustain: 0.4, release: 0.6 },
+        portamento: 0.06
+      })
+    },
+    duo: {
+      make: () => new Tone.DuoSynth({
+        vibratoAmount: 0.25, vibratoRate: 5, harmonicity: 1.5, portamento: 0.08,
+        voice0: { oscillator: { type: 'sine' }, envelope: { attack: 0.03, decay: 0.2, sustain: 0.6, release: 1.5 } },
+        voice1: { oscillator: { type: 'triangle' }, envelope: { attack: 0.04, decay: 0.2, sustain: 0.5, release: 1.5 } }
+      })
+    },
+    mono: {
+      make: () => new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.02, decay: 0.25, sustain: 0.6, release: 1.3 },
+        filter: { Q: 2, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.04, baseFrequency: 300, octaves: 3, decay: 0.3, sustain: 0.4, release: 1.0 },
+        portamento: 0.06
+      })
+    }
+  };
+
+  /**
+   * Phrasing rulesets. Each returns, for a given bar, an array of "speak"
+   * events: { beat, sel, vel, glide } where beat is on the 0..3.5 eighth grid,
+   * sel is a note-SELECTION rule resolved against the octave's pool, vel is
+   * velocity, glide requests portamento from the previous note. Density is an
+   * intensity 0..1 (movement-driven). These schedule WHEN and WHICH; pitch is
+   * always drawn from notePool. This is the anti-noodling core.
+   *
+   * sel values: 'low' | 'high' | 'motif' | 'up' | 'down' | 'pedal'
+   */
+  const LEAD_STYLES = {
+    // Sparse, drifting, long notes and long rests. Space is the composition.
+    ambient(bar, density) {
+      const events = [];
+      // 1-2 notes per bar at most; more rests when still
+      if (bar % 2 === 0) events.push({ beat: 0, sel: 'low', vel: 0.5, glide: true });
+      if (density > 0.5 && bar % 2 === 1) events.push({ beat: 2, sel: 'high', vel: 0.45, glide: true });
+      if (density > 0.8 && bar % 4 === 3) events.push({ beat: 3, sel: 'up', vel: 0.4, glide: true });
+      return events;
+    },
+    // Motif-based: repeat a short cell with variation. Repetition = hook.
+    melodic(bar, density) {
+      const events = [];
+      // Play the motif across the bar on strong-ish beats
+      const beats = density > 0.6 ? [0, 1, 2, 3] : [0, 2];
+      beats.forEach((b, i) => {
+        events.push({ beat: b, sel: 'motif', vel: 0.55 - (i % 2) * 0.1, glide: false });
+      });
+      // Occasional syncopated pickup
+      if (density > 0.7 && bar % 2 === 1) events.push({ beat: 3.5, sel: 'motif', vel: 0.4, glide: false });
+      return events;
+    },
+    // Phrase arcs over 8 bars: sparse->ascend->thicken->resolve->rest.
+    cinematic(bar, density) {
+      const events = [];
+      const phase = bar % 8;
+      if (phase === 0) events.push({ beat: 0, sel: 'low', vel: 0.4, glide: true });
+      else if (phase < 3) events.push({ beat: 0, sel: 'up', vel: 0.45 + phase * 0.05, glide: true });
+      else if (phase < 6) {
+        events.push({ beat: 0, sel: 'up', vel: 0.6, glide: true });
+        if (density > 0.5) events.push({ beat: 2, sel: 'high', vel: 0.65, glide: true });
+      } else if (phase === 6) events.push({ beat: 0, sel: 'high', vel: 0.7, glide: true });
+      // phase 7 = rest (arrival/breath)
+      return events;
+    },
+    // Groove-locked, lazy, looping motif behind the beat.
+    lofi(bar, density) {
+      const events = [];
+      events.push({ beat: 0, sel: 'motif', vel: 0.5, glide: false });
+      if (density > 0.4) events.push({ beat: 1.5, sel: 'motif', vel: 0.4, glide: true });
+      events.push({ beat: 2.5, sel: 'motif', vel: 0.45, glide: false });
+      if (density > 0.7 && bar % 2 === 1) events.push({ beat: 3.5, sel: 'down', vel: 0.35, glide: true });
+      return events;
+    }
+  };
+
+  async function buildLeadChain() {
+    if (typeof Tone === 'undefined' || Tone === null) return;
+    disposeLeadChain();
+    const engine = LEAD_ENGINES[settings.leadEngine] || LEAD_ENGINES.fm;
+    leadSynth = engine.make();
+    leadHp = new Tone.Filter(120, 'highpass');
+    leadLp = new Tone.Filter(9000, 'lowpass');
+    leadReverb = new Tone.Reverb({ decay: 3.5, wet: 0.3 });
+    leadVolume = new Tone.Volume(settings.leadVolumeDb);
+    leadSynth.chain(leadHp, leadLp, leadReverb, leadVolume, masterVolume);
+    await leadReverb.ready;
+    console.log('[AudioService] Built lead chain:', settings.leadEngine);
+  }
+
+  function disposeLeadChain() {
+    try { leadSynth?.dispose(); } catch (e) {}
+    try { leadHp?.dispose(); } catch (e) {}
+    try { leadLp?.dispose(); } catch (e) {}
+    try { leadReverb?.dispose(); } catch (e) {}
+    try { leadVolume?.dispose(); } catch (e) {}
+    leadSynth = leadHp = leadLp = leadReverb = leadVolume = null;
+  }
+
+  /**
+   * Whether the lead is currently active for routing. Mirrors perOctaveActive's
+   * deferral so the lead yields during journeys/crossfade.
+   */
+  function leadActive() {
+    return settings.leadEnabled && leadSynth &&
+           (crossfade <= 0.01 || crossfade >= 0.99) &&
+           !(global.JourneyService && global.JourneyService.isActive && global.JourneyService.isActive());
+  }
+
+  /**
+   * Advance the octave cursor per the walk path. Called once per leadBarsPerStep.
+   */
+  function stepLeadOctave() {
+    const lo = Math.max(0, Math.min(9, settings.leadOctaveLow | 0));
+    const hi = Math.max(lo, Math.min(9, settings.leadOctaveHigh | 0));
+    const span = hi - lo;
+    switch (settings.leadWalk) {
+      case 'ascending':
+        leadCursorOctave = leadCursorOctave >= hi ? lo : leadCursorOctave + 1; break;
+      case 'descending':
+        leadCursorOctave = leadCursorOctave <= lo ? hi : leadCursorOctave - 1; break;
+      case 'pingpong':
+        if (leadCursorOctave >= hi) leadWalkDir = -1;
+        else if (leadCursorOctave <= lo) leadWalkDir = 1;
+        leadCursorOctave += leadWalkDir; break;
+      case 'randomwalk': {
+        const stepDir = Math.random() < 0.5 ? -1 : 1;
+        leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave + stepDir)); break;
+      }
+      case 'pedal':
+      default:
+        // stay put; phrasing carries it
+        break;
+    }
+    // Clamp in case settings changed
+    leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave));
+  }
+
+  /**
+   * Resolve a selection rule to a concrete note-name from the octave's pool.
+   * ALWAYS returns a pitch from notePool - never invents one.
+   */
+  function selectLeadNote(sel, octave) {
+    const pool = notePool[octave] || [];
+    if (pool.length === 0) return null;
+    switch (sel) {
+      case 'low': return pool[0];
+      case 'high': return pool[pool.length - 1];
+      case 'up': {
+        const i = Math.min(pool.length - 1, leadPhrasePos % pool.length);
+        return pool[i];
+      }
+      case 'down': {
+        const i = Math.max(0, (pool.length - 1) - (leadPhrasePos % pool.length));
+        return pool[i];
+      }
+      case 'pedal': return pool[0];
+      case 'motif': {
+        if (!leadMotif || leadMotif.length === 0) return pool[0];
+        const idx = leadMotif[leadPhrasePos % leadMotif.length] % pool.length;
+        return pool[idx];
+      }
+      default: return pool[0];
+    }
+  }
+
+  /**
+   * (Re)generate a short motif = sequence of pool indices. Cheap "hook".
+   */
+  function regenerateMotif(octave) {
+    const pool = notePool[octave] || [];
+    const len = Math.max(2, Math.min(5, pool.length));
+    const motif = [];
+    for (let i = 0; i < len; i++) motif.push(Math.floor(Math.random() * Math.max(1, pool.length)));
+    leadMotif = motif;
+    leadMotifAge = 0;
+  }
+
+  /**
+   * Called once per bar (from the drone clock bar boundary). Advances the walk,
+   * regenerates motif periodically, and SCHEDULES the bar's phrase - each event
+   * fires at its beat via the transport-relative time, gliding when asked.
+   */
+  function leadBar(barStartTime, secondsPerBeat) {
+    if (!leadActive()) return;
+
+    // Advance octave cursor on schedule
+    leadBarCounter++;
+    if (leadBarCounter >= Math.max(1, settings.leadBarsPerStep | 0)) {
+      leadBarCounter = 0;
+      stepLeadOctave();
+    }
+
+    // Movement-driven phrasing density
+    let density = 0.6;
+    if (settings.leadFollowMovement) {
+      if (Date.now() - lastCoordChangeTime > stationaryFadeStartMs) density = 0.25; // sparse when parked
+      else density = Math.max(0.2, Math.min(1, 0.5 + getAcceleration() * settings.accelerationSensitivity));
+    }
+
+    // Refresh motif every 8 bars (or if missing) for repeat-with-variation
+    if (!leadMotif || leadMotifAge >= 8) regenerateMotif(leadCursorOctave);
+    leadMotifAge++;
+
+    const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.ambient;
+    const events = style(droneCurrentBar, density);
+
+    for (const ev of events) {
+      const note = selectLeadNote(ev.sel, leadCursorOctave);
+      if (!note) continue;
+      const octave = leadCursorOctave + settings.transpose;
+      const fullNote = `${note}${octave}`;
+      const when = barStartTime + ev.beat * secondsPerBeat;
+      const dur = secondsPerBeat * 0.9; // slightly detached
+      try {
+        // Portamento is a property of the mono synth; glide happens automatically
+        // when notes are triggered legato. We use triggerAttackRelease per note.
+        leadSynth.triggerAttackRelease(fullNote, dur, when, ev.vel);
+      } catch (e) {}
+      // Feed the event bus so the piano roll shows the lead line too.
+      emitNoteEvent(fullNote, dur, ev.vel, when, { octave: leadCursorOctave, slotIndex: 0, lead: true });
+      leadPhrasePos++;
+    }
   }
 
   // ============== RETRO DRUM TRACK ==============
@@ -1335,6 +1660,14 @@
     const stationaryMod = settings.droneMovementFade ? currentDroneVolumeReduction : 0;
     const adjustedVelocity = velocity * Math.pow(10, stationaryMod / 20);
     
+    // Lead REPLACE mode: while the lead owns its cursor octave, suppress that
+    // octave's normal drone note so the lead becomes the voice of the octave it
+    // is passing through. The lead's own notes bypass triggerNote, so they are
+    // never suppressed. In LAYER mode we do nothing here (octave plays too).
+    if (leadActive() && settings.leadMode === 'replace' &&
+        meta && meta.octave === leadCursorOctave && !meta.lead) {
+      return;
+    }
     // Per-octave instrument routing: if active and this note carries an octave
     // that maps to a built chain, play it there INSTEAD of A/B, then emit and
     // return. All other paths (no meta, mid-crossfade, journeys) fall through
@@ -2400,6 +2733,13 @@
           if (settings.octaveSwapEnabled) {
             tickOctaveSwap();
           }
+          
+          // Lead / arranger: schedule this bar's phrase at the downbeat.
+          // `time` is the bar's start; events place themselves at beat offsets.
+          if (settings.leadEnabled) {
+            const secondsPerBeat = 60 / getCurrentBPM();
+            leadBar(time, secondsPerBeat);
+          }
         }
         
         // Update notes on beats (pattern-based or legacy)
@@ -2544,6 +2884,7 @@
       for (const p of Object.keys(octaveSwapChains)) {
         try { octaveSwapChains[p]?.synth?.releaseAll(); } catch (e) {}
       }
+      try { leadSynth?.triggerRelease?.(); } catch (e) {}
     } catch (e) {}
     
     // Clear all tracking state
@@ -2623,6 +2964,13 @@
       if (settings.drumEnabled) {
         try { buildDrums(); } catch (e) {
           console.warn('[AudioService] Failed to build drums at init:', e);
+        }
+      }
+      
+      // If the lead was left enabled (persisted), build its voice now.
+      if (settings.leadEnabled) {
+        try { await buildLeadChain(); } catch (e) {
+          console.warn('[AudioService] Failed to build lead chain at init:', e);
         }
       }
     },
@@ -3319,6 +3667,91 @@
     getDrumFillStart() {
       return settings.drumFillStart;
     },
+
+    // ===== LEAD / ARRANGER =====
+
+    async setLeadEnabled(enabled) {
+      settings.leadEnabled = !!enabled;
+      saveLeadSettings();
+      if (enabled) {
+        leadBarCounter = 0; leadPhrasePos = 0; leadMotif = null; leadMotifAge = 8;
+        await buildLeadChain();
+      } else {
+        disposeLeadChain();
+      }
+    },
+
+    getLeadEnabled() { return settings.leadEnabled; },
+
+    async setLeadEngine(engine) {
+      if (!LEAD_ENGINES[engine]) return;
+      settings.leadEngine = engine;
+      saveLeadSettings();
+      if (settings.leadEnabled) await buildLeadChain(); // rebuild the voice
+    },
+
+    getLeadEngine() { return settings.leadEngine; },
+    getLeadEngineNames() { return Object.keys(LEAD_ENGINES); },
+
+    setLeadStyle(style) {
+      if (!LEAD_STYLES[style]) return;
+      settings.leadStyle = style;
+      leadMotif = null; leadMotifAge = 8; // fresh motif for the new style
+      saveLeadSettings();
+    },
+
+    getLeadStyle() { return settings.leadStyle; },
+    getLeadStyleNames() { return Object.keys(LEAD_STYLES); },
+
+    setLeadWalk(walk) {
+      const valid = ['ascending', 'descending', 'pingpong', 'randomwalk', 'pedal'];
+      if (!valid.includes(walk)) return;
+      settings.leadWalk = walk;
+      saveLeadSettings();
+    },
+
+    getLeadWalk() { return settings.leadWalk; },
+
+    setLeadMode(mode) {
+      if (mode !== 'replace' && mode !== 'layer') return;
+      settings.leadMode = mode;
+      saveLeadSettings();
+    },
+
+    getLeadMode() { return settings.leadMode; },
+
+    setLeadBarsPerStep(n) {
+      settings.leadBarsPerStep = Math.max(1, Math.min(16, n | 0));
+      saveLeadSettings();
+    },
+
+    getLeadBarsPerStep() { return settings.leadBarsPerStep; },
+
+    setLeadVolume(db) {
+      settings.leadVolumeDb = Math.max(-30, Math.min(0, db));
+      saveLeadSettings();
+      if (leadVolume) leadVolume.volume.rampTo(settings.leadVolumeDb, 0.1);
+    },
+
+    getLeadVolume() { return settings.leadVolumeDb; },
+
+    setLeadOctaveRange(low, high) {
+      const lo = Math.max(0, Math.min(9, low | 0));
+      const hi = Math.max(lo, Math.min(9, high | 0));
+      settings.leadOctaveLow = lo;
+      settings.leadOctaveHigh = hi;
+      leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave));
+      saveLeadSettings();
+    },
+
+    getLeadOctaveRange() { return { low: settings.leadOctaveLow, high: settings.leadOctaveHigh }; },
+
+    setLeadFollowMovement(enabled) {
+      settings.leadFollowMovement = !!enabled;
+      saveLeadSettings();
+    },
+
+    getLeadFollowMovement() { return settings.leadFollowMovement; },
 
     // ===== SUB-BASS TWEAKS =====
     // Live-edit the built-in 'sub-bass' preset's filter-envelope character and
