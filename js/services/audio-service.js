@@ -2,14 +2,16 @@
  * geosonify-audio-service.js v6.2
  * 
  * v6.2 changes:
- * - Lead / Arranger layer (off by default): a monophonic foreground voice
- *   (FM/Duo/Mono, with glide) that WALKS across octaves and PHRASES the place's
- *   notes - selection + rhythm + rests - so the piece reads as composed rather
- *   than noodling. Pitches ALWAYS come from notePool (never invented). Four
- *   phrasing styles (ambient/melodic/cinematic/lofi), five walk paths, and
- *   replace-vs-layer routing. Rides the drone clock; yields to journeys like the
- *   other features. Persisted under geosonify_lead. Background is byte-identical
- *   when the lead is off.
+ * - Lead / Melody Composer (off by default): COMPOSES a melody from the place's
+ *   available pitch-classes (a palette across all octaves), voicing them in a
+ *   sensible register with real rhythm (RHYTHM_PHRASES: quarters/8ths/dotted/
+ *   triplet/syncopated/long), preferring stepwise motion, resolving to the
+ *   tonal center. Pitches ALWAYS from notePool - never invented. Four styles
+ *   (flowing/sparse/rhythmic/lyrical) and four voices (80s/theremin/FM/mono).
+ *   FORM: enters after an intro, plays a phrase for N bars, rests, returns
+ *   EVOLVED (varies ~20% of notes, recomposes after 3 evolutions or palette
+ *   change). replace/layer routing. Persisted under geosonify_lead. Background
+ *   byte-identical when off.
  * - Stagger reworked to a rotating active set: at most staggerCount idle
  *   octaves are staggered at once (default 1), rotating every
  *   staggerReshuffleBars (default 16); promoting a new octave demotes the
@@ -122,19 +124,22 @@
   let octaveSwapBarsLeft = 0;     // bars remaining before revert
   let octaveSwapCounter = 0;      // bars since last swap event
 
-  // ============== LEAD / ARRANGER LAYER ==============
-  // A monophonic foreground voice that walks across octaves and PHRASES the
-  // place's notes (selection + rhythm + rests) to read as music rather than
-  // noodling. Pitches ALWAYS come from notePool - the arranger never invents
-  // pitch. Off by default; the crystal background is untouched unless enabled.
-  let leadSynth = null;           // bare monophonic Tone synth (FM/Duo/Mono) - glides via portamento
+  // ============== LEAD / MELODY COMPOSER ==============
+  // A monophonic foreground voice that COMPOSES a melody from the place's
+  // available pitch-classes (the ~notes across all octaves), voicing them in a
+  // sensible register with real rhythm, then evolves it over repeats. Pitches
+  // ALWAYS come from notePool - never invented. Enters after an intro, plays a
+  // phrase, rests, returns evolved. Off by default; background untouched.
+  let leadSynth = null;
   let leadHp = null, leadLp = null, leadReverb = null, leadVolume = null;
-  let leadCursorOctave = 5;       // which octave the lead is currently "in"
-  let leadWalkDir = 1;            // +1 / -1 for ping-pong & directional walks
-  let leadBarCounter = 0;         // bars since last octave step
-  let leadPhrasePos = 0;          // index into the current phrasing cycle
-  let leadMotif = null;           // cached motif (array of note-name indices) for repeat-based rulesets
-  let leadMotifAge = 0;           // bars since motif was (re)generated
+  // The composed phrase: array of { pc, octave, startBeat (absolute in phrase), durBeats, vel }
+  let leadPhrase = null;
+  let leadPhraseBars = 4;         // length of the current phrase in bars
+  let leadFormState = 'intro';    // 'intro' | 'playing' | 'resting'
+  let leadFormBar = 0;            // bar counter within the current form segment
+  let leadEvolutions = 0;         // how many times the current melody has evolved
+  let leadRegisterCenter = 5;     // octave the current phrase is centred on
+  let leadActiveOctaves = new Set(); // octaves the current phrase voices (for replace mode)
   const LEAD_SETTINGS_KEY = 'geosonify_lead';
 
   // Retro drum track (optional; off by default)
@@ -300,15 +305,15 @@
     drumFillStart: 3,            // extra hats/bar at the start of the return (tapers -1/bar to 0)
     // Lead / arranger (off by default; place-fixed pitches, composed timing)
     leadEnabled: false,          // master toggle for the foreground lead voice
-    leadEngine: 'fm',            // 'fm' | 'duo' | 'mono'
-    leadStyle: 'ambient',        // phrasing ruleset: 'ambient'|'melodic'|'cinematic'|'lofi'
-    leadWalk: 'pingpong',        // 'ascending'|'descending'|'pingpong'|'randomwalk'|'pedal'
-    leadBarsPerStep: 4,          // bars before the lead moves to the next octave
-    leadMode: 'replace',         // 'replace' (suppress octave's note) | 'layer' (play on top)
-    leadVolumeDb: -8,            // lead output level
-    leadOctaveLow: 3,            // lowest octave the walk visits
-    leadOctaveHigh: 8,           // highest octave the walk visits
-    leadFollowMovement: true,    // busier phrasing when accelerating, sparser when still
+    leadEngine: 'eighties',      // '80s'|'theremin'|'fm'|'mono'
+    leadStyle: 'flowing',        // melodic character: 'flowing'|'sparse'|'rhythmic'|'lyrical'
+    leadPhraseBars: 4,           // phrase length in bars
+    leadRestBars: 4,             // bars of rest between phrases
+    leadIntroBars: 4,            // bars before the lead first enters
+    leadMode: 'layer',           // 'replace' (mute the melody's octave) | 'layer' (over the top)
+    leadVolumeDb: -6,            // lead output level
+    leadFollowMovement: true,    // denser phrasing when moving, sparser when still
+    leadFadeWhenStationary: false, // ebb the lead with the drone when parked
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -536,13 +541,13 @@
           if (typeof d.enabled === 'boolean') settings.leadEnabled = d.enabled;
           if (typeof d.engine === 'string') settings.leadEngine = d.engine;
           if (typeof d.style === 'string') settings.leadStyle = d.style;
-          if (typeof d.walk === 'string') settings.leadWalk = d.walk;
-          if (typeof d.barsPerStep === 'number') settings.leadBarsPerStep = d.barsPerStep;
+          if (typeof d.phraseBars === 'number') settings.leadPhraseBars = d.phraseBars;
+          if (typeof d.restBars === 'number') settings.leadRestBars = d.restBars;
+          if (typeof d.introBars === 'number') settings.leadIntroBars = d.introBars;
           if (typeof d.mode === 'string') settings.leadMode = d.mode;
           if (typeof d.volumeDb === 'number') settings.leadVolumeDb = d.volumeDb;
-          if (typeof d.octaveLow === 'number') settings.leadOctaveLow = d.octaveLow;
-          if (typeof d.octaveHigh === 'number') settings.leadOctaveHigh = d.octaveHigh;
           if (typeof d.followMovement === 'boolean') settings.leadFollowMovement = d.followMovement;
+          if (typeof d.fadeWhenStationary === 'boolean') settings.leadFadeWhenStationary = d.fadeWhenStationary;
         }
       }
     } catch (e) {
@@ -556,13 +561,13 @@
         enabled: !!settings.leadEnabled,
         engine: settings.leadEngine,
         style: settings.leadStyle,
-        walk: settings.leadWalk,
-        barsPerStep: settings.leadBarsPerStep,
+        phraseBars: settings.leadPhraseBars,
+        restBars: settings.leadRestBars,
+        introBars: settings.leadIntroBars,
         mode: settings.leadMode,
         volumeDb: settings.leadVolumeDb,
-        octaveLow: settings.leadOctaveLow,
-        octaveHigh: settings.leadOctaveHigh,
-        followMovement: !!settings.leadFollowMovement
+        followMovement: !!settings.leadFollowMovement,
+        fadeWhenStationary: !!settings.leadFadeWhenStationary
       }));
     } catch (e) {
       console.warn('[AudioService] Failed to save lead settings:', e);
@@ -968,91 +973,80 @@
 
   // ============== LEAD / ARRANGER ==============
 
-  // Bare monophonic voice params per engine. These are NOT poly presets - the
-  // lead is one gliding line, so we build the raw synth for true portamento.
+  // Lead voices. portamento is kept small (or zero) so distinct notes actually
+  // ARTICULATE - large glide on a mono synth merges rapid notes into one pitch.
+  // Only the theremin leans into glide, because there the slide IS the sound.
   const LEAD_ENGINES = {
-    fm: {
-      make: () => new Tone.FMSynth({
-        harmonicity: 3, modulationIndex: 12,
-        oscillator: { type: 'sine' },
-        envelope: { attack: 0.02, decay: 0.2, sustain: 0.5, release: 1.4 },
-        modulation: { type: 'triangle' },
-        modulationEnvelope: { attack: 0.06, decay: 0.2, sustain: 0.4, release: 0.6 },
-        portamento: 0.06
+    // Bright, singing 80s synth-lead: detuned saw, resonant filter, fast attack.
+    eighties: {
+      glide: 0.0,
+      make: () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsawtooth', spread: 20, count: 3 },
+        envelope: { attack: 0.008, decay: 0.25, sustain: 0.7, release: 0.5 },
+        filter: { Q: 4, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.01, baseFrequency: 600, octaves: 3.5, decay: 0.25, sustain: 0.5, release: 0.6, exponent: 2 },
+        portamento: 0.0
       })
     },
-    duo: {
+    // Floating theremin: pure sine, heavy glide, deep slow vibrato. Continuous.
+    theremin: {
+      glide: 0.18,
       make: () => new Tone.DuoSynth({
-        vibratoAmount: 0.25, vibratoRate: 5, harmonicity: 1.5, portamento: 0.08,
-        voice0: { oscillator: { type: 'sine' }, envelope: { attack: 0.03, decay: 0.2, sustain: 0.6, release: 1.5 } },
-        voice1: { oscillator: { type: 'triangle' }, envelope: { attack: 0.04, decay: 0.2, sustain: 0.5, release: 1.5 } }
+        vibratoAmount: 0.5, vibratoRate: 5.5, harmonicity: 1.0, portamento: 0.18,
+        voice0: { oscillator: { type: 'sine' }, envelope: { attack: 0.15, decay: 0.1, sustain: 0.9, release: 1.8 } },
+        voice1: { oscillator: { type: 'sine' }, envelope: { attack: 0.2, decay: 0.1, sustain: 0.85, release: 1.8 } }
       })
     },
+    // FM bell/reed lead - metallic, distinctive, articulate.
+    fm: {
+      glide: 0.0,
+      make: () => new Tone.FMSynth({
+        harmonicity: 2, modulationIndex: 8,
+        oscillator: { type: 'sine' },
+        envelope: { attack: 0.006, decay: 0.3, sustain: 0.4, release: 0.6 },
+        modulation: { type: 'triangle' },
+        modulationEnvelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 0.4 },
+        portamento: 0.0
+      })
+    },
+    // Warm analog mono lead, gentle.
     mono: {
+      glide: 0.02,
       make: () => new Tone.MonoSynth({
         oscillator: { type: 'sawtooth' },
-        envelope: { attack: 0.02, decay: 0.25, sustain: 0.6, release: 1.3 },
+        envelope: { attack: 0.01, decay: 0.25, sustain: 0.6, release: 0.7 },
         filter: { Q: 2, type: 'lowpass', rolloff: -24 },
-        filterEnvelope: { attack: 0.04, baseFrequency: 300, octaves: 3, decay: 0.3, sustain: 0.4, release: 1.0 },
-        portamento: 0.06
+        filterEnvelope: { attack: 0.02, baseFrequency: 400, octaves: 3, decay: 0.3, sustain: 0.4, release: 0.7 },
+        portamento: 0.02
       })
     }
   };
 
   /**
    * Phrasing rulesets. Each returns, for a given bar, an array of "speak"
-   * events: { beat, sel, vel, glide } where beat is on the 0..3.5 eighth grid,
-   * sel is a note-SELECTION rule resolved against the octave's pool, vel is
-   * velocity, glide requests portamento from the previous note. Density is an
-   * intensity 0..1 (movement-driven). These schedule WHEN and WHICH; pitch is
-   * always drawn from notePool. This is the anti-noodling core.
-   *
-   * sel values: 'low' | 'high' | 'motif' | 'up' | 'down' | 'pedal'
+   * The composer builds a melody from the place's pitch-classes and sets it to
+   * a rhythm phrase. RHYTHM_PHRASES are per-bar rhythms (durations in beats that
+   * sum to 4); the composer assigns pitches to these slots. A style picks which
+   * rhythm family and how dense/ornamented the line is.
    */
+  // Rhythm cells: arrays of note durations in beats (each sums to 4 = one bar).
+  // The composer fits melody pitches onto these slots, so rhythm has coherence
+  // (a repeating cell) rather than random durations.
+  const RHYTHM_PHRASES = {
+    straight:   [[1, 1, 1, 1]],                     // quarters
+    flowing:    [[1, 0.5, 0.5, 1, 1], [1, 1, 0.5, 0.5, 1]], // mixed 8ths/4ths
+    dotted:     [[1.5, 0.5, 1.5, 0.5], [1.5, 0.5, 2]],       // dotted lilt
+    triplet:    [[0.667, 0.667, 0.667, 1, 1], [2, 0.667, 0.667, 0.667]], // triplet figure
+    syncopated: [[0.5, 1, 0.5, 1, 1], [1, 0.5, 1, 0.5, 1]],  // off-beat push
+    long:       [[2, 2], [3, 1], [4]]                        // sustained / ambient
+  };
+
+  // Style = which rhythm families a phrase draws from + note count target/bar.
   const LEAD_STYLES = {
-    // Sparse, drifting, long notes and long rests. Space is the composition.
-    ambient(bar, density) {
-      const events = [];
-      // 1-2 notes per bar at most; more rests when still
-      if (bar % 2 === 0) events.push({ beat: 0, sel: 'low', vel: 0.5, glide: true });
-      if (density > 0.5 && bar % 2 === 1) events.push({ beat: 2, sel: 'high', vel: 0.45, glide: true });
-      if (density > 0.8 && bar % 4 === 3) events.push({ beat: 3, sel: 'up', vel: 0.4, glide: true });
-      return events;
-    },
-    // Motif-based: repeat a short cell with variation. Repetition = hook.
-    melodic(bar, density) {
-      const events = [];
-      // Play the motif across the bar on strong-ish beats
-      const beats = density > 0.6 ? [0, 1, 2, 3] : [0, 2];
-      beats.forEach((b, i) => {
-        events.push({ beat: b, sel: 'motif', vel: 0.55 - (i % 2) * 0.1, glide: false });
-      });
-      // Occasional syncopated pickup
-      if (density > 0.7 && bar % 2 === 1) events.push({ beat: 3.5, sel: 'motif', vel: 0.4, glide: false });
-      return events;
-    },
-    // Phrase arcs over 8 bars: sparse->ascend->thicken->resolve->rest.
-    cinematic(bar, density) {
-      const events = [];
-      const phase = bar % 8;
-      if (phase === 0) events.push({ beat: 0, sel: 'low', vel: 0.4, glide: true });
-      else if (phase < 3) events.push({ beat: 0, sel: 'up', vel: 0.45 + phase * 0.05, glide: true });
-      else if (phase < 6) {
-        events.push({ beat: 0, sel: 'up', vel: 0.6, glide: true });
-        if (density > 0.5) events.push({ beat: 2, sel: 'high', vel: 0.65, glide: true });
-      } else if (phase === 6) events.push({ beat: 0, sel: 'high', vel: 0.7, glide: true });
-      // phase 7 = rest (arrival/breath)
-      return events;
-    },
-    // Groove-locked, lazy, looping motif behind the beat.
-    lofi(bar, density) {
-      const events = [];
-      events.push({ beat: 0, sel: 'motif', vel: 0.5, glide: false });
-      if (density > 0.4) events.push({ beat: 1.5, sel: 'motif', vel: 0.4, glide: true });
-      events.push({ beat: 2.5, sel: 'motif', vel: 0.45, glide: false });
-      if (density > 0.7 && bar % 2 === 1) events.push({ beat: 3.5, sel: 'down', vel: 0.35, glide: true });
-      return events;
-    }
+    flowing:  { rhythms: ['flowing', 'straight', 'dotted'], notesPerBar: 3, restProb: 0.12, leap: 0.25 },
+    sparse:   { rhythms: ['long', 'dotted'],                notesPerBar: 1.5, restProb: 0.3, leap: 0.35 },
+    rhythmic: { rhythms: ['syncopated', 'straight', 'triplet'], notesPerBar: 4, restProb: 0.08, leap: 0.2 },
+    lyrical:  { rhythms: ['flowing', 'dotted', 'triplet'], notesPerBar: 2.5, restProb: 0.15, leap: 0.3 }
   };
 
   async function buildLeadChain() {
@@ -1089,120 +1083,190 @@
   }
 
   /**
-   * Advance the octave cursor per the walk path. Called once per leadBarsPerStep.
+   * Build the palette from the place's notes: unique pitch-classes across all
+   * octaves, plus a tonal center (the most frequently occurring pitch-class,
+   * which tends to be the harmonic root). Pitches are NEVER invented - this is
+   * purely the set the place gave us.
    */
-  function stepLeadOctave() {
-    const lo = Math.max(0, Math.min(9, settings.leadOctaveLow | 0));
-    const hi = Math.max(lo, Math.min(9, settings.leadOctaveHigh | 0));
-    const span = hi - lo;
-    switch (settings.leadWalk) {
-      case 'ascending':
-        leadCursorOctave = leadCursorOctave >= hi ? lo : leadCursorOctave + 1; break;
-      case 'descending':
-        leadCursorOctave = leadCursorOctave <= lo ? hi : leadCursorOctave - 1; break;
-      case 'pingpong':
-        if (leadCursorOctave >= hi) leadWalkDir = -1;
-        else if (leadCursorOctave <= lo) leadWalkDir = 1;
-        leadCursorOctave += leadWalkDir; break;
-      case 'randomwalk': {
-        const stepDir = Math.random() < 0.5 ? -1 : 1;
-        leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave + stepDir)); break;
+  function leadPalette() {
+    const counts = {};
+    const order = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    for (let oct = 0; oct < notePool.length; oct++) {
+      for (const pc of (notePool[oct] || [])) {
+        const norm = pc.replace('Db','C#').replace('Eb','D#').replace('Gb','F#').replace('Ab','G#').replace('Bb','A#');
+        counts[norm] = (counts[norm] || 0) + 1;
       }
-      case 'pedal':
-      default:
-        // stay put; phrasing carries it
-        break;
     }
-    // Clamp in case settings changed
-    leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave));
+    const pcs = Object.keys(counts);
+    if (pcs.length === 0) return null;
+    // Sort pitch-classes chromatically so "stepwise" motion is meaningful.
+    pcs.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    // Tonal center = most common pitch-class.
+    let center = pcs[0], best = -1;
+    for (const pc of pcs) { if (counts[pc] > best) { best = counts[pc]; center = pc; } }
+    return { pcs, center, semitoneOf: (pc) => order.indexOf(pc) };
   }
 
   /**
-   * Resolve a selection rule to a concrete note-name from the octave's pool.
-   * ALWAYS returns a pitch from notePool - never invents one.
+   * Compose a melody from the palette. Uses real melodic principles:
+   * - contour is an arch (rise then fall) or gentle wander
+   * - prefers stepwise motion (nearest pitch-class in the desired direction),
+   *   with occasional leaps controlled by style.leap
+   * - lands on the tonal center at phrase end (resolution)
+   * - fits pitches onto a repeating RHYTHM cell so rhythm is coherent
+   * Returns array of { pc, octave, startBeat (absolute across the phrase),
+   * durBeats, vel }. All pitches are from the palette (the place's notes).
    */
-  function selectLeadNote(sel, octave) {
-    const pool = notePool[octave] || [];
-    if (pool.length === 0) return null;
-    switch (sel) {
-      case 'low': return pool[0];
-      case 'high': return pool[pool.length - 1];
-      case 'up': {
-        const i = Math.min(pool.length - 1, leadPhrasePos % pool.length);
-        return pool[i];
-      }
-      case 'down': {
-        const i = Math.max(0, (pool.length - 1) - (leadPhrasePos % pool.length));
-        return pool[i];
-      }
-      case 'pedal': return pool[0];
-      case 'motif': {
-        if (!leadMotif || leadMotif.length === 0) return pool[0];
-        const idx = leadMotif[leadPhrasePos % leadMotif.length] % pool.length;
-        return pool[idx];
-      }
-      default: return pool[0];
+  function composeLeadPhrase() {
+    const pal = leadPalette();
+    if (!pal || pal.pcs.length === 0) { leadPhrase = null; return; }
+    const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.flowing;
+    const bars = Math.max(1, settings.leadPhraseBars | 0);
+    leadPhraseBars = bars;
+
+    // Pick one rhythm cell for this phrase and reuse it each bar (coherence),
+    // with light per-bar variation later during evolution.
+    const family = style.rhythms[Math.floor(Math.random() * style.rhythms.length)];
+    const cellChoices = RHYTHM_PHRASES[family] || RHYTHM_PHRASES.straight;
+    const cell = cellChoices[Math.floor(Math.random() * cellChoices.length)];
+
+    // Pick a register center for this phrase (sensible mid range, varied).
+    leadRegisterCenter = 4 + Math.floor(Math.random() * 3); // 4..6
+
+    // Build a contour target: start near center, arch up, resolve down to center.
+    const pcs = pal.pcs;
+    const centerIdx = pcs.indexOf(pal.center);
+    let cursor = centerIdx >= 0 ? centerIdx : Math.floor(pcs.length / 2);
+
+    const phrase = [];
+    let beatAbs = 0;
+    const totalBeats = bars * 4;
+    let slot = 0;
+    // A gentle arch across the phrase: peak around 60% through.
+    while (beatAbs < totalBeats) {
+      const dur = cell[slot % cell.length];
+      slot++;
+      // Rest instead of a note sometimes (space).
+      if (Math.random() < style.restProb && beatAbs > 0) { beatAbs += dur; continue; }
+
+      // Decide melodic direction from the arch position.
+      const t = beatAbs / totalBeats;
+      const wantUp = t < 0.6; // rise for first 60%, then fall
+      // Stepwise by default; occasional leap.
+      let move;
+      if (Math.random() < style.leap) move = (wantUp ? 1 : -1) * (2 + Math.floor(Math.random() * 2));
+      else move = (wantUp ? 1 : -1) * (Math.random() < 0.8 ? 1 : 0);
+      cursor = Math.max(0, Math.min(pcs.length - 1, cursor + move));
+
+      // Octave: center register, but let big cursor excursions nudge the octave
+      // so a wide palette spans registers naturally.
+      let octave = leadRegisterCenter;
+      if (cursor > centerIdx + Math.floor(pcs.length / 2)) octave += 1;
+      if (cursor < centerIdx - Math.floor(pcs.length / 2)) octave -= 1;
+      octave = Math.max(2, Math.min(8, octave));
+
+      const vel = 0.45 + 0.15 * Math.sin(t * Math.PI); // swell toward the middle
+      phrase.push({ pc: pcs[cursor], octave, startBeat: beatAbs, durBeats: dur, vel });
+      beatAbs += dur;
     }
+
+    // Resolution: force the final note to the tonal center at the register.
+    if (phrase.length > 0) {
+      const last = phrase[phrase.length - 1];
+      last.pc = pal.center;
+      last.octave = leadRegisterCenter;
+    }
+
+    leadPhrase = phrase;
+    leadActiveOctaves = new Set(phrase.map(n => n.octave));
+    leadEvolutions = 0;
   }
 
   /**
-   * (Re)generate a short motif = sequence of pool indices. Cheap "hook".
+   * Evolve the current melody a little rather than repeat identically or
+   * regenerate: nudge a few pitches stepwise and lightly alter a duration.
+   * Keeps the "hook" recognizable while avoiding moronic repetition.
    */
-  function regenerateMotif(octave) {
-    const pool = notePool[octave] || [];
-    const len = Math.max(2, Math.min(5, pool.length));
-    const motif = [];
-    for (let i = 0; i < len; i++) motif.push(Math.floor(Math.random() * Math.max(1, pool.length)));
-    leadMotif = motif;
-    leadMotifAge = 0;
+  function evolveLeadPhrase() {
+    if (!leadPhrase || leadPhrase.length === 0) { composeLeadPhrase(); return; }
+    const pal = leadPalette();
+    if (!pal) return;
+    const pcs = pal.pcs;
+    const n = leadPhrase.length;
+    const changes = Math.max(1, Math.round(n * 0.2)); // vary ~20% of notes
+    for (let k = 0; k < changes; k++) {
+      const i = Math.floor(Math.random() * n);
+      const note = leadPhrase[i];
+      let idx = pcs.indexOf(note.pc);
+      if (idx < 0) idx = 0;
+      idx = Math.max(0, Math.min(pcs.length - 1, idx + (Math.random() < 0.5 ? -1 : 1)));
+      note.pc = pcs[idx];
+    }
+    // Keep the resolution note on the center.
+    const last = leadPhrase[leadPhrase.length - 1];
+    last.pc = pal.center;
+    leadEvolutions++;
   }
 
   /**
-   * Called once per bar (from the drone clock bar boundary). Advances the walk,
-   * regenerates motif periodically, and SCHEDULES the bar's phrase - each event
-   * fires at its beat via the transport-relative time, gliding when asked.
+   * Called once per bar from the drone clock. Manages the FORM (intro -> play
+   * a phrase -> rest -> return evolved) and, during playing bars, schedules the
+   * portion of the composed melody that falls in this bar.
    */
   function leadBar(barStartTime, secondsPerBeat) {
     if (!leadActive()) return;
 
-    // Advance octave cursor on schedule
-    leadBarCounter++;
-    if (leadBarCounter >= Math.max(1, settings.leadBarsPerStep | 0)) {
-      leadBarCounter = 0;
-      stepLeadOctave();
+    // Ebb with the drone when stationary, if enabled (once per bar).
+    if (leadVolume) {
+      const ebb = settings.leadFadeWhenStationary ? currentDroneVolumeReduction : 0;
+      leadVolume.volume.rampTo(settings.leadVolumeDb + ebb, 0.5);
     }
 
-    // Movement-driven phrasing density
-    let density = 0.6;
-    if (settings.leadFollowMovement) {
-      if (Date.now() - lastCoordChangeTime > stationaryFadeStartMs) density = 0.25; // sparse when parked
-      else density = Math.max(0.2, Math.min(1, 0.5 + getAcceleration() * settings.accelerationSensitivity));
+    // FORM state machine.
+    if (leadFormState === 'intro') {
+      leadFormBar++;
+      if (leadFormBar >= Math.max(0, settings.leadIntroBars | 0)) {
+        leadFormState = 'playing'; leadFormBar = 0;
+        if (!leadPhrase) composeLeadPhrase();
+      }
+      return; // silent during intro
     }
 
-    // Refresh motif every 8 bars (or if missing) for repeat-with-variation
-    if (!leadMotif || leadMotifAge >= 8) regenerateMotif(leadCursorOctave);
-    leadMotifAge++;
+    if (leadFormState === 'resting') {
+      leadFormBar++;
+      if (leadFormBar >= Math.max(1, settings.leadRestBars | 0)) {
+        leadFormState = 'playing'; leadFormBar = 0;
+        // Return evolved (or re-compose occasionally / if palette changed).
+        if (!leadPhrase || leadEvolutions >= 3) composeLeadPhrase();
+        else evolveLeadPhrase();
+      }
+      return; // silent during rest
+    }
 
-    const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.ambient;
-    const events = style(droneCurrentBar, density);
+    // playing: schedule the slice of the phrase that lands in this bar.
+    if (!leadPhrase) { composeLeadPhrase(); if (!leadPhrase) return; }
+    const barIndexInPhrase = leadFormBar; // 0..leadPhraseBars-1
+    const barStartBeatAbs = barIndexInPhrase * 4;
+    const barEndBeatAbs = barStartBeatAbs + 4;
 
-    for (const ev of events) {
-      const note = selectLeadNote(ev.sel, leadCursorOctave);
-      if (!note) continue;
-      const octave = leadCursorOctave + settings.transpose;
-      const fullNote = `${note}${octave}`;
-      const when = barStartTime + ev.beat * secondsPerBeat;
-      const dur = secondsPerBeat * 0.9; // slightly detached
-      try {
-        // Portamento is a property of the mono synth; glide happens automatically
-        // when notes are triggered legato. We use triggerAttackRelease per note.
-        leadSynth.triggerAttackRelease(fullNote, dur, when, ev.vel);
-      } catch (e) {}
-      // Feed the event bus so the piano roll shows the lead line too.
-      emitNoteEvent(fullNote, dur, ev.vel, when, { octave: leadCursorOctave, slotIndex: 0, lead: true });
-      leadPhrasePos++;
+    for (const note of leadPhrase) {
+      if (note.startBeat < barStartBeatAbs || note.startBeat >= barEndBeatAbs) continue;
+      const beatInBar = note.startBeat - barStartBeatAbs;
+      const when = barStartTime + beatInBar * secondsPerBeat;
+      const dur = Math.max(0.08, note.durBeats * secondsPerBeat - 0.03);
+      const octave = note.octave + settings.transpose;
+      const fullNote = `${note.pc}${octave}`;
+      try { leadSynth.triggerAttackRelease(fullNote, dur, when, note.vel); } catch (e) {}
+      emitNoteEvent(fullNote, dur, note.vel, when, { octave: note.octave, slotIndex: 0, lead: true });
+    }
+
+    leadFormBar++;
+    if (leadFormBar >= leadPhraseBars) {
+      // Phrase finished -> rest.
+      leadFormState = 'resting'; leadFormBar = 0;
     }
   }
+
 
   // ============== RETRO DRUM TRACK ==============
 
@@ -1660,12 +1724,12 @@
     const stationaryMod = settings.droneMovementFade ? currentDroneVolumeReduction : 0;
     const adjustedVelocity = velocity * Math.pow(10, stationaryMod / 20);
     
-    // Lead REPLACE mode: while the lead owns its cursor octave, suppress that
-    // octave's normal drone note so the lead becomes the voice of the octave it
-    // is passing through. The lead's own notes bypass triggerNote, so they are
-    // never suppressed. In LAYER mode we do nothing here (octave plays too).
-    if (leadActive() && settings.leadMode === 'replace' &&
-        meta && meta.octave === leadCursorOctave && !meta.lead) {
+    // Lead REPLACE mode: while the melody is playing, mute the drone notes in
+    // the octaves the melody currently voices, so the lead becomes the voice of
+    // those octaves. The lead's own notes bypass triggerNote (meta.lead), so
+    // they are never suppressed. LAYER mode does nothing here (octave plays too).
+    if (leadActive() && settings.leadMode === 'replace' && leadFormState === 'playing' &&
+        meta && !meta.lead && leadActiveOctaves.has(meta.octave)) {
       return;
     }
     // Per-octave instrument routing: if active and this note carries an octave
@@ -3674,7 +3738,7 @@
       settings.leadEnabled = !!enabled;
       saveLeadSettings();
       if (enabled) {
-        leadBarCounter = 0; leadPhrasePos = 0; leadMotif = null; leadMotifAge = 8;
+        leadFormState = 'intro'; leadFormBar = 0; leadPhrase = null; leadEvolutions = 0;
         await buildLeadChain();
       } else {
         disposeLeadChain();
@@ -3696,21 +3760,12 @@
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
       settings.leadStyle = style;
-      leadMotif = null; leadMotifAge = 8; // fresh motif for the new style
+      composeLeadPhrase(); // fresh melody in the new character
       saveLeadSettings();
     },
 
     getLeadStyle() { return settings.leadStyle; },
     getLeadStyleNames() { return Object.keys(LEAD_STYLES); },
-
-    setLeadWalk(walk) {
-      const valid = ['ascending', 'descending', 'pingpong', 'randomwalk', 'pedal'];
-      if (!valid.includes(walk)) return;
-      settings.leadWalk = walk;
-      saveLeadSettings();
-    },
-
-    getLeadWalk() { return settings.leadWalk; },
 
     setLeadMode(mode) {
       if (mode !== 'replace' && mode !== 'layer') return;
@@ -3720,12 +3775,27 @@
 
     getLeadMode() { return settings.leadMode; },
 
-    setLeadBarsPerStep(n) {
-      settings.leadBarsPerStep = Math.max(1, Math.min(16, n | 0));
+    setLeadPhraseBars(n) {
+      settings.leadPhraseBars = Math.max(1, Math.min(16, n | 0));
+      composeLeadPhrase();
       saveLeadSettings();
     },
 
-    getLeadBarsPerStep() { return settings.leadBarsPerStep; },
+    getLeadPhraseBars() { return settings.leadPhraseBars; },
+
+    setLeadRestBars(n) {
+      settings.leadRestBars = Math.max(0, Math.min(16, n | 0));
+      saveLeadSettings();
+    },
+
+    getLeadRestBars() { return settings.leadRestBars; },
+
+    setLeadIntroBars(n) {
+      settings.leadIntroBars = Math.max(0, Math.min(32, n | 0));
+      saveLeadSettings();
+    },
+
+    getLeadIntroBars() { return settings.leadIntroBars; },
 
     setLeadVolume(db) {
       settings.leadVolumeDb = Math.max(-30, Math.min(0, db));
@@ -3735,23 +3805,19 @@
 
     getLeadVolume() { return settings.leadVolumeDb; },
 
-    setLeadOctaveRange(low, high) {
-      const lo = Math.max(0, Math.min(9, low | 0));
-      const hi = Math.max(lo, Math.min(9, high | 0));
-      settings.leadOctaveLow = lo;
-      settings.leadOctaveHigh = hi;
-      leadCursorOctave = Math.max(lo, Math.min(hi, leadCursorOctave));
-      saveLeadSettings();
-    },
-
-    getLeadOctaveRange() { return { low: settings.leadOctaveLow, high: settings.leadOctaveHigh }; },
-
     setLeadFollowMovement(enabled) {
       settings.leadFollowMovement = !!enabled;
       saveLeadSettings();
     },
 
     getLeadFollowMovement() { return settings.leadFollowMovement; },
+
+    setLeadFadeWhenStationary(enabled) {
+      settings.leadFadeWhenStationary = !!enabled;
+      saveLeadSettings();
+    },
+
+    getLeadFadeWhenStationary() { return settings.leadFadeWhenStationary; },
 
     // ===== SUB-BASS TWEAKS =====
     // Live-edit the built-in 'sub-bass' preset's filter-envelope character and
