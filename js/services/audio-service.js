@@ -1,6 +1,38 @@
 /**
- * geosonify-audio-service.js v6.2
- * 
+ * geosonify-audio-service.js v6.3
+ *
+ * v6.3 changes (Lead becomes a real melodic composer):
+ * - PITCHED LADDER: the lead's palette is now the exact set of (pitch-class,
+ *   octave) pairs the place specifies in notePool - deduped, sorted by midi -
+ *   NOT pitch-classes voiced at a chosen register. The pair is decode-critical
+ *   data, so a pc is never voiced at an octave the place didn't give it.
+ *   Stepwise motion = adjacent rung, which crosses octave boundaries only
+ *   through real rungs. The tonal centre is itself a real rung (most common
+ *   pc at its most mid-register occurrence). getLeadLadder() exposes it.
+ * - COMPOSER: motif + development. A tune = a 2-5 note pitch motif, a rhythm
+ *   cell (its rhythmic motif) and a contour, arranged in a small A A' B A''
+ *   song plan. Each phrase entry plays one section: A' = inversion or
+ *   rhythmic variation, B = fresh contrasting motif/contour/rhythm family,
+ *   A'' = sequence-lifted or retrograde return. New tune after the plan
+ *   completes, on style change, or when the place's notes change (palette
+ *   signature check). Old evolve-20%-of-notes drift is gone.
+ * - PHRASING: period form (antecedent ends off-tonic = question, consequent
+ *   cadences onto the tonic = answer, approached by step or - for 'leap'
+ *   cadence styles - a same-pc octave jump between real rungs). Contours
+ *   (arch/invarch/asc/desc/archtail/wave) give one clear climax, forced onto
+ *   a strong beat; velocity follows the tension curve; passing/neighbour
+ *   tones on weak short slots; gap-fill after leaps; no pitch >2x in a row.
+ * - RHYTHM: each phrase repeats ONE rhythm cell with recognizable variation
+ *   (split/merge a value); cadence bars end long. New 'sixteenth' and
+ *   'anacrusis' (pickup) families; styles retuned to be audibly distinct.
+ * - REPLACE mode now mutes a drone note only while the lead is actually
+ *   sounding in that octave (time-span overlap), not every octave the whole
+ *   phrase visits - octave-spanning melodies no longer silence the background.
+ * - Follow-movement now does something: when parked, ornament notes are
+ *   thinned. Style changes restart the form so they're audible within a bar.
+ * - New API: newLeadMelody(), getLeadPhrase(), getLeadLadder(),
+ *   getLeadSection(). Settings/persistence unchanged (geosonify_lead).
+ *
  * v6.2 changes:
  * - Lead / Melody Composer (off by default): COMPOSES a melody from the place's
  *   available pitch-classes (a palette across all octaves), voicing them in a
@@ -125,21 +157,26 @@
   let octaveSwapCounter = 0;      // bars since last swap event
 
   // ============== LEAD / MELODY COMPOSER ==============
-  // A monophonic foreground voice that COMPOSES a melody from the place's
-  // available pitch-classes (the ~notes across all octaves), voicing them in a
-  // sensible register with real rhythm, then evolves it over repeats. Pitches
-  // ALWAYS come from notePool - never invented. Enters after an intro, plays a
-  // phrase, rests, returns evolved. Off by default; background untouched.
+  // A monophonic foreground voice that COMPOSES a melody over the pitched
+  // "ladder" the place supplies: the exact (pitch-class, octave) pairs in
+  // notePool, and NOTHING else - the pair is decode-critical data, so a
+  // pitch-class is never voiced at an octave the place didn't give. The
+  // composer selects and orders from that real set using motif + development,
+  // period (question/answer) phrasing, contour with a single climax, and
+  // step-approached cadences. FORM: intro -> play a section -> rest -> return
+  // with the NEXT section of a small A A' B A'' tune; new tune after the plan
+  // completes or when the place's notes change. Off by default; the crystal
+  // background is byte-identical when off.
   let leadSynth = null;
   let leadHp = null, leadLp = null, leadReverb = null, leadVolume = null;
-  // The composed phrase: array of { pc, octave, startBeat (absolute in phrase), durBeats, vel }
+  // The realized phrase for the CURRENT section:
+  // array of { pc, octave, startBeat (absolute in phrase), durBeats, vel, ornament }
   let leadPhrase = null;
   let leadPhraseBars = 4;         // length of the current phrase in bars
   let leadFormState = 'intro';    // 'intro' | 'playing' | 'resting'
   let leadFormBar = 0;            // bar counter within the current form segment
-  let leadEvolutions = 0;         // how many times the current melody has evolved
-  let leadRegisterCenter = 5;     // octave the current phrase is centred on
-  let leadActiveOctaves = new Set(); // octaves the current phrase voices (for replace mode)
+  let leadTune = null;            // { signature, plan: [{label, degrees, cell, contour, lift}], pos }
+  let leadNoteSpans = [];         // { octave, start, end } of scheduled lead notes (replace-mode muting)
   const LEAD_SETTINGS_KEY = 'geosonify_lead';
 
   // Retro drum track (optional; off by default)
@@ -1030,23 +1067,34 @@
    * rhythm family and how dense/ornamented the line is.
    */
   // Rhythm cells: arrays of note durations in beats (each sums to 4 = one bar).
-  // The composer fits melody pitches onto these slots, so rhythm has coherence
-  // (a repeating cell) rather than random durations.
+  // The composer picks ONE cell as the phrase's rhythmic MOTIF and repeats it
+  // with recognizable variation (split/merge one value), so rhythm is
+  // composed, not sprinkled. 'sixteenth' adds 16th figures; 'anacrusis' cells
+  // end in a pickup pair that leads into the next downbeat.
   const RHYTHM_PHRASES = {
-    straight:   [[1, 1, 1, 1]],                     // quarters
-    flowing:    [[1, 0.5, 0.5, 1, 1], [1, 1, 0.5, 0.5, 1]], // mixed 8ths/4ths
-    dotted:     [[1.5, 0.5, 1.5, 0.5], [1.5, 0.5, 2]],       // dotted lilt
-    triplet:    [[0.667, 0.667, 0.667, 1, 1], [2, 0.667, 0.667, 0.667]], // triplet figure
-    syncopated: [[0.5, 1, 0.5, 1, 1], [1, 0.5, 1, 0.5, 1]],  // off-beat push
-    long:       [[2, 2], [3, 1], [4]]                        // sustained / ambient
+    straight:   [[1, 1, 1, 1], [1, 1, 2]],                    // quarters
+    flowing:    [[1, 0.5, 0.5, 1, 1], [1, 1, 0.5, 0.5, 1], [0.5, 0.5, 1, 1, 0.5, 0.5]], // mixed 8ths/4ths
+    dotted:     [[1.5, 0.5, 1.5, 0.5], [1.5, 0.5, 2], [1, 0.5, 1.5, 1]],   // dotted lilt
+    triplet:    [[0.667, 0.667, 0.667, 1, 1], [2, 0.667, 0.667, 0.667]],   // triplet figure
+    syncopated: [[0.5, 1, 0.5, 1, 1], [1, 0.5, 1, 0.5, 1], [0.5, 1, 1, 1.5]], // off-beat push / tied feel
+    sixteenth:  [[0.5, 0.25, 0.25, 0.5, 0.5, 1, 1], [1, 0.25, 0.25, 0.5, 1, 1], [0.25, 0.25, 0.5, 1, 0.5, 0.5, 1]],
+    anacrusis:  [[2, 1, 0.5, 0.5], [1, 1, 1, 0.5, 0.5]],      // ends with a pickup into the next bar
+    long:       [[2, 2], [3, 1], [4]]                          // sustained / ambient
   };
+  // Cadence bars end on a long, settled value (agogic weight on the landing).
+  const LEAD_CADENCE_CELLS = [[1, 1, 2], [2, 2], [1, 3], [0.5, 0.5, 3]];
 
-  // Style = which rhythm families a phrase draws from + note count target/bar.
+  // Style = rhythmic vocabulary + melodic temperament, tuned to be AUDIBLY
+  // different: sparse = long tones and wide leaps over most of the ladder;
+  // rhythmic = busy syncopation/16ths in a narrow band with a leaping cadence;
+  // lyrical = dotted singing arcs; flowing = the balanced default.
+  // span = fraction of the ladder a phrase may roam; varProb = chance a bar
+  // varies the rhythm motif; motifLen = pitch-motif length in notes.
   const LEAD_STYLES = {
-    flowing:  { rhythms: ['flowing', 'straight', 'dotted'], notesPerBar: 3, restProb: 0.12, leap: 0.25 },
-    sparse:   { rhythms: ['long', 'dotted'],                notesPerBar: 1.5, restProb: 0.3, leap: 0.35 },
-    rhythmic: { rhythms: ['syncopated', 'straight', 'triplet'], notesPerBar: 4, restProb: 0.08, leap: 0.2 },
-    lyrical:  { rhythms: ['flowing', 'dotted', 'triplet'], notesPerBar: 2.5, restProb: 0.15, leap: 0.3 }
+    flowing:  { rhythms: ['flowing', 'straight', 'dotted'],        leap: 0.16, restProb: 0.10, motifLen: 4, contours: ['arch', 'wave', 'archtail'],  cadence: 'step', span: 0.75, varProb: 0.35 },
+    sparse:   { rhythms: ['long', 'dotted'],                       leap: 0.35, restProb: 0.28, motifLen: 3, contours: ['desc', 'invarch', 'arch'],   cadence: 'step', span: 0.95, varProb: 0.25 },
+    rhythmic: { rhythms: ['syncopated', 'sixteenth', 'anacrusis'], leap: 0.22, restProb: 0.05, motifLen: 5, contours: ['wave', 'asc', 'arch'],       cadence: 'leap', span: 0.55, varProb: 0.50 },
+    lyrical:  { rhythms: ['dotted', 'flowing', 'triplet'],         leap: 0.28, restProb: 0.12, motifLen: 4, contours: ['arch', 'archtail', 'desc'],  cadence: 'step', span: 0.85, varProb: 0.30 }
   };
 
   async function buildLeadChain() {
@@ -1082,136 +1130,391 @@
            !(global.JourneyService && global.JourneyService.isActive && global.JourneyService.isActive());
   }
 
-  /**
-   * Build the palette from the place's notes: unique pitch-classes across all
-   * octaves, plus a tonal center (the most frequently occurring pitch-class,
-   * which tends to be the harmonic root). Pitches are NEVER invented - this is
-   * purely the set the place gave us.
-   */
-  function leadPalette() {
-    const counts = {};
-    const order = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-    for (let oct = 0; oct < notePool.length; oct++) {
-      for (const pc of (notePool[oct] || [])) {
-        const norm = pc.replace('Db','C#').replace('Eb','D#').replace('Gb','F#').replace('Ab','G#').replace('Bb','A#');
-        counts[norm] = (counts[norm] || 0) + 1;
-      }
-    }
-    const pcs = Object.keys(counts);
-    if (pcs.length === 0) return null;
-    // Sort pitch-classes chromatically so "stepwise" motion is meaningful.
-    pcs.sort((a, b) => order.indexOf(a) - order.indexOf(b));
-    // Tonal center = most common pitch-class.
-    let center = pcs[0], best = -1;
-    for (const pc of pcs) { if (counts[pc] > best) { best = counts[pc]; center = pc; } }
-    return { pcs, center, semitoneOf: (pc) => order.indexOf(pc) };
+  // ---- Pitched ladder ------------------------------------------------------
+  const LEAD_PC_ORDER = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  function leadNormPc(pc) {
+    return pc.replace('Db','C#').replace('Eb','D#').replace('Gb','F#').replace('Ab','G#').replace('Bb','A#');
   }
 
   /**
-   * Compose a melody from the palette. Uses real melodic principles:
-   * - contour is an arch (rise then fall) or gentle wander
-   * - prefers stepwise motion (nearest pitch-class in the desired direction),
-   *   with occasional leaps controlled by style.leap
-   * - lands on the tonal center at phrase end (resolution)
-   * - fits pitches onto a repeating RHYTHM cell so rhythm is coherent
-   * Returns array of { pc, octave, startBeat (absolute across the phrase),
-   * durBeats, vel }. All pitches are from the palette (the place's notes).
+   * Build the pitched palette: one ladder rung per concrete (pitch-class,
+   * octave) pair the place actually specified in notePool - and NOTHING else.
+   * The (pc, octave) PAIR is data (it decodes back to a location), so a
+   * pitch-class is never voiced at an octave the place didn't give it.
+   * Rungs are deduped and sorted by midi, so "stepwise" = adjacent rung -
+   * which naturally crosses octave boundaries wherever the place supplied
+   * consecutive-enough pitches, but only ever through real rungs.
+   * The tonal centre is itself a REAL rung: the most common pitch-class,
+   * taken at its occurrence closest to the ladder's midpoint (mid-register).
+   */
+  function leadLadder() {
+    const seen = new Set();
+    const rungs = [];
+    const counts = {};
+    for (let oct = 0; oct < notePool.length; oct++) {
+      for (const raw of (notePool[oct] || [])) {
+        const pc = leadNormPc(raw);
+        const semi = LEAD_PC_ORDER.indexOf(pc);
+        if (semi < 0) continue;
+        counts[pc] = (counts[pc] || 0) + 1;
+        const key = pc + oct;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        rungs.push({ pc, octave: oct, midi: 12 * (oct + 1) + semi });
+      }
+    }
+    if (rungs.length === 0) return null;
+    rungs.sort((a, b) => a.midi - b.midi);
+    let centerPc = rungs[0].pc, best = -1;
+    for (const pc in counts) { if (counts[pc] > best) { best = counts[pc]; centerPc = pc; } }
+    const midMidi = rungs[Math.floor(rungs.length / 2)].midi;
+    let tonicIdx = 0, bestDist = Infinity;
+    for (let i = 0; i < rungs.length; i++) {
+      if (rungs[i].pc !== centerPc) continue;
+      const d = Math.abs(rungs[i].midi - midMidi);
+      if (d < bestDist) { bestDist = d; tonicIdx = i; }
+    }
+    return { rungs, tonicIdx, signature: rungs.map(r => r.pc + r.octave).join(' ') };
+  }
+
+  // ---- Melodic material ----------------------------------------------------
+  // Contour = the phrase's overall shape: 0..1 of phrase time -> 0..1 of the
+  // usable ladder window. Each has ONE clear high (or low) point, not many.
+  const LEAD_CONTOURS = {
+    arch:     t => Math.sin(Math.PI * Math.pow(t, 1.6)),        // single peak ~65% in
+    invarch:  t => 1 - Math.sin(Math.PI * Math.pow(t, 1.6)),    // dip and return
+    asc:      t => t,                                           // climbing line
+    desc:     t => 1 - t,                                       // falling line
+    archtail: t => t < 0.7 ? Math.sin(Math.PI * t / 1.4) : Math.max(0.35, 1 - (t - 0.7) * 2.2),
+    wave:     t => 0.5 + 0.45 * Math.sin(Math.PI * 2.5 * t)
+  };
+
+  /**
+   * Generate a short pitch motif as RELATIVE ladder degrees (offsets from an
+   * anchor rung): mostly stepwise, at most one leap, and after a leap the line
+   * steps back the other way (gap fill).
+   */
+  function leadRandomMotif(style, maxSpan) {
+    const len = Math.max(2, Math.min(style.motifLen, maxSpan + 1));
+    const degrees = [0];
+    let leapUsed = false, prevMove = 0;
+    for (let i = 1; i < len; i++) {
+      let move;
+      if (!leapUsed && Math.random() < style.leap) {
+        move = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.floor(Math.random() * 2)); // 2-3 rung leap
+        leapUsed = true;
+      } else if (Math.abs(prevMove) >= 2) {
+        move = prevMove > 0 ? -1 : 1;                            // gap fill after the leap
+      } else {
+        move = (Math.random() < 0.85 ? 1 : 0) * (Math.random() < 0.5 ? -1 : 1); // step, rarely repeat
+      }
+      degrees.push(degrees[degrees.length - 1] + move);
+      prevMove = move;
+    }
+    return degrees;
+  }
+
+  /**
+   * A recognizable variation of a rhythm cell: merge its two shortest
+   * neighbours into one value (augmentation of a figure) or split its longest
+   * value into two (diminution). The cell stays the same length in beats.
+   */
+  function leadVaryCell(cell) {
+    const out = cell.slice();
+    if (out.length >= 3 && Math.random() < 0.5) {
+      let bi = 0, bsum = Infinity;
+      for (let i = 0; i + 1 < out.length; i++) {
+        if (out[i] + out[i + 1] < bsum) { bsum = out[i] + out[i + 1]; bi = i; }
+      }
+      out.splice(bi, 2, bsum);
+    } else {
+      let bi = 0;
+      for (let i = 1; i < out.length; i++) if (out[i] > out[bi]) bi = i;
+      if (out[bi] >= 0.5) out.splice(bi, 1, out[bi] / 2, out[bi] / 2);
+    }
+    return out;
+  }
+
+  /**
+   * Compose a new TUNE: a pitch motif + rhythm cell + contour arranged in a
+   * small song plan A A' B A''. Each section becomes one phrase entry
+   * (realized by composeLeadPhrase), so over successive returns the listener
+   * hears statement, development, contrast, and a lifted/reversed return -
+   * the tune GROWING rather than drifting. Development devices: inversion,
+   * retrograde, rhythmic variation, sequence-lift. A fresh tune is composed
+   * after the plan completes or when the place's notes change.
+   */
+  function composeLeadTune() {
+    const lad = leadLadder();
+    if (!lad) { leadTune = null; return; }
+    const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.flowing;
+    const maxSpan = Math.max(2, lad.rungs.length - 1);
+    const degrees = leadRandomMotif(style, maxSpan);
+    const family = style.rhythms[Math.floor(Math.random() * style.rhythms.length)];
+    const cells = RHYTHM_PHRASES[family] || RHYTHM_PHRASES.straight;
+    const cell = cells[Math.floor(Math.random() * cells.length)];
+    const contour = style.contours[Math.floor(Math.random() * style.contours.length)];
+
+    // Developments for the later sections.
+    const inversion = degrees.map(d => -d);
+    const retro = degrees.slice().reverse().map(d => d - degrees[degrees.length - 1]);
+    const dev1 = Math.random() < 0.5
+      ? { label: "A'",  degrees: inversion, cell, contour, lift: 0 }               // melodic inversion
+      : { label: "A'",  degrees, cell: leadVaryCell(cell), contour, lift: 0 };     // rhythmic variation
+    // Contrast section: fresh motif, different contour, different rhythm family.
+    const bContourPool = Object.keys(LEAD_CONTOURS).filter(c => c !== contour);
+    const bContour = bContourPool[Math.floor(Math.random() * bContourPool.length)];
+    const bFams = style.rhythms.filter(f => f !== family);
+    const bFam = bFams.length ? bFams[Math.floor(Math.random() * bFams.length)] : family;
+    const bCells = RHYTHM_PHRASES[bFam] || RHYTHM_PHRASES.straight;
+    const bSection = { label: 'B', degrees: leadRandomMotif(style, maxSpan),
+                       cell: bCells[Math.floor(Math.random() * bCells.length)],
+                       contour: bContour, lift: 0 };
+    // Return: the original motif lifted one rung (sequence up - arrival), or
+    // its retrograde coming back home.
+    const dev2 = Math.random() < 0.6
+      ? { label: "A''", degrees, cell, contour, lift: 1 }
+      : { label: "A''", degrees: retro, cell, contour, lift: 0 };
+
+    leadTune = {
+      signature: lad.signature,
+      plan: [{ label: 'A', degrees, cell, contour, lift: 0 }, dev1, bSection, dev2],
+      pos: 0
+    };
+  }
+
+  /**
+   * Realize the tune's current section as a concrete phrase over the ladder.
+   * Period form: the first half (antecedent) ends OFF the tonic - a musical
+   * question - and the second half (consequent) cadences ONTO it - the
+   * answer. Motif statements are anchored along the section's contour, which
+   * yields automatic SEQUENCES (the figure restated higher/lower as the line
+   * rises/falls); stepwise passing tones connect statements; weak short slots
+   * become neighbour-style ornaments; there is one velocity/metric climax;
+   * the final tonic is approached by step (or, for 'leap'-cadence styles, by
+   * an octave jump between two REAL rungs of the same pitch-class, when the
+   * place supplies one). Every pitch is chosen as a ladder INDEX, so by
+   * construction the melody plays only (pc, octave) pairs the place gave.
    */
   function composeLeadPhrase() {
-    const pal = leadPalette();
-    if (!pal || pal.pcs.length === 0) { leadPhrase = null; return; }
+    const lad = leadLadder();
+    if (!lad) { leadPhrase = null; return; }
+    if (!leadTune || leadTune.signature !== lad.signature) composeLeadTune();
+    if (!leadTune) { leadPhrase = null; return; }
     const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.flowing;
+    const sec = leadTune.plan[leadTune.pos % leadTune.plan.length];
     const bars = Math.max(1, settings.leadPhraseBars | 0);
     leadPhraseBars = bars;
 
-    // Pick one rhythm cell for this phrase and reuse it each bar (coherence),
-    // with light per-bar variation later during evolution.
-    const family = style.rhythms[Math.floor(Math.random() * style.rhythms.length)];
-    const cellChoices = RHYTHM_PHRASES[family] || RHYTHM_PHRASES.straight;
-    const cell = cellChoices[Math.floor(Math.random() * cellChoices.length)];
+    // Usable ladder window: a span fraction of the ladder, kept around the tonic.
+    const N = lad.rungs.length;
+    const spanRungs = Math.min(N, Math.max(3, Math.round(N * style.span)));
+    let lo = Math.max(0, lad.tonicIdx - (spanRungs >> 1));
+    const hi = Math.min(N - 1, lo + spanRungs - 1);
+    lo = Math.max(0, hi - spanRungs + 1);
+    const range = Math.max(1, hi - lo);
+    const clampIdx = (i) => Math.max(lo, Math.min(hi, i));
 
-    // Pick a register center for this phrase (sensible mid range, varied).
-    leadRegisterCenter = 4 + Math.floor(Math.random() * 3); // 4..6
+    // ---- Rhythm: repeat the section's cell with variation; the antecedent's
+    // last bar and the final bar become cadence bars (long settled ending).
+    const half = Math.max(1, Math.floor(bars / 2));
+    const slots = [];
+    for (let bar = 0; bar < bars; bar++) {
+      const halfCadence = bars >= 4 && bar === half - 1;
+      const finalCadence = bar === bars - 1;
+      let cell;
+      if (finalCadence || halfCadence) {
+        cell = LEAD_CADENCE_CELLS[Math.floor(Math.random() * LEAD_CADENCE_CELLS.length)];
+      } else if (bar === 0 || Math.random() > style.varProb) {
+        cell = sec.cell;
+      } else {
+        cell = leadVaryCell(sec.cell);
+      }
+      let beat = 0;
+      for (const raw of cell) {
+        if (beat >= 4 - 1e-6) break;
+        const dur = Math.min(raw, 4 - beat);
+        slots.push({ startBeat: bar * 4 + beat, durBeats: dur, bar,
+                     strong: (beat % 2) < 0.01, halfCadence, finalCadence });
+        beat += dur;
+      }
+    }
+    if (slots.length === 0) { leadPhrase = null; return; }
 
-    // Build a contour target: start near center, arch up, resolve down to center.
-    const pcs = pal.pcs;
-    const centerIdx = pcs.indexOf(pal.center);
-    let cursor = centerIdx >= 0 ? centerIdx : Math.floor(pcs.length / 2);
-
-    const phrase = [];
-    let beatAbs = 0;
+    // ---- Pitches: motif statements anchored on the contour + passing tones.
+    const contourF = LEAD_CONTOURS[sec.contour] || LEAD_CONTOURS.arch;
+    const deg = sec.degrees;
+    // Anchor bounds that let a whole statement fit inside the window, so the
+    // motif's interval shape survives intact instead of flattening at the
+    // ladder's edges (falls back to plain clamping on very narrow windows).
+    const degMin = Math.min.apply(null, deg);
+    const degMax = Math.max.apply(null, deg);
+    const aLo = lo - degMin, aHi = hi - degMax;
+    const anchorFit = (a) => (aLo <= aHi) ? Math.max(aLo, Math.min(aHi, a)) : clampIdx(a);
     const totalBeats = bars * 4;
-    let slot = 0;
-    // A gentle arch across the phrase: peak around 60% through.
-    while (beatAbs < totalBeats) {
-      const dur = cell[slot % cell.length];
-      slot++;
-      // Rest instead of a note sometimes (space).
-      if (Math.random() < style.restProb && beatAbs > 0) { beatAbs += dur; continue; }
+    const notes = [];
+    let i = 0, prevIdx = null;
+    while (i < slots.length) {
+      const s = slots[i];
+      const t = Math.min(1, s.startBeat / totalBeats);
+      const anchorRaw = lo + Math.round(contourF(t) * range) + (sec.lift || 0);
+      const anchor = clampIdx(anchorRaw);
+      const inCadenceBar = s.halfCadence || s.finalCadence;
+      if (!inCadenceBar && (i === 0 || Math.random() < 0.75)) {
+        // State the motif (as much of it as fits before the next cadence
+        // bar), anchored so its interval shape stays intact in the window.
+        const a = anchorFit(anchorRaw);
+        for (let k = 0; k < deg.length && i < slots.length; k++, i++) {
+          const sl = slots[i];
+          if (sl.halfCadence || sl.finalCadence) break;
+          const idx = clampIdx(a + deg[k]);
+          notes.push({ idx, slot: sl, ornament: false });
+          prevIdx = idx;
+        }
+      } else {
+        // Connective tissue: step toward the anchor (passing tone) or, on
+        // weak short slots, a neighbour-style ornament. In cadence bars this
+        // walks toward the tonic; the rewrite below pins the actual landing.
+        const target = inCadenceBar ? lad.tonicIdx : anchor;
+        let idx;
+        if (prevIdx === null) idx = target;
+        else {
+          const dirTo = Math.sign(target - prevIdx);
+          idx = prevIdx + (dirTo !== 0 ? dirTo : (Math.random() < 0.5 ? -1 : 1));
+        }
+        idx = clampIdx(idx);
+        notes.push({ idx, slot: s, ornament: !s.strong && s.durBeats <= 0.5 && !inCadenceBar });
+        prevIdx = idx;
+        i++;
+      }
+    }
+    if (notes.length === 0) { leadPhrase = null; return; }
 
-      // Decide melodic direction from the arch position.
-      const t = beatAbs / totalBeats;
-      const wantUp = t < 0.6; // rise for first 60%, then fall
-      // Stepwise by default; occasional leap.
-      let move;
-      if (Math.random() < style.leap) move = (wantUp ? 1 : -1) * (2 + Math.floor(Math.random() * 2));
-      else move = (wantUp ? 1 : -1) * (Math.random() < 0.8 ? 1 : 0);
-      cursor = Math.max(0, Math.min(pcs.length - 1, cursor + move));
+    // ---- Rests: thin some weak, non-cadence notes (space is phrasing too).
+    const thinned = notes.filter((n, j) => {
+      if (j === 0 || n.slot.finalCadence || n.slot.halfCadence) return true;
+      const p = n.slot.strong ? style.restProb * 0.5 : style.restProb;
+      return Math.random() >= p;
+    });
+    const line = thinned.length >= 2 ? thinned : notes;
 
-      // Octave: center register, but let big cursor excursions nudge the octave
-      // so a wide palette spans registers naturally.
-      let octave = leadRegisterCenter;
-      if (cursor > centerIdx + Math.floor(pcs.length / 2)) octave += 1;
-      if (cursor < centerIdx - Math.floor(pcs.length / 2)) octave -= 1;
-      octave = Math.max(2, Math.min(8, octave));
-
-      const vel = 0.45 + 0.15 * Math.sin(t * Math.PI); // swell toward the middle
-      phrase.push({ pc: pcs[cursor], octave, startBeat: beatAbs, durBeats: dur, vel });
-      beatAbs += dur;
+    // ---- Cadence rewrite: antecedent ends OFF-tonic (question); the phrase
+    // ends ON the tonic (answer), approached by step or same-pc octave leap.
+    const lastInBar = (barIdx) => {
+      for (let j = line.length - 1; j >= 0; j--) if (line[j].slot.bar === barIdx) return j;
+      return -1;
+    };
+    if (bars >= 4) {
+      const q = lastInBar(half - 1);
+      if (q >= 0) {
+        let idx = clampIdx(lad.tonicIdx + (Math.random() < 0.5 ? 1 : 2));
+        if (idx === lad.tonicIdx) idx = clampIdx(lad.tonicIdx - 1);
+        line[q].idx = idx;
+        line[q].ornament = false;
+      }
+    }
+    const fin = lastInBar(bars - 1) >= 0 ? lastInBar(bars - 1) : line.length - 1;
+    line[fin].idx = lad.tonicIdx;
+    line[fin].ornament = false;
+    if (fin - 1 >= 0) {
+      let ap = null;
+      if (style.cadence === 'leap') {
+        // Same pitch-class at another REAL octave, if the place gave one.
+        for (let j = 0; j < lad.rungs.length; j++) {
+          if (j !== lad.tonicIdx && j >= lo && j <= hi &&
+              lad.rungs[j].pc === lad.rungs[lad.tonicIdx].pc) { ap = j; break; }
+        }
+      }
+      if (ap === null) {
+        const from = line[fin - 1].idx;
+        ap = clampIdx(lad.tonicIdx + (from >= lad.tonicIdx ? 1 : -1));
+        if (ap === lad.tonicIdx) ap = clampIdx(lad.tonicIdx === lo ? lo + 1 : lad.tonicIdx - 1);
+      }
+      line[fin - 1].idx = ap;
+      line[fin - 1].ornament = false;
     }
 
-    // Resolution: force the final note to the tonal center at the register.
-    if (phrase.length > 0) {
-      const last = phrase[phrase.length - 1];
-      last.pc = pal.center;
-      last.octave = leadRegisterCenter;
+    // ---- One clear climax on a strong beat: if the highest pitch fell on a
+    // weak slot, swap pitches with the highest strong-beat note. (Runs BEFORE
+    // repeat elimination, since a swap can itself create a repeated run.)
+    let maxJ = 0;
+    for (let j = 1; j < line.length; j++) if (line[j].idx > line[maxJ].idx) maxJ = j;
+    if (!line[maxJ].slot.strong) {
+      let sw = -1;
+      for (let j = 0; j < line.length; j++) {
+        if (!line[j].slot.strong || j === fin || j === fin - 1) continue;
+        if (sw < 0 || line[j].idx > line[sw].idx) sw = j;
+      }
+      if (sw >= 0) {
+        const tmp = line[sw].idx; line[sw].idx = line[maxJ].idx; line[maxJ].idx = tmp;
+      }
     }
 
-    leadPhrase = phrase;
-    leadActiveOctaves = new Set(phrase.map(n => n.octave));
-    leadEvolutions = 0;
+    // ---- No pitch more than twice in a row: nudge one member of each run a
+    // step, looping until stable (a nudge can create a new run downstream).
+    // The cadence landing and its approach are pinned; pick another member.
+    for (let pass = 0; pass < 4; pass++) {
+      let changed = false;
+      for (let j = 2; j < line.length; j++) {
+        if (!(line[j].idx === line[j - 1].idx && line[j].idx === line[j - 2].idx)) continue;
+        let target = -1;
+        for (const c of [j, j - 1, j - 2]) {
+          if (c !== fin && c !== fin - 1) { target = c; break; }
+        }
+        if (target < 0) continue;
+        // Prefer nudging DOWN so the fix can never mint a new melodic peak
+        // (which the climax pass just placed on a strong beat).
+        const dir = line[target].idx - 1 >= lo ? -1 : 1;
+        let cand = clampIdx(line[target].idx + dir);
+        if (cand === line[target].idx) cand = clampIdx(line[target].idx - dir);
+        if (cand !== line[target].idx) { line[target].idx = cand; changed = true; }
+      }
+      if (!changed) break;
+    }
+
+    // ---- Dynamics: velocity follows the tension curve (ladder height +
+    // proximity to the climax) with metric and climax accents.
+    maxJ = 0;
+    for (let j = 1; j < line.length; j++) if (line[j].idx > line[maxJ].idx) maxJ = j;
+    const peakBeat = line[maxJ].slot.startBeat;
+    for (let j = 0; j < line.length; j++) {
+      const n = line[j];
+      const height = (n.idx - lo) / range;
+      const near = 1 - Math.min(1, Math.abs(n.slot.startBeat - peakBeat) / totalBeats * 2);
+      let vel = 0.40 + 0.14 * height + 0.08 * near + (n.slot.strong ? 0.06 : 0);
+      if (j === maxJ) vel += 0.10;
+      if (sec.lift) vel += 0.03;
+      n.vel = Math.min(0.88, vel);
+    }
+
+    leadPhrase = line.map(n => ({
+      pc: lad.rungs[n.idx].pc,
+      octave: lad.rungs[n.idx].octave,
+      startBeat: n.slot.startBeat,
+      durBeats: n.slot.durBeats,
+      vel: n.vel,
+      ornament: !!n.ornament
+    }));
   }
 
   /**
-   * Evolve the current melody a little rather than repeat identically or
-   * regenerate: nudge a few pitches stepwise and lightly alter a duration.
-   * Keeps the "hook" recognizable while avoiding moronic repetition.
+   * Advance to the tune's next section (A -> A' -> B -> A''), composing a
+   * fresh tune after the last section. composeLeadPhrase also recomposes
+   * automatically if the place's notes changed (palette signature check).
    */
-  function evolveLeadPhrase() {
-    if (!leadPhrase || leadPhrase.length === 0) { composeLeadPhrase(); return; }
-    const pal = leadPalette();
-    if (!pal) return;
-    const pcs = pal.pcs;
-    const n = leadPhrase.length;
-    const changes = Math.max(1, Math.round(n * 0.2)); // vary ~20% of notes
-    for (let k = 0; k < changes; k++) {
-      const i = Math.floor(Math.random() * n);
-      const note = leadPhrase[i];
-      let idx = pcs.indexOf(note.pc);
-      if (idx < 0) idx = 0;
-      idx = Math.max(0, Math.min(pcs.length - 1, idx + (Math.random() < 0.5 ? -1 : 1)));
-      note.pc = pcs[idx];
+  function advanceLeadSection() {
+    if (leadTune) {
+      leadTune.pos++;
+      if (leadTune.pos >= leadTune.plan.length) leadTune = null;
     }
-    // Keep the resolution note on the center.
-    const last = leadPhrase[leadPhrase.length - 1];
-    last.pc = pal.center;
-    leadEvolutions++;
+    composeLeadPhrase();
   }
 
   /**
    * Called once per bar from the drone clock. Manages the FORM (intro -> play
-   * a phrase -> rest -> return evolved) and, during playing bars, schedules the
-   * portion of the composed melody that falls in this bar.
+   * a section -> rest -> return with the tune's NEXT section; new tune after
+   * the plan completes or when the place changes) and, during playing bars,
+   * schedules the portion of the composed melody that falls in this bar.
    */
   function leadBar(barStartTime, secondsPerBeat) {
     if (!leadActive()) return;
@@ -1236,27 +1539,35 @@
       leadFormBar++;
       if (leadFormBar >= Math.max(1, settings.leadRestBars | 0)) {
         leadFormState = 'playing'; leadFormBar = 0;
-        // Return evolved (or re-compose occasionally / if palette changed).
-        if (!leadPhrase || leadEvolutions >= 3) composeLeadPhrase();
-        else evolveLeadPhrase();
+        // Return with the tune's next section (A -> A' -> B -> A'').
+        advanceLeadSection();
       }
       return; // silent during rest
     }
 
     // playing: schedule the slice of the phrase that lands in this bar.
     if (!leadPhrase) { composeLeadPhrase(); if (!leadPhrase) return; }
-    const barIndexInPhrase = leadFormBar; // 0..leadPhraseBars-1
-    const barStartBeatAbs = barIndexInPhrase * 4;
+    const barStartBeatAbs = leadFormBar * 4;
     const barEndBeatAbs = barStartBeatAbs + 4;
+
+    // Prune replace-mode spans that ended before this bar.
+    if (leadNoteSpans.length) {
+      leadNoteSpans = leadNoteSpans.filter(sp => sp.end > barStartTime - 0.5);
+    }
+
+    // Follow movement: when parked, thin the ornaments (sparser line).
+    const thinOrnaments = settings.leadFollowMovement && currentDroneVolumeReduction < -3;
 
     for (const note of leadPhrase) {
       if (note.startBeat < barStartBeatAbs || note.startBeat >= barEndBeatAbs) continue;
+      if (thinOrnaments && note.ornament) continue;
       const beatInBar = note.startBeat - barStartBeatAbs;
       const when = barStartTime + beatInBar * secondsPerBeat;
       const dur = Math.max(0.08, note.durBeats * secondsPerBeat - 0.03);
       const octave = note.octave + settings.transpose;
       const fullNote = `${note.pc}${octave}`;
       try { leadSynth.triggerAttackRelease(fullNote, dur, when, note.vel); } catch (e) {}
+      leadNoteSpans.push({ octave: note.octave, start: when, end: when + dur });
       emitNoteEvent(fullNote, dur, note.vel, when, { octave: note.octave, slotIndex: 0, lead: true });
     }
 
@@ -1724,13 +2035,17 @@
     const stationaryMod = settings.droneMovementFade ? currentDroneVolumeReduction : 0;
     const adjustedVelocity = velocity * Math.pow(10, stationaryMod / 20);
     
-    // Lead REPLACE mode: while the melody is playing, mute the drone notes in
-    // the octaves the melody currently voices, so the lead becomes the voice of
-    // those octaves. The lead's own notes bypass triggerNote (meta.lead), so
-    // they are never suppressed. LAYER mode does nothing here (octave plays too).
+    // Lead REPLACE mode: mute a drone note only while the lead is ACTUALLY
+    // SOUNDING a note in that octave (time-span overlap) - not for every
+    // octave the whole phrase visits, which with octave-spanning melodies
+    // would silence most of the background. The lead's own notes bypass
+    // triggerNote (meta.lead). LAYER mode does nothing here.
     if (leadActive() && settings.leadMode === 'replace' && leadFormState === 'playing' &&
-        meta && !meta.lead && leadActiveOctaves.has(meta.octave)) {
-      return;
+        meta && !meta.lead && leadNoteSpans.length) {
+      for (let li = 0; li < leadNoteSpans.length; li++) {
+        const sp = leadNoteSpans[li];
+        if (sp.octave === meta.octave && t >= sp.start - 0.02 && t < sp.end + 0.02) return;
+      }
     }
     // Per-octave instrument routing: if active and this note carries an octave
     // that maps to a built chain, play it there INSTEAD of A/B, then emit and
@@ -3738,7 +4053,7 @@
       settings.leadEnabled = !!enabled;
       saveLeadSettings();
       if (enabled) {
-        leadFormState = 'intro'; leadFormBar = 0; leadPhrase = null; leadEvolutions = 0;
+        leadFormState = 'intro'; leadFormBar = 0; leadPhrase = null; leadTune = null; leadNoteSpans = [];
         await buildLeadChain();
       } else {
         disposeLeadChain();
@@ -3760,12 +4075,55 @@
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
       settings.leadStyle = style;
-      composeLeadPhrase(); // fresh melody in the new character
+      leadTune = null;             // new character = new tune
+      composeLeadPhrase();
+      if (settings.leadEnabled) {  // audible within a bar, not at the next entry
+        leadFormState = 'playing'; leadFormBar = 0;
+      }
       saveLeadSettings();
     },
 
     getLeadStyle() { return settings.leadStyle; },
     getLeadStyleNames() { return Object.keys(LEAD_STYLES); },
+
+    /** Discard the current tune and compose a fresh one immediately (A/B aid). */
+    newLeadMelody() {
+      leadTune = null;
+      composeLeadPhrase();
+      if (settings.leadEnabled) {
+        leadFormState = 'playing'; leadFormBar = 0;
+      }
+    },
+
+    /** Skip ahead to the tune's next section (A -> A' -> B -> A'' -> new tune). */
+    nextLeadSection() {
+      advanceLeadSection();
+      if (settings.leadEnabled) {
+        leadFormState = 'playing'; leadFormBar = 0;
+      }
+    },
+
+    /** Copy of the current realized phrase (debug / piano-roll aid). */
+    getLeadPhrase() {
+      return leadPhrase ? leadPhrase.map(n => Object.assign({}, n)) : null;
+    },
+
+    /** The derived pitched ladder: real (pc, octave) rungs + the tonic rung. */
+    getLeadLadder() {
+      const lad = leadLadder();
+      return lad ? {
+        rungs: lad.rungs.map(r => Object.assign({}, r)),
+        tonicIdx: lad.tonicIdx,
+        signature: lad.signature
+      } : null;
+    },
+
+    /** Which section of the tune's plan is current (e.g. A, A', B, A''). */
+    getLeadSection() {
+      if (!leadTune) return null;
+      const sec = leadTune.plan[leadTune.pos % leadTune.plan.length];
+      return { label: sec.label, contour: sec.contour, pos: leadTune.pos, planLength: leadTune.plan.length };
+    },
 
     setLeadMode(mode) {
       if (mode !== 'replace' && mode !== 'layer') return;
@@ -3778,6 +4136,7 @@
     setLeadPhraseBars(n) {
       settings.leadPhraseBars = Math.max(1, Math.min(16, n | 0));
       composeLeadPhrase();
+      if (leadFormState === 'playing') leadFormBar = 0; // restart the phrase at the new length
       saveLeadSettings();
     },
 
@@ -4281,6 +4640,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.1 loaded (note event bus, pattern evolution)');
+  console.log('[geosonify] audio-service v6.3 loaded (melodic lead composer: pitched ladder, motif development, A A\' B A\'\' form)');
 
 })(typeof window !== 'undefined' ? window : this);
