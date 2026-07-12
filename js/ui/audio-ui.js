@@ -1,7 +1,22 @@
 /**
- * geosonify-audio-ui.js v3.5
+ * geosonify-audio-ui.js v3.6
  * 
  * Audio playback controls for BPM-clock-driven location sonification.
+ * 
+ * v3.6 features:
+ * - FIX: the per-octave instrument binding loop selected by bare class
+ *   ('.octave-instrument-select'), which #leadStyleSelect and
+ *   #leadEngineSelect reuse for styling only - it OVERWROTE their handlers
+ *   (bound earlier), so changing lead style/voice silently called
+ *   setOctaveInstrument(NaN, ...) and did nothing. Loop is now scoped to
+ *   '.octave-instrument-select[data-octave]'. This was very likely the
+ *   remaining root cause of "style changes seem to do nothing".
+ * - Lead voice section gains "New melody" (reroll the tune) and "Next
+ *   section" (skip through the A A' B A'' plan) buttons - fast A/B steering
+ *   of the melodic composer (audio-service v6.3)
+ * - Lead hint text describes the composer (tune plan, question/answer
+ *   phrasing, single climax, resolution); version log line now reports the
+ *   real version (was stuck at v3.4)
  * 
  * v3.5 features:
  * - Stationary-fade sliders now initialize from getStationaryFadeTiming() with
@@ -1195,8 +1210,14 @@
               <input type="checkbox" id="leadFadeWhenStationary" ${leadFadeStationary ? 'checked' : ''}>
               <span>Fade out when stationary</span>
             </label>
+            <div style="display:flex;gap:8px;margin-top:8px;">
+              <button type="button" id="leadNewMelodyBtn" class="pattern-reset-btn" style="flex:1;margin-top:0;">🎲 New melody</button>
+              <button type="button" id="leadNextSectionBtn" class="pattern-reset-btn" style="flex:1;margin-top:0;">⏭ Next section</button>
+            </div>
             <div class="audio-design-hint" style="font-size:11px;opacity:0.6;margin-top:6px;">
-              Pitches always come from the place; the lead composes their timing.
+              Composes a tune (A A&#8242; B A&#8243;) from the exact notes the place gives,
+              across all their octaves &mdash; question/answer phrases, one climax,
+              resolving home. New melody rerolls the tune; Next section skips ahead.
             </div>
           </div>
         </div>
@@ -2152,6 +2173,10 @@
     if (leadFollowEl) leadFollowEl.onchange = function() { AudioService?.setLeadFollowMovement(this.checked); };
     const leadFadeEl = designModal.querySelector('#leadFadeWhenStationary');
     if (leadFadeEl) leadFadeEl.onchange = function() { AudioService?.setLeadFadeWhenStationary(this.checked); };
+    const leadNewMelodyBtn = designModal.querySelector('#leadNewMelodyBtn');
+    if (leadNewMelodyBtn) leadNewMelodyBtn.onclick = function() { AudioService?.newLeadMelody?.(); };
+    const leadNextSectionBtn = designModal.querySelector('#leadNextSectionBtn');
+    if (leadNextSectionBtn) leadNextSectionBtn.onclick = function() { AudioService?.nextLeadSection?.(); };
     const octaveSwapEl = designModal.querySelector('#octaveSwapEnabled');
     if (octaveSwapEl) {
       octaveSwapEl.onchange = async function() { await AudioService?.setOctaveSwapEnabled(this.checked); };
@@ -2179,8 +2204,12 @@
       await AudioService?.setPerOctaveEnabled(on);
     };
     
-    // Per-octave instruments: per-octave instrument selects
-    designModal.querySelectorAll('.octave-instrument-select').forEach(sel => {
+    // Per-octave instruments: per-octave instrument selects. Scoped to
+    // [data-octave] because #leadStyleSelect / #leadEngineSelect /
+    // #drumKitSelect reuse the class for STYLING only - binding by bare
+    // class here overwrote the lead handlers (bound earlier), so changing
+    // lead style/voice silently called setOctaveInstrument(NaN, ...) instead.
+    designModal.querySelectorAll('.octave-instrument-select[data-octave]').forEach(sel => {
       sel.onchange = async function() {
         const oct = parseInt(this.getAttribute('data-octave'), 10);
         await AudioService?.setOctaveInstrument(oct, this.value);
@@ -3010,6 +3039,6 @@
     return btn;
   };
 
-  console.log('[geosonify] audio-ui v3.4 loaded (piano roll auto-switch)');
+  console.log('[geosonify] audio-ui v3.6 loaded (lead composer controls)');
 
 })(typeof window !== 'undefined' ? window : this);
