@@ -1,5 +1,24 @@
 /**
- * geosonify-audio-service.js v6.3
+ * geosonify-audio-service.js v6.4
+ *
+ * v6.4 changes:
+ * - Voice VARIANTS: 80s Lead and Analog Mono each expose 6 auditionable synth
+ *   flavours (default + 5); 'default' reproduces the original sound
+ *   byte-for-byte. theremin/fm keep a single 'default'. getLeadVariant/
+ *   setLeadVariant/getLeadVariantNames/getLeadVariantLabels; persisted under
+ *   geosonify_lead.variants. Only synth params change - notes/timing/routing
+ *   are identical.
+ * - AUTO-PAIR (leadAutoPair, off by default): on each drum-change return, the
+ *   lead jumps to a random engine+style pair (theremin/sparse, fm/rhythmic,
+ *   mono/lyrical, eighties/flowing), never the pair currently active. Rebuild
+ *   happens during the silent drop-out, so it's click-safe.
+ * - Per-engine loudness trim (LEAD_ENGINE_TRIM) added to leadVolumeDb wherever
+ *   the lead volume node is set (build, per-bar ebb, setLeadVolume): theremin
+ *   -3 dB, FM bell +9 dB, 80s lead and Analog mono unchanged. Trim only - the
+ *   user's leadVolumeDb still governs overall lead level.
+ * - Lead defaults changed: ON by default, theremin engine, sparse style, layer
+ *   mode, 8-bar phrase / 12-bar rest / enter after 16 bars, follow-movement on.
+ *   Persisted settings still override these for returning users.
  *
  * v6.3 changes (Lead becomes a real melodic composer):
  * - PITCHED LADDER: the lead's palette is now the exact set of (pitch-class,
@@ -341,16 +360,17 @@
     drumDropoutBars: 64,         // period between drop-outs
     drumFillStart: 3,            // extra hats/bar at the start of the return (tapers -1/bar to 0)
     // Lead / arranger (off by default; place-fixed pitches, composed timing)
-    leadEnabled: false,          // master toggle for the foreground lead voice
-    leadEngine: 'eighties',      // '80s'|'theremin'|'fm'|'mono'
-    leadStyle: 'flowing',        // melodic character: 'flowing'|'sparse'|'rhythmic'|'lyrical'
-    leadPhraseBars: 4,           // phrase length in bars
-    leadRestBars: 4,             // bars of rest between phrases
-    leadIntroBars: 4,            // bars before the lead first enters
+    leadEnabled: true,           // master toggle for the foreground lead voice
+    leadEngine: 'theremin',      // '80s'|'theremin'|'fm'|'mono'
+    leadStyle: 'sparse',         // melodic character: 'flowing'|'sparse'|'rhythmic'|'lyrical'
+    leadPhraseBars: 8,           // phrase length in bars
+    leadRestBars: 12,            // bars of rest between phrases
+    leadIntroBars: 16,           // bars before the lead first enters
     leadMode: 'layer',           // 'replace' (mute the melody's octave) | 'layer' (over the top)
     leadVolumeDb: -6,            // lead output level
     leadFollowMovement: true,    // denser phrasing when moving, sparser when still
     leadFadeWhenStationary: false, // ebb the lead with the drone when parked
+    leadAutoPair: false,         // on each drum change, switch to a random engine+style pair (never repeat current)
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -585,6 +605,15 @@
           if (typeof d.volumeDb === 'number') settings.leadVolumeDb = d.volumeDb;
           if (typeof d.followMovement === 'boolean') settings.leadFollowMovement = d.followMovement;
           if (typeof d.fadeWhenStationary === 'boolean') settings.leadFadeWhenStationary = d.fadeWhenStationary;
+          if (typeof d.autoPair === 'boolean') settings.leadAutoPair = d.autoPair;
+          if (d.variants && typeof d.variants === 'object') {
+            for (const eng of Object.keys(leadEngineVariant)) {
+              const v = d.variants[eng];
+              if (typeof v === 'string' && LEAD_ENGINE_VARIANTS[eng] && LEAD_ENGINE_VARIANTS[eng][v]) {
+                leadEngineVariant[eng] = v;
+              }
+            }
+          }
         }
       }
     } catch (e) {
@@ -604,7 +633,9 @@
         mode: settings.leadMode,
         volumeDb: settings.leadVolumeDb,
         followMovement: !!settings.leadFollowMovement,
-        fadeWhenStationary: !!settings.leadFadeWhenStationary
+        fadeWhenStationary: !!settings.leadFadeWhenStationary,
+        autoPair: !!settings.leadAutoPair,
+        variants: Object.assign({}, leadEngineVariant)
       }));
     } catch (e) {
       console.warn('[AudioService] Failed to save lead settings:', e);
@@ -1013,31 +1044,75 @@
   // Lead voices. portamento is kept small (or zero) so distinct notes actually
   // ARTICULATE - large glide on a mono synth merges rapid notes into one pitch.
   // Only the theremin leans into glide, because there the slide IS the sound.
-  const LEAD_ENGINES = {
-    // Bright, singing 80s synth-lead: detuned saw, resonant filter, fast attack.
+  // Voice VARIANTS for auditioning. Each engine has a named set of synth
+  // recipes; 'default' MUST reproduce the original sound byte-for-byte so an
+  // untouched install is unchanged. The other variants only differ in synth
+  // params (oscillator/filter/envelope) - notes, timing and routing are
+  // identical. leadEngineVariant (per engine) selects which recipe make() uses.
+  // Currently only eighties and mono expose alternates (the two the user wants
+  // to improve); theremin and fm have a single 'default'.
+  const LEAD_ENGINE_VARIANTS = {
     eighties: {
-      glide: 0.0,
-      make: () => new Tone.MonoSynth({
+      // Original: bright detuned saw, resonant filter, fast attack.
+      default:  () => new Tone.MonoSynth({
         oscillator: { type: 'fatsawtooth', spread: 20, count: 3 },
         envelope: { attack: 0.008, decay: 0.25, sustain: 0.7, release: 0.5 },
         filter: { Q: 4, type: 'lowpass', rolloff: -24 },
         filterEnvelope: { attack: 0.01, baseFrequency: 600, octaves: 3.5, decay: 0.25, sustain: 0.5, release: 0.6, exponent: 2 },
         portamento: 0.0
+      }),
+      // Wider, glassier - more detuning + higher open filter.
+      hyperwide: () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsawtooth', spread: 40, count: 4 },
+        envelope: { attack: 0.006, decay: 0.22, sustain: 0.75, release: 0.6 },
+        filter: { Q: 3, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.008, baseFrequency: 900, octaves: 3.2, decay: 0.22, sustain: 0.6, release: 0.7, exponent: 2 },
+        portamento: 0.0
+      }),
+      // Screaming resonant lead - high Q, big filter sweep.
+      screamer:  () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsawtooth', spread: 24, count: 3 },
+        envelope: { attack: 0.004, decay: 0.3, sustain: 0.6, release: 0.5 },
+        filter: { Q: 8, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.015, baseFrequency: 400, octaves: 4.5, decay: 0.3, sustain: 0.35, release: 0.6, exponent: 2 },
+        portamento: 0.0
+      }),
+      // Soft-attack pad-lead - slower onset, rounder, mellower top.
+      softpad:   () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsawtooth', spread: 16, count: 3 },
+        envelope: { attack: 0.06, decay: 0.3, sustain: 0.8, release: 0.9 },
+        filter: { Q: 2, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.08, baseFrequency: 500, octaves: 2.8, decay: 0.4, sustain: 0.6, release: 1.0, exponent: 2 },
+        portamento: 0.02
+      }),
+      // Hollow square-ish PWM feel via narrow saw stack + tighter filter.
+      hollow:    () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsquare', spread: 14, count: 2 },
+        envelope: { attack: 0.006, decay: 0.2, sustain: 0.65, release: 0.5 },
+        filter: { Q: 3, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.01, baseFrequency: 700, octaves: 3, decay: 0.22, sustain: 0.5, release: 0.55, exponent: 2 },
+        portamento: 0.0
+      }),
+      // Punchy plucked-lead - short decay, low sustain, snappy filter.
+      pluck:     () => new Tone.MonoSynth({
+        oscillator: { type: 'fatsawtooth', spread: 22, count: 3 },
+        envelope: { attack: 0.004, decay: 0.18, sustain: 0.3, release: 0.35 },
+        filter: { Q: 5, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.005, baseFrequency: 800, octaves: 3.8, decay: 0.16, sustain: 0.2, release: 0.4, exponent: 2 },
+        portamento: 0.0
       })
     },
-    // Floating theremin: pure sine, heavy glide, deep slow vibrato. Continuous.
     theremin: {
-      glide: 0.18,
-      make: () => new Tone.DuoSynth({
+      // Floating theremin: pure sine, heavy glide, deep slow vibrato. Continuous.
+      default: () => new Tone.DuoSynth({
         vibratoAmount: 0.5, vibratoRate: 5.5, harmonicity: 1.0, portamento: 0.18,
         voice0: { oscillator: { type: 'sine' }, envelope: { attack: 0.15, decay: 0.1, sustain: 0.9, release: 1.8 } },
         voice1: { oscillator: { type: 'sine' }, envelope: { attack: 0.2, decay: 0.1, sustain: 0.85, release: 1.8 } }
       })
     },
-    // FM bell/reed lead - metallic, distinctive, articulate.
     fm: {
-      glide: 0.0,
-      make: () => new Tone.FMSynth({
+      // FM bell/reed lead - metallic, distinctive, articulate.
+      default: () => new Tone.FMSynth({
         harmonicity: 2, modulationIndex: 8,
         oscillator: { type: 'sine' },
         envelope: { attack: 0.006, decay: 0.3, sustain: 0.4, release: 0.6 },
@@ -1046,18 +1121,121 @@
         portamento: 0.0
       })
     },
-    // Warm analog mono lead, gentle.
     mono: {
-      glide: 0.02,
-      make: () => new Tone.MonoSynth({
+      // Original: warm analog mono lead, gentle.
+      default:  () => new Tone.MonoSynth({
         oscillator: { type: 'sawtooth' },
         envelope: { attack: 0.01, decay: 0.25, sustain: 0.6, release: 0.7 },
         filter: { Q: 2, type: 'lowpass', rolloff: -24 },
         filterEnvelope: { attack: 0.02, baseFrequency: 400, octaves: 3, decay: 0.3, sustain: 0.4, release: 0.7 },
         portamento: 0.02
+      }),
+      // Fatter, rounder - triangle-ish body, lower filter, more sustain.
+      round:    () => new Tone.MonoSynth({
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 0.9 },
+        filter: { Q: 1, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.03, baseFrequency: 300, octaves: 2.5, decay: 0.35, sustain: 0.5, release: 0.9 },
+        portamento: 0.03
+      }),
+      // Reedy/nasal - square oscillator, resonant midrange emphasis.
+      reedy:    () => new Tone.MonoSynth({
+        oscillator: { type: 'square' },
+        envelope: { attack: 0.012, decay: 0.22, sustain: 0.6, release: 0.6 },
+        filter: { Q: 4, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.02, baseFrequency: 600, octaves: 2.8, decay: 0.28, sustain: 0.45, release: 0.6 },
+        portamento: 0.02
+      }),
+      // Bright & vocal - open filter, more octaves of sweep, keeps saw body.
+      vocal:    () => new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.015, decay: 0.25, sustain: 0.65, release: 0.7 },
+        filter: { Q: 3, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.02, baseFrequency: 700, octaves: 3.5, decay: 0.3, sustain: 0.5, release: 0.7 },
+        portamento: 0.04
+      }),
+      // Woody/muted - low filter, gentle Q, short-ish body, soft top.
+      woody:    () => new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.02, decay: 0.28, sustain: 0.5, release: 0.6 },
+        filter: { Q: 1.5, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.03, baseFrequency: 250, octaves: 2.2, decay: 0.3, sustain: 0.35, release: 0.6 },
+        portamento: 0.02
+      }),
+      // Singing portamento lead - heavier glide, longer release, expressive.
+      glider:   () => new Tone.MonoSynth({
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.02, decay: 0.3, sustain: 0.7, release: 1.1 },
+        filter: { Q: 2.5, type: 'lowpass', rolloff: -24 },
+        filterEnvelope: { attack: 0.03, baseFrequency: 450, octaves: 3, decay: 0.35, sustain: 0.5, release: 1.0 },
+        portamento: 0.10
       })
     }
   };
+
+  // Human-facing labels for the variant selector (per engine).
+  const LEAD_VARIANT_LABELS = {
+    eighties: { default: 'Classic', hyperwide: 'Hyper-wide', screamer: 'Screamer', softpad: 'Soft pad', hollow: 'Hollow', pluck: 'Pluck' },
+    theremin: { default: 'Classic' },
+    fm:       { default: 'Classic' },
+    mono:     { default: 'Classic', round: 'Round', reedy: 'Reedy', vocal: 'Vocal', woody: 'Woody', glider: 'Glider' }
+  };
+
+  // Per-engine glide (portamento at the composer level). Kept identical to the
+  // original per-engine glide values so timing/articulation is unchanged.
+  const LEAD_ENGINE_GLIDE = { eighties: 0.0, theremin: 0.18, fm: 0.0, mono: 0.02 };
+
+  // The selected variant name per engine (persisted). Defaults keep the
+  // original sound for every engine.
+  let leadEngineVariant = { eighties: 'default', theremin: 'default', fm: 'default', mono: 'default' };
+
+  // Auto-pair sets: each drum change picks one of these (engine + matching
+  // style), never the pair currently active, so it always audibly changes.
+  const LEAD_AUTO_PAIRS = [
+    { engine: 'theremin', style: 'sparse' },
+    { engine: 'fm',       style: 'rhythmic' },
+    { engine: 'mono',     style: 'lyrical' },
+    { engine: 'eighties', style: 'flowing' }
+  ];
+  // Pick a pair that differs from the currently active engine+style.
+  function pickNextLeadPair() {
+    const options = LEAD_AUTO_PAIRS.filter(p =>
+      !(p.engine === settings.leadEngine && p.style === settings.leadStyle));
+    const pool = options.length ? options : LEAD_AUTO_PAIRS;
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  function leadVariantNames(engine) {
+    return Object.keys(LEAD_ENGINE_VARIANTS[engine] || { default: 1 });
+  }
+  function leadVariantMakeFor(engine) {
+    const variants = LEAD_ENGINE_VARIANTS[engine] || LEAD_ENGINE_VARIANTS.fm;
+    const name = leadEngineVariant[engine] || 'default';
+    return variants[name] || variants.default;
+  }
+
+  // Back-compat facade: existing code reads LEAD_ENGINES[name].make()/.glide.
+  // make() dispatches to the currently-selected variant FOR THAT engine key.
+  const LEAD_ENGINES = {
+    eighties: { glide: LEAD_ENGINE_GLIDE.eighties, make: () => leadVariantMakeFor('eighties')() },
+    theremin: { glide: LEAD_ENGINE_GLIDE.theremin, make: () => leadVariantMakeFor('theremin')() },
+    fm:       { glide: LEAD_ENGINE_GLIDE.fm,       make: () => leadVariantMakeFor('fm')() },
+    mono:     { glide: LEAD_ENGINE_GLIDE.mono,     make: () => leadVariantMakeFor('mono')() }
+  };
+
+  // Per-engine loudness trim (dB) added to leadVolumeDb so the four voices sit
+  // at a matched foreground level. Trim only - the user's leadVolumeDb still
+  // sets the overall lead level; this just compensates the engines' intrinsic
+  // loudness against each other. eighties/mono are the reference (0 dB).
+  const LEAD_ENGINE_TRIM = {
+    theremin: -3,   // pure sine reads loud - pull back
+    fm:        9,   // metallic bell is intrinsically quiet - lift
+    eighties:  0,
+    mono:      0
+  };
+  function leadEngineTrim() {
+    return LEAD_ENGINE_TRIM[settings.leadEngine] || 0;
+  }
 
   /**
    * Phrasing rulesets. Each returns, for a given bar, an array of "speak"
@@ -1105,7 +1283,7 @@
     leadHp = new Tone.Filter(120, 'highpass');
     leadLp = new Tone.Filter(9000, 'lowpass');
     leadReverb = new Tone.Reverb({ decay: 3.5, wet: 0.3 });
-    leadVolume = new Tone.Volume(settings.leadVolumeDb);
+    leadVolume = new Tone.Volume(settings.leadVolumeDb + leadEngineTrim());
     leadSynth.chain(leadHp, leadLp, leadReverb, leadVolume, masterVolume);
     await leadReverb.ready;
     console.log('[AudioService] Built lead chain:', settings.leadEngine);
@@ -1522,7 +1700,7 @@
     // Ebb with the drone when stationary, if enabled (once per bar).
     if (leadVolume) {
       const ebb = settings.leadFadeWhenStationary ? currentDroneVolumeReduction : 0;
-      leadVolume.volume.rampTo(settings.leadVolumeDb + ebb, 0.5);
+      leadVolume.volume.rampTo(settings.leadVolumeDb + leadEngineTrim() + ebb, 0.5);
     }
 
     // FORM state machine.
@@ -1977,6 +2155,22 @@
             }
           } else {
             drumMutations = new Set();
+          }
+          // Auto-pair: on this drum-change return, jump the lead to a random
+          // engine+style pair (never the current one). Happens during the
+          // silent dropout, so the chain rebuild is click-safe.
+          if (settings.leadAutoPair && settings.leadEnabled) {
+            const pair = pickNextLeadPair();
+            settings.leadStyle = pair.style;
+            leadTune = null; // new character = new tune
+            if (pair.engine !== settings.leadEngine) {
+              settings.leadEngine = pair.engine;
+              saveLeadSettings();
+              buildLeadChain(); // rebuild voice during silence (async, fire-and-forget)
+            } else {
+              saveLeadSettings();
+            }
+            composeLeadPhrase();
           }
           drumFillBarsLeft = Math.max(0, settings.drumFillStart | 0);
           drumFillHatsThisBar = 0;
@@ -4072,6 +4266,29 @@
     getLeadEngine() { return settings.leadEngine; },
     getLeadEngineNames() { return Object.keys(LEAD_ENGINES); },
 
+    /** Variant (voice flavour) API for auditioning within an engine. */
+    getLeadVariantNames(engine) { return leadVariantNames(engine || settings.leadEngine); },
+    getLeadVariantLabels(engine) {
+      const e = engine || settings.leadEngine;
+      return Object.assign({}, LEAD_VARIANT_LABELS[e] || {});
+    },
+    getLeadVariant(engine) { return leadEngineVariant[engine || settings.leadEngine] || 'default'; },
+    async setLeadVariant(variant, engine) {
+      const e = engine || settings.leadEngine;
+      if (!LEAD_ENGINE_VARIANTS[e] || !LEAD_ENGINE_VARIANTS[e][variant]) return;
+      leadEngineVariant[e] = variant;
+      saveLeadSettings();
+      if (settings.leadEnabled && e === settings.leadEngine) await buildLeadChain(); // reaudition now
+    },
+
+    /** Auto-pair: on each drum change, jump to a random engine+style pair
+     *  (never the current one). Toggle + read. */
+    setLeadAutoPair(enabled) {
+      settings.leadAutoPair = !!enabled;
+      saveLeadSettings();
+    },
+    getLeadAutoPair() { return settings.leadAutoPair; },
+
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
       settings.leadStyle = style;
@@ -4159,7 +4376,7 @@
     setLeadVolume(db) {
       settings.leadVolumeDb = Math.max(-30, Math.min(0, db));
       saveLeadSettings();
-      if (leadVolume) leadVolume.volume.rampTo(settings.leadVolumeDb, 0.1);
+      if (leadVolume) leadVolume.volume.rampTo(settings.leadVolumeDb + leadEngineTrim(), 0.1);
     },
 
     getLeadVolume() { return settings.leadVolumeDb; },
@@ -4640,6 +4857,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.3 loaded (melodic lead composer: pitched ladder, motif development, A A\' B A\'\' form)');
+  console.log('[geosonify] audio-service v6.4 loaded (lead variants + auto-pair; melodic composer: pitched ladder, motif development, A A\' B A\'\' form)');
 
 })(typeof window !== 'undefined' ? window : this);
