@@ -1,4 +1,15 @@
 /**
+ * geosonify-audio-service.js v6.5
+ *
+ * v6.5 changes:
+ * - Chosen variant defaults: 80s Lead = 'hollow', Analog Mono = 'round'
+ *   (persisted per-engine choices still override).
+ * - 'flowing' style reworked - it read as leaden: dropped the plain-quarter
+ *   'straight' family, added a 'running' 8th-note cell family, raised leap
+ *   0.16->0.24, span 0.75->0.85, varProb 0.35->0.40, lowered restProb
+ *   0.10->0.08, and swapped the drooping 'archtail' contour for rising 'asc'.
+ *   Still distinct from lyrical/rhythmic.
+ *
  * geosonify-audio-service.js v6.4
  *
  * v6.4 changes:
@@ -1187,7 +1198,9 @@
 
   // The selected variant name per engine (persisted). Defaults keep the
   // original sound for every engine.
-  let leadEngineVariant = { eighties: 'default', theremin: 'default', fm: 'default', mono: 'default' };
+  // Chosen defaults: 80s Lead = hollow, Analog Mono = round. theremin/fm have
+  // only 'default'. (Persisted per-engine choices still override these.)
+  let leadEngineVariant = { eighties: 'hollow', theremin: 'default', fm: 'default', mono: 'round' };
 
   // Auto-pair sets: each drum change picks one of these (engine + matching
   // style), never the pair currently active, so it always audibly changes.
@@ -1252,6 +1265,7 @@
   const RHYTHM_PHRASES = {
     straight:   [[1, 1, 1, 1], [1, 1, 2]],                    // quarters
     flowing:    [[1, 0.5, 0.5, 1, 1], [1, 1, 0.5, 0.5, 1], [0.5, 0.5, 1, 1, 0.5, 0.5]], // mixed 8ths/4ths
+    running:    [[0.5, 0.5, 0.5, 0.5, 1, 1], [1, 0.5, 0.5, 0.5, 0.5, 1], [0.5, 0.5, 1, 0.5, 0.5, 1]], // buoyant running 8ths, no dead quarters
     dotted:     [[1.5, 0.5, 1.5, 0.5], [1.5, 0.5, 2], [1, 0.5, 1.5, 1]],   // dotted lilt
     triplet:    [[0.667, 0.667, 0.667, 1, 1], [2, 0.667, 0.667, 0.667]],   // triplet figure
     syncopated: [[0.5, 1, 0.5, 1, 1], [1, 0.5, 1, 0.5, 1], [0.5, 1, 1, 1.5]], // off-beat push / tied feel
@@ -1269,7 +1283,7 @@
   // span = fraction of the ladder a phrase may roam; varProb = chance a bar
   // varies the rhythm motif; motifLen = pitch-motif length in notes.
   const LEAD_STYLES = {
-    flowing:  { rhythms: ['flowing', 'straight', 'dotted'],        leap: 0.16, restProb: 0.10, motifLen: 4, contours: ['arch', 'wave', 'archtail'],  cadence: 'step', span: 0.75, varProb: 0.35 },
+    flowing:  { rhythms: ['running', 'flowing', 'dotted'],         leap: 0.24, restProb: 0.08, motifLen: 4, contours: ['arch', 'wave', 'asc'],       cadence: 'step', span: 0.85, varProb: 0.40 },
     sparse:   { rhythms: ['long', 'dotted'],                       leap: 0.35, restProb: 0.28, motifLen: 3, contours: ['desc', 'invarch', 'arch'],   cadence: 'step', span: 0.95, varProb: 0.25 },
     rhythmic: { rhythms: ['syncopated', 'sixteenth', 'anacrusis'], leap: 0.22, restProb: 0.05, motifLen: 5, contours: ['wave', 'asc', 'arch'],       cadence: 'leap', span: 0.55, varProb: 0.50 },
     lyrical:  { rhythms: ['dotted', 'flowing', 'triplet'],         leap: 0.28, restProb: 0.12, motifLen: 4, contours: ['arch', 'archtail', 'desc'],  cadence: 'step', span: 0.85, varProb: 0.30 }
@@ -4857,6 +4871,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.4 loaded (lead variants + auto-pair; melodic composer: pitched ladder, motif development, A A\' B A\'\' form)');
+  console.log('[geosonify] audio-service v6.5 loaded (lead variants + auto-pair; flowing reworked; melodic composer: pitched ladder, motif development, A A\' B A\'\' form)');
 
 })(typeof window !== 'undefined' ? window : this);
