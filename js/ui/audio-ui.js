@@ -31,6 +31,9 @@
  *   random per-octave instrument-swap toggle + period/duration sliders
  * - Drum kit selector includes "randomize" (default); return busy-ness slider.
  *   10 kits total.
+ * - Lead voice: added a "Variant" selector (voice flavours for 80s Lead and
+ *   Analog Mono; other engines show only Classic) and an "Auto" tickbox that
+ *   pairs voice+style and switches on each drum change (never repeating).
  * - "Lead voice" section: enable, style (flowing/sparse/rhythmic/lyrical),
  *   voice (80s/theremin/FM/mono), replace/layer, phrase/rest/intro bars,
  *   volume, follow-movement, fade-when-stationary
@@ -693,6 +696,13 @@
     const leadEngineLabels = { eighties: '80s Lead', theremin: 'Theremin', fm: 'FM Bell', mono: 'Analog Mono' };
     const leadEngineOpts = leadEngineNames.map(e => `<option value="${e}" ${e === leadEngine ? 'selected' : ''}>${leadEngineLabels[e] || e.toUpperCase()}</option>`).join('');
     const leadStyleOpts = leadStyleNames.map(s => `<option value="${s}" ${s === leadStyle ? 'selected' : ''}>${s}</option>`).join('');
+    // Voice variant (flavour) selector - only meaningful for engines with >1 variant.
+    const leadVariant = AudioService?.getLeadVariant?.(leadEngine) ?? 'default';
+    const leadVariantNames = AudioService?.getLeadVariantNames?.(leadEngine) ?? ['default'];
+    const leadVariantLabels = AudioService?.getLeadVariantLabels?.(leadEngine) ?? { default: 'Classic' };
+    const leadVariantOpts = leadVariantNames.map(v => `<option value="${v}" ${v === leadVariant ? 'selected' : ''}>${leadVariantLabels[v] || v}</option>`).join('');
+    const leadVariantHasChoices = leadVariantNames.length > 1;
+    const leadAutoPair = AudioService?.getLeadAutoPair?.() ?? false;
     
     // Sub-bass tuning params
     const sb = AudioService?.getSubBassParams?.() || { baseFrequency: 50, octaves: 3.2, attack: 0.04, lpFreq: 1200 };
@@ -1179,6 +1189,8 @@
             <select id="leadStyleSelect" class="octave-instrument-select" style="width:100%;">${leadStyleOpts}</select>
             <div class="audio-design-label" style="margin-top:8px;"><span>Voice</span></div>
             <select id="leadEngineSelect" class="octave-instrument-select" style="width:100%;">${leadEngineOpts}</select>
+            <div class="audio-design-label" id="leadVariantLabel" style="margin-top:8px;display:${leadVariantHasChoices ? 'flex' : 'none'};"><span>Variant</span></div>
+            <select id="leadVariantSelect" class="octave-instrument-select" style="width:100%;display:${leadVariantHasChoices ? 'block' : 'none'};">${leadVariantOpts}</select>
             <div class="audio-design-label" style="margin-top:8px;">
               <span>Mode</span>
             </div>
@@ -1209,6 +1221,10 @@
             <label class="drone-toggle-label">
               <input type="checkbox" id="leadFadeWhenStationary" ${leadFadeStationary ? 'checked' : ''}>
               <span>Fade out when stationary</span>
+            </label>
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="leadAutoPair" ${leadAutoPair ? 'checked' : ''}>
+              <span>Auto: pair voice + style, switch on drum change</span>
             </label>
             <div style="display:flex;gap:8px;margin-top:8px;">
               <button type="button" id="leadNewMelodyBtn" class="pattern-reset-btn" style="flex:1;margin-top:0;">🎲 New melody</button>
@@ -2137,7 +2153,25 @@
     const leadStyleSelect = designModal.querySelector('#leadStyleSelect');
     if (leadStyleSelect) leadStyleSelect.onchange = function() { AudioService?.setLeadStyle(this.value); };
     const leadEngineSelect = designModal.querySelector('#leadEngineSelect');
-    if (leadEngineSelect) leadEngineSelect.onchange = async function() { await AudioService?.setLeadEngine(this.value); };
+    if (leadEngineSelect) leadEngineSelect.onchange = async function() {
+      await AudioService?.setLeadEngine(this.value);
+      // Rebuild the variant selector for the newly selected engine.
+      const vSel = designModal.querySelector('#leadVariantSelect');
+      const vLbl = designModal.querySelector('#leadVariantLabel');
+      if (vSel && vLbl) {
+        const names = AudioService?.getLeadVariantNames?.(this.value) ?? ['default'];
+        const labels = AudioService?.getLeadVariantLabels?.(this.value) ?? { default: 'Classic' };
+        const cur = AudioService?.getLeadVariant?.(this.value) ?? 'default';
+        vSel.innerHTML = names.map(v => `<option value="${v}" ${v === cur ? 'selected' : ''}>${labels[v] || v}</option>`).join('');
+        const show = names.length > 1;
+        vSel.style.display = show ? 'block' : 'none';
+        vLbl.style.display = show ? 'flex' : 'none';
+      }
+    };
+    const leadVariantSelect = designModal.querySelector('#leadVariantSelect');
+    if (leadVariantSelect) leadVariantSelect.onchange = async function() {
+      await AudioService?.setLeadVariant(this.value);
+    };
     designModal.querySelectorAll('input[name="leadMode"]').forEach(radio => {
       radio.onchange = function() { if (this.checked) AudioService?.setLeadMode(this.value); };
     });
@@ -2173,6 +2207,8 @@
     if (leadFollowEl) leadFollowEl.onchange = function() { AudioService?.setLeadFollowMovement(this.checked); };
     const leadFadeEl = designModal.querySelector('#leadFadeWhenStationary');
     if (leadFadeEl) leadFadeEl.onchange = function() { AudioService?.setLeadFadeWhenStationary(this.checked); };
+    const leadAutoPairEl = designModal.querySelector('#leadAutoPair');
+    if (leadAutoPairEl) leadAutoPairEl.onchange = function() { AudioService?.setLeadAutoPair(this.checked); };
     const leadNewMelodyBtn = designModal.querySelector('#leadNewMelodyBtn');
     if (leadNewMelodyBtn) leadNewMelodyBtn.onclick = function() { AudioService?.newLeadMelody?.(); };
     const leadNextSectionBtn = designModal.querySelector('#leadNextSectionBtn');
