@@ -1,4 +1,31 @@
 /**
+ * geosonify-audio-service.js v6.7
+ *
+ * v6.7 changes:
+ * - Lead EFFECTS (auto-pair only): each voice-round can carry one effect,
+ *   spliced before the reverb in the lead chain - 'straight' (none), dotted-8th
+ *   'delay', 'adt' (double-track), 'wide' (stereo), 'phaser', 'flanger'.
+ *   'straight' is weighted 2x so the plain voice still dominates. The opening
+ *   is always theremin + straight; effects stay locked for the first four
+ *   dropout voice-rounds and only enter from round 5 (LEAD_ROUNDS_BEFORE_
+ *   EFFECTS). Never repeats the current effect. Delay time locks to the tempo
+ *   (dotted 8th). All built on Tone 14.8.49 effect classes (verified present).
+ *
+ * geosonify-audio-service.js v6.6
+ *
+ * v6.6 changes:
+ * - 'flowing' refined again: measurement showed it was busy but SQUARE (onsets
+ *   mostly on-beat), which read as leaden. The 'running' cells are now lilting
+ *   (off-beat push), lifting flowing's off-beat share into the musical range
+ *   alongside lyrical while staying distinct (more onsets, rising contours,
+ *   wider range, step cadence).
+ * - Auto-pair no longer clicks: the drum dropout doesn't silence the LEAD, so
+ *   rebuilding the voice at the dropout return could cut a ringing note. The
+ *   switch is now QUEUED (leadPendingPair) and applied by leadBar at the next
+ *   lead rest (when nothing is sounding). If the lead is already silent when
+ *   auto-pair fires, it switches immediately. Voice + style always move
+ *   together via applyLeadPair().
+ *
  * geosonify-audio-service.js v6.5
  *
  * v6.5 changes:
@@ -207,6 +234,10 @@
   let leadFormBar = 0;            // bar counter within the current form segment
   let leadTune = null;            // { signature, plan: [{label, degrees, cell, contour, lift}], pos }
   let leadNoteSpans = [];         // { octave, start, end } of scheduled lead notes (replace-mode muting)
+  let leadPendingPair = null;     // { engine, style } queued by auto-pair; applied at the next lead rest to avoid a mid-phrase click
+  let leadRoundCount = 0;         // how many auto-pair voice switches have happened this session
+  let leadEffect = 'straight';    // current lead effect: 'straight'|'delay'|'adt'|'wide'|'phaser'|'flanger'
+  let leadFx = null;              // the active effect node(s) in the chain (disposed with the chain)
   const LEAD_SETTINGS_KEY = 'geosonify_lead';
 
   // Retro drum track (optional; off by default)
@@ -1265,7 +1296,7 @@
   const RHYTHM_PHRASES = {
     straight:   [[1, 1, 1, 1], [1, 1, 2]],                    // quarters
     flowing:    [[1, 0.5, 0.5, 1, 1], [1, 1, 0.5, 0.5, 1], [0.5, 0.5, 1, 1, 0.5, 0.5]], // mixed 8ths/4ths
-    running:    [[0.5, 0.5, 0.5, 0.5, 1, 1], [1, 0.5, 0.5, 0.5, 0.5, 1], [0.5, 0.5, 1, 0.5, 0.5, 1]], // buoyant running 8ths, no dead quarters
+    running:    [[0.5, 1, 0.5, 0.5, 1, 0.5], [0.75, 0.75, 0.5, 1, 1], [1, 0.5, 0.5, 1, 0.5, 0.5], [0.5, 0.5, 1, 0.75, 0.75, 0.5]], // lilting 8ths with off-beat push, not square
     dotted:     [[1.5, 0.5, 1.5, 0.5], [1.5, 0.5, 2], [1, 0.5, 1.5, 1]],   // dotted lilt
     triplet:    [[0.667, 0.667, 0.667, 1, 1], [2, 0.667, 0.667, 0.667]],   // triplet figure
     syncopated: [[0.5, 1, 0.5, 1, 1], [1, 0.5, 1, 0.5, 1], [0.5, 1, 1, 1.5]], // off-beat push / tied feel
@@ -1289,6 +1320,47 @@
     lyrical:  { rhythms: ['dotted', 'flowing', 'triplet'],         leap: 0.28, restProb: 0.12, motifLen: 4, contours: ['arch', 'archtail', 'desc'],  cadence: 'step', span: 0.85, varProb: 0.30 }
   };
 
+  // ---- Lead effects ---------------------------------------------------------
+  // An occasional effect on the lead adds surprise without pushing it forward.
+  // Each factory returns a Tone node (or null for 'straight') spliced into the
+  // lead chain BEFORE the reverb, so the effect feeds the shared space. The
+  // node is disposed with the rest of the chain. wet levels are kept modest so
+  // the lead stays a background "visitor", never a spotlight.
+  const LEAD_EFFECTS = {
+    straight: null,
+    // Dotted-eighth feedback delay - the classic "ambient lead" ping. Time is
+    // set per-build from the current tempo so it locks to a dotted 8th.
+    delay:   () => new Tone.FeedbackDelay({ delayTime: leadDottedEighthSeconds(), feedback: 0.32, wet: 0.28 }),
+    // ADT (artificial double-tracking): very short modulated delay + tiny
+    // detune, so the line sounds doubled/thickened, not echoed.
+    adt:     () => new Tone.Chorus({ frequency: 0.6, delayTime: 6, depth: 0.35, spread: 40, wet: 0.5 }).start(),
+    // Wider stereo field - subtle widening, no timbral change.
+    wide:    () => new Tone.StereoWidener({ width: 0.7 }),
+    // Slow phaser - gentle sweep, low wet.
+    phaser:  () => new Tone.Phaser({ frequency: 0.25, octaves: 3, baseFrequency: 500, wet: 0.35 }),
+    // Flanger via a short modulated delay (Tone has no Flanger; a fast, short
+    // Chorus with low frequency and tiny delay reads as a flange sweep).
+    flanger: () => new Tone.Chorus({ frequency: 0.15, delayTime: 3.5, depth: 0.7, spread: 0, feedback: 0.4, wet: 0.4 }).start()
+  };
+  // Which effects may appear once effects unlock (straight stays most likely so
+  // the plain voice still dominates - the effect is the exception, not the rule).
+  const LEAD_EFFECT_POOL = ['straight', 'straight', 'delay', 'adt', 'wide', 'phaser', 'flanger'];
+  const LEAD_ROUNDS_BEFORE_EFFECTS = 4; // rounds 1-4 stay straight; effects may enter from round 5
+
+  function leadDottedEighthSeconds() {
+    // Dotted eighth = 0.75 beat. secondsPerBeat = 60 / bpm.
+    const bpm = (typeof getCurrentBPM === 'function') ? getCurrentBPM() : (settings.bpm || 100);
+    return (60 / Math.max(1, bpm)) * 0.75;
+  }
+
+  // Pick the effect for the NEXT voice-round. Stays 'straight' until effects
+  // unlock; then rolls from the pool (never immediately repeating the current).
+  function pickLeadEffect() {
+    if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) return 'straight';
+    const pool = LEAD_EFFECT_POOL.filter(e => e !== leadEffect);
+    return (pool.length ? pool : LEAD_EFFECT_POOL)[Math.floor(Math.random() * (pool.length || LEAD_EFFECT_POOL.length))];
+  }
+
   async function buildLeadChain() {
     if (typeof Tone === 'undefined' || Tone === null) return;
     disposeLeadChain();
@@ -1298,18 +1370,27 @@
     leadLp = new Tone.Filter(9000, 'lowpass');
     leadReverb = new Tone.Reverb({ decay: 3.5, wet: 0.3 });
     leadVolume = new Tone.Volume(settings.leadVolumeDb + leadEngineTrim());
-    leadSynth.chain(leadHp, leadLp, leadReverb, leadVolume, masterVolume);
+    // Optional effect, spliced before the reverb. 'straight' = no node.
+    const fxFactory = LEAD_EFFECTS[leadEffect];
+    leadFx = null;
+    if (fxFactory) { try { leadFx = fxFactory(); } catch (e) { leadFx = null; } }
+    if (leadFx) {
+      leadSynth.chain(leadHp, leadLp, leadFx, leadReverb, leadVolume, masterVolume);
+    } else {
+      leadSynth.chain(leadHp, leadLp, leadReverb, leadVolume, masterVolume);
+    }
     await leadReverb.ready;
-    console.log('[AudioService] Built lead chain:', settings.leadEngine);
+    console.log('[AudioService] Built lead chain:', settings.leadEngine, '| fx:', leadEffect);
   }
 
   function disposeLeadChain() {
     try { leadSynth?.dispose(); } catch (e) {}
     try { leadHp?.dispose(); } catch (e) {}
     try { leadLp?.dispose(); } catch (e) {}
+    try { leadFx?.dispose(); } catch (e) {}
     try { leadReverb?.dispose(); } catch (e) {}
     try { leadVolume?.dispose(); } catch (e) {}
-    leadSynth = leadHp = leadLp = leadReverb = leadVolume = null;
+    leadSynth = leadHp = leadLp = leadFx = leadReverb = leadVolume = null;
   }
 
   /**
@@ -1708,6 +1789,29 @@
    * the plan completes or when the place changes) and, during playing bars,
    * schedules the portion of the composed melody that falls in this bar.
    */
+  // Apply a queued (or immediate) auto-pair switch. Only rebuilds the voice
+  // when the engine actually changes; always refreshes style + tune so the
+  // next composed phrase takes on the new character. Callers must ensure the
+  // lead is silent (resting/intro) before invoking, to avoid a click.
+  function applyLeadPair(pair) {
+    if (!pair) return;
+    settings.leadStyle = pair.style;
+    leadTune = null;                 // new character = new tune next phrase
+    // This is a voice-round: count it, then pick this round's effect. The first
+    // LEAD_ROUNDS_BEFORE_EFFECTS rounds stay 'straight'; after that, effects may
+    // enter. Effect is chosen here so the rebuilt chain includes it.
+    leadRoundCount++;
+    const nextEffect = pickLeadEffect();
+    const effectChanged = (nextEffect !== leadEffect);
+    leadEffect = nextEffect;
+    const engineChanged = (pair.engine !== settings.leadEngine);
+    if (engineChanged) settings.leadEngine = pair.engine;
+    saveLeadSettings();
+    if (engineChanged || effectChanged) {
+      buildLeadChain();              // rebuild while silent (async, fire-and-forget)
+    }
+  }
+
   function leadBar(barStartTime, secondsPerBeat) {
     if (!leadActive()) return;
 
@@ -1718,6 +1822,16 @@
     }
 
     // FORM state machine.
+    // Apply a queued auto-pair switch now IF the lead is silent this bar
+    // (resting or intro). Deferring to here means a switch requested mid-phrase
+    // waits for the phrase to finish, so the voice rebuild never cuts a ringing
+    // note. One extra guard: only switch on a resting bar that still has room
+    // before the next entry, so the rebuilt voice is audibly the new one.
+    if (leadPendingPair && leadFormState !== 'playing') {
+      applyLeadPair(leadPendingPair);
+      leadPendingPair = null;
+    }
+
     if (leadFormState === 'intro') {
       leadFormBar++;
       if (leadFormBar >= Math.max(0, settings.leadIntroBars | 0)) {
@@ -2170,21 +2284,19 @@
           } else {
             drumMutations = new Set();
           }
-          // Auto-pair: on this drum-change return, jump the lead to a random
-          // engine+style pair (never the current one). Happens during the
-          // silent dropout, so the chain rebuild is click-safe.
+          // Auto-pair: on this drum-change return, move the lead to a random
+          // engine+style pair (never the current one). The drum dropout does
+          // NOT silence the lead, so rebuilding the voice here could cut a
+          // ringing note (a click). Instead we QUEUE the switch and let leadBar
+          // apply it at the next rest, when nothing is sounding. If the lead is
+          // already silent (resting/intro), apply it right away.
           if (settings.leadAutoPair && settings.leadEnabled) {
             const pair = pickNextLeadPair();
-            settings.leadStyle = pair.style;
-            leadTune = null; // new character = new tune
-            if (pair.engine !== settings.leadEngine) {
-              settings.leadEngine = pair.engine;
-              saveLeadSettings();
-              buildLeadChain(); // rebuild voice during silence (async, fire-and-forget)
+            if (leadFormState === 'playing') {
+              leadPendingPair = pair;            // defer to the next phrase boundary
             } else {
-              saveLeadSettings();
+              applyLeadPair(pair);               // silent now - safe to switch immediately
             }
-            composeLeadPhrase();
           }
           drumFillBarsLeft = Math.max(0, settings.drumFillStart | 0);
           drumFillHatsThisBar = 0;
@@ -4298,10 +4410,20 @@
     /** Auto-pair: on each drum change, jump to a random engine+style pair
      *  (never the current one). Toggle + read. */
     setLeadAutoPair(enabled) {
-      settings.leadAutoPair = !!enabled;
+      const on = !!enabled;
+      settings.leadAutoPair = on;
       saveLeadSettings();
+      // Reset the progression so the arc (theremin straight -> 4 rounds ->
+      // effects unlock) restarts cleanly. Turning it off returns the lead to a
+      // plain (straight) voice so it isn't stuck with an effect.
+      leadRoundCount = 0;
+      if (leadEffect !== 'straight') {
+        leadEffect = 'straight';
+        if (settings.leadEnabled) buildLeadChain();
+      }
     },
     getLeadAutoPair() { return settings.leadAutoPair; },
+    getLeadEffect() { return leadEffect; }, // exposed for UI/debug
 
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
@@ -4871,6 +4993,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.5 loaded (lead variants + auto-pair; flowing reworked; melodic composer: pitched ladder, motif development, A A\' B A\'\' form)');
+  console.log('[geosonify] audio-service v6.7 loaded (lead effects; click-free auto-pair; variants; flowing reworked)');
 
 })(typeof window !== 'undefined' ? window : this);
