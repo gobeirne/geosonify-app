@@ -1,4 +1,31 @@
 /**
+ * geosonify-audio-service.js v6.9
+ *
+ * v6.9 changes (real fix for the auto-switch click):
+ * - The lead now PLANS phrases around the known drum-drop schedule instead of
+ *   just deferring the switch. barsUntilNextDrop() reads the dropout counter;
+ *   before entering a phrase the lead caps its length so the phrase ENDS a
+ *   decay-margin (>=2 bars, tempo-scaled to the ~3.5s reverb tail) before the
+ *   next drop, and if it's already too close it stays silent until after the
+ *   drop. So when the voice/effect rebuilds at the drop, the tail has faded to
+ *   silence - no click, not merely a delayed one. Cap is one-shot per phrase.
+ *
+ * geosonify-audio-service.js v6.8
+ *
+ * v6.8 changes:
+ * - Effect selector exposed: getLeadEffectNames/getLeadEffectLabels/
+ *   setLeadEffect for a manual override (UI dropdown). Manual pick applies now;
+ *   auto resumes choosing at the next drum change.
+ * - Effects made stronger/more obvious: deeper phaser (Q8, 4 oct, wet .7),
+ *   pronounced flanger (feedback .7, depth .9), fuller double-track (depth .7,
+ *   wet .7), and 'wide' fixed - width 0.7 was collapsing the lead toward one
+ *   ear; 0.85 with centred mid/side now widens without panning. Delay a touch
+ *   wetter (.32).
+ * - Effect selection reworked: even mix (no more 2x 'straight'); a 4-round
+ *   NO-STRAIGHT window right after unlock; and forced dotted-8th delay whenever
+ *   the style is 'flowing' or the engine is 'fm' (user favourites - flowing
+ *   only sits right with the delay, and FM bell + delay is loved).
+ *
  * geosonify-audio-service.js v6.7
  *
  * v6.7 changes:
@@ -230,6 +257,7 @@
   // array of { pc, octave, startBeat (absolute in phrase), durBeats, vel, ornament }
   let leadPhrase = null;
   let leadPhraseBars = 4;         // length of the current phrase in bars
+  let leadPhraseCapBars = 0;      // if >0, cap the NEXT composed phrase to this many bars (drop-aware fit); 0 = no cap
   let leadFormState = 'intro';    // 'intro' | 'playing' | 'resting'
   let leadFormBar = 0;            // bar counter within the current form segment
   let leadTune = null;            // { signature, plan: [{label, degrees, cell, contour, lift}], pos }
@@ -1330,22 +1358,42 @@
     straight: null,
     // Dotted-eighth feedback delay - the classic "ambient lead" ping. Time is
     // set per-build from the current tempo so it locks to a dotted 8th.
-    delay:   () => new Tone.FeedbackDelay({ delayTime: leadDottedEighthSeconds(), feedback: 0.32, wet: 0.28 }),
-    // ADT (artificial double-tracking): very short modulated delay + tiny
-    // detune, so the line sounds doubled/thickened, not echoed.
-    adt:     () => new Tone.Chorus({ frequency: 0.6, delayTime: 6, depth: 0.35, spread: 40, wet: 0.5 }).start(),
-    // Wider stereo field - subtle widening, no timbral change.
-    wide:    () => new Tone.StereoWidener({ width: 0.7 }),
-    // Slow phaser - gentle sweep, low wet.
-    phaser:  () => new Tone.Phaser({ frequency: 0.25, octaves: 3, baseFrequency: 500, wet: 0.35 }),
-    // Flanger via a short modulated delay (Tone has no Flanger; a fast, short
-    // Chorus with low frequency and tiny delay reads as a flange sweep).
-    flanger: () => new Tone.Chorus({ frequency: 0.15, delayTime: 3.5, depth: 0.7, spread: 0, feedback: 0.4, wet: 0.4 }).start()
+    delay:   () => new Tone.FeedbackDelay({ delayTime: leadDottedEighthSeconds(), feedback: 0.38, wet: 0.32 }),
+    // ADT (artificial double-tracking): doubled/thickened, now deeper and wider
+    // so it clearly reads as two voices rather than a hint.
+    adt:     () => new Tone.Chorus({ frequency: 0.8, delayTime: 12, depth: 0.7, spread: 120, wet: 0.7 }).start(),
+    // Wider stereo field. width is normalRange 0..1 where 0.5 = neutral; going
+    // to 0.7 collapsed the lead toward one side. 0.85 with the mid/side balance
+    // kept centred gives an obvious WIDE image without pushing it to one ear.
+    wide:    () => new Tone.StereoWidener({ width: 0.85 }),
+    // Slow phaser - now a deep, sweeping notch that's clearly audible.
+    phaser:  () => new Tone.Phaser({ frequency: 0.5, octaves: 4, baseFrequency: 350, stages: 10, Q: 8, wet: 0.7 }),
+    // Flanger via a short heavily-modulated feedback Chorus - now a pronounced
+    // jet-sweep rather than a subtle shimmer.
+    flanger: () => new Tone.Chorus({ frequency: 0.3, delayTime: 4.5, depth: 0.9, spread: 0, feedback: 0.7, wet: 0.6 }).start()
   };
-  // Which effects may appear once effects unlock (straight stays most likely so
-  // the plain voice still dominates - the effect is the exception, not the rule).
-  const LEAD_EFFECT_POOL = ['straight', 'straight', 'delay', 'adt', 'wide', 'phaser', 'flanger'];
+  // Human-facing labels for the effect selector.
+  const LEAD_EFFECT_LABELS = {
+    straight: 'Straight (none)',
+    delay:    'Dotted-8th delay',
+    adt:      'Double-track',
+    wide:     'Wide stereo',
+    phaser:   'Phaser',
+    flanger:  'Flanger'
+  };
+  // Effects that may appear once unlocked, in an EVEN mix (no weighting).
+  const LEAD_EFFECT_POOL = ['straight', 'delay', 'adt', 'wide', 'phaser', 'flanger'];
+  // Non-straight effects only - used during the "no straight" window and as a
+  // fallback whenever straight must be excluded.
+  const LEAD_EFFECT_POOL_NOSTRAIGHT = ['delay', 'adt', 'wide', 'phaser', 'flanger'];
   const LEAD_ROUNDS_BEFORE_EFFECTS = 4; // rounds 1-4 stay straight; effects may enter from round 5
+  // After effects unlock, this many rounds are guaranteed non-straight (so the
+  // ear hears the effect palette before 'straight' can reappear).
+  const LEAD_ROUNDS_NOSTRAIGHT = 4;
+  // Styles / engines that always take the dotted-eighth delay (user favourites:
+  // flowing only sits right with the delay, and the FM bell + delay is loved).
+  const LEAD_FORCE_DELAY_STYLES = new Set(['flowing']);
+  const LEAD_FORCE_DELAY_ENGINES = new Set(['fm']);
 
   function leadDottedEighthSeconds() {
     // Dotted eighth = 0.75 beat. secondsPerBeat = 60 / bpm.
@@ -1353,12 +1401,21 @@
     return (60 / Math.max(1, bpm)) * 0.75;
   }
 
-  // Pick the effect for the NEXT voice-round. Stays 'straight' until effects
-  // unlock; then rolls from the pool (never immediately repeating the current).
-  function pickLeadEffect() {
+  // Pick the effect for a voice-round given the engine+style about to play.
+  // Order of rules:
+  //  1) before unlock -> straight.
+  //  2) favourites (flowing style, or fm engine) -> always delay.
+  //  3) during the no-straight window right after unlock -> non-straight mix.
+  //  4) otherwise -> even mix, never immediately repeating the current effect.
+  function pickLeadEffect(engine, style) {
     if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) return 'straight';
-    const pool = LEAD_EFFECT_POOL.filter(e => e !== leadEffect);
-    return (pool.length ? pool : LEAD_EFFECT_POOL)[Math.floor(Math.random() * (pool.length || LEAD_EFFECT_POOL.length))];
+    if (LEAD_FORCE_DELAY_STYLES.has(style) || LEAD_FORCE_DELAY_ENGINES.has(engine)) return 'delay';
+    const inNoStraightWindow =
+      leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS + LEAD_ROUNDS_NOSTRAIGHT;
+    const base = inNoStraightWindow ? LEAD_EFFECT_POOL_NOSTRAIGHT : LEAD_EFFECT_POOL;
+    const pool = base.filter(e => e !== leadEffect);
+    const src = pool.length ? pool : base;
+    return src[Math.floor(Math.random() * src.length)];
   }
 
   async function buildLeadChain() {
@@ -1576,7 +1633,10 @@
     if (!leadTune) { leadPhrase = null; return; }
     const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.flowing;
     const sec = leadTune.plan[leadTune.pos % leadTune.plan.length];
-    const bars = Math.max(1, settings.leadPhraseBars | 0);
+    const wanted = Math.max(1, settings.leadPhraseBars | 0);
+    // If a drop-aware cap is set, shorten this phrase so it lands (with a decay
+    // gap) before the next drum break. 0 = no cap.
+    const bars = leadPhraseCapBars > 0 ? Math.min(wanted, leadPhraseCapBars) : wanted;
     leadPhraseBars = bars;
 
     // Usable ladder window: a span fraction of the ladder, kept around the tonic.
@@ -1768,6 +1828,7 @@
       vel: n.vel,
       ornament: !!n.ornament
     }));
+    leadPhraseCapBars = 0; // one-shot: the cap applied to this phrase only
   }
 
   /**
@@ -1801,7 +1862,7 @@
     // LEAD_ROUNDS_BEFORE_EFFECTS rounds stay 'straight'; after that, effects may
     // enter. Effect is chosen here so the rebuilt chain includes it.
     leadRoundCount++;
-    const nextEffect = pickLeadEffect();
+    const nextEffect = pickLeadEffect(pair.engine, pair.style);
     const effectChanged = (nextEffect !== leadEffect);
     leadEffect = nextEffect;
     const engineChanged = (pair.engine !== settings.leadEngine);
@@ -1810,6 +1871,46 @@
     if (engineChanged || effectChanged) {
       buildLeadChain();              // rebuild while silent (async, fire-and-forget)
     }
+  }
+
+  // ---- Drop-aware phrase fitting -------------------------------------------
+  // How many whole bars from the START of the NEXT bar until the next drum
+  // drop-out begins. The scheduler fires a drop when, on a played bar,
+  // drumDropoutCounter+1 >= drumDropoutBars (it increments then tests). So from
+  // the next bar onward the drop lands after (period - counter) bars. Returns a
+  // large number when drops are disabled or currently suppressed, so the lead
+  // just uses its normal phrase length.
+  function barsUntilNextDrop() {
+    if (!settings.drumDropoutEnabled) return 9999;
+    if (typeof shouldSkipEvolution === 'function' && shouldSkipEvolution()) return 9999; // parked: no drops
+    const period = Math.max(4, settings.drumDropoutBars | 0);
+    // If we're mid-dropout or in the post-drop fill, the counter is paused; the
+    // safest read is "not right now" - let the phrase run normally.
+    if (drumDropoutBarsLeft > 0 || drumFillBarsLeft > 0) return 9999;
+    const remaining = period - drumDropoutCounter;
+    return remaining > 0 ? remaining : period; // guard against off-by-one at the boundary
+  }
+
+  // Bars of silence to leave after a phrase so its reverb/delay tail decays
+  // before the drop and the voice rebuild. Reverb decay is ~3.5s; scale to the
+  // tempo (minimum 2 bars) so faster tempos still clear the tail.
+  function leadDecayMarginBars() {
+    const bpm = (typeof getCurrentBPM === 'function') ? getCurrentBPM() : (settings.bpm || 100);
+    const secPerBar = (60 / Math.max(1, bpm)) * 4;
+    const tailBars = Math.ceil(3.5 / Math.max(0.1, secPerBar));
+    return Math.max(2, tailBars);
+  }
+
+  // Given we're about to enter a playing phrase, decide its capped length so it
+  // finishes with a decay gap before the next drop. Returns:
+  //   >=1  -> enter and cap the phrase to this many bars
+  //    0   -> don't enter yet; too close to the drop, keep resting
+  function leadPhraseFitBars() {
+    const until = barsUntilNextDrop();
+    if (until >= 9999) return Math.max(1, settings.leadPhraseBars | 0); // no drop soon: full phrase
+    const room = until - leadDecayMarginBars();
+    if (room < 1) return 0;                     // too close - wait past the drop
+    return Math.min(Math.max(1, settings.leadPhraseBars | 0), room);
   }
 
   function leadBar(barStartTime, secondsPerBeat) {
@@ -1835,8 +1936,11 @@
     if (leadFormState === 'intro') {
       leadFormBar++;
       if (leadFormBar >= Math.max(0, settings.leadIntroBars | 0)) {
+        const fit = leadPhraseFitBars();
+        if (fit <= 0) return; // too close to the next drop - hold silent one more bar
+        leadPhraseCapBars = fit;
         leadFormState = 'playing'; leadFormBar = 0;
-        if (!leadPhrase) composeLeadPhrase();
+        composeLeadPhrase();
       }
       return; // silent during intro
     }
@@ -1844,6 +1948,9 @@
     if (leadFormState === 'resting') {
       leadFormBar++;
       if (leadFormBar >= Math.max(1, settings.leadRestBars | 0)) {
+        const fit = leadPhraseFitBars();
+        if (fit <= 0) return; // too close to the next drop - stay resting this bar
+        leadPhraseCapBars = fit;
         leadFormState = 'playing'; leadFormBar = 0;
         // Return with the tune's next section (A -> A' -> B -> A'').
         advanceLeadSection();
@@ -4423,7 +4530,18 @@
       }
     },
     getLeadAutoPair() { return settings.leadAutoPair; },
-    getLeadEffect() { return leadEffect; }, // exposed for UI/debug
+    getLeadEffect() { return leadEffect; },
+    getLeadEffectNames() { return Object.keys(LEAD_EFFECTS); },
+    getLeadEffectLabels() { return Object.assign({}, LEAD_EFFECT_LABELS); },
+    /** Manual effect override. Sets the effect now and rebuilds the chain. In
+     *  auto mode this takes effect immediately; auto will resume choosing at the
+     *  next drum change. */
+    async setLeadEffect(effect) {
+      if (!(effect in LEAD_EFFECTS)) return;
+      if (effect === leadEffect) return;
+      leadEffect = effect;
+      if (settings.leadEnabled) await buildLeadChain();
+    },
 
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
@@ -4993,6 +5111,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.7 loaded (lead effects; click-free auto-pair; variants; flowing reworked)');
+  console.log('[geosonify] audio-service v6.9 loaded (drop-aware phrase fitting kills the auto-switch click; effect selector; forced delay for flowing/fm)');
 
 })(typeof window !== 'undefined' ? window : this);
