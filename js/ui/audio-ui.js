@@ -32,8 +32,9 @@
  * - Drum kit selector includes "randomize" (default); return busy-ness slider.
  *   10 kits total.
  * - Lead voice: added a "Variant" selector (voice flavours for 80s Lead and
- *   Analog Mono; other engines show only Classic) and an "Auto" tickbox that
- *   pairs voice+style and switches on each drum change (never repeating).
+ *   Analog Mono; other engines show only Classic), an "Effect" selector (manual
+ *   override: straight/delay/double-track/wide/phaser/flanger), and an "Auto"
+ *   tickbox that pairs voice+style and switches on each drum change.
  * - "Lead voice" section: enable, style (flowing/sparse/rhythmic/lyrical),
  *   voice (80s/theremin/FM/mono), replace/layer, phrase/rest/intro bars,
  *   volume, follow-movement, fade-when-stationary
@@ -703,6 +704,10 @@
     const leadVariantOpts = leadVariantNames.map(v => `<option value="${v}" ${v === leadVariant ? 'selected' : ''}>${leadVariantLabels[v] || v}</option>`).join('');
     const leadVariantHasChoices = leadVariantNames.length > 1;
     const leadAutoPair = AudioService?.getLeadAutoPair?.() ?? false;
+    const leadEffect = AudioService?.getLeadEffect?.() ?? 'straight';
+    const leadEffectNames = AudioService?.getLeadEffectNames?.() ?? ['straight'];
+    const leadEffectLabels = AudioService?.getLeadEffectLabels?.() ?? { straight: 'Straight (none)' };
+    const leadEffectOpts = leadEffectNames.map(e => `<option value="${e}" ${e === leadEffect ? 'selected' : ''}>${leadEffectLabels[e] || e}</option>`).join('');
     
     // Sub-bass tuning params
     const sb = AudioService?.getSubBassParams?.() || { baseFrequency: 50, octaves: 3.2, attack: 0.04, lpFreq: 1200 };
@@ -1191,6 +1196,8 @@
             <select id="leadEngineSelect" class="octave-instrument-select" style="width:100%;">${leadEngineOpts}</select>
             <div class="audio-design-label" id="leadVariantLabel" style="margin-top:8px;display:${leadVariantHasChoices ? 'flex' : 'none'};"><span>Variant</span></div>
             <select id="leadVariantSelect" class="octave-instrument-select" style="width:100%;display:${leadVariantHasChoices ? 'block' : 'none'};">${leadVariantOpts}</select>
+            <div class="audio-design-label" style="margin-top:8px;"><span>Effect</span></div>
+            <select id="leadEffectSelect" class="octave-instrument-select" style="width:100%;">${leadEffectOpts}</select>
             <div class="audio-design-label" style="margin-top:8px;">
               <span>Mode</span>
             </div>
@@ -2171,6 +2178,10 @@
     const leadVariantSelect = designModal.querySelector('#leadVariantSelect');
     if (leadVariantSelect) leadVariantSelect.onchange = async function() {
       await AudioService?.setLeadVariant(this.value);
+    };
+    const leadEffectSelect = designModal.querySelector('#leadEffectSelect');
+    if (leadEffectSelect) leadEffectSelect.onchange = async function() {
+      await AudioService?.setLeadEffect(this.value);
     };
     designModal.querySelectorAll('input[name="leadMode"]').forEach(radio => {
       radio.onchange = function() { if (this.checked) AudioService?.setLeadMode(this.value); };
