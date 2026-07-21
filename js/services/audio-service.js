@@ -1,4 +1,10 @@
 /**
+ * geosonify-audio-service.js v6.10
+ *
+ * v6.10 changes:
+ * - Auto-pair now defaults ON (leadAutoPair: true). Returning users with a
+ *   saved geosonify_lead keep their own setting.
+ *
  * geosonify-audio-service.js v6.9
  *
  * v6.9 changes (real fix for the auto-switch click):
@@ -440,7 +446,7 @@
     leadVolumeDb: -6,            // lead output level
     leadFollowMovement: true,    // denser phrasing when moving, sparser when still
     leadFadeWhenStationary: false, // ebb the lead with the drone when parked
-    leadAutoPair: false,         // on each drum change, switch to a random engine+style pair (never repeat current)
+    leadAutoPair: true,          // on by default: on each drum change, switch to a random engine+style pair (never repeat current)
     
     // Pattern evolution settings
     patternEvolutionEnabled: true,    // Enable pattern evolution system
@@ -5111,6 +5117,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.9 loaded (drop-aware phrase fitting kills the auto-switch click; effect selector; forced delay for flowing/fm)');
+  console.log('[geosonify] audio-service v6.10 loaded (auto-pair on by default; drop-aware phrase fitting; effect selector)');
 
 })(typeof window !== 'undefined' ? window : this);
