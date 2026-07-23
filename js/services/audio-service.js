@@ -270,6 +270,8 @@
   let leadNoteSpans = [];         // { octave, start, end } of scheduled lead notes (replace-mode muting)
   let leadPendingPair = null;     // { engine, style } queued by auto-pair; applied at the next lead rest to avoid a mid-phrase click
   let leadRoundCount = 0;         // how many auto-pair voice switches have happened this session
+  let leadOpeningQueue = null;    // remaining pairs in the scripted 4-round opening; null = opening not armed/finished
+  let leadOpeningArmed = false;   // true until the opening's round 1 (theremin/sparse) has been placed
   let leadEffect = 'straight';    // current lead effect: 'straight'|'delay'|'adt'|'wide'|'phaser'|'flanger'
   let leadFx = null;              // the active effect node(s) in the chain (disposed with the chain)
   const LEAD_SETTINGS_KEY = 'geosonify_lead';
@@ -1275,12 +1277,53 @@
     { engine: 'mono',     style: 'lyrical' },
     { engine: 'eighties', style: 'flowing' }
   ];
+  // ---- Scripted opening (best foot forward) --------------------------------
+  // The first four auto-pair rounds are DEALT, not random: round 1 is always
+  // theremin/sparse, and rounds 2-4 are the other three pairs in shuffled
+  // order. This guarantees each of the four pairs is heard exactly once before
+  // anything repeats. From round 5 on, selection is random as before.
+  // Effects during the opening are handled in pickLeadEffect().
+  const LEAD_OPENING_FIRST = { engine: 'theremin', style: 'sparse' };
+
+  // Build the opening deal: [theremin/sparse, ...other three shuffled].
+  function buildLeadOpeningQueue() {
+    const rest = LEAD_AUTO_PAIRS.filter(p =>
+      !(p.engine === LEAD_OPENING_FIRST.engine && p.style === LEAD_OPENING_FIRST.style));
+    for (let i = rest.length - 1; i > 0; i--) {   // Fisher-Yates
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = rest[i]; rest[i] = rest[j]; rest[j] = t;
+    }
+    return [LEAD_OPENING_FIRST].concat(rest);
+  }
+
+  // Arm (or re-arm) the scripted opening. Called when auto-pair is toggled on
+  // and when a fresh listening session starts, so a returning user always hears
+  // the opening from the top with a newly shuffled rounds 2-4.
+  function resetLeadOpening() {
+    leadRoundCount = 0;
+    leadOpeningQueue = buildLeadOpeningQueue();
+    leadOpeningArmed = true;
+  }
+
   // Pick a pair that differs from the currently active engine+style.
+  // During the scripted opening, deal from the queue instead of choosing.
   function pickNextLeadPair() {
+    if (leadOpeningQueue && leadOpeningQueue.length) return leadOpeningQueue[0];
     const options = LEAD_AUTO_PAIRS.filter(p =>
       !(p.engine === settings.leadEngine && p.style === settings.leadStyle));
     const pool = options.length ? options : LEAD_AUTO_PAIRS;
     return pool[Math.floor(Math.random() * pool.length)];
+  }
+
+  // Place round 1 (theremin/sparse/straight) as the OPENING VOICE, before any
+  // drum change. Round 1 is therefore the voice you hear first; the three drum
+  // changes after it deal rounds 2-4. Safe to call repeatedly - it only acts
+  // while the opening is armed.
+  function applyLeadOpeningVoice() {
+    if (!leadOpeningArmed) return;
+    if (!settings.leadAutoPair || !settings.leadEnabled) return;
+    leadOpeningArmed = false;
+    applyLeadPair(leadOpeningQueue ? leadOpeningQueue[0] : LEAD_OPENING_FIRST);
   }
 
   function leadVariantNames(engine) {
@@ -1414,8 +1457,13 @@
   //  3) during the no-straight window right after unlock -> non-straight mix.
   //  4) otherwise -> even mix, never immediately repeating the current effect.
   function pickLeadEffect(engine, style) {
-    if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) return 'straight';
-    if (LEAD_FORCE_DELAY_STYLES.has(style) || LEAD_FORCE_DELAY_ENGINES.has(engine)) return 'delay';
+    const forceDelay =
+      LEAD_FORCE_DELAY_STYLES.has(style) || LEAD_FORCE_DELAY_ENGINES.has(engine);
+    // Opening window (rounds 1-4): no random effects, but the two pairs that
+    // are only right WITH the dotted-8th delay keep it - eighties/flowing and
+    // fm/rhythmic. theremin/sparse and mono/lyrical stay straight.
+    if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) return forceDelay ? 'delay' : 'straight';
+    if (forceDelay) return 'delay';
     const inNoStraightWindow =
       leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS + LEAD_ROUNDS_NOSTRAIGHT;
     const base = inNoStraightWindow ? LEAD_EFFECT_POOL_NOSTRAIGHT : LEAD_EFFECT_POOL;
@@ -1868,6 +1916,15 @@
     // LEAD_ROUNDS_BEFORE_EFFECTS rounds stay 'straight'; after that, effects may
     // enter. Effect is chosen here so the rebuilt chain includes it.
     leadRoundCount++;
+    // If this is a scripted-opening round, consume it from the deal. When the
+    // queue empties the opening is over and selection returns to random.
+    if (leadOpeningQueue && leadOpeningQueue.length) {
+      const head = leadOpeningQueue[0];
+      if (head.engine === pair.engine && head.style === pair.style) {
+        leadOpeningQueue.shift();
+        if (!leadOpeningQueue.length) leadOpeningQueue = null;
+      }
+    }
     const nextEffect = pickLeadEffect(pair.engine, pair.style);
     const effectChanged = (nextEffect !== leadEffect);
     leadEffect = nextEffect;
@@ -3476,7 +3533,13 @@
    */
   function startDroneBPMClock() {
     if (droneUpdateScheduleId !== null) return;
-    
+
+    // A new listening session restarts the auto-pair arc from the top: round 1
+    // is theremin/sparse/straight and rounds 2-4 are a fresh shuffle of the
+    // other three pairs. Coming back after a break sounds like a first visit.
+    resetLeadOpening();
+    applyLeadOpeningVoice();
+
     droneCurrentBar = 0;
     droneBeatCount = 0;
     droneOctaveStartBars = {};
@@ -4487,6 +4550,10 @@
       saveLeadSettings();
       if (enabled) {
         leadFormState = 'intro'; leadFormBar = 0; leadPhrase = null; leadTune = null; leadNoteSpans = [];
+        // If auto-pair is on and the scripted opening is still armed (e.g. the
+        // lead was off when the session started), place round 1 now so the
+        // first thing heard is theremin/sparse/straight.
+        applyLeadOpeningVoice();
         await buildLeadChain();
       } else {
         disposeLeadChain();
@@ -4526,14 +4593,19 @@
       const on = !!enabled;
       settings.leadAutoPair = on;
       saveLeadSettings();
-      // Reset the progression so the arc (theremin straight -> 4 rounds ->
-      // effects unlock) restarts cleanly. Turning it off returns the lead to a
-      // plain (straight) voice so it isn't stuck with an effect.
-      leadRoundCount = 0;
+      // Reset the progression so the arc (scripted 4-round opening -> effects
+      // unlock) restarts cleanly, with a freshly shuffled rounds 2-4. Turning
+      // it off returns the lead to a plain (straight) voice so it isn't stuck
+      // with an effect.
+      resetLeadOpening();
       if (leadEffect !== 'straight') {
         leadEffect = 'straight';
         if (settings.leadEnabled) buildLeadChain();
       }
+      // Turning auto ON places round 1 (theremin/sparse/straight) right away,
+      // so the opening voice is the intended one rather than whatever was set.
+      if (on) applyLeadOpeningVoice();
+      else leadOpeningArmed = false;
     },
     getLeadAutoPair() { return settings.leadAutoPair; },
     getLeadEffect() { return leadEffect; },
