@@ -1441,8 +1441,10 @@
   const LEAD_ROUNDS_NOSTRAIGHT = 4;
   // Styles / engines that always take the dotted-eighth delay (user favourites:
   // flowing only sits right with the delay, and the FM bell + delay is loved).
+  // Styles that always take the dotted-eighth delay (flowing only sits right
+  // with the delay). NOTE: the FM engine used to be pinned to the delay too,
+  // but is now free to draw any effect once the opening window is over.
   const LEAD_FORCE_DELAY_STYLES = new Set(['flowing']);
-  const LEAD_FORCE_DELAY_ENGINES = new Set(['fm']);
 
   function leadDottedEighthSeconds() {
     // Dotted eighth = 0.75 beat. secondsPerBeat = 60 / bpm.
@@ -1452,17 +1454,20 @@
 
   // Pick the effect for a voice-round given the engine+style about to play.
   // Order of rules:
-  //  1) before unlock -> straight.
-  //  2) favourites (flowing style, or fm engine) -> always delay.
+  //  1) opening window (rounds 1-4) -> straight, except 'flowing' which keeps
+  //     the dotted-8th delay. fm/rhythmic is straight here.
+  //  2) 'flowing' -> always delay.
   //  3) during the no-straight window right after unlock -> non-straight mix.
   //  4) otherwise -> even mix, never immediately repeating the current effect.
+  //     fm lands here, so it can draw any effect.
   function pickLeadEffect(engine, style) {
-    const forceDelay =
-      LEAD_FORCE_DELAY_STYLES.has(style) || LEAD_FORCE_DELAY_ENGINES.has(engine);
-    // Opening window (rounds 1-4): no random effects, but the two pairs that
-    // are only right WITH the dotted-8th delay keep it - eighties/flowing and
-    // fm/rhythmic. theremin/sparse and mono/lyrical stay straight.
-    if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) return forceDelay ? 'delay' : 'straight';
+    const forceDelay = LEAD_FORCE_DELAY_STYLES.has(style);
+    // Opening window (rounds 1-4): no random effects. Only the 'flowing' style
+    // keeps the dotted-8th delay; every other opening pair - including
+    // fm/rhythmic - stays straight.
+    if (leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS) {
+      return forceDelay ? 'delay' : 'straight';
+    }
     if (forceDelay) return 'delay';
     const inNoStraightWindow =
       leadRoundCount <= LEAD_ROUNDS_BEFORE_EFFECTS + LEAD_ROUNDS_NOSTRAIGHT;
