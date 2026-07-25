@@ -445,9 +445,19 @@
     const coord = state.get('coordinate');
     if (!coord || coord.lat === null) return;
     
-    // Get music code for this coordinate
+    // Get music code for this coordinate.
+    // If a SCALE card is active (key 'scale_<id>'), encode with that card's
+    // grid and voice the lead in that scale's tuning. Otherwise fall back to
+    // the 'music' card with the legacy name-based pitch path, exactly as
+    // before — setScale(null) restores the original behaviour byte for byte.
     if (typeof global.encodeCardCoordinate === 'function') {
-      const code = global.encodeCardCoordinate('music', coord.lat, coord.lon);
+      const cs = (global.CardRenderer && global.CardRenderer.getCardState)
+        ? global.CardRenderer.getCardState() : null;
+      const activeCard = (cs && cs.active) || 'music';
+      const scaleId = activeCard.indexOf('scale_') === 0 ? activeCard.slice(6) : null;
+      const cardKey = scaleId ? activeCard : 'music';
+      if (global.AudioService.setScale) global.AudioService.setScale(scaleId);
+      const code = global.encodeCardCoordinate(cardKey, coord.lat, coord.lon);
       if (code) {
         global.AudioService.setMusicalCode(code);
       }

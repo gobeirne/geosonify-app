@@ -594,6 +594,21 @@
   // hpquad and hp64 (added via "+ Add Mode"). Marked `healpix:<key>` so the
   // renderer routes encode/decode to HealpixGrids while keeping them eligible
   // for the trademark features the `gis` flag disables.
+  // Register scale cards (the music family: modes, pentatonics, blues,
+  // maqams, non-12-TET). Mirrors registerGISCards above. Excludes cmajor —
+  // the existing 'music' card already covers it and must not be redefined.
+  function registerScaleCards() {
+    if (typeof GeoScales === 'undefined') return;
+    const defs = GeoScales.cardDefs();
+    for (const key of Object.keys(defs)) {
+      CARD_GRIDS[key] = defs[key];
+      if (cardState.iterations[key] === undefined) {
+        cardState.iterations[key] = defs[key].defaultIterations;
+      }
+      if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+  }
+
   function registerHealpixCards() {
     if (typeof HealpixGrids === 'undefined') return;
     const defs = HealpixGrids.cardDefs();
@@ -5876,6 +5891,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // yet and saved additions/ordering for them are dropped on reload).
       registerGISCards();
       registerHealpixCards();
+      registerScaleCards();
       registerChessboardCards();
 
       // Load saved state
