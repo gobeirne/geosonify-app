@@ -1521,6 +1521,36 @@
 
   // ---- Pitched ladder ------------------------------------------------------
   const LEAD_PC_ORDER = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+
+  // ---- Scale layer (additive) ----------------------------------------------
+  // The legacy music card is name-based: pitch classes are note letters and
+  // pitch is reconstructed as an integer MIDI number, which hard-codes 12-TET.
+  // Scale cards instead carry a cents table (GeoScales), so a 5-note pelog or
+  // a maqam with quarter-tones can be voiced exactly.
+  //
+  // currentScaleId === null  => LEGACY PATH, byte-identical to before. Nothing
+  // below runs. Every existing card, code and URL is unaffected.
+  let currentScaleId = null;
+
+  function scaleActive() {
+    return currentScaleId !== null &&
+           typeof GeoScales !== 'undefined' && !!GeoScales.get(currentScaleId);
+  }
+
+  // Resolve a pool symbol to absolute cents above C0 at a given octave index.
+  // Returns null if the symbol isn't in the active scale.
+  function scaleCents(symbol, octave) {
+    if (!scaleActive()) return null;
+    return GeoScales.centsFor(currentScaleId, symbol, octave);
+  }
+
+  // A rung's sounding value. Scale cards get Hz (exact, arbitrary tuning);
+  // legacy stays a note NAME so Tone.js resolves it exactly as it always has.
+  function rungVoice(rung) {
+    return (rung.cents !== undefined && rung.cents !== null)
+      ? GeoScales.centsToHz(rung.cents)
+      : null;
+  }
   function leadNormPc(pc) {
     return pc.replace('Db','C#').replace('Eb','D#').replace('Gb','F#').replace('Ab','G#').replace('Bb','A#');
   }
@@ -1540,22 +1570,44 @@
     const seen = new Set();
     const rungs = [];
     const counts = {};
+    const useScale = scaleActive();
     for (let oct = 0; oct < notePool.length; oct++) {
       for (const raw of (notePool[oct] || [])) {
-        const pc = leadNormPc(raw);
-        const semi = LEAD_PC_ORDER.indexOf(pc);
-        if (semi < 0) continue;
+        let pc, midi, cents = null;
+        if (useScale) {
+          // Scale card: the symbol IS the pitch class; cents come from the
+          // tuning table, so 'midi' becomes fractional. Everything downstream
+          // only sorts and compares it, so fractions are fine — and that is
+          // what lets a non-12-TET or quarter-tone rung exist at all.
+          cents = scaleCents(raw, oct);
+          if (cents === null) continue;
+          pc = raw;
+          midi = cents / 100;
+        } else {
+          pc = leadNormPc(raw);
+          const semi = LEAD_PC_ORDER.indexOf(pc);
+          if (semi < 0) continue;
+          midi = 12 * (oct + 1) + semi;
+        }
         counts[pc] = (counts[pc] || 0) + 1;
         const key = pc + oct;
         if (seen.has(key)) continue;
         seen.add(key);
-        rungs.push({ pc, octave: oct, midi: 12 * (oct + 1) + semi });
+        rungs.push({ pc, octave: oct, midi, cents });
       }
     }
     if (rungs.length === 0) return null;
     rungs.sort((a, b) => a.midi - b.midi);
     let centerPc = rungs[0].pc, best = -1;
     for (const pc in counts) { if (counts[pc] > best) { best = counts[pc]; centerPc = pc; } }
+    // A scale may DECLARE its tonic. That is the whole of what separates the
+    // seven diatonic modes: identical pitches, different home note. Honour it
+    // only if the place actually supplied that pitch — the tonal centre must
+    // stay a real rung, never a note the location didn't give us.
+    if (useScale) {
+      const declared = GeoScales.get(currentScaleId).tonic;
+      if (declared && rungs.some(r => r.pc === declared)) centerPc = declared;
+    }
     const midMidi = rungs[Math.floor(rungs.length / 2)].midi;
     let tonicIdx = 0, bestDist = Infinity;
     for (let i = 0; i < rungs.length; i++) {
@@ -1882,6 +1934,7 @@
     leadPhrase = line.map(n => ({
       pc: lad.rungs[n.idx].pc,
       octave: lad.rungs[n.idx].octave,
+      cents: lad.rungs[n.idx].cents,   // null on the legacy path
       startBeat: n.slot.startBeat,
       durBeats: n.slot.durBeats,
       vel: n.vel,
@@ -2046,7 +2099,12 @@
       const when = barStartTime + beatInBar * secondsPerBeat;
       const dur = Math.max(0.08, note.durBeats * secondsPerBeat - 0.03);
       const octave = note.octave + settings.transpose;
-      const fullNote = `${note.pc}${octave}`;
+      // Legacy: a note NAME, resolved by Tone exactly as it always has been.
+      // Scale card: Hz, the only way to voice a tuning that isn't 12-TET.
+      // settings.transpose still shifts by whole octaves in both cases.
+      const fullNote = (note.cents !== undefined && note.cents !== null)
+        ? GeoScales.centsToHz(note.cents + 1200 * settings.transpose)
+        : `${note.pc}${octave}`;
       try { leadSynth.triggerAttackRelease(fullNote, dur, when, note.vel); } catch (e) {}
       leadNoteSpans.push({ octave: note.octave, start: when, end: when + dur });
       emitNoteEvent(fullNote, dur, note.vel, when, { octave: note.octave, slotIndex: 0, lead: true });
@@ -4019,6 +4077,30 @@
       return true;
     },
 
+    // ===== SCALE SELECTION =====
+
+    /**
+     * Select the tuning the lead and drone are voiced in.
+     * Pass null (the default) for the legacy name-based path — that is what
+     * every existing card uses, and it is untouched by the scale layer.
+     * Pass a GeoScales id ('rast', 'degung', …) for a scale card.
+     * Returns true if the scale was applied.
+     */
+    setScale(scaleId) {
+      if (scaleId === null || scaleId === undefined) {
+        currentScaleId = null;
+        return true;
+      }
+      if (typeof GeoScales === 'undefined' || !GeoScales.get(scaleId)) {
+        console.warn('[AudioService] unknown scale:', scaleId);
+        return false;
+      }
+      currentScaleId = scaleId;
+      return true;
+    },
+
+    getScale() { return currentScaleId; },
+
     // ===== NOTE POOL =====
 
     setMusicalCode(code) {
@@ -4033,7 +4115,20 @@
         : null;
       
       const groups = code.split(',').filter(g => g.trim());
+      const useScale = scaleActive();
       notePool = groups.map(group => {
+        if (useScale) {
+          // Greedy longest-match against the scale's own alphabet. Returns
+          // null (not a partial list) on anything unlexable, so a code from
+          // the wrong scale fails loudly instead of quietly losing symbols —
+          // the legacy regex would silently drop what it didn't recognise.
+          const toks = GeoScales.tokenize(currentScaleId, group.trim());
+          if (!toks) {
+            console.warn('[AudioService] token(s) not in scale', currentScaleId, ':', group);
+            return [];
+          }
+          return toks;
+        }
         const notes = [];
         const noteRegex = /[A-Ga-g][#b]?/g;
         let match;
