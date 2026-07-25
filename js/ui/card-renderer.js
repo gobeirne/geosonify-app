@@ -2628,6 +2628,17 @@
   // Which scale (if any) a card is voiced in. Scale cards carry scaleId from
   // GeoScales.cardDefs(); the frozen 'music' card returns null and takes the
   // v1 character-walk path unchanged.
+  // The music-family card that currently owns the piano roll. Falls back to
+  // the original music card. Hardcoding [data-grid-key="music"] here is why a
+  // scale card's roll jumped back to the music card after a rebuild.
+  function findRollHostCard(scope) {
+    const root = scope || document;
+    const owner = (typeof AudioUI !== 'undefined' && AudioUI.getAudioSourceCard)
+      ? AudioUI.getAudioSourceCard() : null;
+    return (owner && root.querySelector('[data-grid-key="' + owner + '"]'))
+        || root.querySelector('[data-grid-key="music"]');
+  }
+
   function scaleIdFor(gridKey) {
     const def = CARD_GRIDS[gridKey];
     return (def && def.scaleId) || null;
@@ -3455,7 +3466,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     // Re-attach piano roll if it was active before the DOM rebuild
     // BUT skip if it's currently in a fullscreen overlay (don't yank it out)
     if (typeof PianoRoll !== 'undefined' && PianoRoll.isVisible && !document.getElementById('fs-overlay')) {
-      const musicCard = container.querySelector('[data-grid-key="music"]');
+      const musicCard = findRollHostCard(container);
       if (musicCard) {
         const notation = musicCard.querySelector('.music-notation');
         const pianoroll = musicCard.querySelector('.music-pianoroll');
@@ -3528,7 +3539,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       clearInterval(statusInterval);
       window.removeEventListener('geosonify:coordUpdate', onCoordUpdate);
       // Restore piano roll to the card container
-      const musicCard = document.querySelector('[data-grid-key="music"]');
+      const musicCard = findRollHostCard();
       if (musicCard) {
         const cardPianoroll = musicCard.querySelector('.music-pianoroll');
         if (cardPianoroll) {

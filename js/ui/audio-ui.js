@@ -344,6 +344,12 @@
 
   // ============== SPEAKER BUTTON ==============
 
+  // Which card is currently driving the audio. Set by whichever speaker button
+  // the user pressed, so tapping the Dorian card's speaker plays Dorian even if
+  // some other card happens to be the active one. null = fall back to the
+  // active card, which is the original single-card behaviour.
+  let audioSourceCard = null;
+
   function createSpeakerButton(gridKey) {
     injectStyles();
     
@@ -356,14 +362,14 @@
     btn.onclick = async (e) => {
       e.stopPropagation();
       e.preventDefault();
-      await togglePlayback(btn);
+      await togglePlayback(btn, gridKey);
     };
     
     speakerButtons.set(gridKey, btn);
     return btn;
   }
 
-  async function togglePlayback(btn) {
+  async function togglePlayback(btn, gridKey) {
     if (!global.AudioService) {
       console.warn('[AudioUI] AudioService not available');
       return;
@@ -372,17 +378,30 @@
     const AudioService = global.AudioService;
     
     if (AudioService.isPlaying) {
+      // Pressing a DIFFERENT card's speaker while playing hands the audio to
+      // that card rather than stopping. Stopping was the old behaviour and it
+      // made switching cards take two taps, the first of which looked broken.
+      if (gridKey && audioSourceCard && gridKey !== audioSourceCard) {
+        audioSourceCard = gridKey;
+        updateAllButtons(true);
+        updateNotesFromCurrentLocation();
+        switchMusicCardView('roll', gridKey);
+        return;
+      }
       AudioService.stop();
+      const stopped = audioSourceCard;
+      audioSourceCard = null;
       updateAllButtons(false);
       // Auto-switch back to VexFlow notation when stopping
-      switchMusicCardView('staff');
+      switchMusicCardView('staff', stopped);
     } else {
       try {
+        if (gridKey) audioSourceCard = gridKey;
         await AudioService.play();
         updateAllButtons(true);
         updateNotesFromCurrentLocation();
         // Auto-switch to piano roll when starting playback
-        switchMusicCardView('roll');
+        switchMusicCardView('roll', audioSourceCard);
       } catch (err) {
         console.error('[AudioUI] Error starting audio:', err);
       }
@@ -393,10 +412,29 @@
    * Switch the music card between VexFlow staff and piano roll views
    * @param {'staff'|'roll'} view - Which view to show
    */
-  function switchMusicCardView(view) {
-    // Find the music card in the DOM
-    const card = document.querySelector('[data-grid-key="music"]');
+  // Container the singleton PianoRoll is currently bound to, so we can move it
+  // between cards instead of always re-showing it on the original music card.
+  let rollContainer = null;
+
+  function switchMusicCardView(view, gridKey) {
+    // Target the card DRIVING THE AUDIO, not always the original music card.
+    // This used to be hardcoded to [data-grid-key="music"], which is why
+    // starting a scale card lit up the piano roll on the music card instead.
+    const key = gridKey || audioSourceCard || 'music';
+    const card = document.querySelector('[data-grid-key="' + key + '"]')
+              || document.querySelector('[data-grid-key="music"]');
     if (!card) return;
+
+    // Any OTHER music-family card showing a roll goes back to its staff.
+    document.querySelectorAll('[data-grid-key] .music-pianoroll').forEach(pr => {
+      const owner = pr.closest('[data-grid-key]');
+      if (!owner || owner === card) return;
+      pr.style.display = 'none';
+      const nt = owner.querySelector('.music-notation');
+      if (nt) nt.style.display = '';
+      const tg = owner.querySelector('.piano-roll-toggle');
+      if (tg) { tg.innerHTML = '\u25a6'; tg.classList.remove('active'); }
+    });
     
     const notation = card.querySelector('.music-notation');
     const pianoroll = card.querySelector('.music-pianoroll');
@@ -406,8 +444,10 @@
     if (view === 'roll' && typeof PianoRoll !== 'undefined') {
       notation.style.display = 'none';
       pianoroll.style.display = 'block';
-      if (!PianoRoll.isVisible) {
+      if (!PianoRoll.isVisible || rollContainer !== pianoroll) {
+        if (PianoRoll.isVisible) PianoRoll.hide();
         PianoRoll.init({ container: pianoroll, audioService: global.AudioService });
+        rollContainer = pianoroll;
       }
       PianoRoll.show();
       if (toggle) {
@@ -422,7 +462,7 @@
       // Re-render the VexFlow notation with current code
       if (typeof VexFlowLib !== 'undefined' && typeof renderMusicNotation === 'function') {
         const rawEl = card.querySelector('.music-raw');
-        if (rawEl) renderMusicNotation(rawEl.textContent + ',', notation);
+        if (rawEl) renderMusicNotation(rawEl.textContent + ',', notation, key);
       }
       if (toggle) {
         toggle.innerHTML = '▦';
@@ -433,9 +473,12 @@
   }
 
   function updateAllButtons(playing) {
-    for (const btn of speakerButtons.values()) {
-      btn.innerHTML = playing ? '🔊' : '🔇';
-      btn.classList.toggle('playing', playing);
+    // Only the card actually driving the audio shows as playing. Lighting up
+    // every speaker made it look like the original music card had started.
+    for (const [key, btn] of speakerButtons.entries()) {
+      const on = playing && (!audioSourceCard || key === audioSourceCard);
+      btn.innerHTML = on ? '🔊' : '🔇';
+      btn.classList.toggle('playing', on);
     }
   }
 
@@ -453,7 +496,7 @@
     if (typeof global.encodeCardCoordinate === 'function') {
       const cs = (global.CardRenderer && global.CardRenderer.getCardState)
         ? global.CardRenderer.getCardState() : null;
-      const activeCard = (cs && cs.active) || 'music';
+      const activeCard = audioSourceCard || (cs && cs.active) || 'music';
       const scaleId = activeCard.indexOf('scale_') === 0 ? activeCard.slice(6) : null;
       const cardKey = scaleId ? activeCard : 'music';
       if (global.AudioService.setScale) global.AudioService.setScale(scaleId);
@@ -2956,7 +2999,9 @@
      * @param {string} gridKey - Grid key
      */
     attachToCard(cardElement, gridKey) {
-      if (gridKey !== 'music') return;
+      const def = (typeof CARD_GRIDS !== 'undefined') ? CARD_GRIDS[gridKey] : null;
+      const isMusicFamily = gridKey === 'music' || (def && def.display === 'music');
+      if (!isMusicFamily) return;
       
       const header = cardElement.querySelector('.card-header, .card-title, [class*="header"]');
       if (header) {
@@ -2979,6 +3024,11 @@
     toggleControlsPanel(panel, visible) {
       panel.classList.toggle('visible', visible);
     },
+
+    /**
+     * Which card is currently driving the audio (null if none).
+     */
+    getAudioSourceCard() { return audioSourceCard; },
 
     /**
      * Update notes display from current location
