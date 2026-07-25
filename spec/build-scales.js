@@ -236,11 +236,16 @@ function scoreGrid(grid, sym, pcCents) {
 }
 
 // ---- spelling --------------------------------------------------------------
-const SHARP = ['C','C..','D','D..','E','F','F..','G','G..','A','A..','B'];
-const FLAT  = ['C','D__','D','E__','E','F','G__','G','A__','A','B__','B'];
-const ACC = { '': null, '_': 'd', '__': 'b', '.': '+', '..': '#' };
+// Modifiers are single lowercase chars: short, URL-unreserved, and they read
+// the way musicians write ASCII ('Eb', 'Fs'). Note letters stay uppercase so
+// greedy longest-match can never confuse 'Eb' with 'E'+'B'.
+//   b = flat (-100)   s = sharp (+100)
+//   d = half-flat (-50, VexFlow's own code)   p = half-sharp (+50, VexFlow '+')
+const SHARP = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
+const FLAT  = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const ACC = { '': null, 'd': 'd', 'b': 'b', 'p': '+', 's': '#' };
 function renderOf(sym) {
-  const m = /^([A-G])(_{1,2}|\.{1,2})?$/.exec(sym);
+  const m = /^([A-G])([bsdp])?$/.exec(sym);
   if (!m) return null;
   return [m[1].toLowerCase(), ACC[m[2] || '']];
 }
@@ -295,15 +300,15 @@ T.push(
 // Non-12-TET / quarter-tone: the reason the cents layer exists at all.
 T.push(
   { id:'rast', name:'Maqam Rast', param:'mrast', tonicPc:0, tet12:false, tonic:'C',
-    symbols:['C','D','E_','F','G','A','B_'], cents:[0,200,350,500,700,900,1050] },
+    symbols:['C','D','Ed','F','G','A','Bd'], cents:[0,200,350,500,700,900,1050] },
   { id:'bayati', name:'Maqam Bayati', param:'mbayati', tonicPc:2, tet12:false, tonic:'D',
-    symbols:['D','E_','F','G','A','B__','C'], cents:[0,150,300,500,700,800,1000] },
+    symbols:['D','Ed','F','G','A','Bb','C'], cents:[0,150,300,500,700,800,1000] },
   { id:'saba', name:'Maqam Saba', param:'msaba', tonicPc:2, tet12:false, tonic:'D',
-    symbols:['D','E_','F','G__','A','B__','C'], cents:[0,150,300,400,700,800,1000] },
+    symbols:['D','Ed','F','Gb','A','Bb','C'], cents:[0,150,300,400,700,800,1000] },
   { id:'hijaz', name:'Maqam Hijaz', param:'mhijaz', tonicPc:2, tet12:true, tonic:'D',
-    symbols:['D','E__','F..','G','A','B__','C'], cents:[0,100,400,500,700,800,1000] },
+    symbols:['D','Eb','Fs','G','A','Bb','C'], cents:[0,100,400,500,700,800,1000] },
   { id:'miyako', name:'Miyako Bushi', param:'mmiyako', tonicPc:2, tet12:true, tonic:'D',
-    symbols:['D','E__','G','A','B__'], cents:[0,100,500,700,800] },
+    symbols:['D','Eb','G','A','Bb'], cents:[0,100,500,700,800] },
   { id:'degung', name:'Degung (Sundanese pelog)', param:'mdegung', tonicPc:2, tet12:false,
     tonic:'1', symbols:['1','2','3','4','5'], cents:[0,115,345,685,800],
     render:[['d',null],['e','b'],['f',null],['a',null],['b','b']] },
