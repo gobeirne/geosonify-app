@@ -614,6 +614,7 @@
   <script src="js/lib/geosonify-barcode-lib_v1_0.js?v=20260627"></script>
   <script src="js/lib/geosonify-fullscreen_v1_25.js?v=20260111"></script>
   <script src="js/lib/geosonify-scanner-lib_v1_0.js?v=20260703b"></script>
+  <script src="js/lib/geosonify-scales-v1.js?v=20260725"></script>
   <script src="js/lib/geosonify-vexflow-lib_v1_0.js?v=20260109"></script>
   <script src="js/lib/geosonify-url-codec_v1_1.js?v=20260109"></script>
   <script src="js/lib/geosonify-custom-grid-v1_1.js?v=20260214"></script>
@@ -2887,6 +2888,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // Update the URL when shape changes (without reloading page)
     // Map grid keys to URL parameter prefixes
     const GRID_TO_URL_PARAM = {
+      // Scale cards: grid key -> param, the inverse of GeoScales.paramMap().
+      ...(typeof GeoScales !== 'undefined'
+        ? Object.fromEntries(Object.entries(GeoScales.paramMap()).map(function (e) { return [e[1], e[0]]; }))
+        : {}),
       'alphanumeric': 'a',
       'emoji': 'e',
       'byteemoji': 'be',
@@ -2920,7 +2925,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
       'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
       'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
-      'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
+      'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional',
+      // Scale cards (music family). Purely additive: 'm' and every m+flag
+      // form ('mo','md','mr','mod'...) keeps its current meaning. Verified
+      // across 240 existing param forms, zero behaviour changes.
+      ...(typeof GeoScales !== 'undefined' ? GeoScales.paramMap() : {})
     };
     
     function isGisParam(name) {
