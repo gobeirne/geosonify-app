@@ -2625,7 +2625,15 @@
     }
   }
   
-  function renderMusicNotation(code, container) {
+  // Which scale (if any) a card is voiced in. Scale cards carry scaleId from
+  // GeoScales.cardDefs(); the frozen 'music' card returns null and takes the
+  // v1 character-walk path unchanged.
+  function scaleIdFor(gridKey) {
+    const def = CARD_GRIDS[gridKey];
+    return (def && def.scaleId) || null;
+  }
+
+  function renderMusicNotation(code, container, gridKey) {
     if (!container) return;
     container.innerHTML = '';
     const whiteBox = document.createElement('div');
@@ -2633,7 +2641,7 @@
     container.appendChild(whiteBox);
     
     if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
-      const notes = VexFlowLib.parseMusicalCode(code);
+      const notes = VexFlowLib.parseMusicalCode(code, 0, scaleIdFor(gridKey));
       if (notes.length === 0) {
         whiteBox.innerHTML = '<div style="color:#888;font-size:11px;padding:20px;">No notes</div>';
         return;
@@ -2709,7 +2717,7 @@
           // Only re-render VexFlow notation if piano roll isn't active
           // (piano roll updates itself via AudioService event bus)
           if (typeof PianoRoll === 'undefined' || !PianoRoll.isVisible) {
-            renderMusicNotation(code, card.querySelector('.music-notation'));
+            renderMusicNotation(code, card.querySelector('.music-notation'), gridKey);
           }
         }
       } else if (gridDef.display === 'chroma') {
@@ -3251,11 +3259,13 @@
         }
       }
       
-      // Music card speaker and settings
-      if (gridKey === 'music' && typeof AudioUI !== 'undefined') {
+      // Music-family speaker and settings. Gated on display, not on the
+      // literal 'music' key, so every scale card (modes, maqams, pelog...)
+      // gets the same speaker / sound-design / piano-roll / waypoint controls.
+      if (gridDef?.display === 'music' && typeof AudioUI !== 'undefined') {
         const titleEl = card.querySelector('.card-title');
         if (titleEl) {
-          const speakerBtn = AudioUI.createSpeakerButton('music');
+          const speakerBtn = AudioUI.createSpeakerButton(gridKey);
           speakerBtn.style.marginLeft = '8px';
           titleEl.appendChild(speakerBtn);
           
@@ -3368,7 +3378,7 @@
       if (gridDef.display === 'chroma') {
         renderChromaCoord(code, card.querySelector('.chroma-container'), chromaVariantFor(gridKey));
       } else if (gridDef.display === 'music') {
-        renderMusicNotation(code, card.querySelector('.music-notation'));
+        renderMusicNotation(code, card.querySelector('.music-notation'), gridKey);
       } else if (gridDef.display === 'qrhex') {
         renderBarcodeQR(code, card.querySelector('.barcode-container'), 'qrhex');
       } else if (gridDef.display === 'qrbin') {
@@ -3473,7 +3483,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
 
   // ============== FULLSCREEN PIANO ROLL ==============
 
-  function showPianoRollFullscreen(code) {
+  function showPianoRollFullscreen(code, gridKey) {
     const overlay = document.createElement('div');
     overlay.id = 'fs-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:#0a0f0f;color:#fff;z-index:2000;display:flex;flex-direction:column;touch-action:none;padding-top:calc(env(safe-area-inset-top, 20px) + 12px);padding-bottom:env(safe-area-inset-bottom, 0px);';
@@ -3568,7 +3578,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
 
     // Update footer code on coordinate change
     function onCoordUpdate(e) {
-      if (e.detail && e.detail.gridKey === 'music' && e.detail.code) {
+      if (e.detail && e.detail.gridKey === (gridKey || 'music') && e.detail.code) {
         footer.textContent = e.detail.code.replace(/,\s*$/, '');
       }
     }
@@ -3581,8 +3591,8 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     const gridDef = CARD_GRIDS[gridKey];
     
     // If piano roll is active for music card, show fullscreen piano roll instead
-    if (gridKey === 'music' && typeof PianoRoll !== 'undefined' && PianoRoll.isVisible) {
-      showPianoRollFullscreen(code);
+    if (gridDef?.display === 'music' && typeof PianoRoll !== 'undefined' && PianoRoll.isVisible) {
+      showPianoRollFullscreen(code, gridKey);
       return;
     }
     
@@ -3648,17 +3658,12 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       } else if (gridDef?.display === 'music') {
         codeEl.innerHTML = '';
         if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
-          const notes = VexFlowLib.parseMusicalCode(displayCode);
+          const notes = VexFlowLib.parseMusicalCode(displayCode, 0, scaleIdFor(gridKey));
           if (notes.length > 0) {
-            let minOctave = 10, maxOctave = 0;
-            for (const note of notes) {
-              const match = note.match(/[A-Ga-g](\d+)/);
-              if (match) {
-                const oct = parseInt(match[1]);
-                if (oct < minOctave) minOctave = oct;
-                if (oct > maxOctave) maxOctave = oct;
-              }
-            }
+            // octaveRange() understands accidentals; the old inline regex
+            // silently skipped any note carrying one.
+            const _r = VexFlowLib.octaveRange(notes);
+            const minOctave = _r.min, maxOctave = _r.max;
             const baseHeight = 340;
             const extraTopSpace = Math.max(0, maxOctave - 8) * 40;
             const extraBottomSpace = Math.max(0, 1 - minOctave) * 40;
@@ -3742,17 +3747,12 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       
       setTimeout(() => {
         if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
-          const notes = VexFlowLib.parseMusicalCode(displayCode);
+          const notes = VexFlowLib.parseMusicalCode(displayCode, 0, scaleIdFor(gridKey));
           if (notes.length > 0) {
-            let minOctave = 10, maxOctave = 0;
-            for (const note of notes) {
-              const match = note.match(/[A-Ga-g](\d+)/);
-              if (match) {
-                const oct = parseInt(match[1]);
-                if (oct < minOctave) minOctave = oct;
-                if (oct > maxOctave) maxOctave = oct;
-              }
-            }
+            // octaveRange() understands accidentals; the old inline regex
+            // silently skipped any note carrying one.
+            const _r = VexFlowLib.octaveRange(notes);
+            const minOctave = _r.min, maxOctave = _r.max;
             const baseHeight = 340;
             const extraTopSpace = Math.max(0, maxOctave - 8) * 40;
             const extraBottomSpace = Math.max(0, 1 - minOctave) * 40;
