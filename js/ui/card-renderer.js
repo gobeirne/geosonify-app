@@ -4402,6 +4402,13 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       bip39spanish: 'bipes', bip39french: 'bipfr', bip39italian: 'bipit',
       bip39portuguese: 'bippt', bip39czech: 'bipcs', bip39japanese: 'bipja',
       bip39korean: 'bipko', bip39chinesesimplified: 'bipzhs', bip39chinesetraditional: 'bipzht',
+      // Scale cards. This map is SEPARATE from index.html's GRID_TO_URL_PARAM
+      // and drives the per-card share button; without these entries a scale
+      // card fell through to the raw 'r' fallback below and produced a link
+      // that could not be decoded.
+      ...(typeof GeoScales !== 'undefined'
+        ? Object.fromEntries(Object.entries(GeoScales.paramMap()).map(function (e) { return [e[1], e[0]]; }))
+        : {}),
       qrhex: 'h', datamatrix: 'h'  // barcode hex cards use hexbyte param
     };
     // Chess AND Chroma cards are a PRESENTATION of a sibling's code (chessOf /
