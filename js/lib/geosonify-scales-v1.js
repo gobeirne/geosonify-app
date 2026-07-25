@@ -69,162 +69,162 @@
     dorian: {
     id: 'dorian', name: "Dorian", param: 'mdorian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','F','G','A','B__'],
+    symbols: ['C','D','Eb','F','G','A','Bb'],
     cents: [0, 200, 300, 500, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a',null], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE__,','CF,','CG,','CA,','CB__,'],
-      ['CDB__,','DD,','DE__,','DF,','DG,','DA,','DB__,'],
-      ['CE__G,','DE__G,','E__E__,','E__F,','E__G,','E__A,','E__B__,'],
-      ['CFG,','DFG,','E__FG,','FF,','FG,','FA,','FB__,'],
-      ['CDG,','DGB__,','E__GB__,','FGB__,','GG,','GA,','GB__,'],
-      ['CDA,','DFA,','E__FA,','CFA,','CGA,','AA,','AB__,'],
-      ['CE__B__,','DFB__,','E__FB__,','CFB__,','CGB__,','CAB__,','B__B__,']
+      ['CC,','CD,','CEb,','CF,','CG,','CA,','CBb,'],
+      ['CDBb,','DD,','DEb,','DF,','DG,','DA,','DBb,'],
+      ['CEbG,','DEbG,','EbEb,','EbF,','EbG,','EbA,','EbBb,'],
+      ['CFG,','DFG,','EbFG,','FF,','FG,','FA,','FBb,'],
+      ['CDG,','DGBb,','EbGBb,','FGBb,','GG,','GA,','GBb,'],
+      ['CDA,','DFA,','EbFA,','CFA,','CGA,','AA,','ABb,'],
+      ['CEbBb,','DFBb,','EbFBb,','CFBb,','CGBb,','CABb,','BbBb,']
     ]
   },
 
     phrygian: {
     id: 'phrygian', name: "Phrygian", param: 'mphrygian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E__','F','G','A__','B__'],
+    symbols: ['C','Db','Eb','F','G','Ab','Bb'],
     cents: [0, 100, 300, 500, 700, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE__,','CF,','CG,','CA__,','CB__,'],
-      ['CD__E__,','D__D__,','D__E__,','D__F,','D__G,','D__A__,','D__B__,'],
-      ['CE__G,','D__E__F,','E__E__,','E__F,','E__G,','E__A__,','E__B__,'],
-      ['CE__F,','D__FA__,','E__FA__,','FF,','FG,','FA__,','FB__,'],
-      ['CFG,','D__E__G,','E__GB__,','FGB__,','GG,','GA__,','GB__,'],
-      ['CD__A__,','D__E__A__,','CE__A__,','CFA__,','CGA__,','A__A__,','A__B__,'],
-      ['CD__B__,','D__E__B__,','CE__B__,','CFB__,','CGB__,','CA__B__,','B__B__,']
+      ['CC,','CDb,','CEb,','CF,','CG,','CAb,','CBb,'],
+      ['CDbEb,','DbDb,','DbEb,','DbF,','DbG,','DbAb,','DbBb,'],
+      ['CEbG,','DbEbF,','EbEb,','EbF,','EbG,','EbAb,','EbBb,'],
+      ['CEbF,','DbFAb,','EbFAb,','FF,','FG,','FAb,','FBb,'],
+      ['CFG,','DbEbG,','EbGBb,','FGBb,','GG,','GAb,','GBb,'],
+      ['CDbAb,','DbEbAb,','CEbAb,','CFAb,','CGAb,','AbAb,','AbBb,'],
+      ['CDbBb,','DbEbBb,','CEbBb,','CFBb,','CGBb,','CAbBb,','BbBb,']
     ]
   },
 
     lydian: {
     id: 'lydian', name: "Lydian", param: 'mlydian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F..','G','A','B'],
+    symbols: ['C','D','E','Fs','G','A','B'],
     cents: [0, 200, 400, 600, 700, 900, 1100],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g',null], ['a',null], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE,','CF..,','CG,','CA,','CB,'],
-      ['CDE,','DD,','DE,','DF..,','DG,','DA,','DB,'],
-      ['CEG,','DEG,','EE,','EF..,','EG,','EA,','EB,'],
-      ['CF..A,','CDF..,','DEF..,','F..F..,','F..G,','F..A,','F..B,'],
-      ['CGA,','CDG,','EGB,','DF..G,','GG,','GA,','GB,'],
-      ['CDA,','DEA,','CEA,','DF..A,','DGA,','AA,','AB,'],
-      ['CDB,','DEB,','EF..B,','DF..B,','DGB,','DAB,','BB,']
+      ['CC,','CD,','CE,','CFs,','CG,','CA,','CB,'],
+      ['CDE,','DD,','DE,','DFs,','DG,','DA,','DB,'],
+      ['CEG,','DEG,','EE,','EFs,','EG,','EA,','EB,'],
+      ['CFsA,','CDFs,','DEFs,','FsFs,','FsG,','FsA,','FsB,'],
+      ['CGA,','CDG,','EGB,','DFsG,','GG,','GA,','GB,'],
+      ['CDA,','DEA,','CEA,','DFsA,','DGA,','AA,','AB,'],
+      ['CDB,','DEB,','EFsB,','DFsB,','DGB,','DAB,','BB,']
     ]
   },
 
     mixolydian: {
     id: 'mixolydian', name: "Mixolydian", param: 'mmixolydian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F','G','A','B__'],
+    symbols: ['C','D','E','F','G','A','Bb'],
     cents: [0, 200, 400, 500, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f',null], ['g',null], ['a',null], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE,','CF,','CG,','CA,','CB__,'],
-      ['CDE,','DD,','DE,','DF,','DG,','DA,','DB__,'],
-      ['CEG,','DEA,','EE,','EF,','EG,','EA,','EB__,'],
-      ['CEF,','CDF,','DEF,','FF,','FG,','FA,','FB__,'],
-      ['CFG,','CDG,','DEG,','DFG,','GG,','GA,','GB__,'],
-      ['CDA,','DFA,','CEA,','CFA,','CGA,','AA,','AB__,'],
-      ['CDB__,','DFB__,','CEB__,','CFB__,','CGB__,','CAB__,','B__B__,']
+      ['CC,','CD,','CE,','CF,','CG,','CA,','CBb,'],
+      ['CDE,','DD,','DE,','DF,','DG,','DA,','DBb,'],
+      ['CEG,','DEA,','EE,','EF,','EG,','EA,','EBb,'],
+      ['CEF,','CDF,','DEF,','FF,','FG,','FA,','FBb,'],
+      ['CFG,','CDG,','DEG,','DFG,','GG,','GA,','GBb,'],
+      ['CDA,','DFA,','CEA,','CFA,','CGA,','AA,','ABb,'],
+      ['CDBb,','DFBb,','CEBb,','CFBb,','CGBb,','CABb,','BbBb,']
     ]
   },
 
     aeolian: {
     id: 'aeolian', name: "Aeolian (natural minor)", param: 'maeolian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','F','G','A__','B__'],
+    symbols: ['C','D','Eb','F','G','Ab','Bb'],
     cents: [0, 200, 300, 500, 700, 800, 1000],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE__,','CF,','CG,','CA__,','CB__,'],
-      ['CDG,','DD,','DE__,','DF,','DG,','DA__,','DB__,'],
-      ['CE__G,','DE__G,','E__E__,','E__F,','E__G,','E__A__,','E__B__,'],
-      ['CFA__,','DFG,','E__FG,','FF,','FG,','FA__,','FB__,'],
-      ['CFG,','DGB__,','E__GB__,','FGB__,','GG,','GA__,','GB__,'],
-      ['CE__A__,','DFA__,','E__A__B__,','FA__B__,','GA__B__,','A__A__,','A__B__,'],
-      ['CDB__,','DFB__,','E__FB__,','CFB__,','CGB__,','CA__B__,','B__B__,']
+      ['CC,','CD,','CEb,','CF,','CG,','CAb,','CBb,'],
+      ['CDG,','DD,','DEb,','DF,','DG,','DAb,','DBb,'],
+      ['CEbG,','DEbG,','EbEb,','EbF,','EbG,','EbAb,','EbBb,'],
+      ['CFAb,','DFG,','EbFG,','FF,','FG,','FAb,','FBb,'],
+      ['CFG,','DGBb,','EbGBb,','FGBb,','GG,','GAb,','GBb,'],
+      ['CEbAb,','DFAb,','EbAbBb,','FAbBb,','GAbBb,','AbAb,','AbBb,'],
+      ['CDBb,','DFBb,','EbFBb,','CFBb,','CGBb,','CAbBb,','BbBb,']
     ]
   },
 
     locrian: {
     id: 'locrian', name: "Locrian", param: 'mlocrian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E__','F','G__','A__','B__'],
+    symbols: ['C','Db','Eb','F','Gb','Ab','Bb'],
     cents: [0, 100, 300, 500, 600, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g','b'], ['a','b'], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE__,','CF,','CG__,','CA__,','CB__,'],
-      ['CD__E__,','D__D__,','D__E__,','D__F,','D__G__,','D__A__,','D__B__,'],
-      ['CE__G__,','D__E__F,','E__E__,','E__F,','E__G__,','E__A__,','E__B__,'],
-      ['CFB__,','CD__F,','CE__F,','FF,','FG__,','FA__,','FB__,'],
-      ['CG__B__,','CD__G__,','D__E__G__,','D__FG__,','G__G__,','G__A__,','G__B__,'],
-      ['CFA__,','D__E__A__,','CE__A__,','D__FA__,','D__G__A__,','A__A__,','A__B__,'],
-      ['CA__B__,','D__E__B__,','CE__B__,','D__FB__,','D__G__B__,','D__A__B__,','B__B__,']
+      ['CC,','CDb,','CEb,','CF,','CGb,','CAb,','CBb,'],
+      ['CDbEb,','DbDb,','DbEb,','DbF,','DbGb,','DbAb,','DbBb,'],
+      ['CEbGb,','DbEbF,','EbEb,','EbF,','EbGb,','EbAb,','EbBb,'],
+      ['CFBb,','CDbF,','CEbF,','FF,','FGb,','FAb,','FBb,'],
+      ['CGbBb,','CDbGb,','DbEbGb,','DbFGb,','GbGb,','GbAb,','GbBb,'],
+      ['CFAb,','DbEbAb,','CEbAb,','DbFAb,','DbGbAb,','AbAb,','AbBb,'],
+      ['CAbBb,','DbEbBb,','CEbBb,','DbFBb,','DbGbBb,','DbAbBb,','BbBb,']
     ]
   },
 
     harmonicminor: {
     id: 'harmonicminor', name: "Harmonic Minor", param: 'mharmmin',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','F','G','A__','B'],
+    symbols: ['C','D','Eb','F','G','Ab','B'],
     cents: [0, 200, 300, 500, 700, 800, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE__,','CF,','CG,','CA__,','CB,'],
-      ['CDB,','DD,','DE__,','DF,','DG,','DA__,','DB,'],
-      ['CE__B,','DE__B,','E__E__,','E__F,','E__G,','E__A__,','E__B,'],
-      ['CE__F,','CDF,','E__FA__,','FF,','FG,','FA__,','FB,'],
-      ['CE__G,','CDG,','E__FG,','CFG,','GG,','GA__,','GB,'],
-      ['CGA__,','CDA__,','CE__A__,','CFA__,','GA__B,','A__A__,','A__B,'],
-      ['CA__B,','DA__B,','E__GB,','FA__B,','DGB,','E__A__B,','BB,']
+      ['CC,','CD,','CEb,','CF,','CG,','CAb,','CB,'],
+      ['CDB,','DD,','DEb,','DF,','DG,','DAb,','DB,'],
+      ['CEbB,','DEbB,','EbEb,','EbF,','EbG,','EbAb,','EbB,'],
+      ['CEbF,','CDF,','EbFAb,','FF,','FG,','FAb,','FB,'],
+      ['CEbG,','CDG,','EbFG,','CFG,','GG,','GAb,','GB,'],
+      ['CGAb,','CDAb,','CEbAb,','CFAb,','GAbB,','AbAb,','AbB,'],
+      ['CAbB,','DAbB,','EbGB,','FAbB,','DGB,','EbAbB,','BB,']
     ]
   },
 
     melodicminor: {
     id: 'melodicminor', name: "Melodic Minor", param: 'mmelmin',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','F','G','A','B'],
+    symbols: ['C','D','Eb','F','G','A','B'],
     cents: [0, 200, 300, 500, 700, 900, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a',null], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE__,','CF,','CG,','CA,','CB,'],
-      ['CDB,','DD,','DE__,','DF,','DG,','DA,','DB,'],
-      ['CE__B,','DE__B,','E__E__,','E__F,','E__G,','E__A,','E__B,'],
-      ['CE__F,','CDF,','E__FG,','FF,','FG,','FA,','FB,'],
-      ['CE__G,','CDG,','DE__G,','DFG,','GG,','GA,','GB,'],
-      ['CDA,','DGA,','CE__A,','DFA,','CGA,','AA,','AB,'],
-      ['CAB,','DAB,','E__GB,','DFB,','DGB,','GAB,','BB,']
+      ['CC,','CD,','CEb,','CF,','CG,','CA,','CB,'],
+      ['CDB,','DD,','DEb,','DF,','DG,','DA,','DB,'],
+      ['CEbB,','DEbB,','EbEb,','EbF,','EbG,','EbA,','EbB,'],
+      ['CEbF,','CDF,','EbFG,','FF,','FG,','FA,','FB,'],
+      ['CEbG,','CDG,','DEbG,','DFG,','GG,','GA,','GB,'],
+      ['CDA,','DGA,','CEbA,','DFA,','CGA,','AA,','AB,'],
+      ['CAB,','DAB,','EbGB,','DFB,','DGB,','GAB,','BB,']
     ]
   },
 
     neapolitanminor: {
     id: 'neapolitanminor', name: "Neapolitan Minor", param: 'mneapmin',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E__','F','G','A__','B'],
+    symbols: ['C','Db','Eb','F','G','Ab','B'],
     cents: [0, 100, 300, 500, 700, 800, 1100],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE__,','CF,','CG,','CA__,','CB,'],
-      ['CD__E__,','D__D__,','D__E__,','D__F,','D__G,','D__A__,','D__B,'],
-      ['CE__G,','D__E__F,','E__E__,','E__F,','E__G,','E__A__,','E__B,'],
-      ['CE__F,','D__FA__,','E__FA__,','FF,','FG,','FA__,','FB,'],
-      ['CFG,','D__E__G,','E__GB,','E__FG,','GG,','GA__,','GB,'],
-      ['CD__A__,','D__E__A__,','CE__A__,','CFA__,','CGA__,','A__A__,','A__B,'],
-      ['CGB,','D__A__B,','E__A__B,','FA__B,','FGB,','CA__B,','BB,']
+      ['CC,','CDb,','CEb,','CF,','CG,','CAb,','CB,'],
+      ['CDbEb,','DbDb,','DbEb,','DbF,','DbG,','DbAb,','DbB,'],
+      ['CEbG,','DbEbF,','EbEb,','EbF,','EbG,','EbAb,','EbB,'],
+      ['CEbF,','DbFAb,','EbFAb,','FF,','FG,','FAb,','FB,'],
+      ['CFG,','DbEbG,','EbGB,','EbFG,','GG,','GAb,','GB,'],
+      ['CDbAb,','DbEbAb,','CEbAb,','CFAb,','CGAb,','AbAb,','AbB,'],
+      ['CGB,','DbAbB,','EbAbB,','FAbB,','FGB,','CAbB,','BB,']
     ]
   },
 
@@ -247,32 +247,32 @@
     minpenta: {
     id: 'minpenta', name: "Minor Pentatonic", param: 'mminpenta',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','E__','F','G','B__'],
+    symbols: ['C','Eb','F','G','Bb'],
     cents: [0, 300, 500, 700, 1000],
     render: [['c',null], ['e','b'], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
     grid: [
-      ['CC,','CE__,','CF,','CG,','CB__,'],
-      ['CE__F,','E__E__,','E__F,','E__G,','E__B__,'],
-      ['CFG,','E__FG,','FF,','FG,','FB__,'],
-      ['CE__G,','E__GB__,','FGB__,','GG,','GB__,'],
-      ['CE__B__,','E__FB__,','CFB__,','CGB__,','B__B__,']
+      ['CC,','CEb,','CF,','CG,','CBb,'],
+      ['CEbF,','EbEb,','EbF,','EbG,','EbBb,'],
+      ['CFG,','EbFG,','FF,','FG,','FBb,'],
+      ['CEbG,','EbGBb,','FGBb,','GG,','GBb,'],
+      ['CEbBb,','EbFBb,','CFBb,','CGBb,','BbBb,']
     ]
   },
 
     egyptian: {
     id: 'egyptian', name: "Egyptian (suspended)", param: 'megyptian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','F','G','B__'],
+    symbols: ['C','D','F','G','Bb'],
     cents: [0, 200, 500, 700, 1000],
     render: [['c',null], ['d',null], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
     grid: [
-      ['CC,','CD,','CF,','CG,','CB__,'],
-      ['CDF,','DD,','DF,','DG,','DB__,'],
-      ['CFG,','DFG,','FF,','FG,','FB__,'],
-      ['CDG,','DGB__,','FGB__,','GG,','GB__,'],
-      ['CDB__,','DFB__,','CFB__,','CGB__,','B__B__,']
+      ['CC,','CD,','CF,','CG,','CBb,'],
+      ['CDF,','DD,','DF,','DG,','DBb,'],
+      ['CFG,','DFG,','FF,','FG,','FBb,'],
+      ['CDG,','DGBb,','FGBb,','GG,','GBb,'],
+      ['CDBb,','DFBb,','CFBb,','CGBb,','BbBb,']
     ]
   },
 
@@ -295,373 +295,373 @@
     hirajoshi: {
     id: 'hirajoshi', name: "Hirajoshi", param: 'mhirajoshi',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','G','A__'],
+    symbols: ['C','D','Eb','G','Ab'],
     cents: [0, 200, 300, 700, 800],
     render: [['c',null], ['d',null], ['e','b'], ['g',null], ['a','b']],
     iterations: 10,
     grid: [
-      ['CC,','CD,','CE__,','CG,','CA__,'],
-      ['CDE__,','DD,','DE__,','DG,','DA__,'],
-      ['CE__G,','DE__G,','E__E__,','E__G,','E__A__,'],
-      ['CDG,','DGA__,','E__GA__,','GG,','GA__,'],
-      ['CDA__,','DE__A__,','CE__A__,','CGA__,','A__A__,']
+      ['CC,','CD,','CEb,','CG,','CAb,'],
+      ['CDEb,','DD,','DEb,','DG,','DAb,'],
+      ['CEbG,','DEbG,','EbEb,','EbG,','EbAb,'],
+      ['CDG,','DGAb,','EbGAb,','GG,','GAb,'],
+      ['CDAb,','DEbAb,','CEbAb,','CGAb,','AbAb,']
     ]
   },
 
     insen: {
     id: 'insen', name: "Insen", param: 'minsen',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','F','G','B__'],
+    symbols: ['C','Db','F','G','Bb'],
     cents: [0, 100, 500, 700, 1000],
     render: [['c',null], ['d','b'], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
     grid: [
-      ['CC,','CD__,','CF,','CG,','CB__,'],
-      ['CD__F,','D__D__,','D__F,','D__G,','D__B__,'],
-      ['CFG,','D__FG,','FF,','FG,','FB__,'],
-      ['CD__G,','D__GB__,','FGB__,','GG,','GB__,'],
-      ['CD__B__,','D__FB__,','CFB__,','CGB__,','B__B__,']
+      ['CC,','CDb,','CF,','CG,','CBb,'],
+      ['CDbF,','DbDb,','DbF,','DbG,','DbBb,'],
+      ['CFG,','DbFG,','FF,','FG,','FBb,'],
+      ['CDbG,','DbGBb,','FGBb,','GG,','GBb,'],
+      ['CDbBb,','DbFBb,','CFBb,','CGBb,','BbBb,']
     ]
   },
 
     iwato: {
     id: 'iwato', name: "Iwato", param: 'miwato',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','F','G__','B__'],
+    symbols: ['C','Db','F','Gb','Bb'],
     cents: [0, 100, 500, 600, 1000],
     render: [['c',null], ['d','b'], ['f',null], ['g','b'], ['b','b']],
     iterations: 10,
     grid: [
-      ['CC,','CD__,','CF,','CG__,','CB__,'],
-      ['CD__F,','D__D__,','D__F,','D__G__,','D__B__,'],
-      ['CFG__,','D__FG__,','FF,','FG__,','FB__,'],
-      ['CD__G__,','D__G__B__,','FG__B__,','G__G__,','G__B__,'],
-      ['CD__B__,','D__FB__,','CFB__,','CG__B__,','B__B__,']
+      ['CC,','CDb,','CF,','CGb,','CBb,'],
+      ['CDbF,','DbDb,','DbF,','DbGb,','DbBb,'],
+      ['CFGb,','DbFGb,','FF,','FGb,','FBb,'],
+      ['CDbGb,','DbGbBb,','FGbBb,','GbGb,','GbBb,'],
+      ['CDbBb,','DbFBb,','CFBb,','CGbBb,','BbBb,']
     ]
   },
 
     majblues: {
     id: 'majblues', name: "Major Blues", param: 'mmajblues',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','E','G','A'],
+    symbols: ['C','D','Eb','E','G','A'],
     cents: [0, 200, 300, 400, 700, 900],
     render: [['c',null], ['d',null], ['e','b'], ['e',null], ['g',null], ['a',null]],
     iterations: 9,
     grid: [
-      ['CC,','CD,','CE__,','CE,','CG,','CA,'],
-      ['CDG,','DD,','DE__,','DE,','DG,','DA,'],
-      ['CE__G,','DE__G,','E__E__,','E__E,','E__G,','E__A,'],
-      ['CDE,','DEG,','E__EG,','EE,','EG,','EA,'],
-      ['CEG,','DGA,','E__GA,','EGA,','GG,','GA,'],
-      ['CDA,','DEA,','CE__A,','CEA,','CGA,','AA,']
+      ['CC,','CD,','CEb,','CE,','CG,','CA,'],
+      ['CDG,','DD,','DEb,','DE,','DG,','DA,'],
+      ['CEbG,','DEbG,','EbEb,','EbE,','EbG,','EbA,'],
+      ['CDE,','DEG,','EbEG,','EE,','EG,','EA,'],
+      ['CEG,','DGA,','EbGA,','EGA,','GG,','GA,'],
+      ['CDA,','DEA,','CEbA,','CEA,','CGA,','AA,']
     ]
   },
 
     minblues: {
     id: 'minblues', name: "Minor Blues", param: 'mminblues',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','E__','F','G__','G','B__'],
+    symbols: ['C','Eb','F','Gb','G','Bb'],
     cents: [0, 300, 500, 600, 700, 1000],
     render: [['c',null], ['e','b'], ['f',null], ['g','b'], ['g',null], ['b','b']],
     iterations: 9,
     grid: [
-      ['CC,','CE__,','CF,','CG__,','CG,','CB__,'],
-      ['CE__F,','E__E__,','E__F,','E__G__,','E__G,','E__B__,'],
-      ['CFG,','E__FB__,','FF,','FG__,','FG,','FB__,'],
-      ['CFG__,','CE__G__,','FG__B__,','G__G__,','G__G,','G__B__,'],
-      ['CE__G,','E__GB__,','FGB__,','G__GB__,','GG,','GB__,'],
-      ['CE__B__,','E__G__B__,','CFB__,','CG__B__,','CGB__,','B__B__,']
+      ['CC,','CEb,','CF,','CGb,','CG,','CBb,'],
+      ['CEbF,','EbEb,','EbF,','EbGb,','EbG,','EbBb,'],
+      ['CFG,','EbFBb,','FF,','FGb,','FG,','FBb,'],
+      ['CFGb,','CEbGb,','FGbBb,','GbGb,','GbG,','GbBb,'],
+      ['CEbG,','EbGBb,','FGBb,','GbGBb,','GG,','GBb,'],
+      ['CEbBb,','EbGbBb,','CFBb,','CGbBb,','CGBb,','BbBb,']
     ]
   },
 
     wholetone: {
     id: 'wholetone', name: "Whole Tone", param: 'mwholetone',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F..','G..','A..'],
+    symbols: ['C','D','E','Fs','Gs','As'],
     cents: [0, 200, 400, 600, 800, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g','#'], ['a','#']],
     iterations: 9,
     grid: [
-      ['CC,','CD,','CE,','CF..,','CG..,','CA..,'],
-      ['CDE,','DD,','DE,','DF..,','DG..,','DA..,'],
-      ['CEG..,','DEF..,','EE,','EF..,','EG..,','EA..,'],
-      ['CF..G..,','DF..G..,','EF..G..,','F..F..,','F..G..,','F..A..,'],
-      ['CDG..,','DG..A..,','EG..A..,','F..G..A..,','G..G..,','G..A..,'],
-      ['CDA..,','DF..A..,','CEA..,','CF..A..,','CG..A..,','A..A..,']
+      ['CC,','CD,','CE,','CFs,','CGs,','CAs,'],
+      ['CDE,','DD,','DE,','DFs,','DGs,','DAs,'],
+      ['CEGs,','DEFs,','EE,','EFs,','EGs,','EAs,'],
+      ['CFsGs,','DFsGs,','EFsGs,','FsFs,','FsGs,','FsAs,'],
+      ['CDGs,','DGsAs,','EGsAs,','FsGsAs,','GsGs,','GsAs,'],
+      ['CDAs,','DFsAs,','CEAs,','CFsAs,','CGsAs,','AsAs,']
     ]
   },
 
     prometheus: {
     id: 'prometheus', name: "Prometheus", param: 'mprometheus',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F..','A','A..'],
+    symbols: ['C','D','E','Fs','A','As'],
     cents: [0, 200, 400, 600, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['a',null], ['a','#']],
     iterations: 9,
     grid: [
-      ['CC,','CD,','CE,','CF..,','CA,','CA..,'],
-      ['CDE,','DD,','DE,','DF..,','DA,','DA..,'],
-      ['CEA,','DEF..,','EE,','EF..,','EA,','EA..,'],
-      ['CEF..,','DF..A..,','EF..A,','F..F..,','F..A,','F..A..,'],
-      ['CF..A,','CDA,','DEA,','DF..A,','AA,','AA..,'],
-      ['CDA..,','DEA..,','CEA..,','CF..A..,','F..AA..,','A..A..,']
+      ['CC,','CD,','CE,','CFs,','CA,','CAs,'],
+      ['CDE,','DD,','DE,','DFs,','DA,','DAs,'],
+      ['CEA,','DEFs,','EE,','EFs,','EA,','EAs,'],
+      ['CEFs,','DFsAs,','EFsA,','FsFs,','FsA,','FsAs,'],
+      ['CFsA,','CDA,','DEA,','DFsA,','AA,','AAs,'],
+      ['CDAs,','DEAs,','CEAs,','CFsAs,','FsAAs,','AsAs,']
     ]
   },
 
     diminished: {
     id: 'diminished', name: "Diminished", param: 'mdiminish',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E__','F','G__','A__','A','B'],
+    symbols: ['C','D','Eb','F','Gb','Ab','A','B'],
     cents: [0, 200, 300, 500, 600, 800, 900, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g','b'], ['a','b'], ['a',null], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE__,','CF,','CG__,','CA__,','CA,','CB,'],
-      ['CDB,','DD,','DE__,','DF,','DG__,','DA__,','DA,','DB,'],
-      ['CE__B,','DE__B,','E__E__,','E__F,','E__G__,','E__A__,','E__A,','E__B,'],
-      ['CDF,','DFB,','CE__F,','FF,','FG__,','FA__,','FA,','FB,'],
-      ['CDG__,','DG__B,','E__G__B,','DFG__,','G__G__,','G__A__,','G__A,','G__B,'],
-      ['CDA__,','DA__B,','CE__A__,','CFA__,','CG__A__,','A__A__,','A__A,','A__B,'],
-      ['CDA,','DG__A,','CE__A,','CFA,','CG__A,','CA__A,','AA,','AB,'],
-      ['CA__B,','DAB,','E__A__B,','FA__B,','G__AB,','G__A__B,','CAB,','BB,']
+      ['CC,','CD,','CEb,','CF,','CGb,','CAb,','CA,','CB,'],
+      ['CDB,','DD,','DEb,','DF,','DGb,','DAb,','DA,','DB,'],
+      ['CEbB,','DEbB,','EbEb,','EbF,','EbGb,','EbAb,','EbA,','EbB,'],
+      ['CDF,','DFB,','CEbF,','FF,','FGb,','FAb,','FA,','FB,'],
+      ['CDGb,','DGbB,','EbGbB,','DFGb,','GbGb,','GbAb,','GbA,','GbB,'],
+      ['CDAb,','DAbB,','CEbAb,','CFAb,','CGbAb,','AbAb,','AbA,','AbB,'],
+      ['CDA,','DGbA,','CEbA,','CFA,','CGbA,','CAbA,','AA,','AB,'],
+      ['CAbB,','DAB,','EbAbB,','FAbB,','GbAB,','GbAbB,','CAB,','BB,']
     ]
   },
 
     bebopdominant: {
     id: 'bebopdominant', name: "Bebop Dominant", param: 'mbebop',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F','G','A','B__','B'],
+    symbols: ['C','D','E','F','G','A','Bb','B'],
     cents: [0, 200, 400, 500, 700, 900, 1000, 1100],
     render: [['c',null], ['d',null], ['e',null], ['f',null], ['g',null], ['a',null], ['b','b'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE,','CF,','CG,','CA,','CB__,','CB,'],
-      ['CDE,','DD,','DE,','DF,','DG,','DA,','DB__,','DB,'],
-      ['CEG,','DEA,','EE,','EF,','EG,','EA,','EB__,','EB,'],
-      ['CFA,','CDF,','DEF,','FF,','FG,','FA,','FB__,','FB,'],
-      ['CFG,','CDG,','DEG,','DFG,','GG,','GA,','GB__,','GB,'],
-      ['CGA,','CDA,','CEA,','DFA,','DGA,','AA,','AB__,','AB,'],
-      ['CDB__,','DFB__,','DEB__,','FGB__,','DGB__,','DAB__,','B__B__,','B__B,'],
-      ['CDB,','DEB,','EGB,','DFB,','DGB,','DAB,','DB__B,','BB,']
+      ['CC,','CD,','CE,','CF,','CG,','CA,','CBb,','CB,'],
+      ['CDE,','DD,','DE,','DF,','DG,','DA,','DBb,','DB,'],
+      ['CEG,','DEA,','EE,','EF,','EG,','EA,','EBb,','EB,'],
+      ['CFA,','CDF,','DEF,','FF,','FG,','FA,','FBb,','FB,'],
+      ['CFG,','CDG,','DEG,','DFG,','GG,','GA,','GBb,','GB,'],
+      ['CGA,','CDA,','CEA,','DFA,','DGA,','AA,','ABb,','AB,'],
+      ['CDBb,','DFBb,','DEBb,','FGBb,','DGBb,','DABb,','BbBb,','BbB,'],
+      ['CDB,','DEB,','EGB,','DFB,','DGB,','DAB,','DBbB,','BB,']
     ]
   },
 
     spanish: {
     id: 'spanish', name: "Spanish", param: 'mspanish',
     tet12: true, tonicPc: 7, tonic: 'G',
-    symbols: ['G','G..','A..','B','C..','D..','E'],
+    symbols: ['G','Gs','As','B','Cs','Ds','E'],
     cents: [0, 100, 300, 400, 600, 800, 900],
     render: [['g',null], ['g','#'], ['a','#'], ['b',null], ['c','#'], ['d','#'], ['e',null]],
     iterations: 8,
     grid: [
-      ['GG,','GG..,','GA..,','GB,','C..G,','D..G,','EG,'],
-      ['GG..B,','G..G..,','G..A..,','G..B,','C..G..,','D..G..,','EG..,'],
-      ['C..GA..,','G..A..B,','A..A..,','A..B,','C..A..,','D..A..,','EA..,'],
-      ['C..GB,','D..G..B,','GA..B,','BB,','C..B,','D..B,','EB,'],
-      ['C..D..G,','C..EG..,','C..G..A..,','C..G..B,','C..C..,','C..D..,','C..E,'],
-      ['D..GG..,','D..G..A..,','D..GA..,','D..GB,','C..D..G..,','D..D..,','D..E,'],
-      ['EGG..,','EG..B,','EGA..,','EGB,','C..EG,','D..EG,','EE,']
+      ['GG,','GGs,','GAs,','GB,','CsG,','DsG,','EG,'],
+      ['GGsB,','GsGs,','GsAs,','GsB,','CsGs,','DsGs,','EGs,'],
+      ['CsGAs,','GsAsB,','AsAs,','AsB,','CsAs,','DsAs,','EAs,'],
+      ['CsGB,','DsGsB,','GAsB,','BB,','CsB,','DsB,','EB,'],
+      ['CsDsG,','CsEGs,','CsGsAs,','CsGsB,','CsCs,','CsDs,','CsE,'],
+      ['DsGGs,','DsGsAs,','DsGAs,','DsGB,','CsDsGs,','DsDs,','DsE,'],
+      ['EGGs,','EGsB,','EGAs,','EGB,','CsEG,','DsEG,','EE,']
     ]
   },
 
     romani: {
     id: 'romani', name: "Romani (Hungarian minor)", param: 'mromani',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','D..','F..','G','G..','B'],
+    symbols: ['C','D','Ds','Fs','G','Gs','B'],
     cents: [0, 200, 300, 600, 700, 800, 1100],
     render: [['c',null], ['d',null], ['d','#'], ['f','#'], ['g',null], ['g','#'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CD..,','CF..,','CG,','CG..,','CB,'],
-      ['CDF..,','DD,','DD..,','DF..,','DG,','DG..,','DB,'],
-      ['CD..G,','DD..F..,','D..D..,','D..F..,','D..G,','D..G..,','D..B,'],
-      ['CD..F..,','DF..B,','D..F..B,','F..F..,','F..G,','F..G..,','F..B,'],
-      ['CGB,','CDG,','D..GB,','D..F..G,','GG,','GG..,','GB,'],
-      ['CGG..,','CDG..,','CD..G..,','D..F..G..,','D..GG..,','G..G..,','G..B,'],
-      ['CG..B,','DG..B,','CD..B,','F..G..B,','DGB,','D..G..B,','BB,']
+      ['CC,','CD,','CDs,','CFs,','CG,','CGs,','CB,'],
+      ['CDFs,','DD,','DDs,','DFs,','DG,','DGs,','DB,'],
+      ['CDsG,','DDsFs,','DsDs,','DsFs,','DsG,','DsGs,','DsB,'],
+      ['CDsFs,','DFsB,','DsFsB,','FsFs,','FsG,','FsGs,','FsB,'],
+      ['CGB,','CDG,','DsGB,','DsFsG,','GG,','GGs,','GB,'],
+      ['CGGs,','CDGs,','CDsGs,','DsFsGs,','DsGGs,','GsGs,','GsB,'],
+      ['CGsB,','DGsB,','CDsB,','FsGsB,','DGB,','DsGsB,','BB,']
     ]
   },
 
     arabian: {
     id: 'arabian', name: "Arabian (double harmonic)", param: 'marabian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E','F','G','A__','B'],
+    symbols: ['C','Db','E','F','G','Ab','B'],
     cents: [0, 100, 400, 500, 700, 800, 1100],
     render: [['c',null], ['d','b'], ['e',null], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE,','CF,','CG,','CA__,','CB,'],
-      ['CD__E,','D__D__,','D__E,','D__F,','D__G,','D__A__,','D__B,'],
-      ['CEG,','D__EF,','EE,','EF,','EG,','EA__,','EB,'],
-      ['CD__F,','D__FA__,','CEF,','FF,','FG,','FA__,','FB,'],
-      ['CFG,','D__FG,','D__EG,','FGB,','GG,','GA__,','GB,'],
-      ['CD__A__,','D__EA__,','CEA__,','CFA__,','GA__B,','A__A__,','A__B,'],
-      ['CA__B,','D__EB,','EA__B,','FA__B,','EGB,','D__A__B,','BB,']
+      ['CC,','CDb,','CE,','CF,','CG,','CAb,','CB,'],
+      ['CDbE,','DbDb,','DbE,','DbF,','DbG,','DbAb,','DbB,'],
+      ['CEG,','DbEF,','EE,','EF,','EG,','EAb,','EB,'],
+      ['CDbF,','DbFAb,','CEF,','FF,','FG,','FAb,','FB,'],
+      ['CFG,','DbFG,','DbEG,','FGB,','GG,','GAb,','GB,'],
+      ['CDbAb,','DbEAb,','CEAb,','CFAb,','GAbB,','AbAb,','AbB,'],
+      ['CAbB,','DbEB,','EAbB,','FAbB,','EGB,','DbAbB,','BB,']
     ]
   },
 
     persian: {
     id: 'persian', name: "Persian", param: 'mpersian',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E','F','G__','A__','B'],
+    symbols: ['C','Db','E','F','Gb','Ab','B'],
     cents: [0, 100, 400, 500, 600, 800, 1100],
     render: [['c',null], ['d','b'], ['e',null], ['f',null], ['g','b'], ['a','b'], ['b',null]],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE,','CF,','CG__,','CA__,','CB,'],
-      ['CD__E,','D__D__,','D__E,','D__F,','D__G__,','D__A__,','D__B,'],
-      ['CEB,','D__EB,','EE,','EF,','EG__,','EA__,','EB,'],
-      ['CEF,','D__FA__,','D__EF,','FF,','FG__,','FA__,','FB,'],
-      ['CG__A__,','CD__G__,','D__EG__,','D__FG__,','G__G__,','G__A__,','G__B,'],
-      ['CD__A__,','D__EA__,','CEA__,','CFA__,','D__G__A__,','A__A__,','A__B,'],
-      ['CA__B,','D__A__B,','EA__B,','FA__B,','D__G__B,','G__A__B,','BB,']
+      ['CC,','CDb,','CE,','CF,','CGb,','CAb,','CB,'],
+      ['CDbE,','DbDb,','DbE,','DbF,','DbGb,','DbAb,','DbB,'],
+      ['CEB,','DbEB,','EE,','EF,','EGb,','EAb,','EB,'],
+      ['CEF,','DbFAb,','DbEF,','FF,','FGb,','FAb,','FB,'],
+      ['CGbAb,','CDbGb,','DbEGb,','DbFGb,','GbGb,','GbAb,','GbB,'],
+      ['CDbAb,','DbEAb,','CEAb,','CFAb,','DbGbAb,','AbAb,','AbB,'],
+      ['CAbB,','DbAbB,','EAbB,','FAbB,','DbGbB,','GbAbB,','BB,']
     ]
   },
 
     acoustic: {
     id: 'acoustic', name: "Acoustic (Lydian dominant)", param: 'macoustic',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E','F..','G','A','A..'],
+    symbols: ['C','D','E','Fs','G','A','As'],
     cents: [0, 200, 400, 600, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g',null], ['a',null], ['a','#']],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE,','CF..,','CG,','CA,','CA..,'],
-      ['CDE,','DD,','DE,','DF..,','DG,','DA,','DA..,'],
-      ['CEG,','DEG,','EE,','EF..,','EG,','EA,','EA..,'],
-      ['CDF..,','DF..A,','EF..A,','F..F..,','F..G,','F..A,','F..A..,'],
-      ['CDG,','DGA,','EGA,','F..GA..,','GG,','GA,','GA..,'],
-      ['CDA,','DEA,','CEA,','CF..A,','CGA,','AA,','AA..,'],
-      ['CDA..,','DEA..,','CEA..,','CF..A..,','CGA..,','CAA..,','A..A..,']
+      ['CC,','CD,','CE,','CFs,','CG,','CA,','CAs,'],
+      ['CDE,','DD,','DE,','DFs,','DG,','DA,','DAs,'],
+      ['CEG,','DEG,','EE,','EFs,','EG,','EA,','EAs,'],
+      ['CDFs,','DFsA,','EFsA,','FsFs,','FsG,','FsA,','FsAs,'],
+      ['CDG,','DGA,','EGA,','FsGAs,','GG,','GA,','GAs,'],
+      ['CDA,','DEA,','CEA,','CFsA,','CGA,','AA,','AAs,'],
+      ['CDAs,','DEAs,','CEAs,','CFsAs,','CGAs,','CAAs,','AsAs,']
     ]
   },
 
     altered: {
     id: 'altered', name: "Altered", param: 'maltered',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D__','E__','E','G__','A__','B__'],
+    symbols: ['C','Db','Eb','E','Gb','Ab','Bb'],
     cents: [0, 100, 300, 400, 600, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['e',null], ['g','b'], ['a','b'], ['b','b']],
     iterations: 8,
     grid: [
-      ['CC,','CD__,','CE__,','CE,','CG__,','CA__,','CB__,'],
-      ['CD__E__,','D__D__,','D__E__,','D__E,','D__G__,','D__A__,','D__B__,'],
-      ['CE__G__,','D__E__E,','E__E__,','E__E,','E__G__,','E__A__,','E__B__,'],
-      ['CEA__,','CD__E,','CE__E,','EE,','EG__,','EA__,','EB__,'],
-      ['CG__B__,','CD__G__,','D__E__G__,','D__EG__,','G__G__,','G__A__,','G__B__,'],
-      ['CA__B__,','D__E__A__,','CE__A__,','D__EA__,','D__G__A__,','A__A__,','A__B__,'],
-      ['CD__B__,','D__E__B__,','CE__B__,','D__EB__,','D__G__B__,','D__A__B__,','B__B__,']
+      ['CC,','CDb,','CEb,','CE,','CGb,','CAb,','CBb,'],
+      ['CDbEb,','DbDb,','DbEb,','DbE,','DbGb,','DbAb,','DbBb,'],
+      ['CEbGb,','DbEbE,','EbEb,','EbE,','EbGb,','EbAb,','EbBb,'],
+      ['CEAb,','CDbE,','CEbE,','EE,','EGb,','EAb,','EBb,'],
+      ['CGbBb,','CDbGb,','DbEbGb,','DbEGb,','GbGb,','GbAb,','GbBb,'],
+      ['CAbBb,','DbEbAb,','CEbAb,','DbEAb,','DbGbAb,','AbAb,','AbBb,'],
+      ['CDbBb,','DbEbBb,','CEbBb,','DbEBb,','DbGbBb,','DbAbBb,','BbBb,']
     ]
   },
 
     chromatic: {
     id: 'chromatic', name: "Chromatic", param: 'mchromatic',
     tet12: true, tonicPc: 0, tonic: 'C',
-    symbols: ['C','C..','D','D..','E','F','F..','G','G..','A','A..','B'],
+    symbols: ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'],
     cents: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100],
     render: [['c',null], ['c','#'], ['d',null], ['d','#'], ['e',null], ['f',null], ['f','#'], ['g',null], ['g','#'], ['a',null], ['a','#'], ['b',null]],
     iterations: 7,
     grid: [
-      ['CC,','CC..,','CD,','CD..,','CE,','CF,','CF..,','CG,','CG..,','CA,','CA..,','CB,'],
-      ['CC..E,','C..C..,','C..D,','C..D..,','C..E,','C..F,','C..F..,','C..G,','C..G..,','C..A,','C..A..,','C..B,'],
-      ['CDE,','C..DF..,','DD,','DD..,','DE,','DF,','DF..,','DG,','DG..,','DA,','DA..,','DB,'],
-      ['CD..G,','C..D..F..,','DD..F..,','D..D..,','D..E,','D..F,','D..F..,','D..G,','D..G..,','D..A,','D..A..,','D..B,'],
-      ['CEF..,','C..EG..,','DEA,','CD..E,','EE,','EF,','EF..,','EG,','EG..,','EA,','EA..,','EB,'],
-      ['CDF,','C..FA..,','DFA..,','CD..F,','CEF,','FF,','FF..,','FG,','FG..,','FA,','FA..,','FB,'],
-      ['CD..F..,','C..F..A..,','DF..B,','D..F..B,','EF..B,','C..FF..,','F..F..,','F..G,','F..G..,','F..A,','F..A..,','F..B,'],
-      ['CDG,','C..GB,','DGB,','D..GB,','CEG,','CFG,','F..GB,','GG,','GG..,','GA,','GA..,','GB,'],
-      ['CG..B,','C..G..B,','DG..B,','CD..G..,','CEG..,','CFG..,','CF..G..,','CGG..,','G..G..,','G..A,','G..A..,','G..B,'],
-      ['CC..A,','C..EA,','CDA,','CD..A,','CEA,','CFA,','CF..A,','CGA,','CG..A,','AA,','AA..,','AB,'],
-      ['CC..A..,','C..D..A..,','CDA..,','CD..A..,','CEA..,','CFA..,','CF..A..,','CGA..,','C..G..A..,','DAA..,','A..A..,','A..B,'],
-      ['CDB,','C..EB,','DEB,','CD..B,','CEB,','CFB,','C..F..B,','EGB,','D..G..B,','DAB,','DA..B,','BB,']
+      ['CC,','CCs,','CD,','CDs,','CE,','CF,','CFs,','CG,','CGs,','CA,','CAs,','CB,'],
+      ['CCsE,','CsCs,','CsD,','CsDs,','CsE,','CsF,','CsFs,','CsG,','CsGs,','CsA,','CsAs,','CsB,'],
+      ['CDE,','CsDFs,','DD,','DDs,','DE,','DF,','DFs,','DG,','DGs,','DA,','DAs,','DB,'],
+      ['CDsG,','CsDsFs,','DDsFs,','DsDs,','DsE,','DsF,','DsFs,','DsG,','DsGs,','DsA,','DsAs,','DsB,'],
+      ['CEFs,','CsEGs,','DEA,','CDsE,','EE,','EF,','EFs,','EG,','EGs,','EA,','EAs,','EB,'],
+      ['CDF,','CsFAs,','DFAs,','CDsF,','CEF,','FF,','FFs,','FG,','FGs,','FA,','FAs,','FB,'],
+      ['CDsFs,','CsFsAs,','DFsB,','DsFsB,','EFsB,','CsFFs,','FsFs,','FsG,','FsGs,','FsA,','FsAs,','FsB,'],
+      ['CDG,','CsGB,','DGB,','DsGB,','CEG,','CFG,','FsGB,','GG,','GGs,','GA,','GAs,','GB,'],
+      ['CGsB,','CsGsB,','DGsB,','CDsGs,','CEGs,','CFGs,','CFsGs,','CGGs,','GsGs,','GsA,','GsAs,','GsB,'],
+      ['CCsA,','CsEA,','CDA,','CDsA,','CEA,','CFA,','CFsA,','CGA,','CGsA,','AA,','AAs,','AB,'],
+      ['CCsAs,','CsDsAs,','CDAs,','CDsAs,','CEAs,','CFAs,','CFsAs,','CGAs,','CsGsAs,','DAAs,','AsAs,','AsB,'],
+      ['CDB,','CsEB,','DEB,','CDsB,','CEB,','CFB,','CsFsB,','EGB,','DsGsB,','DAB,','DAsB,','BB,']
     ]
   },
 
     rast: {
     id: 'rast', name: "Maqam Rast", param: 'mrast',
     tet12: false, tonicPc: 0, tonic: 'C',
-    symbols: ['C','D','E_','F','G','A','B_'],
+    symbols: ['C','D','Ed','F','G','A','Bd'],
     cents: [0, 200, 350, 500, 700, 900, 1050],
     render: [['c',null], ['d',null], ['e','d'], ['f',null], ['g',null], ['a',null], ['b','d']],
     iterations: 8,
     grid: [
-      ['CC,','CD,','CE_,','CF,','CG,','CA,','CB_,'],
-      ['CDF,','DD,','DE_,','DF,','DG,','DA,','DB_,'],
-      ['CE_G,','DE_G,','E_E_,','E_F,','E_G,','E_A,','E_B_,'],
-      ['CFG,','DFG,','E_FG,','FF,','FG,','FA,','FB_,'],
-      ['CDG,','DGB_,','E_GB_,','FGB_,','GG,','GA,','GB_,'],
-      ['CDA,','DAB_,','CE_A,','CFA,','CGA,','AA,','AB_,'],
-      ['CDB_,','DE_B_,','CE_B_,','CFB_,','CGB_,','GAB_,','B_B_,']
+      ['CC,','CD,','CEd,','CF,','CG,','CA,','CBd,'],
+      ['CDF,','DD,','DEd,','DF,','DG,','DA,','DBd,'],
+      ['CEdG,','DEdG,','EdEd,','EdF,','EdG,','EdA,','EdBd,'],
+      ['CFG,','DFG,','EdFG,','FF,','FG,','FA,','FBd,'],
+      ['CDG,','DGBd,','EdGBd,','FGBd,','GG,','GA,','GBd,'],
+      ['CDA,','DABd,','CEdA,','CFA,','CGA,','AA,','ABd,'],
+      ['CDBd,','DEdBd,','CEdBd,','CFBd,','CGBd,','GABd,','BdBd,']
     ]
   },
 
     bayati: {
     id: 'bayati', name: "Maqam Bayati", param: 'mbayati',
     tet12: false, tonicPc: 2, tonic: 'D',
-    symbols: ['D','E_','F','G','A','B__','C'],
+    symbols: ['D','Ed','F','G','A','Bb','C'],
     cents: [0, 150, 300, 500, 700, 800, 1000],
     render: [['d',null], ['e','d'], ['f',null], ['g',null], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
     grid: [
-      ['DD,','DE_,','DF,','DG,','DA,','DB__,','CD,'],
-      ['DE_G,','E_E_,','E_F,','E_G,','E_A,','E_B__,','CE_,'],
-      ['DFA,','E_FG,','FF,','FG,','FA,','FB__,','CF,'],
-      ['DGB__,','CE_G,','CFG,','GG,','GA,','GB__,','CG,'],
-      ['DGA,','CE_A,','CFA,','CGA,','AA,','AB__,','CA,'],
-      ['DFB__,','CE_B__,','CFB__,','CGB__,','CAB__,','B__B__,','CB__,'],
-      ['CDE_,','CE_F,','CDF,','CDG,','CDA,','CDB__,','CC,']
+      ['DD,','DEd,','DF,','DG,','DA,','DBb,','CD,'],
+      ['DEdG,','EdEd,','EdF,','EdG,','EdA,','EdBb,','CEd,'],
+      ['DFA,','EdFG,','FF,','FG,','FA,','FBb,','CF,'],
+      ['DGBb,','CEdG,','CFG,','GG,','GA,','GBb,','CG,'],
+      ['DGA,','CEdA,','CFA,','CGA,','AA,','ABb,','CA,'],
+      ['DFBb,','CEdBb,','CFBb,','CGBb,','CABb,','BbBb,','CBb,'],
+      ['CDEd,','CEdF,','CDF,','CDG,','CDA,','CDBb,','CC,']
     ]
   },
 
     saba: {
     id: 'saba', name: "Maqam Saba", param: 'msaba',
     tet12: false, tonicPc: 2, tonic: 'D',
-    symbols: ['D','E_','F','G__','A','B__','C'],
+    symbols: ['D','Ed','F','Gb','A','Bb','C'],
     cents: [0, 150, 300, 400, 700, 800, 1000],
     render: [['d',null], ['e','d'], ['f',null], ['g','b'], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
     grid: [
-      ['DD,','DE_,','DF,','DG__,','DA,','DB__,','CD,'],
-      ['DE_A,','E_E_,','E_F,','E_G__,','E_A,','E_B__,','CE_,'],
-      ['DFA,','E_FA,','FF,','FG__,','FA,','FB__,','CF,'],
-      ['DE_G__,','E_G__A,','FG__A,','G__G__,','G__A,','G__B__,','CG__,'],
-      ['DG__A,','CE_A,','CFA,','CG__A,','AA,','AB__,','CA,'],
-      ['DFB__,','CE_B__,','CFB__,','DG__B__,','DAB__,','B__B__,','CB__,'],
-      ['CDE_,','CE_F,','CDF,','CDG__,','CDA,','CDB__,','CC,']
+      ['DD,','DEd,','DF,','DGb,','DA,','DBb,','CD,'],
+      ['DEdA,','EdEd,','EdF,','EdGb,','EdA,','EdBb,','CEd,'],
+      ['DFA,','EdFA,','FF,','FGb,','FA,','FBb,','CF,'],
+      ['DEdGb,','EdGbA,','FGbA,','GbGb,','GbA,','GbBb,','CGb,'],
+      ['DGbA,','CEdA,','CFA,','CGbA,','AA,','ABb,','CA,'],
+      ['DFBb,','CEdBb,','CFBb,','DGbBb,','DABb,','BbBb,','CBb,'],
+      ['CDEd,','CEdF,','CDF,','CDGb,','CDA,','CDBb,','CC,']
     ]
   },
 
     hijaz: {
     id: 'hijaz', name: "Maqam Hijaz", param: 'mhijaz',
     tet12: true, tonicPc: 2, tonic: 'D',
-    symbols: ['D','E__','F..','G','A','B__','C'],
+    symbols: ['D','Eb','Fs','G','A','Bb','C'],
     cents: [0, 100, 400, 500, 700, 800, 1000],
     render: [['d',null], ['e','b'], ['f','#'], ['g',null], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
     grid: [
-      ['DD,','DE__,','DF..,','DG,','DA,','DB__,','CD,'],
-      ['DE__F..,','E__E__,','E__F..,','E__G,','E__A,','E__B__,','CE__,'],
-      ['DF..A,','E__F..G,','F..F..,','F..G,','F..A,','F..B__,','CF..,'],
-      ['DF..G,','E__GB__,','F..GB__,','GG,','GA,','GB__,','CG,'],
-      ['DGA,','E__GA,','E__F..A,','CGA,','AA,','AB__,','CA,'],
-      ['DE__B__,','E__F..B__,','DF..B__,','DGB__,','DAB__,','B__B__,','CB__,'],
-      ['CDF..,','CE__G,','CE__F..,','CDG,','CDA,','CDB__,','CC,']
+      ['DD,','DEb,','DFs,','DG,','DA,','DBb,','CD,'],
+      ['DEbFs,','EbEb,','EbFs,','EbG,','EbA,','EbBb,','CEb,'],
+      ['DFsA,','EbFsG,','FsFs,','FsG,','FsA,','FsBb,','CFs,'],
+      ['DFsG,','EbGBb,','FsGBb,','GG,','GA,','GBb,','CG,'],
+      ['DGA,','EbGA,','EbFsA,','CGA,','AA,','ABb,','CA,'],
+      ['DEbBb,','EbFsBb,','DFsBb,','DGBb,','DABb,','BbBb,','CBb,'],
+      ['CDFs,','CEbG,','CEbFs,','CDG,','CDA,','CDBb,','CC,']
     ]
   },
 
     miyako: {
     id: 'miyako', name: "Miyako Bushi", param: 'mmiyako',
     tet12: true, tonicPc: 2, tonic: 'D',
-    symbols: ['D','E__','G','A','B__'],
+    symbols: ['D','Eb','G','A','Bb'],
     cents: [0, 100, 500, 700, 800],
     render: [['d',null], ['e','b'], ['g',null], ['a',null], ['b','b']],
     iterations: 10,
     grid: [
-      ['DD,','DE__,','DG,','DA,','DB__,'],
-      ['DE__G,','E__E__,','E__G,','E__A,','E__B__,'],
-      ['DGA,','E__GA,','GG,','GA,','GB__,'],
-      ['DE__A,','E__AB__,','GAB__,','AA,','AB__,'],
-      ['DE__B__,','E__GB__,','DGB__,','DAB__,','B__B__,']
+      ['DD,','DEb,','DG,','DA,','DBb,'],
+      ['DEbG,','EbEb,','EbG,','EbA,','EbBb,'],
+      ['DGA,','EbGA,','GG,','GA,','GBb,'],
+      ['DEbA,','EbABb,','GABb,','AA,','ABb,'],
+      ['DEbBb,','EbGBb,','DGBb,','DABb,','BbBb,']
     ]
   },
 
