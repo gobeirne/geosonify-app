@@ -609,6 +609,18 @@
     }
   }
 
+  // Register at MODULE LOAD, not only from init(). A shared URL such as
+  // ?mhirajoshi=... is parsed during app startup, and decodeCardCode() bails
+  // with a bare `return null` when CARD_GRIDS has no entry for the card yet:
+  // no throw, no console error, just a blank map and no cards. Populating
+  // CARD_GRIDS as this file evaluates removes the ordering dependency.
+  // geosonify-scales-v1.js loads before this file, so GeoScales is already
+  // present; the guard covers the case where it is not. Idempotent — init()
+  // calls it again and it only fills gaps.
+  try { registerScaleCards(); } catch (e) {
+    console.warn('[card-renderer] scale card registration deferred:', e);
+  }
+
   function registerHealpixCards() {
     if (typeof HealpixGrids === 'undefined') return;
     const defs = HealpixGrids.cardDefs();
