@@ -1544,6 +1544,32 @@
     return GeoScales.centsFor(currentScaleId, symbol, octave);
   }
 
+  // Absolute cents -> something Tone.js can sound.
+  // Prefer a real note NAME whenever the pitch lands on an exact semitone:
+  // Tone can resolve it, the piano roll can label it, and — critically — the
+  // stop path releases notes BY NAME, so a name-triggered note can actually be
+  // released. Only genuinely microtonal pitches fall back to raw Hz.
+  function centsToSounding(cents) {
+    const midi = cents / 100;
+    if (Math.abs(midi - Math.round(midi)) < 1e-6) {
+      const m = Math.round(midi);
+      return LEAD_PC_ORDER[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
+    }
+    return GeoScales.centsToHz(cents);
+  }
+
+  // Scale symbol + octave -> sounding value. Scale symbols are NOT Tone note
+  // names: Spanish spells its notes Gs/As/Cs/Ds, and Tone needs G#/A#/C#/D#.
+  // Passing the raw symbol made triggerAttackRelease throw into a silent catch,
+  // which is why sharp-spelled scales lost their drone while flat-spelled ones
+  // worked by accident ('Eb3' happens to be valid Tone).
+  function scaleNoteFor(sym, octave) {
+    if (!scaleActive()) return `${sym}${octave}`;
+    const c = scaleCents(sym, octave);
+    if (c === null) return `${sym}${octave}`;
+    return centsToSounding(c);
+  }
+
   // A rung's sounding value. Scale cards get Hz (exact, arbitrary tuning);
   // legacy stays a note NAME so Tone.js resolves it exactly as it always has.
   function rungVoice(rung) {
@@ -2103,7 +2129,7 @@
       // Scale card: Hz, the only way to voice a tuning that isn't 12-TET.
       // settings.transpose still shifts by whole octaves in both cases.
       const fullNote = (note.cents !== undefined && note.cents !== null)
-        ? GeoScales.centsToHz(note.cents + 1200 * settings.transpose)
+        ? centsToSounding(note.cents + 1200 * settings.transpose)
         : `${note.pc}${octave}`;
       try { leadSynth.triggerAttackRelease(fullNote, dur, when, note.vel); } catch (e) {}
       leadNoteSpans.push({ octave: note.octave, start: when, end: when + dur });
@@ -2794,9 +2820,9 @@
       
       if (behavior.mode === 'single') {
         const note = octaveNotes[Math.floor(Math.random() * octaveNotes.length)];
-        notesToPlay = [`${note}${baseOctave}`];
+        notesToPlay = [scaleNoteFor(note, baseOctave)];
       } else if (behavior.mode === 'chord') {
-        notesToPlay = octaveNotes.slice(0, 3).map(n => `${n}${baseOctave}`);
+        notesToPlay = octaveNotes.slice(0, 3).map(n => scaleNoteFor(n, baseOctave));
       } else if (behavior.mode === 'arpeggio') {
         let idx = beatIndex % octaveNotes.length;
         if (accel * accelInfluence < -0.1) {
@@ -2962,7 +2988,7 @@
         if (shouldTrigger) {
           const noteName = mapSlotToNote(slot.slotIndex, octaveNotes, pattern);
           if (noteName) {
-            const fullNote = `${noteName}${baseOctave}`;
+            const fullNote = scaleNoteFor(noteName, baseOctave);
             
             // Calculate duration in seconds based on BPM
             const bpm = getCurrentBPM();
@@ -3020,7 +3046,7 @@
       // Pick ONE note from this octave (cycle based on bar)
       const noteIndex = droneCurrentBar % octaveNotes.length;
       const noteName = octaveNotes[noteIndex];
-      const fullNote = `${noteName}${baseOctave}`;
+      const fullNote = scaleNoteFor(noteName, baseOctave);
       
       targetNotes.set(fullNote, { 
         octave, 
@@ -3773,7 +3799,7 @@
         if (shouldTrigger) {
           const noteName = mapSlotToNote(slot.slotIndex, octaveNotes, pattern);
           if (noteName) {
-            const fullNote = `${noteName}${baseOctave}`;
+            const fullNote = scaleNoteFor(noteName, baseOctave);
             const bpm = getCurrentBPM();
             const beatDuration = 60 / bpm;
             const durationSeconds = slot.duration * beatDuration;
@@ -3822,6 +3848,7 @@
       for (const p of Object.keys(octaveSwapChains)) {
         try { octaveSwapChains[p]?.synth?.releaseAll(); } catch (e) {}
       }
+      try { leadSynth?.releaseAll?.(); } catch (e) {}
       try { leadSynth?.triggerRelease?.(); } catch (e) {}
     } catch (e) {}
     
