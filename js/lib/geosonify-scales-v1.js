@@ -45,6 +45,7 @@
     cents: [900, 1100, 0, 200, 400, 500, 700],
     render: [['a',null], ['b',null], ['c',null], ['d',null], ['e',null], ['f',null], ['g',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: null,   // frozen musicalArray
   },
 
@@ -55,6 +56,7 @@
     cents: [0, 200, 400, 500, 700, 900, 1100],
     render: [['c',null], ['d',null], ['e',null], ['f',null], ['g',null], ['a',null], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CF,','CG,','CA,','CB,'],
       ['CDE,','DD,','DE,','DF,','DG,','DA,','DB,'],
@@ -73,6 +75,7 @@
     cents: [0, 200, 300, 500, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a',null], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CF,','CG,','CA,','CBb,'],
       ['CDBb,','DD,','DEb,','DF,','DG,','DA,','DBb,'],
@@ -91,6 +94,7 @@
     cents: [0, 100, 300, 500, 700, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CEb,','CF,','CG,','CAb,','CBb,'],
       ['CDbEb,','DbDb,','DbEb,','DbF,','DbG,','DbAb,','DbBb,'],
@@ -109,6 +113,7 @@
     cents: [0, 200, 400, 600, 700, 900, 1100],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g',null], ['a',null], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CFs,','CG,','CA,','CB,'],
       ['CDE,','DD,','DE,','DFs,','DG,','DA,','DB,'],
@@ -127,6 +132,7 @@
     cents: [0, 200, 400, 500, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f',null], ['g',null], ['a',null], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CF,','CG,','CA,','CBb,'],
       ['CDE,','DD,','DE,','DF,','DG,','DA,','DBb,'],
@@ -145,6 +151,7 @@
     cents: [0, 200, 300, 500, 700, 800, 1000],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CF,','CG,','CAb,','CBb,'],
       ['CDG,','DD,','DEb,','DF,','DG,','DAb,','DBb,'],
@@ -163,6 +170,7 @@
     cents: [0, 100, 300, 500, 600, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g','b'], ['a','b'], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CEb,','CF,','CGb,','CAb,','CBb,'],
       ['CDbEb,','DbDb,','DbEb,','DbF,','DbGb,','DbAb,','DbBb,'],
@@ -181,6 +189,7 @@
     cents: [0, 200, 300, 500, 700, 800, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CF,','CG,','CAb,','CB,'],
       ['CDB,','DD,','DEb,','DF,','DG,','DAb,','DB,'],
@@ -199,6 +208,7 @@
     cents: [0, 200, 300, 500, 700, 900, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g',null], ['a',null], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CF,','CG,','CA,','CB,'],
       ['CDB,','DD,','DEb,','DF,','DG,','DA,','DB,'],
@@ -217,6 +227,7 @@
     cents: [0, 100, 300, 500, 700, 800, 1100],
     render: [['c',null], ['d','b'], ['e','b'], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CEb,','CF,','CG,','CAb,','CB,'],
       ['CDbEb,','DbDb,','DbEb,','DbF,','DbG,','DbAb,','DbB,'],
@@ -235,6 +246,7 @@
     cents: [0, 200, 400, 700, 900],
     render: [['c',null], ['d',null], ['e',null], ['g',null], ['a',null]],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CG,','CA,'],
       ['CDE,','DD,','DE,','DG,','DA,'],
@@ -251,6 +263,7 @@
     cents: [0, 300, 500, 700, 1000],
     render: [['c',null], ['e','b'], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CEb,','CF,','CG,','CBb,'],
       ['CEbF,','EbEb,','EbF,','EbG,','EbBb,'],
@@ -267,6 +280,7 @@
     cents: [0, 200, 500, 700, 1000],
     render: [['c',null], ['d',null], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CF,','CG,','CBb,'],
       ['CDF,','DD,','DF,','DG,','DBb,'],
@@ -283,6 +297,7 @@
     cents: [0, 400, 500, 700, 1100],
     render: [['c',null], ['e',null], ['f',null], ['g',null], ['b',null]],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CE,','CF,','CG,','CB,'],
       ['CEF,','EE,','EF,','EG,','EB,'],
@@ -299,6 +314,7 @@
     cents: [0, 200, 300, 700, 800],
     render: [['c',null], ['d',null], ['e','b'], ['g',null], ['a','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CG,','CAb,'],
       ['CDEb,','DD,','DEb,','DG,','DAb,'],
@@ -315,6 +331,7 @@
     cents: [0, 100, 500, 700, 1000],
     render: [['c',null], ['d','b'], ['f',null], ['g',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CF,','CG,','CBb,'],
       ['CDbF,','DbDb,','DbF,','DbG,','DbBb,'],
@@ -331,6 +348,7 @@
     cents: [0, 100, 500, 600, 1000],
     render: [['c',null], ['d','b'], ['f',null], ['g','b'], ['b','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CF,','CGb,','CBb,'],
       ['CDbF,','DbDb,','DbF,','DbGb,','DbBb,'],
@@ -347,6 +365,7 @@
     cents: [0, 200, 300, 400, 700, 900],
     render: [['c',null], ['d',null], ['e','b'], ['e',null], ['g',null], ['a',null]],
     iterations: 9,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CE,','CG,','CA,'],
       ['CDG,','DD,','DEb,','DE,','DG,','DA,'],
@@ -364,6 +383,7 @@
     cents: [0, 300, 500, 600, 700, 1000],
     render: [['c',null], ['e','b'], ['f',null], ['g','b'], ['g',null], ['b','b']],
     iterations: 9,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CEb,','CF,','CGb,','CG,','CBb,'],
       ['CEbF,','EbEb,','EbF,','EbGb,','EbG,','EbBb,'],
@@ -381,6 +401,7 @@
     cents: [0, 200, 400, 600, 800, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g','#'], ['a','#']],
     iterations: 9,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CFs,','CGs,','CAs,'],
       ['CDE,','DD,','DE,','DFs,','DGs,','DAs,'],
@@ -398,6 +419,7 @@
     cents: [0, 200, 400, 600, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['a',null], ['a','#']],
     iterations: 9,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CFs,','CA,','CAs,'],
       ['CDE,','DD,','DE,','DFs,','DA,','DAs,'],
@@ -415,6 +437,7 @@
     cents: [0, 200, 300, 500, 600, 800, 900, 1100],
     render: [['c',null], ['d',null], ['e','b'], ['f',null], ['g','b'], ['a','b'], ['a',null], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEb,','CF,','CGb,','CAb,','CA,','CB,'],
       ['CDB,','DD,','DEb,','DF,','DGb,','DAb,','DA,','DB,'],
@@ -434,6 +457,7 @@
     cents: [0, 200, 400, 500, 700, 900, 1000, 1100],
     render: [['c',null], ['d',null], ['e',null], ['f',null], ['g',null], ['a',null], ['b','b'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CF,','CG,','CA,','CBb,','CB,'],
       ['CDE,','DD,','DE,','DF,','DG,','DA,','DBb,','DB,'],
@@ -453,6 +477,7 @@
     cents: [0, 100, 300, 400, 600, 800, 900],
     render: [['g',null], ['g','#'], ['a','#'], ['b',null], ['c','#'], ['d','#'], ['e',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['GG,','GGs,','GAs,','GB,','CsG,','DsG,','EG,'],
       ['GGsB,','GsGs,','GsAs,','GsB,','CsGs,','DsGs,','EGs,'],
@@ -471,6 +496,7 @@
     cents: [0, 200, 300, 600, 700, 800, 1100],
     render: [['c',null], ['d',null], ['d','#'], ['f','#'], ['g',null], ['g','#'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CDs,','CFs,','CG,','CGs,','CB,'],
       ['CDFs,','DD,','DDs,','DFs,','DG,','DGs,','DB,'],
@@ -489,6 +515,7 @@
     cents: [0, 100, 400, 500, 700, 800, 1100],
     render: [['c',null], ['d','b'], ['e',null], ['f',null], ['g',null], ['a','b'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CE,','CF,','CG,','CAb,','CB,'],
       ['CDbE,','DbDb,','DbE,','DbF,','DbG,','DbAb,','DbB,'],
@@ -507,6 +534,7 @@
     cents: [0, 100, 400, 500, 600, 800, 1100],
     render: [['c',null], ['d','b'], ['e',null], ['f',null], ['g','b'], ['a','b'], ['b',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CE,','CF,','CGb,','CAb,','CB,'],
       ['CDbE,','DbDb,','DbE,','DbF,','DbGb,','DbAb,','DbB,'],
@@ -525,6 +553,7 @@
     cents: [0, 200, 400, 600, 700, 900, 1000],
     render: [['c',null], ['d',null], ['e',null], ['f','#'], ['g',null], ['a',null], ['a','#']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CE,','CFs,','CG,','CA,','CAs,'],
       ['CDE,','DD,','DE,','DFs,','DG,','DA,','DAs,'],
@@ -543,6 +572,7 @@
     cents: [0, 100, 300, 400, 600, 800, 1000],
     render: [['c',null], ['d','b'], ['e','b'], ['e',null], ['g','b'], ['a','b'], ['b','b']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CDb,','CEb,','CE,','CGb,','CAb,','CBb,'],
       ['CDbEb,','DbDb,','DbEb,','DbE,','DbGb,','DbAb,','DbBb,'],
@@ -561,6 +591,7 @@
     cents: [0, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100],
     render: [['c',null], ['c','#'], ['d',null], ['d','#'], ['e',null], ['f',null], ['f','#'], ['g',null], ['g','#'], ['a',null], ['a','#'], ['b',null]],
     iterations: 7,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CCs,','CD,','CDs,','CE,','CF,','CFs,','CG,','CGs,','CA,','CAs,','CB,'],
       ['CCsE,','CsCs,','CsD,','CsDs,','CsE,','CsF,','CsFs,','CsG,','CsGs,','CsA,','CsAs,','CsB,'],
@@ -584,6 +615,7 @@
     cents: [0, 200, 350, 500, 700, 900, 1050],
     render: [['c',null], ['d',null], ['e','d'], ['f',null], ['g',null], ['a',null], ['b','d']],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['CC,','CD,','CEd,','CF,','CG,','CA,','CBd,'],
       ['CDF,','DD,','DEd,','DF,','DG,','DA,','DBd,'],
@@ -602,6 +634,7 @@
     cents: [0, 150, 300, 500, 700, 800, 1000],
     render: [['d',null], ['e','d'], ['f',null], ['g',null], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['DD,','DEd,','DF,','DG,','DA,','DBb,','CD,'],
       ['DEdG,','EdEd,','EdF,','EdG,','EdA,','EdBb,','CEd,'],
@@ -620,6 +653,7 @@
     cents: [0, 150, 300, 400, 700, 800, 1000],
     render: [['d',null], ['e','d'], ['f',null], ['g','b'], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['DD,','DEd,','DF,','DGb,','DA,','DBb,','CD,'],
       ['DEdA,','EdEd,','EdF,','EdGb,','EdA,','EdBb,','CEd,'],
@@ -638,6 +672,7 @@
     cents: [0, 100, 400, 500, 700, 800, 1000],
     render: [['d',null], ['e','b'], ['f','#'], ['g',null], ['a',null], ['b','b'], ['c',null]],
     iterations: 8,
+    staffErrorCents: 0,
     grid: [
       ['DD,','DEb,','DFs,','DG,','DA,','DBb,','CD,'],
       ['DEbFs,','EbEb,','EbFs,','EbG,','EbA,','EbBb,','CEb,'],
@@ -656,6 +691,7 @@
     cents: [0, 100, 500, 700, 800],
     render: [['d',null], ['e','b'], ['g',null], ['a',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['DD,','DEb,','DG,','DA,','DBb,'],
       ['DEbG,','EbEb,','EbG,','EbA,','EbBb,'],
@@ -672,6 +708,7 @@
     cents: [0, 115, 345, 685, 800],
     render: [['d',null], ['e','b'], ['f',null], ['a',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 45,
     grid: [
       ['11,','12,','13,','14,','15,'],
       ['123,','22,','23,','24,','25,'],
@@ -688,6 +725,7 @@
     cents: [0, 231, 474, 717, 955],
     render: [['d',null], ['e',null], ['f','+'], ['a',null], ['b','b']],
     iterations: 10,
+    staffErrorCents: 155,
     grid: [
       ['11,','12,','13,','15,','16,'],
       ['123,','22,','23,','25,','26,'],
@@ -704,6 +742,7 @@
     cents: [0, 200, 400, 700, 900],
     render: [['c',null], ['d',null], ['e',null], ['g',null], ['a',null]],
     iterations: 10,
+    staffErrorCents: 0,
     grid: [
       ['GG,','GS,','GJ,','GZ,','GY,'],
       ['GSJ,','SS,','SJ,','SZ,','SY,'],
@@ -754,6 +793,17 @@
     return 1200 * (octave + 1) + pc;
   }
 
+  // True when the Western staff would misrepresent this tuning by more than a
+  // quarter-tone. Such a card shows its raw token column instead: the staff
+  // would not be a rough guide but a wrong one, and a reader following it
+  // would play a different scale. Slendro is the current case — its third
+  // degree sounds 674c where the staff draws 550c, and its fifth sounds 1155c
+  // where the staff draws 1000c.
+  function usesTokenColumn(id) {
+    var sc = SCALES[id];
+    return !!sc && sc.staffErrorCents > 50;
+  }
+
   function centsToHz(cents) { return 440 * Math.pow(2, (cents - 6900) / 1200); }
   function get(id) { return SCALES[id] || null; }
   function ids() { return Object.keys(SCALES); }
@@ -798,7 +848,7 @@
   global.GeoScales = {
     SCALES: SCALES, get: get, ids: ids, gridFor: gridFor,
     tokenize: tokenize, centsFor: centsFor, centsToHz: centsToHz,
-    cardDefs: cardDefs, paramMap: paramMap
+    cardDefs: cardDefs, paramMap: paramMap, usesTokenColumn: usesTokenColumn
   };
   try { console.log('[geosonify] scales-v1 loaded (' + ids().length + ' scales)'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : this);
