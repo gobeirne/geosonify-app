@@ -2656,13 +2656,49 @@
     return (def && def.scaleId) || null;
   }
 
+  // Raw token column, for scales the Western staff cannot honestly express.
+  // No pitch is claimed and no notation is imitated — this is the code the
+  // card already encodes, stacked by octave. Reads bottom-to-top like the
+  // staff and the piano roll: LOWEST octave at the BOTTOM.
+  function renderTokenColumn(code, whiteBox, gridKey) {
+    const tokens = String(code || '').replace(/,\s*$/, '').split(',')
+      .map(t => t.trim()).filter(Boolean);
+    if (!tokens.length) {
+      whiteBox.innerHTML = '<div style="color:#888;font-size:11px;padding:20px;">No notes</div>';
+      return;
+    }
+    const col = document.createElement('div');
+    col.style.cssText = 'font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;' +
+      'font-size:13px;line-height:1.6;color:#111;text-align:center;padding:10px 16px;' +
+      'letter-spacing:0.06em;white-space:pre;';
+    tokens.slice().reverse().forEach(t => {
+      const row = document.createElement('div');
+      row.textContent = t;
+      col.appendChild(row);
+    });
+    whiteBox.appendChild(col);
+  }
+
+  // True when this card should use the column rather than a staff.
+  function usesTokenColumn(gridKey) {
+    const sid = scaleIdFor(gridKey);
+    return !!sid && typeof GeoScales !== 'undefined'
+        && typeof GeoScales.usesTokenColumn === 'function'
+        && GeoScales.usesTokenColumn(sid);
+  }
+
   function renderMusicNotation(code, container, gridKey) {
     if (!container) return;
     container.innerHTML = '';
     const whiteBox = document.createElement('div');
     whiteBox.style.cssText = 'background:white;border-radius:6px;padding:4px;width:fit-content;margin:0 auto;';
     container.appendChild(whiteBox);
-    
+
+    if (usesTokenColumn(gridKey)) {
+      renderTokenColumn(code, whiteBox, gridKey);
+      return;
+    }
+
     if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
       const notes = VexFlowLib.parseMusicalCode(code, 0, scaleIdFor(gridKey));
       if (notes.length === 0) {
@@ -3681,6 +3717,11 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       } else if (gridDef?.display === 'music') {
         codeEl.innerHTML = '';
         if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
+          if (usesTokenColumn(gridKey)) {
+            codeEl.innerHTML = '';
+            renderTokenColumn(displayCode, codeEl, gridKey);
+            return;
+          }
           const notes = VexFlowLib.parseMusicalCode(displayCode, 0, scaleIdFor(gridKey));
           if (notes.length > 0) {
             // octaveRange() understands accidentals; the old inline regex
@@ -3770,6 +3811,11 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       
       setTimeout(() => {
         if (typeof VexFlowLib !== 'undefined' && VexFlowLib.renderToElement) {
+          if (usesTokenColumn(gridKey)) {
+            codeEl.innerHTML = '';
+            renderTokenColumn(displayCode, codeEl, gridKey);
+            return;
+          }
           const notes = VexFlowLib.parseMusicalCode(displayCode, 0, scaleIdFor(gridKey));
           if (notes.length > 0) {
             // octaveRange() understands accidentals; the old inline regex
