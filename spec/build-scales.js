@@ -339,6 +339,26 @@ const tokFor = a => { const b=[...a].sort((x,y)=>y.length-x.length||(x<y?-1:1));
   return s=>{const o=[];let i=0;while(i<s.length){const h=b.find(t=>s.startsWith(t,i));
   if(!h)return null;o.push(h);i+=h.length;}return o;}; };
 
+// How far the Western staff's drawn pitch sits from what the scale actually
+// sounds, in cents. Above a quarter-tone the staff stops being an
+// approximation and becomes misinformation — a reader would play a different
+// scale — so those cards show the raw token column instead.
+const STAFF_LETTER = { c:0, d:2, e:4, f:5, g:7, a:9, b:11 };
+const STAFF_ACC = { '#':100, 'b':-100, '+':50, 'd':-50 };
+function staffErrorCents(sc) {
+  let worst = 0;
+  for (let i = 0; i < sc.symbols.length; i++) {
+    const actual = (sc.tonicPc * 100 + sc.cents[i]) % 1200;
+    const [ltr, acc] = sc.render[i];
+    const drawn = ((STAFF_LETTER[ltr] * 100 + (acc ? STAFF_ACC[acc] || 0 : 0)) % 1200 + 1200) % 1200;
+    let err = actual - drawn;
+    if (err > 600) err -= 1200;
+    if (err < -600) err += 1200;
+    worst = Math.max(worst, Math.abs(err));
+  }
+  return worst;
+}
+
 let ok = true; const rows = [];
 for (const s of T) {
   if (!s.render) s.render = s.symbols.map(renderOf);
@@ -359,8 +379,9 @@ for (const s of T) {
   const pass = !unlex&&!rt&&!unsafe.length&&lens&&distinct===flat.length&&!badRender&&!dupSym&&tonicOK;
   if (!pass) { ok=false;
     console.log(`FAIL ${s.id}: unlex=${unlex} rt=${rt} unsafe=${unsafe} lens=${lens} render=${badRender} dup=${dupSym} tonic=${tonicOK}`); }
+  s._staffErr = staffErrorCents(s);
   rows.push([s.id, s.symbols.length, flat.length, Math.ceil(44.9/(2*Math.log2(s.symbols.length))),
-             s.tet12?'12-TET':'micro', s._sc.vl.toFixed(3), s._sc.ds.toFixed(3), pass?'ok':'FAIL']);
+             s.tet12?'12-TET':'micro', s._sc.vl.toFixed(3), s._staffErr + (s._staffErr > 50 ? 'c COLUMN' : 'c'), pass?'ok':'FAIL']);
 }
 
 const slugs = T.map(s=>s.param); const bad = [];
@@ -371,8 +392,8 @@ for (const p of slugs) {
 }
 console.log('slug collisions:', bad.length?bad:'none'); if (bad.length) ok = false;
 
-console.log('\nid                n  cells  iters  tuning  voicelead diss   ');
-for (const r of rows) console.log(r[0].padEnd(18)+String(r[1]).padEnd(3)+String(r[2]).padEnd(7)+String(r[3]).padEnd(7)+r[4].padEnd(8)+r[5].padEnd(10)+r[6].padEnd(7)+r[7]);
+console.log('\nid                n  cells  iters  tuning  voicelead staff    ');
+for (const r of rows) console.log(r[0].padEnd(18)+String(r[1]).padEnd(3)+String(r[2]).padEnd(7)+String(r[3]).padEnd(7)+r[4].padEnd(8)+r[5].padEnd(10)+r[6].padEnd(11)+r[7]);
 
 // ---- emit ------------------------------------------------------------------
 const q = a => "['" + a.join("','") + "']";
@@ -427,6 +448,7 @@ out += T.map(s => {
     cents: [${s.cents.join(', ')}],
     render: [${s.render.map(([l,a])=>`['${l}',${a?`'${a}'`:'null'}]`).join(', ')}],
     iterations: ${Math.ceil(44.9/(2*Math.log2(s.symbols.length)))},
+    staffErrorCents: ${s._staffErr},
 ${g}
   }`; }).join(',\n\n');
 
@@ -473,6 +495,17 @@ out += `
     return 1200 * (octave + 1) + pc;
   }
 
+  // True when the Western staff would misrepresent this tuning by more than a
+  // quarter-tone. Such a card shows its raw token column instead: the staff
+  // would not be a rough guide but a wrong one, and a reader following it
+  // would play a different scale. Slendro is the current case — its third
+  // degree sounds 674c where the staff draws 550c, and its fifth sounds 1155c
+  // where the staff draws 1000c.
+  function usesTokenColumn(id) {
+    var sc = SCALES[id];
+    return !!sc && sc.staffErrorCents > 50;
+  }
+
   function centsToHz(cents) { return 440 * Math.pow(2, (cents - 6900) / 1200); }
   function get(id) { return SCALES[id] || null; }
   function ids() { return Object.keys(SCALES); }
@@ -517,7 +550,7 @@ out += `
   global.GeoScales = {
     SCALES: SCALES, get: get, ids: ids, gridFor: gridFor,
     tokenize: tokenize, centsFor: centsFor, centsToHz: centsToHz,
-    cardDefs: cardDefs, paramMap: paramMap
+    cardDefs: cardDefs, paramMap: paramMap, usesTokenColumn: usesTokenColumn
   };
   try { console.log('[geosonify] scales-v1 loaded (' + ids().length + ' scales)'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : this);
