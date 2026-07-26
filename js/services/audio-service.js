@@ -1532,6 +1532,29 @@
   // below runs. Every existing card, code and URL is unaffected.
   let currentScaleId = null;
 
+  // ---- Octave compression --------------------------------------------------
+  // How many code iterations share one octave. 1 = the original mapping, one
+  // octave per iteration. 2 puts a ten-iteration pentatonic into five octaves
+  // at full precision instead of screaming up to C10 (~16.7 kHz).
+  //
+  // This is purely a SONIFICATION choice: decodeHierarchical walks the
+  // subdivision by token POSITION and never looks at pitch, so changing it
+  // cannot alter what any code means. Existing codes and links are unaffected.
+  let octaveCompression = 1;
+
+  // Pool index -> sounding octave. Compression alone would collapse the stack
+  // onto the bottom of the range and sound dull, so the squeezed span is
+  // lifted to sit where the original sat: a 10-iteration pentatonic goes from
+  // C1..C10 (top ~16.7 kHz, unlistenable) to C3..C7 (top ~2.1 kHz) with no
+  // loss of precision.
+  function compressOctave(i) {
+    const f = octaveCompression > 1 ? octaveCompression : 1;
+    if (f === 1) return i;
+    const span = (notePool.length || 1) - 1;
+    const lift = Math.floor((span - Math.floor(span / f)) / 2);
+    return Math.floor(i / f) + lift;
+  }
+
   function scaleActive() {
     return currentScaleId !== null &&
            typeof GeoScales !== 'undefined' && !!GeoScales.get(currentScaleId);
@@ -1597,8 +1620,9 @@
     const rungs = [];
     const counts = {};
     const useScale = scaleActive();
-    for (let oct = 0; oct < notePool.length; oct++) {
-      for (const raw of (notePool[oct] || [])) {
+    for (let poolIdx = 0; poolIdx < notePool.length; poolIdx++) {
+      const oct = compressOctave(poolIdx);
+      for (const raw of (notePool[poolIdx] || [])) {
         let pc, midi, cents = null;
         if (useScale) {
           // Scale card: the symbol IS the pitch class; cents come from the
@@ -2816,7 +2840,7 @@
       
       // Get notes to play
       let notesToPlay = [];
-      const baseOctave = octave + settings.transpose;
+      const baseOctave = compressOctave(octave) + settings.transpose;
       
       if (behavior.mode === 'single') {
         const note = octaveNotes[Math.floor(Math.random() * octaveNotes.length)];
@@ -2954,7 +2978,7 @@
       // Calculate which bar we're in within this pattern's cycle
       const patternBar = droneCurrentBar % pattern.lengthBars;
       
-      const baseOctave = octave + settings.transpose;
+      const baseOctave = compressOctave(octave) + settings.transpose;
       const octaveSettings = settings.octaves[octave] || { intensity: 0 };
       
       // Calculate velocity for this octave
@@ -3034,7 +3058,7 @@
       const octaveNotes = notePool[octave];
       if (!octaveNotes || octaveNotes.length === 0) continue;
       
-      const baseOctave = octave + settings.transpose;
+      const baseOctave = compressOctave(octave) + settings.transpose;
       const octaveSettings = settings.octaves[octave] || { intensity: 0 };
       
       // Calculate velocity for this octave
@@ -3768,7 +3792,7 @@
       if (!pattern) continue;
       
       const patternBar = droneCurrentBar % pattern.lengthBars;
-      const baseOctave = octave + settings.transpose;
+      const baseOctave = compressOctave(octave) + settings.transpose;
       const octaveSettings = settings.octaves[octave] || { intensity: 0 };
       
       const intensityDb = octaveSettings.intensity || 0;
@@ -4127,6 +4151,22 @@
     },
 
     getScale() { return currentScaleId; },
+
+    /**
+     * How many code iterations share one octave. 1 = original behaviour.
+     * Higher values pull the top of the stack down without losing precision:
+     * a 10-iteration pentatonic at 2 spans five octaves instead of ten.
+     * Sonification only — it cannot change what a code decodes to.
+     */
+    setOctaveCompression(n) {
+      const v = Math.max(1, Math.min(4, (n | 0) || 1));
+      if (v === octaveCompression) return v;
+      octaveCompression = v;
+      leadTune = null; leadPhrase = null;   // rebuild the ladder at the new spread
+      return v;
+    },
+
+    getOctaveCompression() { return octaveCompression; },
 
     // ===== NOTE POOL =====
 
