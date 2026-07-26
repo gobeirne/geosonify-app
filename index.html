@@ -2625,12 +2625,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               const suffix = paramName.slice(hk.length);
               // Valid flags: o (obfuscated), d (delta), r (rhumb), any order,
               // no repeats. Bare hk (empty suffix) is also valid.
-              if (/^[odr]{0,3}$/.test(suffix) && new Set(suffix).size === suffix.length) {
+              if (/^[odrc]{0,4}$/.test(suffix) && new Set(suffix).size === suffix.length) {
                 return {
                   grid: hk,
                   obf: suffix.includes('o'),
                   delta: suffix.includes('d'),
-                  rhumb: suffix.includes('r')
+                  rhumb: suffix.includes('r'),
+                  compress: suffix.includes('c')
                 };
               }
             }
@@ -2665,14 +2666,16 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         for (const base of sortedBases) {
           if (paramName.startsWith(base)) {
             const suffix = paramName.slice(base.length);
-            // Valid suffixes: combinations of 'o' (obfuscated), 'd' (delta), 'r' (rhumb)
-            // Accept any ordering of these flags
-            if (/^[odr]{0,3}$/.test(suffix) && new Set(suffix).size === suffix.length) {
+            // Valid suffixes: 'o' (obfuscated), 'd' (delta), 'r' (rhumb),
+            // 'c' (octave compression - sonification only, never affects decode).
+            // Accept any ordering of these flags.
+            if (/^[odrc]{0,4}$/.test(suffix) && new Set(suffix).size === suffix.length) {
               return {
                 grid: baseParamMap[base],
                 obf: suffix.includes('o'),
                 delta: suffix.includes('d'),
-                rhumb: suffix.includes('r')
+                rhumb: suffix.includes('r'),
+                compress: suffix.includes('c')
               };
             }
           }
@@ -2697,7 +2700,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
         
         if (!config) continue;
-        
+
+        // 'c' flag: octave compression. Sonification only —
+        // decodeHierarchical walks the subdivision by token POSITION and never
+        // reads pitch, so this can never move a pin or change a decode.
+        if (typeof AudioService !== 'undefined' && AudioService.setOctaveCompression) {
+          AudioService.setOctaveCompression(config.compress ? 2 : 1);
+        }
+
         const code = paramValue;
         if (code) {
           setTimeout(() => {
