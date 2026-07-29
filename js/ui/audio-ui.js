@@ -775,6 +775,9 @@
     const octaveSwap = AudioService?.getOctaveSwapEnabled?.() ?? false;
     const octaveSwapPeriod = AudioService?.getOctaveSwapPeriodBars?.() ?? 32;
     const octaveSwapDuration = AudioService?.getOctaveSwapDurationBars?.() ?? 8;
+    // Octave compression: how many code iterations share one sounding octave.
+    // 1 = off (original mapping). Sonification only — cannot change a decode.
+    const octaveCompression = AudioService?.getOctaveCompression?.() ?? 1;
     
     designModal.innerHTML = `
       <div class="audio-design-panel">
@@ -1189,6 +1192,19 @@
               <span>Swap lasts</span><span id="octaveSwapDurationValue">${octaveSwapDuration} bars</span>
             </div>
             <input type="range" class="audio-design-slider" id="octaveSwapDurationSlider" min="2" max="32" value="${octaveSwapDuration}" step="2">
+          </div>
+          <div class="octave-compression-tuning" style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);">
+            <label class="drone-toggle-label">
+              <input type="checkbox" id="octaveCompressionEnabled" ${octaveCompression > 1 ? 'checked' : ''}>
+              <span>🗜️ Compress octaves (tame the top end)</span>
+            </label>
+            <div class="audio-design-label" style="margin-top:6px;">
+              <span>Iterations per octave</span><span id="octaveCompressionValue">${octaveCompression > 1 ? octaveCompression : 2}</span>
+            </div>
+            <input type="range" class="audio-design-slider" id="octaveCompressionSlider" min="2" max="4" value="${octaveCompression > 1 ? octaveCompression : 2}" step="1">
+            <div class="audio-design-label" style="margin-top:4px;opacity:0.6;font-size:11px;">
+              <span>Pitch only — never changes where a code decodes to.</span>
+            </div>
           </div>
         </div>
         
@@ -2293,6 +2309,24 @@
       octaveSwapDurationSlider.oninput = function() {
         designModal.querySelector('#octaveSwapDurationValue').textContent = this.value + ' bars';
         AudioService?.setOctaveSwapDurationBars(parseInt(this.value, 10));
+      };
+    }
+    // Octave compression. Unchecked sends 1 (off) but leaves the slider at its
+    // chosen factor, so re-checking restores the same setting rather than
+    // resetting to 2. setOctaveCompression clears leadTune/leadPhrase, so the
+    // ladder rebuilds and the change is audible without a restart.
+    const octaveCompEl = designModal.querySelector('#octaveCompressionEnabled');
+    const octaveCompSlider = designModal.querySelector('#octaveCompressionSlider');
+    function applyOctaveCompression() {
+      const on = octaveCompEl && octaveCompEl.checked;
+      const f = octaveCompSlider ? parseInt(octaveCompSlider.value, 10) : 2;
+      AudioService?.setOctaveCompression?.(on ? f : 1);
+    }
+    if (octaveCompEl) octaveCompEl.onchange = applyOctaveCompression;
+    if (octaveCompSlider) {
+      octaveCompSlider.oninput = function() {
+        designModal.querySelector('#octaveCompressionValue').textContent = this.value;
+        if (octaveCompEl && octaveCompEl.checked) applyOctaveCompression();
       };
     }
     
