@@ -277,7 +277,7 @@ T.push(
   D12('neapolitanminor','Neapolitan Minor','mneapmin',[0,1,3,5,7,8,11],'flat'),
   D12('majpenta','Major Pentatonic','mmajpenta',[0,2,4,7,9],'sharp'),
   D12('minpenta','Minor Pentatonic','mminpenta',[0,3,5,7,10],'flat'),
-  D12('egyptian','Egyptian (suspended)','megyptian',[0,2,5,7,10],'flat'),
+  D12('egyptian','Suspended Pentatonic','megyptian',[0,2,5,7,10],'flat'),
   D12('ryukyu','Ryukyu (Okinawan)','mryukyu',[0,4,5,7,11],'sharp'),
   D12('hirajoshi','Hirajoshi','mhirajoshi',[0,2,3,7,8],'flat'),
   D12('insen','Insen','minsen',[0,1,5,7,10],'flat'),
@@ -288,10 +288,10 @@ T.push(
   D12('prometheus','Prometheus','mprometheus',[0,2,4,6,9,10],'sharp'),
   D12('diminished','Diminished','mdiminish',[0,2,3,5,6,8,9,11],'flat'),
   D12('bebopdominant','Bebop Dominant','mbebop',[0,2,4,5,7,9,10,11],'flat'),
-  D12('spanish','Spanish','mspanish',[0,1,3,4,6,8,9],'sharp',7),
-  D12('romani','Romani (Hungarian minor)','mromani',[0,2,3,6,7,8,11],'sharp'),
-  D12('arabian','Arabian (double harmonic)','marabian',[0,1,4,5,7,8,11],'flat'),
-  D12('persian','Persian','mpersian',[0,1,4,5,6,8,11],'flat'),
+  D12('spanish','Phrygian Dominant (Spanish)','mspanish',[0,1,4,5,7,8,10],'sharp',4),
+  D12('romani','Hungarian Minor','mromani',[0,2,3,6,7,8,11],'sharp'),
+  D12('arabian','Hijaz Kar (double harmonic)','marabian',[0,1,4,5,7,8,11],'flat'),
+  D12('persian','Double Harmonic ♭5','mpersian',[0,1,4,5,6,8,11],'flat'),
   D12('acoustic','Acoustic (Lydian dominant)','macoustic',[0,2,4,6,7,9,10],'sharp'),
   D12('altered','Altered','maltered',[0,1,3,4,6,8,10],'flat'),
   D12('chromatic','Chromatic','mchromatic',[0,1,2,3,4,5,6,7,8,9,10,11],'sharp')
@@ -299,22 +299,16 @@ T.push(
 
 // Non-12-TET / quarter-tone: the reason the cents layer exists at all.
 T.push(
-  { id:'rast', name:'Maqam Rast', param:'mrast', tonicPc:0, tet12:false, tonic:'C',
+  { id:'rast', name:'Maqam Rast (24-EDO)', param:'mrast', tonicPc:0, tet12:false, tonic:'C',
     symbols:['C','D','Ed','F','G','A','Bd'], cents:[0,200,350,500,700,900,1050] },
-  { id:'bayati', name:'Maqam Bayati', param:'mbayati', tonicPc:2, tet12:false, tonic:'D',
+  { id:'bayati', name:'Maqam Bayati (24-EDO)', param:'mbayati', tonicPc:2, tet12:false, tonic:'D',
     symbols:['D','Ed','F','G','A','Bb','C'], cents:[0,150,300,500,700,800,1000] },
-  { id:'saba', name:'Maqam Saba', param:'msaba', tonicPc:2, tet12:false, tonic:'D',
+  { id:'saba', name:'Maqam Saba (24-EDO)', param:'msaba', tonicPc:2, tet12:false, tonic:'D',
     symbols:['D','Ed','F','Gb','A','Bb','C'], cents:[0,150,300,400,700,800,1000] },
   { id:'hijaz', name:'Maqam Hijaz', param:'mhijaz', tonicPc:2, tet12:true, tonic:'D',
     symbols:['D','Eb','Fs','G','A','Bb','C'], cents:[0,100,400,500,700,800,1000] },
   { id:'miyako', name:'Miyako Bushi', param:'mmiyako', tonicPc:2, tet12:true, tonic:'D',
     symbols:['D','Eb','G','A','Bb'], cents:[0,100,500,700,800] },
-  { id:'degung', name:'Degung (Sundanese pelog)', param:'mdegung', tonicPc:2, tet12:false,
-    tonic:'1', symbols:['1','2','3','4','5'], cents:[0,115,345,685,800],
-    render:[['d',null],['e','b'],['f',null],['a',null],['b','b']] },
-  { id:'slendro', name:'Slendro (Javanese)', param:'mslendro', tonicPc:2, tet12:false,
-    tonic:'1', symbols:['1','2','3','5','6'], cents:[0,231,474,717,955],
-    render:[['d',null],['e',null],['f','+'],['a',null],['b','b']] },
   { id:'gongdiao', name:'Gong Diao', param:'mgong', tonicPc:0, tet12:true, tonic:'G',
     symbols:['G','S','J','Z','Y'], cents:[0,200,400,700,900],
     render:[['c',null],['d',null],['e',null],['g',null],['a',null]] }
@@ -498,9 +492,9 @@ out += `
   // True when the Western staff would misrepresent this tuning by more than a
   // quarter-tone. Such a card shows its raw token column instead: the staff
   // would not be a rough guide but a wrong one, and a reader following it
-  // would play a different scale. Slendro is the current case — its third
-  // degree sounds 674c where the staff draws 550c, and its fifth sounds 1155c
-  // where the staff draws 1000c.
+  // would play a different scale. NO current scale trips this: the two that
+  // did (degung, slendro) were withdrawn because no defensible tuning for
+  // them could be sourced. The path is kept for the next microtonal card.
   function usesTokenColumn(id) {
     var sc = SCALES[id];
     return !!sc && sc.staffErrorCents > 50;
