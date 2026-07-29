@@ -4868,10 +4868,16 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // A presentation card backed by an hphex sibling (the HEALPix ChromaCoord)
       // reads as HEALPix to the user; tag it that way, not "(Chess)".
       const isHpPresentation = !isChess && def.chromaOf === 'hphex';
+      // The music family: the base 'music' card (C major) plus every scale_*
+      // card registered from GeoScales.cardDefs(). display:'music' is the only
+      // thing they share and nothing else uses it, so test the flag rather than
+      // the key prefix — new scales then tag themselves with no edit here.
+      const isMusic = def.display === 'music';
       const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
                 : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
                 : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
-                : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>' : '';
+                : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
+                : isMusic ? ' <span style="font-size:11px;opacity:0.5;">(Music)</span>' : '';
       const label = def.name + tag;
       html += `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
