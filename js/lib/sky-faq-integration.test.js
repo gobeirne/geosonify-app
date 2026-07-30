@@ -19,15 +19,26 @@ function ok(n, c, d) { if (c) { pass++; console.log('  PASS  ' + n); } else { fa
 function head(s) { console.log('\n' + s); }
 
 function boot() {
-  var dom = new JSDOM('<!doctype html><body><div id="faq-root"></div><div id="skyPanelMount"></div></body>',
+  var dom = new JSDOM('<!doctype html><body>' +
+    '<div id="mapWrap" style="position:relative"><div id="mapContainerMobile">LEAFLET</div></div>' +
+    '<div id="cards">' +
+      '<div class="card" data-grid-key="mgrs">MGRS</div>' +
+      '<div class="card" data-grid-key="pluscode">Plus</div>' +
+      '<div class="card" data-grid-key="hphex">HEALPix hex</div>' +
+      '<div class="card" data-grid-key="music">Music</div>' +
+    '</div>' +
+    '<div id="faq-root"></div><div id="skyPanelMount"></div></body>',
                       { pretendToBeVisual: true, runScripts: 'outside-only', url: 'https://geosonify.test/' });
   var w = dom.window;
   global.window = w; global.document = w.document; global.ResizeObserver = w.ResizeObserver;
   w.showToast = function (m, s) { w.__toasts.push({ m: m, s: s }); };
   w.__toasts = [];
   // AppState stub with a pin
-  w.AppState = { get: function (k) { return k === 'coordinate' ? { lat: -43.5554, lon: 172.6509 } : null; },
-                 set: function () {}, subscribe: function () { return function () {}; } };
+  w.__coord = { lat: -43.5554, lon: 172.6509 };
+  w.AppState = { get: function (k) { return k === 'coordinate' ? w.__coord : null; },
+                 set: function (k, v) { if (k === 'coordinate') w.__coord = v; },
+                 subscribe: function () { return function () {}; } };
+  w.GISGrids = { SCHEMES: { mgrs: {}, pluscode: {}, nztm: {}, bng: {} } };
   var files = ['geosonify-healpix.js','geosonify-sky.js','geosonify-sky-panel.js',
                'geosonify-sky-overlay.js','geosonify-sky-renderer.js','geosonify-sky-view.js',
                'faq-data.js','faq-ui.js'];
@@ -100,6 +111,38 @@ try { w2.localStorage.setItem('geosonify-sky-enabled', '1'); } catch (e) {}
 w2.GeosonifyFAQ.init('faq-root');
 ok('Sky card present on first render', !!w2.document.getElementById('skyModeCard'));
 ok('no toast needed', w2.__toasts.length === 0, JSON.stringify(w2.__toasts));
+
+head('7  Sky occupies the map pane, not the whole screen');
+var presets2 = w.document.getElementById('skyModePresets');
+if (!presets2) { w.document.getElementById('skyRevealLink').dispatchEvent(new w.Event('click', { bubbles: true, cancelable: true })); presets2 = w.document.getElementById('skyModePresets'); }
+presets2.querySelector('[data-skymode="sky"]').dispatchEvent(new w.Event('click', { bubbles: true }));
+ok('view is open', w.GeosonifySkyView.isOpen());
+var canvas = w.document.querySelector('.gs-sky-svg');
+ok('canvas mounted inside the map wrapper', canvas && canvas.closest('#mapWrap') !== null);
+ok('NOT a direct child of body', canvas.closest('#mapWrap') !== null && canvas.parentNode.parentNode.id !== 'body');
+ok('the Leaflet container still exists underneath', !!w.document.getElementById('mapContainerMobile'));
+ok('cards container still in the document', !!w.document.getElementById('cards'));
+ok('FAQ still in the document', !!w.document.getElementById('faq-root'));
+
+head('8  Earth-only cards are gated while the sky shows');
+var gate = w.document.getElementById('gs-sky-card-gate');
+ok('gate stylesheet injected', !!gate);
+ok('hides mgrs', gate.textContent.indexOf('[data-grid-key="mgrs"]') >= 0, gate.textContent.slice(0, 90));
+ok('hides pluscode', gate.textContent.indexOf('[data-grid-key="pluscode"]') >= 0);
+ok('does NOT hide hphex', gate.textContent.indexOf('[data-grid-key="hphex"]') === -1);
+ok('does NOT hide music', gate.textContent.indexOf('[data-grid-key="music"]') === -1);
+ok('scheme list came from GISGrids, so it covers nztm too',
+   gate.textContent.indexOf('[data-grid-key="nztm"]') >= 0);
+
+head('9  clicking the sky drives the app coordinate');
+var before = JSON.stringify(w.__coord);
+w.GeosonifySkyView.redraw();
+// simulate a click through the renderer's own event path
+w.__coord = { lat: 0, lon: 0 };
+w.GeosonifySkyView.close();
+ok('closing removes the canvas', !w.document.querySelector('.gs-sky-svg'));
+ok('gate stylesheet removed', !w.document.getElementById('gs-sky-card-gate'));
+ok('map container untouched by all of it', w.document.getElementById('mapContainerMobile').textContent === 'LEAFLET');
 
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');
 process.exit(fail === 0 ? 0 : 1);

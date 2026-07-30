@@ -29,9 +29,12 @@
   var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
   var MIN_ORDER = 1, MAX_ORDER = 52;
 
-  var host = null, renderer = null, els = null;
+  var MAP_CONTAINER_ID = 'mapContainerMobile';
+
+  var host = null, renderer = null, els = null, styleTag = null;
   var order = 16;
   var mark = null;
+  var mapEl = null;
 
   function _Sky() {
     try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
@@ -65,11 +68,67 @@
     return e;
   }
 
+  /*
+    Hide the Earth-only cards while the sky is showing.
+
+    A card with gridDef.gis is a GIS scheme -- MGRS, Plus Codes, NZTM and the
+    rest -- and those mean nothing on the celestial sphere. Showing them would be
+    silently wrong, which is the failure this project exists to avoid.
+
+    Done with an injected stylesheet keyed on [data-grid-key], NOT by editing
+    card-renderer.js: the scheme list comes from GISGrids.SCHEMES, so it stays
+    correct as schemes are added, and leaving the highest-risk file untouched is
+    worth more than the tidiness of doing it "properly".
+
+    Honest caveat: this hides them, it does not remove them from card state. That
+    is acceptable only while sky mode emits no URLs. The moment it does, this
+    needs to become a real capability flag.
+  */
+  function gateEarthOnlyCards(on) {
+    if (styleTag) { styleTag.parentNode.removeChild(styleTag); styleTag = null; }
+    if (!on) return;
+    var keys = [];
+    try {
+      if (typeof GISGrids !== 'undefined' && GISGrids.SCHEMES) keys = Object.keys(GISGrids.SCHEMES);
+      else if (global.GISGrids && global.GISGrids.SCHEMES) keys = Object.keys(global.GISGrids.SCHEMES);
+    } catch (e) {}
+    if (!keys.length) return;
+    var sel = keys.map(function (k) { return '[data-grid-key="' + k + '"]'; }).join(',');
+    styleTag = document.createElement('style');
+    styleTag.id = 'gs-sky-card-gate';
+    styleTag.textContent = sel + '{display:none !important;}';
+    document.head.appendChild(styleTag);
+  }
+
   function build() {
-    host = el('div',
-      'position:fixed; inset:0; z-index:9999; background:#0b0f19; color:#e5e7eb; ' +
-      'display:flex; flex-direction:column; ' +
-      'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+    mapEl = document.getElementById(MAP_CONTAINER_ID);
+
+    /*
+      Sit exactly over the map pane rather than over the whole screen. The coord
+      bar, the cards, the tabs and the sky panel all stay put and stay usable --
+      Geosonify with a sky canvas, rather than a sky app that took the screen.
+
+      Absolute inside the map's own offset parent, so nothing is reparented and
+      Leaflet never learns it has been covered. Falls back to full-screen only if
+      the map pane cannot be found.
+    */
+    var mounted = false;
+    if (mapEl && mapEl.parentNode) {
+      var cs = global.getComputedStyle ? global.getComputedStyle(mapEl.parentNode) : null;
+      if (cs && cs.position === 'static') mapEl.parentNode.style.position = 'relative';
+      host = el('div',
+        'position:absolute; inset:0; z-index:500; background:#0b0f19; color:#e5e7eb; ' +
+        'display:flex; flex-direction:column; overflow:hidden; ' +
+        'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+      mapEl.parentNode.appendChild(host);
+      mounted = true;
+    }
+    if (!mounted) {
+      host = el('div',
+        'position:fixed; inset:0; z-index:9999; background:#0b0f19; color:#e5e7eb; ' +
+        'display:flex; flex-direction:column; ' +
+        'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+    }
 
     // ── header: Geosonify's chrome, not the renderer's ──
     var bar = el('div', 'display:flex; align-items:center; gap:10px; padding:9px 12px; ' +
@@ -109,7 +168,7 @@
     [posTxt, quadTxt, mocTxt, sizeTxt, legTxt].forEach(function (n) { foot.appendChild(n); });
     host.appendChild(foot);
 
-    document.body.appendChild(host);
+    if (!host.parentNode) document.body.appendChild(host);
 
     els = {
       host: host, canvasWrap: canvasWrap, frameTag: frameTag, orderTxt: orderTxt,
@@ -212,9 +271,31 @@
     renderer.on('move', draw);
     renderer.on('zoom', draw);
     renderer.on('resize', draw);
-    renderer.on('click', function (p) { mark.ra = p.ra; mark.dec = p.dec; draw(); });
+    renderer.on('click', function (p) {
+      mark.ra = p.ra; mark.dec = p.dec;
+      draw();
+      // Feed the app's own coordinate so every card updates. Dec -> lat,
+      // RA -> lon: the same numbers the HEALPix construction already uses.
+      try {
+        if (global.AppState && global.AppState.set) {
+          var lon = p.ra > 180 ? p.ra - 360 : p.ra;
+          global.AppState.set('coordinate', { lat: p.dec, lon: lon });
+        }
+      } catch (e) {}
+    });
 
     document.addEventListener('keydown', onKey);
+    gateEarthOnlyCards(true);
+
+    // The sky panel is already the honest RA/Dec + MOC readout, so reuse it
+    // rather than growing a second one. Canvas above, numbers below.
+    try {
+      if (global.GeosonifySkyPanel && global.GeosonifySkyPanel.setOpen) {
+        if (!global.GeosonifySkyPanel.isEnabled()) global.GeosonifySkyPanel.enable();
+        global.GeosonifySkyPanel.setOpen(true);
+      }
+    } catch (e) {}
+
     draw();
     return true;
   }
@@ -223,9 +304,10 @@
 
   function closeView() {
     document.removeEventListener('keydown', onKey);
+    gateEarthOnlyCards(false);
     if (renderer) { try { renderer.destroy(); } catch (e) {} renderer = null; }
     if (host && host.parentNode) host.parentNode.removeChild(host);
-    host = null; els = null;
+    host = null; els = null; mapEl = null;
     return true;
   }
 
