@@ -20,6 +20,9 @@
 var Sky = require('./geosonify-sky.js');
 var HP = null;
 try { HP = require('./geosonify-healpix.js'); } catch (e) {}
+// Geometry needs the real projection; under Node the bare-const probe cannot
+// see it, so inject explicitly.
+if (HP) Sky.setEngine(HP);
 
 var pass = 0, fail = 0;
 function ok(name, cond, detail) {
@@ -237,6 +240,50 @@ var sep = Math.acos(Math.sin(lat / 57.29578) * Math.sin(icrsDec / 57.29578) +
           Math.cos((z.raDeg - icrsRA) / 57.29578)) * 57.29578;
 ok('ICRS separation ~0.354 deg (precession, expected)', near(sep, 0.3536, 0.01), sep.toFixed(4) + ' deg');
 console.log('  frame label: ' + z.frame);
+
+// ---- 10b  cell geometry -----------------------------------------------
+head('10b  cell geometry');
+if (!HP) { console.log('  SKIP  engine not available'); }
+else {
+  var gIpix = HP.nestIndex(lat, lon, 12);
+  var ring = Sky.cellBoundary(12, gIpix, { step: 4 });
+  ok('step 4 gives 16 points + closure', ring.length === 17, String(ring.length));
+  ok('ring closes exactly', ring[0][0] === ring[16][0] && ring[0][1] === ring[16][1]);
+  ok('step 1 gives 4 corners', Sky.cellCorners4(12, gIpix).length === 4);
+
+  // every boundary point must lie in the cell or one of its edge neighbours,
+  // and the centre must be strictly inside
+  var ctr = HP.nestCentre(gIpix, 12);
+  var maxOff = 0;
+  Sky.cellCorners4(12, gIpix).forEach(function (p) {
+    maxOff = Math.max(maxOff, Sky.separationDeg(ctr[1], ctr[0], p[1], p[0]) * 3600);
+  });
+  var side = Sky.cellSize(12).arcsec;
+  ok('corners lie ~half a cell from the centre', maxOff > side * 0.3 && maxOff < side * 1.2,
+     maxOff.toFixed(2) + '" vs side ' + side.toFixed(2) + '"');
+
+  // the seam: unwrapped longitudes must stay continuous, not jump 360
+  var seam = Sky.cellCorners4(6, HP.nestIndex(10, 179.999, 6));
+  var maxJump = 0;
+  for (var si = 1; si < seam.length; si++) maxJump = Math.max(maxJump, Math.abs(seam[si][1] - seam[si - 1][1]));
+  ok('antimeridian ring stays continuous', maxJump < 180, 'max jump ' + maxJump.toFixed(3));
+  ok('and does exceed 180 deg longitude', seam.some(function (p) { return p[1] > 180; }));
+
+  // sky frame: RA in [0,360)
+  var skyRing = Sky.cellBoundary(12, gIpix, { frame: 'sky', unwrap: false });
+  ok('sky frame RA all in [0,360)', skyRing.every(function (p) { return p[1] >= 0 && p[1] < 360; }));
+
+  // ancestry
+  var anc = Sky.ancestry(13, HP.nestIndex(lat, lon, 13), { fromOrder: 8 });
+  ok('ancestry spans the requested orders', anc.length === 6 && anc[0].order === 8 && anc[5].order === 13);
+  ok('each ancestor is a prefix of the next', anc.every(function (a, i) {
+    return i === 0 || a.quaternary.indexOf(anc[i - 1].quaternary) === 0;
+  }));
+  ok('each step is 4x the area', anc.every(function (a, i) {
+    return i === 0 || Math.abs(anc[i - 1].sizeArcsec / a.sizeArcsec - 2) < 1e-9;
+  }));
+  ok('rejects out-of-range ipix', throws(function () { Sky.cellBoundary(2, 999n); }));
+}
 
 // ---- 11  cell sizes ----------------------------------------------------
 head('11  cell size table');

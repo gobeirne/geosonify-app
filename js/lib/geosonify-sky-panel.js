@@ -71,6 +71,23 @@
   */
   var INGESTION_ORDER_LIMIT = 52;
 
+  /*
+    Reference positions for the compare box, so nothing has to be typed on a
+    phone and so comparison is against PUBLISHED values rather than pixels read
+    off a zoomed view.
+
+    Approximate ICRS / J2000. SIMBAD is authoritative; these are here to be
+    recognisable, not to be a catalogue. Polaris and Sgr A* are deliberate edge
+    cases: one is 40 arcmin from the pole where RA becomes ill-conditioned, the
+    other sits in the galactic centre at negative declination.
+  */
+  var REFERENCE_POSITIONS = [
+    ['Vega',    '18 36 56.336 +38 47 01.28'],
+    ['M42',     '05 35 17.3 -05 23 28'],
+    ['Polaris', '02 31 49.09 +89 15 50.8'],
+    ['Sgr A*',  '17 45 40.04 -29 00 28.1']
+  ];
+
   var els = null;
   var order = DEFAULT_ORDER;
   var isOpen = false;
@@ -112,6 +129,48 @@
     Returns everything the panel displays, or { unavailable: reason }.
     Kept pure so the numbers can be gated without a browser.
   */
+  /*
+    Compare a typed sky position against the current pin's cell.
+    Returns the typed position's own cell (always safe to show) and the shared
+    prefix with the pin (which reveals how close the pin is, so it is withheld
+    under privacy mode by the caller).
+  */
+  function compare(text, lat, lon, k) {
+    var Sky = _Sky(), HP = _HP();
+    if (!Sky || !HP) return { error: 'not loaded' };
+    var pos;
+    try { pos = Sky.parsePosition(text); }
+    catch (e) { return { error: e.message }; }
+
+    var dp = Sky.autoDecimals(k, pos.decDeg);
+    var out = {
+      raDeg: pos.raDeg, decDeg: pos.decDeg,
+      pretty: Sky.formatRA(pos.raDeg, { decimals: dp.ra }) + '  ' +
+              Sky.formatDec(pos.decDeg, { decimals: dp.dec, unicode: true }),
+      spelling: pos.spelling
+    };
+
+    // Treat the typed RA/Dec as a celestial position and address it with the
+    // same HEALPix construction: Dec -> lat, RA -> lon.
+    var ipix = BigInt(HP.nestIndex(pos.decDeg, pos.raDeg, k));
+    var cell = Sky.ipixToCell(k, ipix);
+    out.quaternary = cell.quaternary;
+    out.moc = k + '/' + ipix.toString();
+
+    if (lat !== null && lat !== undefined) {
+      var mine = Sky.ipixToCell(k, BigInt(HP.nestIndex(lat, lon, k))).quaternary;
+      out.shared = Sky.sharedPrefix(mine, cell.quaternary);
+      // Angular separation is what people actually want to know, and it is
+      // meaningful even when the two cells share no prefix at all.
+      var sep = Sky.separationDeg(lon, lat, pos.raDeg, pos.decDeg);
+      out.separationDeg = sep;
+      out.separationText = sep >= 1 ? sep.toFixed(2) + '\u00b0'
+                          : (sep >= 1 / 60 ? (sep * 60).toFixed(2) + '\u2032'
+                          : Sky.formatAngle(sep * 3600));
+    }
+    return out;
+  }
+
   function compute(lat, lon, k, date) {
     var Sky = _Sky(), HP = _HP();
     if (!Sky) return { unavailable: 'GeosonifySky not loaded' };
@@ -141,8 +200,10 @@
       skyRA: Sky.formatRA(lon, { decimals: dp.ra }),
       skyDec: Sky.formatDec(lat, { decimals: dp.dec, unicode: true }),
       // ASCII spellings, for pasting into Aladin / SIMBAD / mount software
-      skyPlain: Sky.formatRA(lon, { decimals: dp.ra, delimiter: 'spaces' }) + ' ' +
-                Sky.formatDec(lat, { decimals: dp.dec, delimiter: 'spaces' }),
+      // Copy form carries ROUNDTRIP_EXTRA additional digits so that pasting it
+      // back reproduces the same cell ~99.8% of the time rather than ~85%.
+      skyPlain: Sky.formatRA(lon, { decimals: dp.raRoundTrip, delimiter: 'spaces' }) + ' ' +
+                Sky.formatDec(lat, { decimals: dp.decRoundTrip, delimiter: 'spaces' }),
       decimals: dp,
       designation: Sky.designation(lon, lat),
       cellSize: size.text,
@@ -290,6 +351,32 @@
     b4.appendChild(zVal);
     body.appendChild(b4);
 
+    // block 5 — compare
+    var b5 = el('div', S.block);
+    b5.appendChild(el('p', S.label, 'Compare a sky position'));
+    b5.appendChild(el('p', S.sub, 'paste from Aladin, SIMBAD, a paper, anywhere'));
+    var input = el('input', 'width:100%; box-sizing:border-box; padding:6px 8px; font-size:13px; ' +
+      'font-family:ui-monospace,monospace; border:1px solid var(--ios-separator,#C6C6C8); ' +
+      'border-radius:6px; background:var(--ios-card,#fff); color:var(--ios-text,#000);');
+    input.setAttribute('type', 'text');
+    input.setAttribute('placeholder', '11 30 36.2 -43 33 19.6');
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('autocorrect', 'off');
+    input.setAttribute('spellcheck', 'false');
+    b5.appendChild(input);
+    var chips = el('div', 'display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;');
+    REFERENCE_POSITIONS.forEach(function (rp) {
+      var c = el('button', 'border:1px solid var(--ios-separator,#C6C6C8); border-radius:11px; ' +
+        'background:transparent; color:var(--ios-secondary,#3C3C43); font-size:11px; ' +
+        'padding:3px 9px; cursor:pointer;', rp[0]);
+      c.onclick = function (ev) { ev.stopPropagation(); input.value = rp[1]; renderCompare(); };
+      chips.appendChild(c);
+    });
+    b5.appendChild(chips);
+    var cmpOut = el('div', 'margin-top:7px; font-size:12px; line-height:1.5; color:var(--ios-secondary,#3C3C43);');
+    b5.appendChild(cmpOut);
+    body.appendChild(b5);
+
     // footer
     var foot = el('div', S.block + ' background:var(--ios-light-gray,#F2F2F7);');
     foot.appendChild(el('p', 'font-size:10.5px; line-height:1.45; margin:0; color:var(--ios-gray,#8E8E93);',
@@ -306,8 +393,12 @@
       rMoc: rMoc, rNuniq: rNuniq, rQuad: rQuad,
       warn: warn, warnTxt: warnTxt, warnRow: warnRow,
       pad: pad, padTxt: padTxt,
-      zSub: zSub, zVal: zVal
+      zSub: zSub, zVal: zVal,
+      input: input, cmpOut: cmpOut
     };
+
+    input.oninput = renderCompare;
+    input.onclick = function (ev) { ev.stopPropagation(); };
 
     header.onclick = function () { setOpen(!isOpen); };
     minus.onclick = function (e) { e.stopPropagation(); setOrder(order - 1); };
@@ -423,6 +514,51 @@
 
     els.zSub.textContent = r.zenithFrame + ' \u00b7 ' + r.utc + ' \u00b7 not ICRS (\u22480.35\u00b0 precession)';
     els.zVal.textContent = r.zenithRA + '  ' + r.zenithDec;
+    renderCompare();
+  }
+
+  /*
+    The comparison is the whole point of this block: a shared PREFIX length is an
+    answer a human can read at a glance, where two sexagesimal strings are not.
+    Same digits = same cell = same patch, with no mixed-radix arithmetic and no
+    cos(dec) factor to worry about.
+  */
+  function renderCompare() {
+    if (!els || !isOpen) return;
+    var text = els.input.value;
+    if (!text || !text.trim()) { els.cmpOut.textContent = ''; return; }
+
+    var c = _coord();
+    var r = compare(text, c ? c.lat : null, c ? c.lon : null, order);
+    if (r.error) {
+      els.cmpOut.textContent = r.error;
+      els.cmpOut.style.color = 'var(--ios-gray,#8E8E93)';
+      return;
+    }
+    els.cmpOut.style.color = 'var(--ios-secondary,#3C3C43)';
+    els.cmpOut.textContent = '';
+
+    var line1 = el('div', 'font-family:ui-monospace,monospace;', r.pretty);
+    var line2 = el('div', 'font-family:ui-monospace,monospace; word-break:break-all; ' +
+                          'color:var(--ios-gray,#8E8E93); margin-top:2px;', r.quaternary);
+    els.cmpOut.appendChild(line1);
+    els.cmpOut.appendChild(line2);
+
+    // The comparison leaks how close the pin is, so it follows the same privacy
+    // rule as the rest of the panel. The typed position's own cell does not leak.
+    if (_privacyOn()) {
+      els.cmpOut.appendChild(el('div', 'margin-top:3px;', 'Comparison hidden while privacy mode is active'));
+    } else if (r.shared) {
+      var msg = r.shared.identical
+        ? 'Identical to your point at order ' + order
+        : (r.shared.sameFace
+            ? 'Shares ' + r.shared.digits + ' of ' + order + ' digits \u2014 ' + r.shared.text
+            : 'No shared digits \u2014 different base faces');
+      if (r.separationText) msg += '.  ' + r.separationText + ' away.';
+      els.cmpOut.appendChild(el('div', 'margin-top:3px; color:var(--ios-text,#000);', msg));
+    } else {
+      els.cmpOut.appendChild(el('div', 'margin-top:3px;', 'Select a point on the map to compare'));
+    }
   }
 
   function setAll(text) {
@@ -510,6 +646,8 @@
     INGESTION_ORDER_LIMIT: INGESTION_ORDER_LIMIT,
     setOrder: setOrder, setOpen: setOpen,
     compute: compute,                          // pure, testable without a DOM
+    compare: compare,                          // pure, testable without a DOM
+    REFERENCE_POSITIONS: REFERENCE_POSITIONS,
     getOrder: function () { return order; }
   };
 

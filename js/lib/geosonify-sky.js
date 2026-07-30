@@ -52,11 +52,28 @@
 
   // ---- HealpixGrids resolution (bare top-level const, NOT window.*) --------
   // Mirrors the probe in geosonify-healpix-path.js / geosonify-precision.js.
+  var _engine = null;                       // explicit override, for Node/tests
+
   function _HP() {
+    if (_engine) return _engine;
     try { if (typeof HealpixGrids !== 'undefined' && HealpixGrids) return HealpixGrids; } catch (e) {}
     if (global && global.HealpixGrids) return global.HealpixGrids;
     return null;
   }
+
+  /*
+    In the browser geosonify-healpix.js declares a bare top-level const, so the
+    probe above finds it. Under Node, `require` binds it to a local instead, so
+    tests must inject it. Geometry has no pure-JS fallback -- it needs the real
+    projection -- so injection is the honest way to make it testable rather than
+    silently degrading.
+  */
+  function setEngine(hp) { _engine = hp || null; return _engine; }
+
+  /* The resolved engine, however it was found. Consumers should use this rather
+     than re-probing the bare top-level const themselves: the probe is fragile
+     outside a browser, and one place to get it wrong is better than many. */
+  function getEngine() { return _HP(); }
 
   // ---- BigInt hygiene ------------------------------------------------------
 
@@ -228,6 +245,128 @@
     return (arcsec * 1e9).toFixed(2) + ' nas';
   }
 
+  // ---- cell geometry ----------------------------------------------------
+  /*
+    The engine has pixelBoundary(nside, ipix, step) internally and it takes the
+    INDEX directly -- but it is private, and the public cellCorners() only accepts
+    lat/lon, forcing a needless re-projection. _core.pixcoord2vec_nest IS exported,
+    so the geometry is rebuilt here on top of it and geosonify-healpix.js is left
+    untouched.
+
+    Corners are sampled in the cell's own (u,v) unit square, so the result is
+    exact for the index given -- no round trip through a projected centre, which
+    is the operation that goes wrong near boundaries (see PARITY-FINDINGS.md).
+  */
+
+  function vecToLatLon(v) {
+    var lat = Math.asin(Math.max(-1, Math.min(1, v[2]))) * DEG_PER_RAD;
+    var lon = Math.atan2(v[1], v[0]) * DEG_PER_RAD;
+    return [lat, lon];
+  }
+
+  /*
+    Trace a cell's boundary.
+
+      order, ipix        the cell (ipix BigInt / string / safe Number)
+      opts.step          samples per edge. 1 = the 4 corners. Edges are CURVED on
+                         a sphere, so straight lines between corners bulge wrong
+                         at low orders; 8-16 looks right for order < 6, and 1 is
+                         plenty above ~order 10 where a cell is a few arcsec.
+      opts.close         repeat the first point to close the ring (default true)
+      opts.unwrap        keep longitude continuous across the +/-180 seam
+                         (default true). Leaflet needs this or the polygon smears
+                         across the entire map; Aladin does not care.
+      opts.frame         'earth' -> [lat, lon] with lon in (-180, 180]
+                         'sky'   -> [dec, ra]  with ra in [0, 360)
+  */
+  function cellBoundary(order, ipix, opts) {
+    checkOrder(order);
+    opts = opts || {};
+    if (opts.engine) setEngine(opts.engine);
+    var step = Math.max(1, opts.step === undefined ? 1 : opts.step | 0);
+    var close = opts.close !== false;
+    var unwrap = opts.unwrap !== false;
+    var sky = opts.frame === 'sky';
+
+    var hp = _HP();
+    if (!hp || !hp._core || !hp._core.pixcoord2vec_nest) {
+      throw new Error('cellBoundary needs HealpixGrids._core.pixcoord2vec_nest');
+    }
+    var ip = toBig(ipix, 'ipix');
+    if (ip < 0n || ip >= cellsPerSphere(order)) {
+      throw new Error('ipix ' + ip + ' out of range for order ' + order);
+    }
+    var nside = Math.pow(2, order);
+    var f = hp._core.pixcoord2vec_nest;
+
+    // walk the unit square anticlockwise: (0,0) -> (1,0) -> (1,1) -> (0,1)
+    var edges = [[[0, 0], [1, 0]], [[1, 0], [1, 1]], [[1, 1], [0, 1]], [[0, 1], [0, 0]]];
+    var pts = [];
+    for (var e = 0; e < 4; e++) {
+      var a = edges[e][0], b = edges[e][1];
+      for (var s = 0; s < step; s++) {
+        var t = s / step;
+        pts.push(vecToLatLon(f(nside, ip, a[0] + (b[0] - a[0]) * t,
+                                          a[1] + (b[1] - a[1]) * t)));
+      }
+    }
+
+    if (unwrap) {
+      // Make longitude continuous. A cell straddling the seam then has
+      // longitudes outside (-180, 180], which is what polygon renderers want.
+      for (var i = 1; i < pts.length; i++) {
+        var d = pts[i][1] - pts[i - 1][1];
+        if (d > 180) pts[i][1] -= 360;
+        else if (d < -180) pts[i][1] += 360;
+      }
+    }
+
+    if (sky) {
+      pts = pts.map(function (p) {
+        var ra = p[1] % 360; if (ra < 0) ra += 360;
+        return [p[0], ra];
+      });
+    }
+
+    if (close) pts.push(pts[0].slice());
+    return pts;
+  }
+
+  function cellCorners4(order, ipix, opts) {
+    var o = {};
+    for (var kk in (opts || {})) o[kk] = opts[kk];
+    o.step = 1; o.close = false;
+    return cellBoundary(order, ipix, o);
+  }
+
+  /*
+    The chain of ancestors of a cell, coarsest first.
+
+    This is the visual proof of graceful truncation: each ancestor is one
+    quaternary digit shorter and exactly 4x the area, so plotting the chain draws
+    nested diamonds, each containing the next. Every digit you drop is one ring
+    outward.
+  */
+  function ancestry(order, ipix, opts) {
+    checkOrder(order);
+    opts = opts || {};
+    var from = opts.fromOrder === undefined ? 0 : checkOrder(opts.fromOrder);
+    var ip = toBig(ipix, 'ipix');
+    var out = [];
+    for (var k = from; k <= order; k++) {
+      var anc = ip >> BigInt(2 * (order - k));
+      var cell = ipixToCell(k, anc);
+      out.push({
+        order: k, ipix: anc, quaternary: cell.quaternary,
+        face: cell.face, digits: cell.digits,
+        moc: k + '/' + anc.toString(),
+        sizeArcsec: cellSize(k).arcsec,
+        sizeText: cellSize(k).text
+      });
+    }
+    return out;
+  }
+
   // ---- sexagesimal ------------------------------------------------------
 
   function wrap360(d) { return ((d % 360) + 360) % 360; }
@@ -361,7 +500,25 @@
 
     Capped at 7: beyond that a double coordinate has nothing left to say, and it
     matches the ingestion limit noted in the panel.
+
+    TWO MODES, because naming a cell and REPRODUCING it are different jobs.
+    Measured over 3,000 random points per order: display a position at the s/2
+    precision below, paste it back, and you land in the same cell only ~85% of
+    the time -- a point near a boundary rounds across it. Adding decimals:
+
+        extra   order 16   order 22   order 26   order 29
+          +0      83.0%      90.4%      82.5%      87.2%
+          +1      98.6%      98.9%      98.4%      98.3%
+          +2      99.9%      99.9%      99.8%      99.8%
+          +3     100.0%     100.0%     100.0%     100.0%
+
+    It can never be 100% guaranteed -- a point arbitrarily close to a boundary
+    always flips -- so ROUNDTRIP_EXTRA is a pragmatic choice, not a proof. Use
+    the display precision for reading, and the +2 form for anything that will be
+    parsed again (the copy button, exports, comparisons).
   */
+  var ROUNDTRIP_EXTRA = 2;
+
   function autoDecimals(order, decDeg) {
     checkOrder(order);
     var s = cellSideRad(order) * ARCSEC_PER_RAD;          // cell side, arcsec
@@ -370,10 +527,112 @@
     // so the decimal count stays finite rather than exploding.
     var cosd = Math.max(Math.abs(Math.cos((decDeg || 0) * RAD_PER_DEG)), 1e-3);
     var dRA = Math.ceil(Math.log10(30 * cosd / s));
+    var ra = Math.max(0, Math.min(7, dRA));
+    var dec = Math.max(0, Math.min(7, dDec));
     return {
-      ra: Math.max(0, Math.min(7, dRA)),
-      dec: Math.max(0, Math.min(7, dDec)),
+      ra: ra, dec: dec,
+      raRoundTrip: Math.min(9, ra + ROUNDTRIP_EXTRA),
+      decRoundTrip: Math.min(9, dec + ROUNDTRIP_EXTRA),
       cellArcsec: s
+    };
+  }
+
+  /*
+    Parse a combined "RA Dec" string in any spelling a sky tool is likely to hand
+    you. Returns { raDeg, decDeg, spelling }.
+
+      "11 30 36.219 -43 33 19.60"     six whitespace tokens, sexagesimal
+      "11:30:36.219 -43:33:19.60"     colon form
+      "11h30m36.219s -43d33m19.60s"   letter form
+      "18 36 56.336 +38 47 01.28"     explicit + on the declination
+      "172.6509 -43.5554"             decimal degrees, both axes
+      "172.6509, -43.5554"            comma separated
+
+    The hard part is knowing where RA stops and Dec starts, since a bare
+    "11 30 36 43 33 19" is ambiguous about sign. Rule: split on an explicit
+    declination sign when there is one, otherwise split the token list in half.
+    Six tokens -> 3 and 3. Two tokens -> decimal degrees unless they contain
+    sexagesimal punctuation.
+  */
+  function parsePosition(str) {
+    var raw = String(str || '').trim();
+    if (!raw) throw new Error('empty position');
+
+    var t = raw
+      .replace(/[\u2212\u2013\u2014]/g, '-')
+      .replace(/,/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    var raPart = null, decPart = null;
+
+    // An explicit sign after the first character marks the declination.
+    var m = t.match(/^(.*?[^\s+-])\s*([+-].*)$/);
+    if (m) {
+      raPart = m[1].trim();
+      decPart = m[2].trim();
+    } else {
+      var toks = t.split(' ');
+      if (toks.length === 6) { raPart = toks.slice(0, 3).join(' '); decPart = toks.slice(3).join(' '); }
+      else if (toks.length === 2) { raPart = toks[0]; decPart = toks[1]; }
+      else if (toks.length === 4) {
+        throw new Error('ambiguous: 4 values could be hh mm / dd mm or hh mm ss / dd. ' +
+                        'Add a sign on the declination, or use colons.');
+      } else {
+        throw new Error('cannot tell where RA ends and Dec begins in "' + raw + '"');
+      }
+    }
+
+    // Sexagesimal if it has internal separators or multiple numbers.
+    var sexaRA = /[\s:hm]/.test(raPart.replace(/^[+-]/, ''));
+    var raDeg = parseSexagesimal(raPart, sexaRA);
+    var decDeg = parseSexagesimal(decPart, false);
+
+    if (!isFinite(raDeg) || !isFinite(decDeg)) throw new Error('unparseable position "' + raw + '"');
+    if (decDeg < -90 || decDeg > 90) throw new Error('declination out of range: ' + decDeg);
+
+    return {
+      raDeg: wrap360(raDeg),
+      decDeg: decDeg,
+      spelling: sexaRA ? 'sexagesimal' : 'degrees'
+    };
+  }
+
+  /*
+    How many leading quaternary digits do two cells share?
+
+    This is the comparison that sexagesimal cannot give you. Two positions inside
+    the same order-n cell share exactly n digits, so the shared prefix length IS
+    the resolution at which they agree -- no mixed-radix arithmetic, no cos(dec)
+    factor, just a string comparison. Faces differing means they share nothing.
+  */
+  function separationDeg(ra1, dec1, ra2, dec2) {
+    // Haversine, not arccos: arccos has a sqrt(eps) floor of ~0.003 arcsec,
+    // which is coarser than a cell above order 22 and would report nonsense.
+    var p1 = dec1 * RAD_PER_DEG, p2 = dec2 * RAD_PER_DEG;
+    var dp = p2 - p1, dl = (ra2 - ra1) * RAD_PER_DEG;
+    var h = Math.sin(dp / 2) * Math.sin(dp / 2) +
+            Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+    return 2 * Math.asin(Math.min(1, Math.sqrt(h))) * DEG_PER_RAD;
+  }
+
+  function sharedPrefix(quadA, quadB) {
+    var a = parseQuaternary(quadA), b = parseQuaternary(quadB);
+    if (a.face !== b.face) {
+      return { digits: 0, sameFace: false, order: null, withinArcsec: null,
+               text: 'different base faces' };
+    }
+    var n = 0;
+    var len = Math.min(a.digits.length, b.digits.length);
+    while (n < len && a.digits[n] === b.digits[n]) n++;
+    var size = cellSize(n);
+    return {
+      digits: n, sameFace: true, order: n,
+      withinArcsec: size.arcsec,
+      identical: n === a.digits.length && n === b.digits.length,
+      text: n === len
+        ? 'identical to order ' + n
+        : 'same cell to order ' + n + ' (within ' + size.text + ')'
     };
   }
 
@@ -456,14 +715,19 @@
 
   var API = {
     VERSION: VERSION,
+    setEngine: setEngine, getEngine: getEngine,
     toBig: toBig, pow4: pow4, cellsPerSphere: cellsPerSphere,
     parseQuaternary: parseQuaternary, formatQuaternary: formatQuaternary,
     cellToIpix: cellToIpix, ipixToCell: ipixToCell,
     toMoc: toMoc, fromMoc: fromMoc, mocApprox: mocApprox,
     nuniq: nuniq, fromNuniq: fromNuniq,
     cellSize: cellSize, cellSideRad: cellSideRad, formatAngle: formatAngle,
+    cellBoundary: cellBoundary, cellCorners4: cellCorners4, ancestry: ancestry,
+    vecToLatLon: vecToLatLon,
     formatRA: formatRA, formatDec: formatDec, parseSexagesimal: parseSexagesimal,
-    autoDecimals: autoDecimals,
+    autoDecimals: autoDecimals, ROUNDTRIP_EXTRA: ROUNDTRIP_EXTRA,
+    parsePosition: parsePosition, sharedPrefix: sharedPrefix,
+    separationDeg: separationDeg,
     designation: designation,
     julianDay: julianDay, gmstDeg: gmstDeg, lstDeg: lstDeg, zenith: zenith,
     readout: readout
