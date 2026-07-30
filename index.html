@@ -649,6 +649,7 @@
 <script src="js/lib/gis-grids.js?v=20260622"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260622"></script>
 <script src="js/lib/geosonify-sky.js?v=20260730"></script>
+<script src="js/lib/geosonify-sky-url.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-panel.js?v=20260730"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
@@ -2349,7 +2350,39 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     
     function parseURLParameters() {
       const urlParams = new URLSearchParams(window.location.search);
-      
+
+      // ── Sky frame (?frame=, ?epoch=) ─────────────────────────────────
+      // Absent frame ALWAYS means earth, forever: every URL already issued is
+      // an Earth URL and must stay one. frame=earth is never emitted, so
+      // existing URLs remain byte-identical.
+      //
+      // An UNKNOWN frame aborts the decode rather than falling back to earth.
+      // Falling back would place a sky position on the Earth with no error at
+      // all — the wrong-sphere hazard this parameter exists to prevent. Abort
+      // matches how an invalid GIS code is handled further down.
+      //
+      // Read before ?enc= so the frame is recorded whichever decode path runs.
+      let urlFrame = null;
+      if (typeof GeosonifySkyUrl !== 'undefined') {
+        try {
+          urlFrame = GeosonifySkyUrl.parse(urlParams);
+        } catch (e) {
+          setTimeout(() => showToast(e.message, 'error'), 200);
+          return;
+        }
+        if (typeof AppState !== 'undefined' && AppState.set) {
+          AppState.set('frame', {
+            key: urlFrame.frame,
+            sphere: urlFrame.sphere,
+            epoch: urlFrame.epoch ? urlFrame.epoch.raw : null,
+            explicit: urlFrame.explicit
+          });
+        }
+        if (urlFrame.warnings.length) {
+          setTimeout(() => showToast(urlFrame.warnings[0]), 250);
+        }
+      }
+
       // Check for ?enc= (encrypted URL)
       const encParam = urlParams.get('enc');
       if (encParam) {
