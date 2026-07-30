@@ -232,14 +232,32 @@
 
   function wrap360(d) { return ((d % 360) + 360) % 360; }
 
-  function splitSexa(value, decimals) {
+  /*
+    truncate=false (display): round the seconds, the normal way to show a
+      measured coordinate.
+    truncate=true (designations): TRUNCATE. A designation names a box, and
+      truncating is what keeps a short name a strict PREFIX of a longer one --
+      J113036.2-433319 refines to ...19.6, whereas rounding would give
+      ...-433320, which contradicts 19.6 rather than refining it. Same reason
+      the IAU specifies truncation for source designations, and the same
+      graceful-truncation property the rest of Geosonify relies on.
+  */
+  function splitSexa(value, decimals, truncate) {
     var v = Math.abs(value);
     var a = Math.floor(v);
     var rem = (v - a) * 60;
     var b = Math.floor(rem);
     var c = (rem - b) * 60;
+    var cs;
+    if (truncate) {
+      var scale = Math.pow(10, decimals);
+      // guard the case where c is 59.999... within float noise of 60
+      var t = Math.floor(c * scale + 1e-9) / scale;
+      cs = t.toFixed(decimals);
+    } else {
+      cs = c.toFixed(decimals);
+    }
     // carry, so 59.9999 -> next unit rather than "60.00"
-    var cs = c.toFixed(decimals);
     if (parseFloat(cs) >= 60) { cs = (0).toFixed(decimals); b += 1; }
     if (b >= 60) { b -= 60; a += 1; }
     return { a: a, b: b, c: cs };
@@ -304,14 +322,72 @@
     return neg ? -val : val;
   }
 
+  /*
+    Truncating split. Designations must TRUNCATE, never round.
+
+    A designation is an identifier for a box, and Geosonify's whole premise is
+    that dropping precision yields a box that still CONTAINS the point. Rounding
+    breaks that: Dec -43 33 19.55" rounds to "...433320", naming a box the point
+    is not inside. Truncation gives "...433319", which contains it. This is also
+    the IAU convention for coordinate-derived source names.
+
+    No carry logic is needed, because truncation can never push a unit over 60.
+    The 1e-9 guard absorbs float representation error at the truncation digit
+    (1 nanoarcsecond, far below anything meaningful here).
+  */
+  function splitSexaTrunc(value, decimals) {
+    var v = Math.abs(value);
+    var a = Math.floor(v);
+    var rem = (v - a) * 60;
+    var b = Math.floor(rem);
+    var c = (rem - b) * 60;
+    var f = Math.pow(10, decimals);
+    return { a: a, b: b, c: (Math.floor(c * f + 1e-9) / f).toFixed(decimals) };
+  }
+
+  /*
+    How many decimal places does a given order actually justify?
+
+    A cell of side s arcsec is only pinned down if the display quantum is at
+    most s/2. For declination the quantum is 10^-d arcsec. For right ascension
+    it is 15*cos(dec) arcsec per second of TIME, so RA always needs more
+    decimals than Dec -- typically one more, and more still near the poles.
+
+    Worked example, order 22 at dec -43.6 (cell 0.0503"):
+      Dec needs 2 decimals (0.01" quantum)
+      RA  needs 3 decimals (0.001s = 0.0109" at this declination)
+    Two decimals of RA seconds -- the old fixed default -- is a 0.109" quantum,
+    TWICE the cell width. The panel was naming a cell it could not resolve.
+
+    Capped at 7: beyond that a double coordinate has nothing left to say, and it
+    matches the ingestion limit noted in the panel.
+  */
+  function autoDecimals(order, decDeg) {
+    checkOrder(order);
+    var s = cellSideRad(order) * ARCSEC_PER_RAD;          // cell side, arcsec
+    var dDec = Math.ceil(Math.log10(2 / s));
+    // cos(dec) collapses at the poles, where RA is nearly meaningless; floor it
+    // so the decimal count stays finite rather than exploding.
+    var cosd = Math.max(Math.abs(Math.cos((decDeg || 0) * RAD_PER_DEG)), 1e-3);
+    var dRA = Math.ceil(Math.log10(30 * cosd / s));
+    return {
+      ra: Math.max(0, Math.min(7, dRA)),
+      dec: Math.max(0, Math.min(7, dDec)),
+      cellArcsec: s
+    };
+  }
+
   // ---- IAU-style designation -------------------------------------------
   // Jhhmmss.s+ddmmss  -- truncatable: fewer digits = coarser, same place.
+  // Truncates (see splitSexaTrunc). Pass { round: true } only if you have a
+  // specific reason to want the non-containing behaviour.
   function designation(raDeg, decDeg, opts) {
     opts = opts || {};
     var rd = opts.raDecimals === undefined ? 1 : opts.raDecimals;
     var dd = opts.decDecimals === undefined ? 0 : opts.decDecimals;
-    var r = splitSexa(wrap360(raDeg) / 15, rd);
-    var d = splitSexa(decDeg, dd);
+    var split = opts.round ? splitSexa : splitSexaTrunc;
+    var r = split(wrap360(raDeg) / 15, rd);
+    var d = split(decDeg, dd);
     return 'J' + pad2(r.a) + pad2(r.b) + padNum(r.c, 2) +
            (decDeg < 0 ? '-' : '+') + pad2(d.a) + pad2(d.b) + padNum(d.c, 2);
   }
@@ -387,6 +463,7 @@
     nuniq: nuniq, fromNuniq: fromNuniq,
     cellSize: cellSize, cellSideRad: cellSideRad, formatAngle: formatAngle,
     formatRA: formatRA, formatDec: formatDec, parseSexagesimal: parseSexagesimal,
+    autoDecimals: autoDecimals,
     designation: designation,
     julianDay: julianDay, gmstDeg: gmstDeg, lstDeg: lstDeg, zenith: zenith,
     readout: readout

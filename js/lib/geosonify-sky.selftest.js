@@ -148,6 +148,60 @@ ok('dec +0 is +', Sky.formatDec(0.5, { delimiter: 'spaces' }).charAt(0) === '+')
 ok('RA wraps 360 -> 0', Sky.formatRA(360) === '00h 00m 00.00s', Sky.formatRA(360));
 ok('rejects |dec| > 90', throws(function () { Sky.formatDec(91); }));
 
+head('8b  designations truncate, never round');
+// Dec -43 33 19.55" must NOT become ...433320, which names a box the point is
+// outside. Containment is the whole point of a truncatable identifier.
+var dLat = -43.555431565421, dLon = 172.650929689407;
+ok('truncates seconds', Sky.designation(dLon, dLat) === 'J113036.2-433319', Sky.designation(dLon, dLat));
+ok('rounding opt-in still available', Sky.designation(dLon, dLat, { round: true }) === 'J113036.2-433320',
+   Sky.designation(dLon, dLat, { round: true }));
+var trWorst = 0;
+for (var q = 0; q < 20000; q++) {
+  var ra2 = Math.random() * 360, de2 = Math.random() * 180 - 90;
+  var dg = Sky.designation(ra2, de2);
+  // reconstruct the box the designation names and check the point is inside it
+  var hh = +dg.slice(1, 3), mmm = +dg.slice(3, 5), sss = parseFloat(dg.slice(5, 9));
+  var sgn = dg.charAt(9) === '-' ? -1 : 1;
+  var dd2 = +dg.slice(10, 12), dm = +dg.slice(12, 14), ds = +dg.slice(14, 16);
+  var raBox = (hh + mmm / 60 + sss / 3600) * 15;
+  var deBox = sgn * (dd2 + dm / 60 + ds / 3600);
+  // truncation means the box floor is at or below the true value
+  if (raBox > ra2 + 1e-9 || (sgn > 0 ? deBox > de2 + 1e-9 : deBox < de2 - 1e-9)) trWorst++;
+}
+ok('20,000 designations name a containing box', trWorst === 0, trWorst + ' escaped the box');
+
+head('8b  designations truncate, so short names stay prefixes of long ones');
+var dec = -(43 + 33 / 60 + 19.64 / 3600), ra = 172.65090833;
+var d0 = Sky.designation(ra, dec, { raDecimals: 0, decDecimals: 0 });
+var d1 = Sky.designation(ra, dec, { raDecimals: 1, decDecimals: 1 });
+var d2 = Sky.designation(ra, dec, { raDecimals: 2, decDecimals: 2 });
+ok('19.64" truncates to 19, never rounds to 20', d0.indexOf('-433319') > 0, d0);
+ok('sexagesimal display still rounds to 19.6', Sky.formatDec(dec, { delimiter: 'spaces' }).indexOf('19.6') > 0,
+   Sky.formatDec(dec, { delimiter: 'spaces' }));
+ok('RA part refines as a prefix', d1.split('-')[0].indexOf(d0.split('-')[0]) === 0, d0 + ' -> ' + d1);
+ok('Dec part refines as a prefix', ('-' + d1.split('-')[1]).indexOf('-' + d0.split('-')[1]) === 0, d0 + ' -> ' + d1);
+ok('and again at 2 decimals', d2.split('-')[0].indexOf(d1.split('-')[0]) === 0, d1 + ' -> ' + d2);
+ok('carry guard survives 59.999s', Sky.designation(15 * (11 + 59 / 60 + 59.999 / 3600), 0.5, { raDecimals: 0 }) === 'J115959+003000',
+   Sky.designation(15 * (11 + 59 / 60 + 59.999 / 3600), 0.5, { raDecimals: 0 }));
+
+head('8c  decimals scale with order');
+var dcTest = -(43 + 33 / 60 + 19.598 / 3600);
+ok('order 12 needs no decimals', Sky.autoDecimals(12, dcTest).ra === 0);
+ok('order 22 needs 3 RA / 2 Dec', Sky.autoDecimals(22, dcTest).ra === 3 && Sky.autoDecimals(22, dcTest).dec === 2,
+   JSON.stringify(Sky.autoDecimals(22, dcTest)));
+ok('RA always needs >= Dec decimals', [8, 12, 16, 22, 26, 29, 34].every(function (k) {
+  var a = Sky.autoDecimals(k, dcTest); return a.ra >= a.dec;
+}));
+ok('quantum is finer than half a cell at order 22', (function () {
+  var a = Sky.autoDecimals(22, dcTest);
+  var raQ = Math.pow(10, -a.ra) * 15 * Math.cos(dcTest * Math.PI / 180);
+  return raQ <= a.cellArcsec / 2;
+})());
+ok('capped at 7 and finite at the pole', Sky.autoDecimals(60, 89.9999).ra === 7);
+ok('order 22 reproduces Aladin to displayed precision',
+   Sky.formatRA(15 * (11 + 30 / 60 + 36.219 / 3600), { decimals: 3 }) === '11h 30m 36.219s',
+   Sky.formatRA(15 * (11 + 30 / 60 + 36.219 / 3600), { decimals: 3 }));
+
 // ---- 9  parser spellings -----------------------------------------------
 head('9  parser accepts common spellings');
 // 11h 30m 36.22s is 172.65091666... deg -- two-decimal seconds carry only

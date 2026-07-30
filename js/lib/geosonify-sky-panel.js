@@ -126,25 +126,37 @@
     var size = Sky.cellSize(k);
     var zen = Sky.zenith(lat, lon, date || new Date());
 
+    // Show only as many decimals as the current order actually justifies, and no
+    // fewer. A fixed 2-decimal RA is a 0.109" quantum at mid declinations --
+    // coarser than an order-22 cell -- so a fixed default either names a cell it
+    // cannot resolve, or buries a coarse cell in meaningless digits.
+    var dp = Sky.autoDecimals(k, lat);
+
     var out = {
       order: k,
       lat: lat, lon: lon,
       quaternary: cell.quaternary,
       ipix: ipix,
       // The same cell read as a celestial address: lat -> Dec, lon -> RA.
-      skyRA: Sky.formatRA(lon),
-      skyDec: Sky.formatDec(lat, { unicode: true }),
+      skyRA: Sky.formatRA(lon, { decimals: dp.ra }),
+      skyDec: Sky.formatDec(lat, { decimals: dp.dec, unicode: true }),
+      // ASCII spellings, for pasting into Aladin / SIMBAD / mount software
+      skyPlain: Sky.formatRA(lon, { decimals: dp.ra, delimiter: 'spaces' }) + ' ' +
+                Sky.formatDec(lat, { decimals: dp.dec, delimiter: 'spaces' }),
+      decimals: dp,
       designation: Sky.designation(lon, lat),
       cellSize: size.text,
       areaDeg2: size.areaDeg2,
       moc: moc.moc,
       nuniq: moc.nuniq.toString(),
       standard: moc.standard,
-      zenithRA: zen.ra,
-      zenithDec: zen.dec,
+      zenithRA: Sky.formatRA(zen.raDeg, { decimals: dp.ra }),
+      zenithDec: Sky.formatDec(zen.decDeg, { decimals: dp.dec, unicode: true }),
       zenithFrame: zen.frame,
       zenithCaveat: zen.caveat,
-      utc: (date || new Date()).toISOString().slice(11, 16) + ' UTC'
+      // Seconds matter: 1 second of clock = 15 arcsec of RA, while the zenith
+      // is displayed to 0.01s. HH:MM alone makes the reading unreproducible.
+      utc: (date || new Date()).toISOString().slice(11, 19) + ' UTC'
     };
 
     // Past order 29 there is no legal MOC spelling. Offer the standard ancestor
@@ -302,7 +314,8 @@
     plus.onclick = function (e) { e.stopPropagation(); setOrder(order + 1); };
     posCopy.onclick = function (e) {
       e.stopPropagation();
-      var v = posVal.textContent;
+      // Copy the ASCII spelling: degree/prime/minus glyphs break most parsers.
+      var v = els && els.plainPos ? els.plainPos : posVal.textContent;
       if (!v || v === REDACT) { _toast('Hidden while privacy mode is active', 'error'); return; }
       if (navigator.clipboard) navigator.clipboard.writeText(v).then(function () { _toast('Position copied'); });
     };
@@ -371,6 +384,7 @@
     els.badge.textContent = 'read-only';
     els.sizeTxt.textContent = r.cellSize;
     els.posVal.textContent = r.skyRA + '  ' + r.skyDec;
+    els.plainPos = r.skyPlain;
     els.desig.textContent = r.designation;
     els.rMoc.val.textContent = r.moc;
     els.rNuniq.val.textContent = r.nuniq;
