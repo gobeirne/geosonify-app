@@ -42,8 +42,9 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var MOUNT_ID = 'skyPanelMount';
+  var ENABLE_KEY = 'geosonify-sky-enabled';
   var STORAGE_KEY = 'geosonify-sky-panel-open';
   var ORDER_KEY = 'geosonify-sky-panel-order';
   var DEFAULT_ORDER = 22;
@@ -51,6 +52,24 @@
   var MAX_ORDER = 73;
   var STANDARD_MOC_MAX = 29;
   var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
+
+  /*
+    INGESTION LIMIT (not an address limit).
+    nestIndex's deep path extracts one x bit and one y bit per quaternary digit
+    by repeatedly doubling a pair of doubles. A double carries ~52 mantissa bits,
+    so after 52 digits both values are exactly 0 and every later digit is a
+    literal zero -- padding that looks like measurement. Verified: the tail is
+    all zeros from digit 52 for every coordinate tested, at every order above it.
+
+    The ADDRESS layer has no ceiling -- an order-66 code handed to us round-trips
+    exactly. Only deriving a code from a double coordinate ceilings here.
+
+    Data-dependent by +/-1 (a genuine zero digit at 51 is indistinguishable from
+    padding). The real fix is ingesting through GeoPrecision's Decimal path
+    (geosonify-precision.js, 120 significant digits); that is deliberate later
+    work, not a tweak.
+  */
+  var INGESTION_ORDER_LIMIT = 52;
 
   var els = null;
   var order = DEFAULT_ORDER;
@@ -138,6 +157,13 @@
         note: 'order ' + STANDARD_MOC_MAX + ' ancestor, ' + ap.areaFactor.toString() + '\u00d7 the area'
       };
       out.bits = ipix.toString(2).length;
+    }
+
+    // Past the double-precision ingestion limit the deep digits are padding.
+    // Say so rather than letting a run of zeros pass for measurement.
+    if (k > INGESTION_ORDER_LIMIT) {
+      out.paddedDigits = k - INGESTION_ORDER_LIMIT;
+      out.informativeOrder = INGESTION_ORDER_LIMIT;
     }
     return out;
   }
@@ -237,6 +263,12 @@
     warn.appendChild(warnTxt); warn.appendChild(warnRow.wrap);
     body.appendChild(warn);
 
+    // block 3b — ingestion padding notice (hidden unless order > 52)
+    var pad = el('div', S.block + ' display:none;');
+    var padTxt = el('p', 'font-size:11.5px; line-height:1.45; margin:0; color:var(--ios-secondary,#3C3C43);');
+    pad.appendChild(padTxt);
+    body.appendChild(pad);
+
     // block 4 — zenith
     var b4 = el('div', S.block);
     b4.appendChild(el('p', S.label, 'Overhead here, now'));
@@ -261,6 +293,7 @@
       posVal: posVal, posCopy: posCopy, desig: desig,
       rMoc: rMoc, rNuniq: rNuniq, rQuad: rQuad,
       warn: warn, warnTxt: warnTxt, warnRow: warnRow,
+      pad: pad, padTxt: padTxt,
       zSub: zSub, zVal: zVal
     };
 
@@ -312,6 +345,7 @@
       setAll('\u2014');
       els.sizeTxt.textContent = '';
       els.warn.style.display = 'none';
+      els.pad.style.display = 'none';
       els.zSub.textContent = '';
       return;
     }
@@ -323,6 +357,7 @@
       els.sizeTxt.textContent = '';
       els.desig.textContent = '';
       els.warn.style.display = 'none';
+      els.pad.style.display = 'none';
       els.zSub.textContent = 'Turn off passphrase / obfuscation to show';
       return;
     }
@@ -345,12 +380,31 @@
       els.warn.style.display = 'none';
     } else {
       els.warn.style.display = 'block';
-      els.warnTxt.textContent =
-        'Order ' + r.order + ' is beyond the MOC standard\u2019s order-' + STANDARD_MOC_MAX +
+      var msg = 'Order ' + r.order + ' is beyond the MOC standard\u2019s order-' + STANDARD_MOC_MAX +
         ' ceiling \u2014 this index needs ' + r.bits + ' bits and will not fit the 64-bit integer ' +
         'healpy and mocpy use. The cell above is exact; the fallback below is its ' +
         r.approx.areaFactor + '\u00d7 larger order-' + STANDARD_MOC_MAX + ' ancestor.';
+      // Verified against mocpy 0.20.0: order 30 is accepted WITHOUT error and
+      // silently mis-parsed to "0/32-47 29/" -- sixteen base cells, most of the
+      // sky. Order 31+ is refused cleanly. A refusal is safe; silent whole-sky
+      // corruption is not, so order 30 gets its own warning.
+      if (r.order === 30) {
+        msg += ' Order 30 is the worst case: mocpy accepts it with no error and ' +
+               'silently returns a near-whole-sky region. Use the fallback, not this.';
+      }
+      els.warnTxt.textContent = msg;
       els.warnRow.val.textContent = r.approx.moc;
+    }
+
+    if (r.paddedDigits) {
+      els.pad.style.display = 'block';
+      els.padTxt.textContent =
+        'The last ' + r.paddedDigits + ' digit' + (r.paddedDigits === 1 ? '' : 's') +
+        ' are padding, not measurement. The coordinate is a double, which carries ' +
+        'about ' + r.informativeOrder + ' quaternary digits; past that the code is ' +
+        'a valid contained cell but tells you nothing more about where you are.';
+    } else {
+      els.pad.style.display = 'none';
     }
 
     els.zSub.textContent = r.zenithFrame + ' \u00b7 ' + r.utc + ' \u00b7 not ICRS (\u22480.35\u00b0 precession)';
@@ -367,8 +421,39 @@
 
   // ---- init --------------------------------------------------------------
 
+  /*
+    OPT-IN GATE.
+    Hidden unless localStorage['geosonify-sky-enabled'] === '1'. Deliberately NOT
+    a URL param: any query param at all suppresses the splash screen and the
+    random initial location, so ?sky=1 would silently change startup behaviour.
+    A localStorage flag has no such side effect and never reaches a shared link.
+
+    Turn on:   GeosonifySkyPanel.enable()
+    Turn off:  GeosonifySkyPanel.disable()
+    Both take effect immediately; no reload needed.
+  */
+  function _enabled() {
+    try { return localStorage.getItem(ENABLE_KEY) === '1'; } catch (e) { return false; }
+  }
+
+  function enable() {
+    try { localStorage.setItem(ENABLE_KEY, '1'); } catch (e) {}
+    var built = init({ force: true });
+    if (built) setOpen(true);
+    console.log('[geosonify] sky panel enabled' + (built ? '' : ' (mount div missing)'));
+    return built;
+  }
+
+  function disable() {
+    try { localStorage.setItem(ENABLE_KEY, '0'); } catch (e) {}
+    destroy();
+    console.log('[geosonify] sky panel hidden');
+    return true;
+  }
+
   function init(opts) {
     opts = opts || {};
+    if (!opts.force && !_enabled()) return false;   // muggle-safe default
     var mount = document.getElementById(opts.mountId || MOUNT_ID);
     if (!mount) return false;                 // not wired in; stay silent
     if (els) return true;                     // already built
@@ -406,6 +491,9 @@
   var API = {
     VERSION: VERSION,
     init: init, destroy: destroy, render: render,
+    enable: enable, disable: disable,
+    isEnabled: _enabled,
+    INGESTION_ORDER_LIMIT: INGESTION_ORDER_LIMIT,
     setOrder: setOrder, setOpen: setOpen,
     compute: compute,                          // pure, testable without a DOM
     getOrder: function () { return order; }
