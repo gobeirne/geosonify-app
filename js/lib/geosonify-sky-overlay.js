@@ -200,15 +200,32 @@
     Geosonify's precision culture says the UI states its limits rather than
     quietly rendering a dot and letting the user infer precision from a code.
   */
-  function legibility(picked, deepestCellOrder) {
-    if (!picked.draw.length) {
-      return 'Cell is off screen';
-    }
+  /*
+    A vector renderer has no resolution ceiling, so this must never read like
+    one. Deeper levels are not "too small to exist" -- they are too small TO DRAW
+    AT THIS ZOOM, and zooming in reveals them. The only genuine ceiling is the
+    projection's double-precision wall, which the renderer reports through
+    capabilities().maxResolvableOrder, and which is stated separately because it
+    is a different kind of statement.
+
+    (The earlier wording said "smaller than a pixel", which was wrong twice: the
+    threshold is minPx, not one pixel, and it implied a limit where there is none.)
+  */
+  function legibility(picked, deepestCellOrder, opts) {
+    opts = opts || {};
+    if (!picked.draw.length) return 'Cell is off screen';
+
     var d = picked.deepest.cell.order;
+    var wall = opts.maxResolvableOrder;
+
+    if (wall && deepestCellOrder > wall) {
+      return 'Showing to order ' + d + '; order ' + deepestCellOrder +
+             ' is past what double-precision angles can resolve (order ' + wall + ')';
+    }
     if (d < deepestCellOrder) {
       var n = deepestCellOrder - d;
-      return 'Showing to order ' + d + '; ' + n + ' deeper level' + (n === 1 ? '' : 's') +
-             ' are smaller than a pixel at this zoom';
+      return 'Showing to order ' + d + ' \u2014 zoom in for ' + n + ' more level' +
+             (n === 1 ? '' : 's');
     }
     return 'Showing all levels to order ' + d;
   }

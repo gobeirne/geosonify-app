@@ -224,11 +224,31 @@
       if (ev.preventDefault) ev.preventDefault();
     }
 
+    /*
+      MINIMUM FIELD OF VIEW -- measured, not guessed.
+
+      A vector renderer has no resolution limit, so zooming should keep working
+      until the MATHS runs out, not until something looks small. Zooming until an
+      order-k cell spans 200 px and checking the outline is still a real
+      quadrilateral:
+
+        order 20-48   four distinct corners, sane area   OK
+        order 50+     collapses to three corners, zero area   FAILS
+
+      The wall is order ~49, where adjacent cell corners stop being
+      distinguishable as doubles: at |longitude| ~ 3 rad the representable step
+      is eps*3 = 4.4e-16 rad, and a cell side of 1.0233/2^k rad reaches that at
+      k = 51. Same wall as the order-52 ingestion limit, same cause.
+
+      Order 48 needs a 6.7e-13 degree field, so the floor sits just below it.
+      The previous value of 1e-7 stopped at order 30 -- nineteen orders early,
+      for no reason but a round number.
+    */
+    var MIN_FOV_DEG = 5e-13;
+    var MAX_RESOLVABLE_ORDER = 48;
+
     function setFovDeg(d) {
-      // lower bound is not arbitrary: below ~1e-7 deg the double coordinate
-      // feeding the projection has nothing left to distinguish, which is the
-      // same wall the order-52 ingestion limit describes.
-      fovDeg = Math.max(1e-7, Math.min(180, d));
+      fovDeg = Math.max(MIN_FOV_DEG, Math.min(180, d));
       drawGrid(); drawLimb();
       emit('zoom', { fovDeg: fovDeg });
     }
@@ -299,7 +319,10 @@
           imagery: false,          // graticule only; no sky survey
           offline: true,           // no network at all
           handedness: 'sky',       // east left, viewed from inside
-          projection: 'orthographic'
+          projection: 'orthographic',
+          minFovDeg: MIN_FOV_DEG,
+          maxResolvableOrder: MAX_RESOLVABLE_ORDER   // double-precision wall
+
         };
       },
       redrawChrome: function () { drawGrid(); drawLimb(); }

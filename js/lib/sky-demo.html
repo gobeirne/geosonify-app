@@ -209,7 +209,9 @@
     $('moc').textContent = 'MOC   ' + moc.moc + (moc.standard ? '' : '   \u2190 beyond order 29');
     $('nuniq').textContent = 'NUNIQ ' + moc.nuniq.toString();
     $('orderTxt').textContent = 'order ' + order;
-    $('legibility').textContent = Overlay.legibility(picked, order);
+    $('legibility').textContent = Overlay.legibility(picked, order, {
+      maxResolvableOrder: r.capabilities().maxResolvableOrder
+    });
 
     var leg = $('legend'); leg.innerHTML = '';
     picked.draw.forEach(function(entry, i){
@@ -236,7 +238,7 @@
   r.on('click', function(p){ mark.ra = p.ra; mark.dec = p.dec; draw(); });
 
   $('minus').onclick = function(){ order = Math.max(1, order-1); draw(); };
-  $('plus').onclick  = function(){ order = Math.min(60, order+1); draw(); };
+  $('plus').onclick  = function(){ order = Math.min(52, order+1); draw(); };
 
   Array.prototype.forEach.call(document.querySelectorAll('[data-go]'), function(b){
     b.onclick = function(){
