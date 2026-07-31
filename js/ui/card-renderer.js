@@ -1759,6 +1759,16 @@
     if (_presP) {
       return getPrecisionText(_presP, iterations);
     }
+    // Sky mode: a cell's resolution is an ANGLE, not a length. GeosonifySkyUnits
+    // returns null on Earth — and null whenever a dependency is missing — so
+    // every path below is untouched and the metric/US ladder stays the only
+    // Earth behaviour. Placed after the presentation recursion deliberately:
+    // Chessboard / HEALPix ChromaCoord borrow a sibling's code, so they must
+    // resolve to the sibling first and then take the sibling's angle.
+    if (typeof GeosonifySkyUnits !== 'undefined') {
+      const skyText = GeosonifySkyUnits.cellText(gridKey, gd, iterations, currentCardCoord);
+      if (skyText) return skyText;
+    }
     if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
       // Funnel through formatLength (metric/US) instead of the module's own
       // hard-metric precisionText, so one toggle flips every card. cellMetres
