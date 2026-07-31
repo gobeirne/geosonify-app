@@ -656,6 +656,7 @@
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-view.js?v=20260731"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
@@ -2922,7 +2923,46 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                 // Switch to home tab
                 switchToTab('home');
               }
-              
+
+              // ── Celestial frame: these codes are DIRECTIONS, not places ────
+              // Without this the frame is recorded at the top of this function
+              // and never acted on, so a sky URL decodes down the Earth path and
+              // draws a constellation on the ocean.
+              //
+              // urlFrame is the `let` declared at the top of
+              // parseURLParameters(), so it is already in scope in this closure.
+              //
+              // Vertices are [dec, ra] — the same order
+              // GeosonifySkyFigures.toPaths() produces, so addShape receives
+              // exactly what showFigure('orion') hands it. decodeCardCode
+              // returns [lat, lon] in that order already; only the RA wrap to
+              // 0–360 is added.
+              //
+              // The Leaflet path is deliberately left drawn: it is the same
+              // lat/lon, and suppressing it would contradict the existing
+              // decision that a sky click moves the Earth pin.
+              if (urlFrame && urlFrame.sphere === 'sky' &&
+                  typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isAvailable()) {
+                try {
+                  const skyPts = decoded.split('~').filter(Boolean)
+                    .map(part => decodeCardCode(config.grid, part, config.obf))
+                    .filter(Boolean)
+                    .map(r => [r[0], ((r[1] % 360) + 360) % 360]);
+                  if (skyPts.length) {
+                    GeosonifySkyView.open({ dec: skyPts[0][0], ra: skyPts[0][1] });
+                    GeosonifySkyView.clearShapes();
+                    if (skyPts.length > 1) {
+                      GeosonifySkyView.addShape({
+                        type: 'path', vertices: skyPts, stroke: '#93c5fd', strokeWidth: 1.6
+                      });
+                    }
+                    GeosonifySkyView.redraw();
+                  }
+                } catch (e) {
+                  console.warn('[geosonify] sky path from URL failed:', e);
+                }
+              }
+
               // Show decode banner with grid and code for passphrase re-decode
               showDecodeBanner(config.grid, decoded);
               
