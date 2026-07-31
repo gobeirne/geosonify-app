@@ -549,6 +549,37 @@
     if (_privacyOn()) {
       els.cmpOut.appendChild(el('div', 'margin-top:3px;', 'Comparison hidden while privacy mode is active'));
     } else if (r.shared) {
+      /*
+        The reference chips fill the box and COMPARE — that is their job. But
+        having read "126 degrees away", the obvious next thought is "take me
+        there", so offer it explicitly rather than overloading the chip tap and
+        destroying the comparison it just produced.
+      */
+      var go = el('button', 'margin-top:5px; border:1px solid var(--ios-separator,#C6C6C8); ' +
+        'border-radius:6px; background:transparent; color:var(--ios-text,#000); ' +
+        'font-size:11.5px; padding:3px 10px; cursor:pointer;', 'Go to this position');
+      go.onclick = function (ev) {
+        ev.stopPropagation();
+        var moved = false;
+        try {
+          if (global.GeosonifySkyView && global.GeosonifySkyView.isOpen()) {
+            moved = global.GeosonifySkyView.goTo(r.raDeg, r.decDeg);
+          }
+        } catch (e) {}
+        if (!moved) {
+          // Sky view closed: still move the pin, so the cards follow.
+          try {
+            var lon = r.raDeg > 180 ? r.raDeg - 360 : r.raDeg;
+            if (global.CardRenderer && global.CardRenderer.setCoordinate) {
+              global.CardRenderer.setCoordinate(r.decDeg, lon);
+              moved = true;
+            }
+          } catch (e) {}
+        }
+        _toast(moved ? 'Moved to that position' : 'Could not move there',
+               moved ? undefined : 'error');
+      };
+      els.cmpOut.appendChild(go);
       var msg = r.shared.identical
         ? 'Identical to your point at order ' + order
         : (r.shared.sameFace

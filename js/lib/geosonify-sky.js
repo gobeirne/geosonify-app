@@ -367,6 +367,72 @@
     return out;
   }
 
+  // ---- click provenance -------------------------------------------------
+  /*
+    The finest order whose cell is still at least as big as a given angle.
+
+    This is the sky twin of the Earth rule that a map pin cannot be more precise
+    than the pixel you clicked. A click at a 60-degree field of view resolves
+    arcminutes, not microarcseconds, and a code that claims otherwise is a lie
+    told in a very confident-looking format.
+
+    Returns the COARSER of the two neighbouring orders, deliberately: claiming
+    less than you measured is honest, claiming more is not.
+  */
+  function orderForAngle(arcsec, opts) {
+    opts = opts || {};
+    if (!(arcsec > 0)) return opts.max === undefined ? 52 : opts.max;
+    var rad = arcsec / ARCSEC_PER_RAD;
+    var k = Math.floor(Math.log2(SQRT_PI_OVER_3 / rad));
+    var lo = opts.min === undefined ? 0 : opts.min;
+    var hi = opts.max === undefined ? 52 : opts.max;
+    return Math.max(lo, Math.min(hi, k));
+  }
+
+  /*
+    What a click at this zoom actually justifies.
+
+      fovDeg        field of view across the SHORTER viewport dimension
+      viewportPx    that dimension, in pixels
+      pixels        pointer accuracy: 1 for a mouse, ~10 for a fingertip
+
+    Returns { arcsec, order, text, basis } — everything the UI needs to state the
+    provenance honestly, in the sky's own units rather than pretending metres
+    mean something on the celestial sphere.
+  */
+  function clickProvenance(fovDeg, viewportPx, pixels) {
+    var px = pixels === undefined ? 1 : Math.max(0.25, pixels);
+    var vp = Math.max(1, viewportPx || 1);
+    var arcsec = (fovDeg * 3600 / vp) * px;
+    var order = orderForAngle(arcsec);
+    return {
+      arcsec: arcsec,
+      order: order,
+      cellArcsec: cellSize(order).arcsec,
+      text: formatAngle(arcsec),
+      basis: 'sky-click',
+      pixels: px,
+      fovDeg: fovDeg
+    };
+  }
+
+  /*
+    Is a chosen order claiming more than the view can support?
+    Used to warn rather than to forbid: the user may know something the pointer
+    does not, and Geosonify's habit is to say so rather than to prevent.
+  */
+  function overclaims(order, provenance) {
+    if (!provenance) return null;
+    if (order <= provenance.order) return null;
+    var levels = order - provenance.order;
+    return {
+      levels: levels,
+      factor: Math.pow(2, levels),
+      text: 'order ' + order + ' claims ' + Math.pow(2, levels) +
+            '\u00d7 finer than this zoom justifies (' + provenance.text + ' click)'
+    };
+  }
+
   // ---- sexagesimal ------------------------------------------------------
 
   function wrap360(d) { return ((d % 360) + 360) % 360; }
@@ -723,6 +789,7 @@
     nuniq: nuniq, fromNuniq: fromNuniq,
     cellSize: cellSize, cellSideRad: cellSideRad, formatAngle: formatAngle,
     cellBoundary: cellBoundary, cellCorners4: cellCorners4, ancestry: ancestry,
+    orderForAngle: orderForAngle, clickProvenance: clickProvenance, overclaims: overclaims,
     vecToLatLon: vecToLatLon,
     formatRA: formatRA, formatDec: formatDec, parseSexagesimal: parseSexagesimal,
     autoDecimals: autoDecimals, ROUNDTRIP_EXTRA: ROUNDTRIP_EXTRA,
