@@ -653,6 +653,9 @@
 <script src="js/lib/geosonify-sky-panel.js?v=20260730"></script>
 <script src="js/lib/geosonify-sky-overlay.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-view.js?v=20260731"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
@@ -3234,8 +3237,34 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const base = buildBaseShareURL();
       if (base == null) return null;
       const dParams = getDisplayShareParams();
-      if (!dParams.length) return base;
-      return base + (base.includes('?') ? '&' : '?') + dParams.join('&');
+      const fParams = getFrameShareParams();
+      const all = dParams.concat(fParams);
+      if (!all.length) return base;
+      return base + (base.includes('?') ? '&' : '?') + all.join('&');
+    }
+
+    /*
+      Frame parameters for a share link.
+
+      A sky code and an Earth code are the SAME digits. Without frame= the
+      receiver decodes a celestial direction onto the Earth with no error at all
+      — the wrong-sphere hazard the parameter exists to prevent. So the moment a
+      link is built while the sky is showing, it must say so.
+
+      Earth emits nothing, ever: absent frame means earth by definition, and
+      every link already in the wild stays byte-identical.
+    */
+    function getFrameShareParams() {
+      try {
+        if (typeof AppState === 'undefined' || !AppState.get) return [];
+        const f = AppState.get('frame');
+        if (!f || f.sphere !== 'sky') return [];
+        if (typeof GeosonifySkyUrl === 'undefined') return [];
+        const out = GeosonifySkyUrl.serialize(f.key, f.epoch || null);
+        return Object.keys(out).map(k => k + '=' + encodeURIComponent(out[k]));
+      } catch (e) {
+        return [];
+      }
     }
 
     function copyCompactOutput() {
