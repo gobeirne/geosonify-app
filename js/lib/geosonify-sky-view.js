@@ -181,6 +181,49 @@
     close.onclick = function () { closeView(); };
   }
 
+  /*
+    Push a sky direction into the app as its coordinate. Dec -> lat, RA -> lon:
+    the same numbers the HEALPix construction already uses.
+
+    MUST go through CardRenderer.setCoordinate, NOT AppState.set.
+
+    index.html declares `let currentCardCoord` at the top level of a classic
+    script. A top-level `let` creates a binding in the global LEXICAL
+    environment, which is not a property of window -- so main.js's
+    AppState.subscribe('coordinate') bridge, which does
+    `global.currentCardCoord = ...`, writes a DIFFERENT variable that the inline
+    script never reads. renderCards() then re-renders from the stale value and
+    nothing visibly changes. (This is why the first version of this handler
+    appeared correct and did nothing.)
+
+    CardRenderer.setCoordinate fires callbacks.onCoordChange, and the inline
+    script's handler assigns the lexical currentCardCoord directly, then updates
+    the display, the pin and the cards. That is the path a real map click takes,
+    so it is the path a sky click should take too.
+
+    Verified: onCoordChange does not call renderCards, so there is no recursion
+    with renderCards -> CardRenderer.setCoordinate -> onCoordChange.
+  */
+  function pushCoordinate(decDeg, raDeg) {
+    var lon = raDeg > 180 ? raDeg - 360 : raDeg;
+    var pushed = false;
+    try {
+      if (global.CardRenderer && global.CardRenderer.setCoordinate) {
+        global.CardRenderer.setCoordinate(decDeg, lon);
+        pushed = true;
+      }
+    } catch (e) {}
+    // Keep AppState coherent for anything that reads it directly (the sky panel
+    // does). Harmless if CardRenderer already ran; the bridge is idempotent.
+    try {
+      if (global.AppState && global.AppState.set) {
+        global.AppState.set('coordinate', { lat: decDeg, lon: lon });
+        pushed = true;
+      }
+    } catch (e) {}
+    return pushed;
+  }
+
   function boundaryOf(cell) {
     return _Sky().cellBoundary(cell.order, cell.ipix, { step: 6, close: true, frame: 'sky' });
   }
@@ -274,14 +317,7 @@
     renderer.on('click', function (p) {
       mark.ra = p.ra; mark.dec = p.dec;
       draw();
-      // Feed the app's own coordinate so every card updates. Dec -> lat,
-      // RA -> lon: the same numbers the HEALPix construction already uses.
-      try {
-        if (global.AppState && global.AppState.set) {
-          var lon = p.ra > 180 ? p.ra - 360 : p.ra;
-          global.AppState.set('coordinate', { lat: p.dec, lon: lon });
-        }
-      } catch (e) {}
+      pushCoordinate(p.dec, p.ra);
     });
 
     document.addEventListener('keydown', onKey);
@@ -321,6 +357,7 @@
     isOpen: isOpen,
     redraw: draw,
     setOrder: function (k) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, k)); draw(); },
+    pushCoordinate: pushCoordinate,
     getOrder: function () { return order; }
   };
 
