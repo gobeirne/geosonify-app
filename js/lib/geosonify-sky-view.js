@@ -224,6 +224,26 @@
     return pushed;
   }
 
+  /*
+    Declare which sphere we are on, so other modules can stop volunteering
+    Earth-specific information. geosonify-bip39-entry.js reads this to suppress
+    its region hints and — more importantly — to avoid sending a celestial
+    position to Nominatim.
+
+    AppState is the right home for this: the URL parser already writes the same
+    shape from ?frame=, so a URL-set frame and a UI-set frame are read
+    identically by everything downstream.
+  */
+  function setFrame(key, sphere) {
+    try {
+      if (global.AppState && global.AppState.set) {
+        global.AppState.set('frame', {
+          key: key, sphere: sphere, epoch: sphere === 'sky' ? 'J2000' : null, explicit: false
+        });
+      }
+    } catch (e) {}
+  }
+
   function boundaryOf(cell) {
     return _Sky().cellBoundary(cell.order, cell.ipix, { step: 6, close: true, frame: 'sky' });
   }
@@ -322,6 +342,7 @@
 
     document.addEventListener('keydown', onKey);
     gateEarthOnlyCards(true);
+    setFrame('icrs', 'sky');
 
     // The sky panel is already the honest RA/Dec + MOC readout, so reuse it
     // rather than growing a second one. Canvas above, numbers below.
@@ -341,6 +362,7 @@
   function closeView() {
     document.removeEventListener('keydown', onKey);
     gateEarthOnlyCards(false);
+    setFrame('earth', 'earth');
     if (renderer) { try { renderer.destroy(); } catch (e) {} renderer = null; }
     if (host && host.parentNode) host.parentNode.removeChild(host);
     host = null; els = null; mapEl = null;
