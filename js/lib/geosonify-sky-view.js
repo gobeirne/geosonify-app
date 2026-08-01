@@ -30,6 +30,7 @@
   // mistaken for the HEALPix cell the footer numbers actually describe.
   var CARD_ACCENT = '#4ade80';
   var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
+  var D2R = Math.PI / 180;
   var MIN_ORDER = 1, MAX_ORDER = 52;
 
   var MAP_CONTAINER_ID = 'mapContainerMobile';
@@ -93,7 +94,30 @@
     is acceptable only while sky mode emits no URLs. The moment it does, this
     needs to become a real capability flag.
   */
+  /*
+    Card gating.
+
+    Delegates to GeosonifySkyFrames, which derives each card's valid frames from
+    what the definition already declares (gis: -> earth, sky: -> sky, healpix: /
+    grid: -> both) rather than from a hardcoded list of GIS scheme names. Three
+    things the old stylesheet could not do and now matters: it hides sky-only
+    cards on EARTH as well, it can answer "valid here?" to code before any DOM
+    exists, and it cannot go stale against a card added later.
+
+    The stylesheet remains the mechanism -- still the cheapest way to hide cards
+    without touching renderCards() -- but it is generated from the capability.
+    The old GISGrids path is kept as a fallback so this degrades rather than
+    failing open if the module is absent.
+  */
   function gateEarthOnlyCards(on) {
+    var Frames = global.GeosonifySkyFrames;
+    if (Frames) {
+      if (!on) { Frames.clearGate(); styleTag = null; return; }
+      Frames.applyGate('sky');
+      styleTag = document.getElementById(Frames.STYLE_ID);
+      return;
+    }
+
     if (styleTag) { styleTag.parentNode.removeChild(styleTag); styleTag = null; }
     if (!on) return;
     var keys = [];
@@ -510,6 +534,63 @@
     }
   }
 
+  /*
+    Frame the view on a set of vertices, rather than on the first of them.
+
+    GeosonifySkyFigures.bounds() does this for NAMED figures, but its own comment
+    admits the limitation: "figures here do not straddle RA 0, so a plain min/max
+    is safe; a general implementation would need to unwrap first." Anything
+    arriving from a URL or a GPX track is not covered by that assumption -- a
+    path crossing RA 0 would take a plain min/max of 359 and 1 and centre on 180,
+    the opposite side of the sky.
+
+    So the centre is a circular mean of unit vectors, which has no seam, and the
+    radius is the greatest haversine separation from it. Haversine, never arccos:
+    the precision floor of arccos is coarser than a HEALPix cell above order 22.
+
+    vertices: [[dec, ra], ...] -- the order toPaths() produces and addShape takes.
+  */
+  function frameOn(vertices, opts) {
+    if (!vertices || vertices.length === 0) return false;
+    opts = opts || {};
+
+    var sx = 0, sy = 0, sz = 0, i;
+    for (i = 0; i < vertices.length; i++) {
+      var d = vertices[i][0] * D2R, r = vertices[i][1] * D2R;
+      sx += Math.cos(d) * Math.cos(r);
+      sy += Math.cos(d) * Math.sin(r);
+      sz += Math.sin(d);
+    }
+    var norm = Math.sqrt(sx * sx + sy * sy + sz * sz);
+    if (!norm) return false;
+    sx /= norm; sy /= norm; sz /= norm;
+
+    var decC = Math.asin(Math.max(-1, Math.min(1, sz))) / D2R;
+    var raC = Math.atan2(sy, sx) / D2R;
+    if (raC < 0) raC += 360;
+
+    var radius = 0;
+    for (i = 0; i < vertices.length; i++) {
+      var dp = (vertices[i][0] - decC) * D2R, dl = (vertices[i][1] - raC) * D2R;
+      var a = Math.sin(dp / 2) * Math.sin(dp / 2) +
+              Math.cos(decC * D2R) * Math.cos(vertices[i][0] * D2R) * Math.sin(dl / 2) * Math.sin(dl / 2);
+      var s = 2 * Math.asin(Math.min(1, Math.sqrt(a))) / D2R;
+      if (s > radius) radius = s;
+    }
+
+    // A single point has no extent; leave the field alone rather than zooming to
+    // the floor. Otherwise pad so the outermost vertex is not on the very edge.
+    var fov = radius > 0 ? radius * 2 * (opts.pad || 1.6) : null;
+
+    mark.dec = decC; mark.ra = raC;
+    if (renderer) {
+      renderer.setCenter(raC, decC);
+      if (fov) renderer.setFovDeg(Math.max(1e-9, Math.min(180, fov)));
+    }
+    draw();
+    return true;
+  }
+
   function draw() {
     if (!renderer || !els) return;
     var Sky = _Sky(), Overlay = _Overlay(), HP = _HP();
@@ -680,6 +761,16 @@
     }
     if (host) return true;
 
+    /*
+      Register the sky-only cards on first open rather than at load. They are
+      meaningless on Earth and the gate would only have to hide them; deferring
+      also means a user who never finds sky mode never carries them.
+      register() is idempotent and never clobbers an existing key.
+    */
+    if (global.GeosonifySkyCardDefs) {
+      try { global.GeosonifySkyCardDefs.register(); } catch (e) {}
+    }
+
     // Start from the current pin, read as a celestial direction.
     var c = (global.AppState && global.AppState.get) ? global.AppState.get('coordinate') : null;
     var lat = opts.dec !== undefined ? opts.dec : (c && c.lat !== null && c.lat !== undefined ? c.lat : 0);
@@ -718,6 +809,22 @@
     } catch (e) {}
 
     draw();
+
+    /*
+      Whatever is drawn on the Earth map comes with you. A shape is a list of
+      lat/lon vertices and the sky reads latitude as declination, so nothing is
+      converted -- the Berlin Wall, written on the stars.
+
+      After the first draw() deliberately: a working view is already on screen,
+      so a failure here costs a decoration rather than the view. lastSolution is
+      a LEXICAL binding in index.html's inline script, not a global, so the app
+      publishes it as __geosonifyLastSolution rather than this module reaching
+      for something that is not there. Absent means nothing to carry, which is
+      the common case.
+    */
+    if (global.GeosonifySkyCarry && global.__geosonifyLastSolution) {
+      try { global.GeosonifySkyCarry.carryToSky(global.__geosonifyLastSolution); } catch (e) {}
+    }
     return true;
   }
 
@@ -725,6 +832,16 @@
 
   function closeView() {
     document.removeEventListener('keydown', onKey);
+    /*
+      And the reverse: draw Orion, hit Earth, and Orion is laid across the globe.
+
+      Read the shapes BEFORE the teardown below clears them. Longitude folds
+      back to +/-180 inside the carry module, because Leaflet wraps oddly past
+      180 and would draw a line across the whole map.
+    */
+    if (global.GeosonifySkyCarry && global.__geosonifyMap) {
+      try { global.GeosonifySkyCarry.carryToEarth(global.__geosonifyMap); } catch (e) {}
+    }
     unwatchMapSize();          // else the observer outlives the view it feeds
     gateEarthOnlyCards(false);
     setFrame('earth', 'earth');
@@ -762,6 +879,7 @@
     getOrder: function () { return order; },
     getProvenance: function () { return provenance; },
     addShape: addShape,
+    frameOn: frameOn,
     clearShapes: clearShapes,
     getShapes: function () { return shapes.slice(); },
     shapeRing: shapeRing,
@@ -785,6 +903,8 @@
     },
     isOrderManual: function () { return orderIsManual; },
     getRendererKind: function () { return rendererKind; },
+    getFovDeg: function () { return renderer ? renderer.getFovDeg() : null; },
+    getCentre: function () { return renderer ? renderer.getCenter() : [mark.ra, mark.dec]; },
     useAladin: function () { return tryAladin(); },
     useBuiltIn: function () {
       if (rendererKind === 'builtin') return false;
