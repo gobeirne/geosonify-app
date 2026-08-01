@@ -4869,7 +4869,26 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
     
     Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      if ((!def.grid && !def.gis && !def.healpix && !presentationOf(def)) || def.deprecated) return;
+      /*
+        `!def.sky` was the missing clause. Sky-only cards (RA/Dec, IAU
+        designation, MOC, NUNIQ, Sky neighbours) carry no `grid`, no `gis`, no
+        `healpix` and no presentation sibling — their value comes from a
+        formatter, not a vocabulary array — so every one of them was filtered
+        out of this list and could never be enabled. Registration was working;
+        the picker simply never showed them.
+      */
+      if ((!def.grid && !def.gis && !def.healpix && !def.sky && !presentationOf(def)) || def.deprecated) return;
+
+      /*
+        And only offer what the CURRENT frame can actually display. Enabling a
+        card here that the frame gate then hides would look like the toggle was
+        broken. GeosonifySkyFrames.worksIn() answers from each definition's own
+        capability, so this needs no list. Absent module: everything is offered,
+        which is the pre-sky behaviour.
+      */
+      if (typeof GeosonifySkyFrames !== 'undefined' &&
+          !GeosonifySkyFrames.worksIn(key)) return;
+
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
       const isGis = !!def.gis;
@@ -4883,7 +4902,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // thing they share and nothing else uses it, so test the flag rather than
       // the key prefix — new scales then tag themselves with no edit here.
       const isMusic = def.display === 'music';
+      const isSky = !!def.sky;
       const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
+                : isSky ? ' <span style="font-size:11px;opacity:0.5;">(Sky)</span>'
                 : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
                 : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
                 : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
