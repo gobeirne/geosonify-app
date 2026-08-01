@@ -175,6 +175,11 @@
     skystar: {
       name: 'Sky neighbours',
       sky: 'neighbour',
+      // Its own display type: this card is a list and a picture, not a code.
+      // card-renderer's renderSkyNeighbours() fills it after append, because
+      // the thumbnail and the deep-catalogue upgrade both need the coordinate
+      // and one of them is a promise.
+      display: 'skyneighbours',
       frames: 'sky',
       grid: null,
       // Not order-dependent: the star at an address does not change with how
