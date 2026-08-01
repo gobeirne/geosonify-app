@@ -213,10 +213,13 @@
     them on Earth and the card gate hides any that slip through. Presence in
     CARD_GRIDS is not visibility.
 
-    Deliberately does NOT push to cardState.order. A card needs to be in
-    CARD_GRIDS to be OFFERED; it joins the order when the user actually enables
-    it. Pushing here would write four keys into the saved state of every user
-    who never touches sky mode.
+    DOES push to cardState.order, like every other register* function in
+    card-renderer.js. I had left it out on the theory that order was a user
+    preference and pushing to it would pollute the saved state of people who
+    never open sky mode. That was a misreading: renderCards() iterates ORDER and
+    filters by visible, so a key absent from order can be ticked in the picker
+    and still never render -- the checkmark appears and the deck does not
+    change. Order is the master render list, not a preference.
 
     Additive and idempotent: existing keys are never clobbered, and calling twice
     registers nothing the second time.
@@ -233,8 +236,11 @@
       if (GRIDS[key]) return;                       // never clobber
       GRIDS[key] = DEFS[key];
       n++;
-      if (st && st.iterations && st.iterations[key] === undefined) {
-        st.iterations[key] = DEFS[key].defaultIterations;
+      if (st) {
+        if (st.iterations && st.iterations[key] === undefined) {
+          st.iterations[key] = DEFS[key].defaultIterations;
+        }
+        if (st.order && st.order.indexOf(key) === -1) st.order.push(key);
       }
     });
     return n;
