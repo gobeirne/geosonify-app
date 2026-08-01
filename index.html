@@ -658,6 +658,9 @@
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-frames.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-view.js?v=20260731"></script>
@@ -1207,9 +1210,50 @@
     
     function updateCoordDisplay() {
       const display = document.getElementById('coordDisplay');
-      if (display && currentCardCoord) {
-        display.textContent = `${currentCardCoord.lat.toFixed(6)}, ${currentCardCoord.lon.toFixed(6)}`;
-      }
+      if (!display || !currentCardCoord) return;
+
+      /*
+        In the sky frame the SAME NUMBERS are a direction, not a place, and
+        should read that way. Showing "-43.555447, 172.650843" beside a card
+        saying "11h 30m" is two readings of one number with nothing to say they
+        are the same number.
+
+        Read from the exact point where one exists. At order 22 the cell is
+        50 mas and this text quotes to fractions of it, so the lossy double in
+        AppState would show a different final digit from the cell it names.
+
+        RA folds to 0..360 where longitude folds to +/-180. Identical east of
+        Greenwich; without the fold a London user reads "-0.5h".
+      */
+      try {
+        if (typeof GeosonifySky !== 'undefined' &&
+            typeof AppState !== 'undefined' && AppState.get) {
+          const f = AppState.get('frame');
+          if (f && f.sphere === 'sky') {
+            let lat = currentCardCoord.lat, lon = currentCardCoord.lon;
+            if (typeof GeosonifyMain !== 'undefined' && GeosonifyMain && GeosonifyMain.getExact) {
+              const ex = GeosonifyMain.getExact();
+              if (ex && isFinite(Number(ex.lat)) && isFinite(Number(ex.lon))) {
+                lat = Number(ex.lat); lon = Number(ex.lon);
+              }
+            }
+            const ra = ((lon % 360) + 360) % 360;
+            let order = 22;
+            try {
+              if (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.getOrder) {
+                order = GeosonifySkyView.getOrder();
+              }
+            } catch (e) {}
+            const d = GeosonifySky.autoDecimals(order, lat);
+            display.textContent =
+              GeosonifySky.formatRA(ra, { decimals: d.ra }) + '  ' +
+              GeosonifySky.formatDec(lat, { decimals: d.dec, unicode: true });
+            return;
+          }
+        }
+      } catch (e) { /* fall through to the Earth reading */ }
+
+      display.textContent = `${currentCardCoord.lat.toFixed(6)}, ${currentCardCoord.lon.toFixed(6)}`;
     }
 
     // ===== GPS TRACKING - Now handled by GPSTracking module =====
@@ -1742,7 +1786,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           } catch (e) { /* non-fatal */ }
         }
       });
-      
+
+      /*
+        Publish the Leaflet map so the sky view can draw carried shapes back
+        onto it. Same lexical-binding problem as lastSolution: `map` is declared
+        in this classic script, so GeosonifySkyCarry cannot see it otherwise.
+      */
+      window.__geosonifyMap = map;
+
       // Apply a basemap chosen via ?basemap= — honored only on display links
       // (applyFromURL ignores it on plain shape links, which open in the
       // recipient's own basemap).
@@ -2959,7 +3010,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                         type: 'path', vertices: skyPts, stroke: '#93c5fd', strokeWidth: 1.6
                       });
                     }
-                    GeosonifySkyView.redraw();
+                    // Frame the WHOLE path, not just its first vertex. open()
+                    // centres on one point at the default field, which put
+                    // Orion's belt hard up against the first star and the rest
+                    // of Orion off screen entirely.
+                    if (skyPts.length > 1 && GeosonifySkyView.frameOn) {
+                      GeosonifySkyView.frameOn(skyPts);
+                    } else {
+                      GeosonifySkyView.redraw();
+                    }
                   }
                 } catch (e) {
                   console.warn('[geosonify] sky path from URL failed:', e);
@@ -5153,6 +5212,18 @@ function encodeRaw(sol) {
     // checksumChar moved to geosonify-compact-codec.js
 
     function updateCompactOutputs() {
+      /*
+        Publish the current solution for the sky view to carry across.
+
+        lastSolution is a `let` at the top level of this classic script, so it is
+        a LEXICAL binding — GeosonifySkyView cannot see it, exactly as
+        currentCardCoord cannot be reached by main.js's AppState bridge. Mirroring
+        it onto window here is the same fix in the other direction, and this is
+        the right place because every path that changes a shape ends up calling
+        this function.
+      */
+      window.__geosonifyLastSolution = lastSolution;
+
       // Sync obfuscated state from CardRenderer
       if (typeof CardRenderer !== 'undefined') {
         obfuscated = CardRenderer.isObfuscated();
