@@ -998,6 +998,29 @@
     if (_presEnc) {
       return _encodeCardCoordinateInternal(_presEnc, lat, lon, iterations);
     }
+    /*
+      Sky-only cards (RA/Dec, IAU designation, MOC, NUNIQ, Sky neighbours) have
+      no vocabulary grid and no encoder — their value comes from a formatter in
+      GeosonifySkyCardDefs, which reads the cell the app already has and says it
+      a different way. Without this branch the render loop calls through to the
+      grid path, gets null, and draws an empty card: exactly the "ticked but
+      nothing appears" symptom.
+
+      REDACTED UNDER PRIVACY, like the GIS cards and for the same reason. These
+      are real interoperable standards that cannot be privacy-transformed — a
+      sexagesimal coordinate or a MOC token IS the position in clear text, so
+      showing one beside an obfuscated code would hand back what the obfuscation
+      just hid. The sky VIEW already redacts on this rule; the cards must match.
+
+      lat/lon are read as dec/RA: the same identity the rest of sky mode uses.
+    */
+    if (gridDef && gridDef.sky) {
+      if (passphrase || obfuscated) return '████████';
+      const SD = (typeof GeosonifySkyCardDefs !== 'undefined') ? GeosonifySkyCardDefs
+               : (typeof window !== 'undefined' ? window.GeosonifySkyCardDefs : null);
+      if (!SD || !SD.valueFor) return null;
+      return SD.valueFor(gridKey, lat, ((lon % 360) + 360) % 360, iterations);
+    }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
     // both at the quaternary tree level, conforming to the vocabulary-grid
@@ -2872,7 +2895,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || presentationOf(CARD_GRIDS[k]))
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || CARD_GRIDS[k].sky || presentationOf(CARD_GRIDS[k]))
     );
     
     container.innerHTML = '';
@@ -4942,6 +4965,14 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
           if (visInd) { visInd.textContent = ''; visInd.style.color = '#666'; }
         } else {
           cardState.visible.push(key);
+          /*
+            renderCards() iterates cardState.ORDER and filters by visible, so a
+            key absent from order can be ticked here and still never render —
+            which is exactly how it looks: the checkmark appears, the deck does
+            not change. Every register* function above pushes to order for this
+            reason; this is the backstop for any that forgets.
+          */
+          if (!cardState.order.includes(key)) cardState.order.push(key);
           opt.style.background = 'rgba(0,255,255,0.1)';
           opt.style.borderColor = 'rgba(0,255,255,0.3)';
           if (visInd) { visInd.textContent = '✓'; visInd.style.color = 'cyan'; }
