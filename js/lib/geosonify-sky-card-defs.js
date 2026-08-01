@@ -117,6 +117,21 @@
       return c.order + '/' + c.ipix.toString();
     },
 
+    /*
+      Synchronous, so it can only ever answer from the embedded catalogue --
+      which at 1,765 stars means degrees away, not metres. The remote tier is a
+      promise and belongs in the card's own render path, not here.
+    */
+    skystar: function (dec, ra, order) {
+      var N = global.GeosonifySkyNeighbour;
+      if (!N) return null;
+      var list = N.neighbours(dec, ra > 180 ? ra - 360 : ra, { limit: 3 });
+      if (!list.length) return null;
+      // One line each, nearest first. describe() carries the coarse-tier caveat
+      // itself, so a 269 km "neighbour" cannot be read as a local one.
+      return list.map(function (n) { return N.describe(n); }).join('\n');
+    },
+
     skynuniq: function (dec, ra, order) {
       var Sky = _Sky(), c = cellAt(dec, ra, order);
       if (!Sky || !c) return null;
@@ -157,6 +172,20 @@
       maxIterations: 29,
       link: 'https://www.ivoa.net/documents/MOC/'
     },
+    skystar: {
+      name: 'Sky neighbours',
+      sky: 'neighbour',
+      frames: 'sky',
+      grid: null,
+      // Not order-dependent: the star at an address does not change with how
+      // finely you name the address. Fixed so the +/- stepper does not imply
+      // a precision control that does nothing.
+      fixedIterations: 22,
+      defaultIterations: 22,
+      minIterations: 22,
+      maxIterations: 22,
+      link: 'https://simbad.cds.unistra.fr/simbad/'
+    },
     skynuniq: {
       name: 'NUNIQ',
       sky: 'nuniq',
@@ -170,9 +199,27 @@
   };
 
   /*
-    Registration. Additive and idempotent: existing cards are untouched, and
-    calling twice is harmless. Order defaults are only seeded when absent, so a
-    user's saved iteration survives a reload.
+    REGISTRATION HAPPENS AT LOAD, NOT ON FIRST SKY OPEN.
+
+    Deferring it until openView() seemed tidy -- why carry sky cards if you never
+    find sky mode -- but it makes the "+ Add Mode" list depend on history: the
+    cards are absent until you have opened the sky view once, and present
+    afterwards, with nothing on screen to explain the difference. A picker that
+    changes based on what you did earlier in the session is worse than a picker
+    with four entries you cannot currently use.
+
+    Carrying them costs nothing now that the frame capability exists:
+    GeosonifySkyFrames marks them `frames: 'sky'`, so showAddFormatModal hides
+    them on Earth and the card gate hides any that slip through. Presence in
+    CARD_GRIDS is not visibility.
+
+    Deliberately does NOT push to cardState.order. A card needs to be in
+    CARD_GRIDS to be OFFERED; it joins the order when the user actually enables
+    it. Pushing here would write four keys into the saved state of every user
+    who never touches sky mode.
+
+    Additive and idempotent: existing keys are never clobbered, and calling twice
+    registers nothing the second time.
   */
   function register() {
     var GRIDS = _GRIDS(), CR = global.CardRenderer;
@@ -186,14 +233,27 @@
       if (GRIDS[key]) return;                       // never clobber
       GRIDS[key] = DEFS[key];
       n++;
-      if (st) {
-        if (st.iterations && st.iterations[key] === undefined) {
-          st.iterations[key] = DEFS[key].defaultIterations;
-        }
-        if (st.order && st.order.indexOf(key) === -1) st.order.push(key);
+      if (st && st.iterations && st.iterations[key] === undefined) {
+        st.iterations[key] = DEFS[key].defaultIterations;
       }
     });
     return n;
+  }
+
+  /*
+    CardRenderer builds CARD_GRIDS during init(), which runs after this file
+    loads, so registering immediately would find nothing to register into. Poll
+    briefly rather than depend on a load-order guarantee that the script tags do
+    not actually make -- ten tries at 200 ms covers a slow first paint and then
+    gives up quietly. openView() also calls register(), so a missed window still
+    recovers the first time sky mode opens.
+  */
+  function autoRegister(tries) {
+    tries = tries === undefined ? 10 : tries;
+    if (register() > 0 || tries <= 0) return;
+    if (typeof setTimeout === 'function') {
+      setTimeout(function () { autoRegister(tries - 1); }, 200);
+    }
   }
 
   /*
@@ -215,11 +275,13 @@
     DEFS: DEFS,
     FORMAT: FORMAT,
     register: register,
+    autoRegister: autoRegister,
     valueFor: valueFor,
     keys: function () { return Object.keys(DEFS); }
   };
 
   global.GeosonifySkyCardDefs = API;
+  autoRegister();
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   try { console.log('[geosonify] sky-card-defs ' + VERSION + ' loaded'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : globalThis);
