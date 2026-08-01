@@ -31,6 +31,7 @@
   var CARD_ACCENT = '#4ade80';
   var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
   var D2R = Math.PI / 180;
+  var ancestryLevels = 6;          // parents drawn above the deepest cell
   var MIN_ORDER = 1, MAX_ORDER = 52;
 
   var MAP_CONTAINER_ID = 'mapContainerMobile';
@@ -358,9 +359,67 @@
     Verified: onCoordChange does not call renderCards, so there is no recursion
     with renderCards -> CardRenderer.setCoordinate -> onCoordChange.
   */
+  var _coordUnsub = null;
+  var _pushing = false;
+
+  /*
+    FOLLOW THE APP'S COORDINATE.
+
+    pushCoordinate below sends sky -> app. Nothing sent app -> sky, so a GPS fix
+    or a retyped card code moved the pin and the cards and left the sphere
+    sitting exactly where it was.
+
+    Recentres only when the new position falls OUTSIDE the current field. Moving
+    the mark always is right -- it is the same cell the cards describe -- but
+    yanking the view on every tracking tick would make the sky unusable while
+    walking. Following when it needs to is what the Earth map does.
+
+    _pushing guards the echo: a sky click calls pushCoordinate, which sets
+    AppState, which fires this. Without the flag every click would re-enter and
+    redraw twice.
+  */
+  function onExternalCoordinate(c) {
+    if (_pushing || !host || !renderer || !c) return;
+    if (typeof c.lat !== 'number' || typeof c.lon !== 'number') return;
+    if (!isFinite(c.lat) || !isFinite(c.lon)) return;
+
+    var ra = ((c.lon % 360) + 360) % 360;
+    if (Math.abs(c.lat - mark.dec) < 1e-12 &&
+        Math.abs(ra - mark.ra) < 1e-12) return;          // already there
+
+    mark = { ra: ra, dec: c.lat };
+
+    var centre = renderer.getCenter();
+    var half = renderer.getFovDeg() / 2;
+    var sep = 180;
+    try {
+      var S = _Sky();
+      if (S && S.separationDeg) sep = S.separationDeg(centre[0], centre[1], ra, c.lat);
+    } catch (e) {}
+    if (sep > half * 0.8) renderer.setCenter(ra, c.lat);
+
+    draw();
+  }
+
+  function watchCoordinate() {
+    if (_coordUnsub) return;
+    try {
+      if (global.AppState && global.AppState.subscribe) {
+        _coordUnsub = global.AppState.subscribe('coordinate', onExternalCoordinate);
+      }
+    } catch (e) { _coordUnsub = null; }
+  }
+
+  function unwatchCoordinate() {
+    if (!_coordUnsub) return;
+    try { if (typeof _coordUnsub === 'function') _coordUnsub(); } catch (e) {}
+    _coordUnsub = null;
+  }
+
   function pushCoordinate(decDeg, raDeg) {
     var lon = raDeg > 180 ? raDeg - 360 : raDeg;
     var pushed = false;
+    _pushing = true;                     // suppress the echo through AppState
     try {
       if (global.CardRenderer && global.CardRenderer.setCoordinate) {
         global.CardRenderer.setCoordinate(decDeg, lon);
@@ -375,6 +434,7 @@
         pushed = true;
       }
     } catch (e) {}
+    _pushing = false;
     return pushed;
   }
 
@@ -603,7 +663,17 @@
     var ipix = BigInt(HP.nestIndex(mark.dec, mark.ra, order));
     var cell = Sky.ipixToCell(order, ipix);
     var moc = Sky.toMoc(cell);
-    var chain = Sky.ancestry(order, ipix, { fromOrder: Math.max(0, order - 6) });
+    /*
+      Ancestry depth. Seven levels by default (order-6 .. order), pruned further
+      by pickVisible's 5px floor -- the celestial twin of the Earth map's faded
+      parent cells, so the two frames show the same hierarchy the same way.
+
+      Exposed because the canvas got busier: the deepest cell in ACCENT, up to
+      six parents in RAMP, the starred card's cell in green, carried shapes in
+      pink and the mark cross in red. Someone who wants just the cell and its
+      parent can now say so, without the default changing under anyone.
+    */
+    var chain = Sky.ancestry(order, ipix, { fromOrder: Math.max(0, order - ancestryLevels) });
 
     var picked = Overlay.pickVisible(chain, boundaryOf, renderer.project,
                                      { viewport: renderer.getSize(), minPx: 5 });
@@ -825,6 +895,8 @@
     if (global.GeosonifySkyCarry && global.__geosonifyLastSolution) {
       try { global.GeosonifySkyCarry.carryToSky(global.__geosonifyLastSolution); } catch (e) {}
     }
+
+    watchCoordinate();      // GPS fixes and card-code edits move the sphere too
     return true;
   }
 
@@ -842,6 +914,7 @@
     if (global.GeosonifySkyCarry && global.__geosonifyMap) {
       try { global.GeosonifySkyCarry.carryToEarth(global.__geosonifyMap); } catch (e) {}
     }
+    unwatchCoordinate();
     unwatchMapSize();          // else the observer outlives the view it feeds
     gateEarthOnlyCards(false);
     setFrame('earth', 'earth');
@@ -877,6 +950,12 @@
       return true;
     },
     getOrder: function () { return order; },
+    getAncestryLevels: function () { return ancestryLevels; },
+    setAncestryLevels: function (n) {
+      ancestryLevels = Math.max(0, Math.min(12, n | 0));
+      draw();
+      return ancestryLevels;
+    },
     getProvenance: function () { return provenance; },
     addShape: addShape,
     frameOn: frameOn,
