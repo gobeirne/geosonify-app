@@ -109,6 +109,41 @@
     document.head.appendChild(styleTag);
   }
 
+  var _mapRO = null;
+
+  /*
+    Match the host to the map element's box: same top offset within the wrapper,
+    same height. Left/right stay 0 because the map is full-width.
+
+    offsetTop rather than 0: the map is the wrapper's first child today, but
+    pinning to its measured position survives anything being inserted above it.
+  */
+  function syncHostToMap() {
+    if (!host || !mapEl) return;
+    host.style.top = (mapEl.offsetTop || 0) + 'px';
+    var h = mapEl.offsetHeight || mapEl.clientHeight || 0;
+    if (h) host.style.height = h + 'px';
+  }
+
+  function watchMapSize() {
+    if (_mapRO || !mapEl || typeof global.ResizeObserver !== 'function') return;
+    try {
+      _mapRO = new global.ResizeObserver(function () {
+        syncHostToMap();
+        // The renderer reads its container's box on resize; tell it the box moved.
+        if (renderer && renderer.redrawChrome) { try { renderer.redrawChrome(); } catch (e) {} }
+        draw();
+      });
+      _mapRO.observe(mapEl);
+    } catch (e) { _mapRO = null; }
+  }
+
+  function unwatchMapSize() {
+    if (!_mapRO) return;
+    try { _mapRO.disconnect(); } catch (e) {}
+    _mapRO = null;
+  }
+
   function build() {
     mapEl = document.getElementById(MAP_CONTAINER_ID);
 
@@ -125,6 +160,30 @@
     if (mapEl && mapEl.parentNode) {
       var cs = global.getComputedStyle ? global.getComputedStyle(mapEl.parentNode) : null;
       if (cs && cs.position === 'static') mapEl.parentNode.style.position = 'relative';
+      /*
+        Size to the MAP, not the wrapper.
+
+        The DOM is
+
+            #sharedMapContainer
+              #mapContainerMobile     <- Leaflet
+              #mapResizeHandle        <- 12px drag bar, BELOW the map
+              #mapResizeHandleH
+
+        so `inset:0` on a child of the wrapper spanned the handle as well and
+        buried it. The symptom: the handle vanishes in sky mode, and you have to
+        switch to Earth, drag, and switch back -- which worked only because the
+        host is rebuilt on open() and re-read the wrapper's new height.
+
+        Pinned to the map's own box instead, and kept in sync with a
+        ResizeObserver so dragging the handle resizes the sky view live, exactly
+        as it resizes the map.
+      */
+      host = el('div',
+        'position:absolute; left:0; right:0; top:0; background:#0b0f19; color:#e5e7eb; ' +
+        'display:flex; flex-direction:column; overflow:hidden; ' +
+        'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+
       /*
         z-index must clear Leaflet's CONTROLS, not just its panes.
 
@@ -143,11 +202,10 @@
         1001 is the smallest value that clears them. The app's own scale jumps
         from 500 to 1200, so this sits in an empty gap and nothing else moves.
       */
-      host = el('div',
-        'position:absolute; inset:0; z-index:1001; background:#0b0f19; color:#e5e7eb; ' +
-        'display:flex; flex-direction:column; overflow:hidden; ' +
-        'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+      host.style.zIndex = '1001';
+      syncHostToMap();
       mapEl.parentNode.appendChild(host);
+      watchMapSize();
       mounted = true;
     }
     if (!mounted) {
@@ -667,6 +725,7 @@
 
   function closeView() {
     document.removeEventListener('keydown', onKey);
+    unwatchMapSize();          // else the observer outlives the view it feeds
     gateEarthOnlyCards(false);
     setFrame('earth', 'earth');
     if (renderer) { try { renderer.destroy(); } catch (e) {} renderer = null; }

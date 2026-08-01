@@ -92,6 +92,37 @@
     script: a bare `import()` would make some bundlers and older parsers treat
     the whole file as a module.
   */
+  /*
+    Report what was actually seen, and allow a retry.
+
+    'unexpected Aladin module shape' threw away the only evidence. The probe
+    checks mod.default || mod.A || mod, which is correct for the bundle this was
+    written against (verified: aladin-lite@3.9.0-beta exports `export{f as
+    default}` with f.aladin a function). If it fails, the thing served at the URL
+    is not that bundle -- and `latest` is a mutable pointer, so it can move
+    without warning. The message now carries the namespace keys, the typeof of
+    each candidate, and whether a global `A` appeared, which distinguishes a
+    moved ESM build from a side-effecting classic script the probe cannot see.
+
+    _modulePromise also used to cache the REJECTION for the life of the page, so
+    one transient network failure permanently disabled useAladin(). Cleared on
+    failure so a retry is possible.
+  */
+  function _shapeReport(mod) {
+    var bits = [];
+    try { bits.push('keys=[' + Object.keys(mod || {}).join(',') + ']'); } catch (e) { bits.push('keys=?'); }
+    ['default', 'A'].forEach(function (k) {
+      var v = null;
+      try { v = mod ? mod[k] : undefined; } catch (e) {}
+      bits.push(k + '=' + (typeof v) + (v && typeof v.aladin === 'function' ? '(has aladin)' : ''));
+    });
+    try {
+      var g = (typeof window !== 'undefined') ? window : null;
+      bits.push('window.A=' + (g ? typeof g.A : 'n/a'));
+    } catch (e) {}
+    return bits.join(' ');
+  }
+
   function loadAladin(src) {
     if (_modulePromise) return _modulePromise;
     if (!webgl2Available()) {
@@ -101,10 +132,21 @@
     var url = src || CDN_URL;
     _modulePromise = new Function('u', 'return import(u);')(url)
       .then(function (mod) {
+        // A side-effecting classic build assigns a global instead of exporting.
+        var g = (typeof window !== 'undefined') ? window : null;
         var A = mod && (mod.default || mod.A || mod);
-        if (!A || typeof A.aladin !== 'function') throw new Error('unexpected Aladin module shape');
+        if (!A || typeof A.aladin !== 'function') {
+          if (g && g.A && typeof g.A.aladin === 'function') A = g.A;
+        }
+        if (!A || typeof A.aladin !== 'function') {
+          throw new Error('unexpected Aladin module shape from ' + url + ' -- ' + _shapeReport(mod));
+        }
         // A.init is a promise made at module load; it rejects without WebGL2.
         return Promise.resolve(A.init).then(function () { return A; });
+      })
+      .catch(function (err) {
+        _modulePromise = null;          // do not cache the failure forever
+        throw err;
       });
     return _modulePromise;
   }
