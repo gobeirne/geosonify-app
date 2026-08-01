@@ -2162,6 +2162,153 @@
 
   // ============== SPECIAL RENDERERS ==============
   
+  /*
+    The Sky neighbours card: a patch of the real sky with your dot on it, and a
+    list of the stars standing at your address.
+
+    Two things happen here that cannot happen in the synchronous formatter:
+
+      THE PICTURE. CDS's hips2fits renders a cutout of any HiPS survey at any
+      position and returns it as an ordinary image, so this needs no library and
+      no canvas -- an <img>, with markers positioned over it. The image is
+      appended only on load, so a failed request leaves no broken-image icon and
+      no gap; the list stands on its own.
+
+      THE DEEP CATALOGUE. The formatter is synchronous, so it can only reach the
+      1,765-star embedded catalogue -- where the typical neighbour is 269 km away
+      read as ground distance. A VizieR lookup gets within about a kilometre, but
+      it is a promise. So the local answer renders immediately and the remote one
+      replaces it if and when it lands. Same progressive pattern the sky view
+      uses for Aladin imagery: something correct at once, better shortly.
+
+    Redacts wholesale under passphrase/obfuscation. A thumbnail centred on your
+    position IS your position, drawn at a few hundred metres per pixel -- it
+    would defeat privacy mode more completely than the coordinate it sits beside.
+  */
+  // No escaper exists in this module, and the sky-neighbours list carries star
+  // names straight from a remote catalogue into innerHTML. Escaping is not
+  // optional there.
+  function escapeHtml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function renderSkyNeighbours(card, coord, redacted) {
+    const thumb = card.querySelector('.skyneighbours-thumb');
+    const list = card.querySelector('.skyneighbours-list');
+    if (!thumb || !list || !coord) return;
+
+    if (redacted) { thumb.innerHTML = ''; return; }
+
+    const N = (typeof GeosonifySkyNeighbour !== 'undefined')
+      ? GeosonifySkyNeighbour
+      : (typeof window !== 'undefined' ? window.GeosonifySkyNeighbour : null);
+    if (!N) return;
+
+    const dec = coord.lat;
+    const ra = ((coord.lon % 360) + 360) % 360;
+    const PX = 120;
+
+    /*
+      FIELD SIZED TO THE DATA, not fixed.
+
+      A 20 arcsec field is the right frame for a Gaia neighbour (~8.6 arcsec,
+      266 m) but wrong for everything else: a UCAC4 neighbour sits near 34
+      arcsec and would fall outside it, and an embedded-catalogue one is degrees
+      away and will never fit at any sane zoom. A fixed field would show your dot
+      alone and look broken.
+
+      So: 2.5x the nearest separation, clamped to 20..300 arcsec (620 m .. 9.3 km
+      of ground). The clamp is what keeps it honest -- when the nearest star is
+      genuinely 4 degrees off, the picture becomes "the sky at your address" with
+      your dot on it, which is true, rather than a zoomed-out starfield
+      pretending the neighbours are nearby. The caption states the field so the
+      scale is never guessed.
+    */
+    function fovFor(entries) {
+      const nearest = entries.reduce((m, e) => {
+        const s = e.star && typeof e.star.sepDeg === 'number' ? e.star.sepDeg : null;
+        return (s !== null && (m === null || s < m)) ? s : m;
+      }, null);
+      if (nearest === null) return 60;
+      return Math.max(20, Math.min(300, nearest * 3600 * 2.5));
+    }
+
+    function fovCaption(fovArcsec, dec) {
+      const metres = fovArcsec / 3600 * 111319.9;
+      const ground = metres < 1000 ? Math.round(metres) + ' m'
+                                   : (metres / 1000).toFixed(1) + ' km';
+      const ang = fovArcsec < 60 ? fovArcsec.toFixed(0) + '\u2033'
+                                 : (fovArcsec / 60).toFixed(1) + '\u2032';
+      return ang + ' across \u00b7 ' + ground + ' on the ground';
+    }
+
+    function paint(entries) {
+      const FOV = fovFor(entries);
+      const lines = entries.map(e => N.describe(e));
+      const note = entries.some(e => e.coarse) ? N.coarseNote() : '';
+      list.innerHTML = lines.map(l =>
+        '<div class="skyneighbours-line">' + escapeHtml(l) + '</div>').join('') +
+        (note ? '<div class="skyneighbours-note">' + escapeHtml(note) + '</div>' : '');
+
+      thumb.innerHTML = '';
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative;width:' + PX + 'px;height:' + PX +
+        'px;border-radius:8px;overflow:hidden;background:#0b0f19;';
+
+      const img = document.createElement('img');
+      img.width = PX; img.height = PX;
+      img.alt = 'sky at these coordinates';
+      img.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;';
+      // Append only once it has actually loaded, so a 404 or an offline device
+      // shows the markers over plain sky rather than a broken-image icon.
+      img.onload = () => { wrap.insertBefore(img, wrap.firstChild); };
+      img.onerror = () => { /* leave the dark background */ };
+      img.src = N.thumbnailUrl(dec, ra, { px: PX, fovArcsec: FOV });
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('width', PX);
+      svg.setAttribute('height', PX);
+      svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+
+      N.thumbnailMarkers(dec, ra, entries, { px: PX, fovArcsec: FOV }).forEach(m => {
+        if (!m.self && m.inFrame === false) return;
+        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        c.setAttribute('cx', m.x); c.setAttribute('cy', m.y);
+        c.setAttribute('r', m.self ? 3.5 : 2.5);
+        c.setAttribute('fill', m.self ? '#f87171' : 'none');
+        c.setAttribute('stroke', m.self ? '#fff' : '#4ade80');
+        c.setAttribute('stroke-width', m.self ? 1 : 1.4);
+        svg.appendChild(c);
+      });
+      wrap.appendChild(svg);
+      thumb.appendChild(wrap);
+
+      const cap = document.createElement('div');
+      cap.className = 'skyneighbours-scale';
+      cap.style.cssText = 'font-size:10.5px;opacity:0.55;margin-top:4px;text-align:center;';
+      cap.textContent = fovCaption(FOV, dec);
+      thumb.appendChild(cap);
+    }
+
+    let entries = [];
+    try { entries = N.neighbours(dec, coord.lon, { limit: 3 }) || []; } catch (e) {}
+    if (entries.length) paint(entries);
+
+    // Upgrade to the deep catalogue if it answers. Guarded on the card still
+    // being in the document: renderCards() replaces every element, so a promise
+    // resolving after a re-render must not write into an orphan.
+    if (N.lookupRemote) {
+      try {
+        N.lookupRemote(dec, coord.lon).then(remote => {
+          if (!remote || !card.isConnected) return;
+          paint([remote].concat(entries.slice(0, 2)));
+        }).catch(() => {});
+      } catch (e) {}
+    }
+  }
+
   function renderChromaCoord(hexCode, container, variant) {
     if (!container) return;
     container.innerHTML = '';
@@ -2965,6 +3112,18 @@
         bodyContent = `<div class="barcode-display"><div class="barcode-container" data-code="${code}" data-grid="${gridKey}"></div><div class="barcode-hex" data-editable="true" title="Click to edit">${code}</div></div>`;
       } else if (gridDef.display === 'music') {
         bodyContent = `<div class="music-display"><div class="music-notation"></div><div class="music-pianoroll" style="display:none;"></div><div class="music-raw" data-editable="true" title="Click to edit">${code.replace(/,\s*$/, '')}</div></div>`;
+      } else if (gridDef.display === 'skyneighbours') {
+        /*
+          Its own body because this card is a list plus a picture, not a code.
+          The container is filled after append by renderSkyNeighbours(), which
+          needs the coordinate rather than the encoded string -- and which also
+          fires the deep-catalogue lookup, so the text has to be replaceable
+          after the fact.
+        */
+        bodyContent = '<div class="skyneighbours-display">' +
+          '<div class="skyneighbours-thumb"></div>' +
+          '<div class="skyneighbours-list">' + (code || '') + '</div>' +
+          '</div>';
       } else if (isWordBased) {
         // Wrap in span so flex treats code+checksum as single item, not separate columns
         bodyContent = `<div class="code-display" data-editable="true" title="Click to edit"><span>${formattedCode}</span></div>`;
@@ -3467,7 +3626,9 @@
       container.appendChild(card);
       
       // Render special displays
-      if (gridDef.display === 'chroma') {
+      if (gridDef.display === 'skyneighbours') {
+        renderSkyNeighbours(card, currentCardCoord, !!(passphrase || obfuscated));
+      } else if (gridDef.display === 'chroma') {
         renderChromaCoord(code, card.querySelector('.chroma-container'), chromaVariantFor(gridKey));
       } else if (gridDef.display === 'music') {
         renderMusicNotation(code, card.querySelector('.music-notation'), gridKey);
