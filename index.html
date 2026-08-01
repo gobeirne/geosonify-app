@@ -1030,6 +1030,25 @@
           currentCardCoord = { lat, lon };
           updateCoordDisplay();
           updateMapPin();
+          /*
+            Publish to AppState as well.
+
+            This handler is the single funnel every coordinate change passes
+            through — a card code edited, a scan decoded, a GPS fix, a sky click
+            — but it only ever wrote the LEXICAL currentCardCoord and the pin.
+            Nothing outside this script could learn that the position moved, so
+            the sky view sat still while tracking ran and while card codes were
+            retyped.
+
+            AppState.set is the one channel modules can subscribe to, so the
+            funnel now feeds it. Cheap, and it makes the bridge work in the
+            direction it never did.
+          */
+          try {
+            if (typeof AppState !== 'undefined' && AppState.set) {
+              AppState.set('coordinate', { lat, lon });
+            }
+          } catch (e) {}
           // Ensure lastSolution is set so updateCompactOutputs can generate output
           if (!lastSolution || lastSolution.type === 'point') {
             lastSolution = {
