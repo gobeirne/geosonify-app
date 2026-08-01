@@ -2,7 +2,7 @@
  * geosonify-bip39-entry.js v1.0
  * 
  * BIP39 word-entry UI for the card view.
- * Toggled via ✎ button in card header — same pattern as
+ * Toggled via the 📥 RECEIVE button in card header — same pattern as
  * the piano roll toggle (▦) on the music card.
  * 
  * Normal view: code display (sand-gas-legal-humor.134)
@@ -476,13 +476,13 @@
 
   /**
    * Build both entry view AND speaker view into the card body.
-   * Both hidden by default. ✎ pen toggles entry, ✓ tick toggles speaker.
+   * Both hidden by default. 📥 RECEIVE toggles entry, ✓ tick toggles speaker.
    */
   function buildEntryDOM(card, gridKey) {
     const state = getState(gridKey);
     const wordlist = getWordlist(gridKey);
 
-    // ═══ RECEIVER ENTRY VIEW (toggled by ✎ pen) ═══
+    // ═══ RECEIVER ENTRY VIEW (toggled by 📥 RECEIVE) ═══
     const entry = document.createElement('div');
     entry.className = 'bip39-entry';
     entry.style.display = 'none';
@@ -1245,7 +1245,7 @@
 
   // ============== TOGGLE VIEW ==============
 
-  // ✎ pen toggle — controls receiver entry view only
+  // 📥 RECEIVE toggle — controls receiver entry view only
   function toggleView(gridKey) {
     const state = getState(gridKey);
     state.active = !state.active;
@@ -1262,9 +1262,17 @@
     if (state.entryEl) state.entryEl.style.display = state.active ? 'block' : 'none';
     if (state.codeEl) state.codeEl.style.display = state.active ? 'none' : '';
     if (state.toggleBtn) {
-      state.toggleBtn.textContent = state.active ? '✕' : '✎';
-      state.toggleBtn.style.color = state.active ? 'var(--accent, #f59e0b)' : '';
-      state.toggleBtn.title = state.active ? 'Close entry mode' : 'Entry mode';
+      if (state.active) {
+        state.toggleBtn.innerHTML = '✕ CLOSE';
+        state.toggleBtn.style.background = '#78350f';
+        state.toggleBtn.style.color = '#fbbf24';
+        state.toggleBtn.title = 'Close entry mode';
+      } else {
+        state.toggleBtn.innerHTML = '📥 RECEIVE';
+        state.toggleBtn.style.background = '#555078';
+        state.toggleBtn.style.color = '#e2dff0';
+        state.toggleBtn.title = 'Enter a code received from sender';
+      }
     }
 
     if (state.active && state.inputEls.length > 0) {
@@ -1291,8 +1299,9 @@
       state.active = false;
       if (state.entryEl) state.entryEl.style.display = 'none';
       if (state.toggleBtn) {
-        state.toggleBtn.textContent = '✎';
-        state.toggleBtn.style.color = '';
+        state.toggleBtn.innerHTML = '📥 RECEIVE';
+        state.toggleBtn.style.background = '#555078';
+        state.toggleBtn.style.color = '#e2dff0';
       }
     }
 
@@ -1319,26 +1328,21 @@
       const state = getState(gridKey);
       card.dataset.gridKey = gridKey;
 
-      // Ensure checksum is shown by default in the code display.
-      // cardState.checksumEnabled controls the .134 in the code view.
-      // We default it to true so the checksum always appears.
-      // The ✓ tick then controls the speaker/noisy readout separately.
-      if (typeof CardRenderer !== 'undefined' && CardRenderer.getCardState) {
-        const cs = CardRenderer.getCardState();
-        if (cs && cs.checksumEnabled && cs.checksumEnabled[gridKey] === undefined) {
-          // Not yet set — enable it. This triggers via the next renderCards cycle.
-          cs.checksumEnabled[gridKey] = true;
-        }
-      }
+      // checksumEnabled[gridKey] controls the SPEAKER (per-word) readout only.
+      // card-renderer.js:878 already defaults it to false on purpose, so cards
+      // open in the compact view and the ✓ tick switches to per-word. Forcing
+      // it true here contradicted that default — and because a SyntaxError kept
+      // this whole file from parsing for the entire life of that code, the
+      // contradiction never once reached a browser.
 
-      // Add ✎ toggle button to card header
+      // Add 📥 RECEIVE toggle button to card header
       const titleEl = card.querySelector('.card-title');
       if (titleEl && !titleEl.querySelector('.bip39-entry-toggle')) {
         const toggle = document.createElement('button');
         toggle.className = 'audio-speaker-btn bip39-entry-toggle';
-        toggle.innerHTML = '✎';
-        toggle.title = 'Entry mode';
-        toggle.style.cssText = "margin-left:4px; font-family:'SF Mono',ui-monospace,monospace; font-weight:700; font-size:16px;";
+        toggle.innerHTML = '📥 RECEIVE';
+        toggle.title = 'Enter a code received from sender';
+        toggle.style.cssText = "margin-left:4px; background:#555078; border:none; border-radius:6px; color:#e2dff0; font-size:10px; font-weight:700; padding:4px 8px; cursor:pointer; font-family:inherit; letter-spacing:0.04em;";
         toggle.onclick = (e) => { e.stopPropagation(); toggleView(gridKey); };
         titleEl.appendChild(toggle);
         state.toggleBtn = toggle;

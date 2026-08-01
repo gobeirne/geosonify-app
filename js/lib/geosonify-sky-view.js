@@ -26,6 +26,9 @@
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
+  // The starred card's cell. Distinct from ACCENT so the graticule box is never
+  // mistaken for the HEALPix cell the footer numbers actually describe.
+  var CARD_ACCENT = '#4ade80';
   var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
   var MIN_ORDER = 1, MAX_ORDER = 52;
 
@@ -122,8 +125,26 @@
     if (mapEl && mapEl.parentNode) {
       var cs = global.getComputedStyle ? global.getComputedStyle(mapEl.parentNode) : null;
       if (cs && cs.position === 'static') mapEl.parentNode.style.position = 'relative';
+      /*
+        z-index must clear Leaflet's CONTROLS, not just its panes.
+
+        Leaflet's panes top out at 700 (.leaflet-popup-pane), so 500 looked
+        sufficient. But leaflet.css also carries
+
+            .leaflet-top, .leaflet-bottom { position: absolute; z-index: 1000; }
+
+        and .leaflet-container gets position:relative with NO z-index and no
+        isolation -- so it does not open a stacking context, and those control
+        containers compete directly against this host in the shared parent.
+        At 500 they won: the zoom control and the attribution painted straight
+        through the sky, giving two overlapping sets of +/- and an OpenStreetMap
+        credit on a star field.
+
+        1001 is the smallest value that clears them. The app's own scale jumps
+        from 500 to 1200, so this sits in an empty gap and nothing else moves.
+      */
       host = el('div',
-        'position:absolute; inset:0; z-index:500; background:#0b0f19; color:#e5e7eb; ' +
+        'position:absolute; inset:0; z-index:1001; background:#0b0f19; color:#e5e7eb; ' +
         'display:flex; flex-direction:column; overflow:hidden; ' +
         'font:13px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
       mapEl.parentNode.appendChild(host);
@@ -169,11 +190,12 @@
     /*
       Zoom controls.
 
-      The map's own +/- are Leaflet's, inside mapContainerMobile, and our canvas
-      sits on top of them — so they are neither visible nor clickable in sky
-      mode. Rather than punching a hole through the overlay, Geosonify draws its
-      own, in the same place and the same shape, wired to the renderer's field of
-      view. Consistent with the rest of this: we own the chrome.
+      The map's own +/- are Leaflet's, inside mapContainerMobile. They sit at
+      z-index 1000 (leaflet.css .leaflet-top), so this host must clear that --
+      see the z-index note in build(). Once it does they are covered and
+      unclickable, and Geosonify draws its own in the same place and the same
+      shape, wired to the renderer's field of view. Consistent with the rest of
+      this: we own the chrome.
 
       Zooming IN recentres on the marked cell, because "zoom in" here means
       "look closer at the thing I selected", not "magnify the middle of wherever
@@ -200,8 +222,9 @@
     var mocTxt = el('span', mono + ' color:#94a3b8;');
     var sizeTxt = el('span', 'font-size:11.5px; color:#94a3b8;');
     var legTxt = el('span', 'font-size:11.5px; color:#94a3b8; flex-basis:100%;');
+    var cardTxt = el('span', 'font-size:11.5px; color:' + CARD_ACCENT + '; flex-basis:100%;');
     var provTxt = el('span', 'font-size:11.5px; flex-basis:100%;');
-    [posTxt, quadTxt, mocTxt, sizeTxt, legTxt, provTxt].forEach(function (n) { foot.appendChild(n); });
+    [posTxt, quadTxt, mocTxt, sizeTxt, legTxt, cardTxt, provTxt].forEach(function (n) { foot.appendChild(n); });
     host.appendChild(foot);
 
     if (!host.parentNode) document.body.appendChild(host);
@@ -209,6 +232,7 @@
     els = {
       host: host, canvasWrap: canvasWrap, frameTag: frameTag, orderTxt: orderTxt,
       posTxt: posTxt, quadTxt: quadTxt, mocTxt: mocTxt, sizeTxt: sizeTxt, legTxt: legTxt,
+      cardTxt: cardTxt,
       provTxt: provTxt, attrib: attrib,
       minus: minus, plus: plus, close: close, zIn: zIn, zOut: zOut
     };
@@ -354,6 +378,80 @@
     return _Sky().cellBoundary(cell.order, cell.ipix, { step: 6, close: true, frame: 'sky' });
   }
 
+  function _Cards() { return global.GeosonifySkyCards || null; }
+
+  /*
+    The starred card's own cell.
+
+    Star a card on the Earth map and MapManager.updateHierarchicalGrid() draws
+    THAT card's grid. In sky mode nothing happened, because draw() below is
+    unconditional HEALPix and never reads cardState.active.
+
+    Additive rather than replacing: the HEALPix ancestry stays, because the whole
+    footer readout -- order, MOC, cell size, provenance, the overclaim warning --
+    is computed from it, and drawing one thing while reporting another is exactly
+    the kind of quiet disagreement this project keeps getting bitten by. So the
+    graticule cell is drawn in its own colour, and labelled, on top of the
+    HEALPix frame it is measured against.
+
+    HEALPix cards need nothing here: their cell IS the drawing already. GIS cards
+    return null from the module (no celestial meaning) and are hidden in sky mode
+    anyway. Wrapped whole: a decoration must never cost the view.
+  */
+  function drawCardCell(g) {
+    var Cards = _Cards(), Overlay = _Overlay();
+    var clear = function () { if (els && els.cardTxt) els.cardTxt.textContent = ''; };
+
+    // Every bail-out clears the label. Leaving the previous card's name and
+    // size on screen while drawing a different card's cell is the same class of
+    // quiet disagreement this whole feature exists to avoid.
+    if (!Cards || !Overlay || _privacyOn()) { clear(); return; }   // redacted like a GIS card
+
+    var got;
+    try { got = Cards.activeCardRings(mark.dec, mark.ra); } catch (e) { clear(); return; }
+    if (!got || !got.rings || !got.rings.length) { clear(); return; }
+
+    var vp = renderer.getSize();
+    var drew = null;
+
+    got.rings.forEach(function (entry, i) {
+      var pr;
+      try { pr = Overlay.projectRing(entry.ring, renderer.project, { viewport: vp }); }
+      catch (e) { return; }
+      if (!pr || !pr.visible) return;
+
+      // Sub-pixel cells are a dot claiming a precision the screen cannot show;
+      // pickVisible applies the same floor to the HEALPix chain.
+      if (!entry.deepest && pr.maxPx < 5) return;
+
+      var p = document.createElementNS(SVGNS, 'path');
+      p.setAttribute('d', Overlay.ringToPath(pr));
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', CARD_ACCENT);
+      p.setAttribute('stroke-width', entry.deepest ? 1.6 : 0.9);
+      p.setAttribute('stroke-opacity', entry.deepest ? 0.95 : Math.max(0.18, 0.55 - i * 0.1));
+      p.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(p);
+      if (entry.deepest) drew = entry;
+    });
+
+    if (els.cardTxt) {
+      var label = '';
+      if (drew) {
+        label = got.card.name + ' \u00b7 ' + got.card.iterations;
+        var size = null;
+        try {
+          if (global.GeosonifySkyUnits) {
+            size = global.GeosonifySkyUnits.cellText(got.card.key, got.card.def,
+                                                     got.card.iterations, { lat: mark.dec, lon: mark.ra });
+          }
+        } catch (e) {}
+        if (size) label += '  \u2014  ' + size;
+      }
+      els.cardTxt.textContent = label;
+    }
+  }
+
   function draw() {
     if (!renderer || !els) return;
     var Sky = _Sky(), Overlay = _Overlay(), HP = _HP();
@@ -381,6 +479,8 @@
       p.setAttribute('stroke-linejoin', 'round');
       g.appendChild(p);
     });
+
+    drawCardCell(g);
 
     drawShapes(g);
 
