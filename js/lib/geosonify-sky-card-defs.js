@@ -122,14 +122,18 @@
       which at 1,765 stars means degrees away, not metres. The remote tier is a
       promise and belongs in the card's own render path, not here.
     */
+    /*
+      A placeholder only. The real content is asynchronous -- the stars that are
+      actually AT your address live in Gaia, and that is a network round trip --
+      so card-renderer's renderSkyNeighbours() fills this in after append.
+
+      Deliberately does NOT fall back to the embedded catalogue. That returns
+      stars 450 km away which never change as you move, and a card that looks
+      answered but says nothing is worse than one that admits it is still
+      looking.
+    */
     skystar: function (dec, ra, order) {
-      var N = global.GeosonifySkyNeighbour;
-      if (!N) return null;
-      var list = N.neighbours(dec, ra > 180 ? ra - 360 : ra, { limit: 3 });
-      if (!list.length) return null;
-      // One line each, nearest first. describe() carries the coarse-tier caveat
-      // itself, so a 269 km "neighbour" cannot be read as a local one.
-      return list.map(function (n) { return N.describe(n); }).join('\n');
+      return '\u2026';
     },
 
     skynuniq: function (dec, ra, order) {

@@ -191,11 +191,30 @@
     short enough to read aloud, which is the point of the card. `opts.catalogue`
     switches it.
   */
-  var CATALOGUES = {
-    ucac4: { source: 'I/322A/out', idCol: 'UCAC4', label: 'UCAC4' },
-    gaia:  { source: 'I/355/gaiadr3', idCol: 'Source', label: 'Gaia DR3' }
-  };
+  /*
+    THE CATALOGUE DECIDES WHETHER THE CARD IS ALIVE.
 
+    The test that matters is not "does it name a star" but "does it CHANGE as you
+    move". A card that reads the same from one side of the city to the other is
+    scenery, not information. Typical neighbour separation, and the walk it takes
+    before the answer changes:
+
+        embedded (1,765)      8702"     269 km    never, within one life
+        UCAC4 (114 M)           34"     1.06 km   about one suburb
+        Gaia DR3 (1.81 B)      8.6"       266 m   a few streets
+
+    Across St Martins, 1.5 km wide, that is 0.0 distinct embedded neighbours,
+    1.4 UCAC4 ones, and 5.6 Gaia ones. Only the last is hyperlocal.
+
+    So GAIA IS THE DEFAULT, reversing the earlier choice. UCAC4 identifiers are
+    shorter and more sayable, which was the reason before, but a name you can
+    pronounce for a star that never changes is the wrong trade. UCAC4 stays
+    available for anyone who wants the readable identifier.
+
+    Gaia also carries parallax, so the distance is real rather than absent:
+    1000/Plx gives parsecs. That restores the light-years figure the embedded
+    catalogue could only supply for bright stars.
+  */
   /*
     UCAC4 identifiers carry their own declination, which makes them
     self-checking.
@@ -206,16 +225,11 @@
     declination between -43.6 and -43.4 -- and St Martins sits at -43.5839,
     inside it.
 
-    This matters more than a curiosity. The VizieR parse in lookupRemote() has
-    never been run against a live response, and the way a column-order mistake
-    would present is a plausible identifier attached to the wrong position. The
-    zone is an independent witness: if the parsed dec and the parsed id disagree,
-    something is wrong with the parse and the result is discarded rather than
-    shown. Silent wrong answers are the failure mode this project cares about
-    most.
-
-    Returns null for anything that is not a UCAC4 id, so it never rejects the
-    Gaia tier by accident.
+    This is an independent witness on a parse that has never been run live. A
+    column mistake would present as a plausible identifier attached to the wrong
+    position, and nothing else in the pipeline could catch that. Returns null for
+    anything that is not a UCAC4 id, so the Gaia tier is never rejected by
+    accident.
   */
   function ucac4Zone(id) {
     var m = /(?:UCAC4\s+)?(\d{3})-(\d{6})/.exec(String(id || ''));
@@ -227,132 +241,152 @@
 
   function ucac4Agrees(id, decDeg) {
     var z = ucac4Zone(id);
-    if (!z) return true;                     // not a UCAC4 id: nothing to check
-    // One zone of slack: a star exactly on a boundary can be catalogued either
-    // side, and rejecting a correct result would be worse than accepting a
-    // near-miss.
+    if (!z) return true;
+    // One zone of slack: a star on a boundary can be catalogued either side, and
+    // rejecting a correct result is worse than accepting a near-miss.
     return decDeg >= z.decMin - 0.2 && decDeg <= z.decMax + 0.2;
   }
 
+  var CATALOGUES = {
+    gaia: {
+      source: 'I/355/gaiadr3', label: 'Gaia DR3',
+      cols: 'RA_ICRS,DE_ICRS,Source,Plx,Gmag',
+      idCol: 'Source', plxCol: 'Plx', magCol: 'Gmag',
+      raCol: 'RA_ICRS', decCol: 'DE_ICRS'
+    },
+    ucac4: {
+      source: 'I/322A/out', label: 'UCAC4',
+      cols: 'RAJ2000,DEJ2000,UCAC4,f.mag',
+      idCol: 'UCAC4', plxCol: null, magCol: 'f.mag',
+      raCol: 'RAJ2000', decCol: 'DEJ2000'
+    }
+  };
+
+  var PC_TO_LY = 3.2615638;
+
+  /*
+    Up to `limit` stars, nearest first.
+
+    UNVERIFIED against a live service: this sandbox cannot reach
+    vizier.cds.unistra.fr (403 at the egress proxy), so the request form comes
+    from the documentation rather than an observed reply. Two things make that
+    less dangerous than it sounds:
+
+      -out= names the columns EXPLICITLY, so the parse does not depend on
+      guessing VizieR's default column order for each catalogue -- the failure
+      mode I would otherwise be most worried about.
+
+      the UCAC4 zone check (below) is an independent witness on the position,
+      and a disagreement discards the row rather than showing it.
+
+    Returns [] on any failure. An empty list is a true statement; a wrong star is
+    not.
+  */
   function lookupRemote(lat, lon, opts) {
     opts = opts || {};
-    if (!isSky()) return Promise.resolve(null);      // never leak Earth coords
-    if (typeof fetch !== 'function') return Promise.resolve(null);
+    if (!isSky()) return Promise.resolve([]);        // never leak Earth coords
+    if (typeof fetch !== 'function') return Promise.resolve(null);   // could not look
 
-    var cat = CATALOGUES[opts.catalogue || 'ucac4'] || CATALOGUES.ucac4;
+    var cat = CATALOGUES[opts.catalogue || 'gaia'] || CATALOGUES.gaia;
     var ra = ((lon % 360) + 360) % 360;
+    var limit = opts.limit || 3;
     var radiusArcmin = opts.radiusArcmin || 1;
 
     var url = 'https://vizier.cds.unistra.fr/viz-bin/asu-tsv' +
       '?-source=' + encodeURIComponent(cat.source) +
       '&-c=' + encodeURIComponent(ra.toFixed(6) + (lat < 0 ? '' : '+') + lat.toFixed(6)) +
       '&-c.rm=' + radiusArcmin +
-      '&-out.max=1&-sort=_r&-out.add=_r';
+      '&-out=' + encodeURIComponent(cat.cols) +
+      '&-out.add=_r&-sort=_r&-out.max=' + limit;
 
+    /*
+      null means COULD NOT LOOK; [] means looked and found nothing. Collapsing
+      them loses the only distinction the card needs to be honest -- "the
+      catalogue is unreachable" and "there is genuinely no star here" are
+      different sentences and one of them is not the user's fault.
+    */
     return fetch(url).then(function (r) { return r.ok ? r.text() : null; })
       .then(function (text) {
-        if (!text) return null;
-        var row = parseTsv(text);
-        if (!row) return null;
-
-        var name = cat.label + ' ' + row.id;
-
-        // Independent witness on an unverified parse. See ucac4Zone above.
-        if (!ucac4Agrees(row.id, row.dec)) {
-          try {
-            console.warn('[geosonify] star lookup discarded: ' + name +
-                         ' claims a declination zone that disagrees with ' +
-                         row.dec.toFixed(4) + ' — the VizieR parse is wrong');
-          } catch (e) {}
-          return null;
-        }
-
-        var star = {
-          ra: row.ra, dec: row.dec, mag: row.mag,
-          name: name, con: null, distLy: null,
-          sepDeg: row.sepArcmin === null ? null : row.sepArcmin / 60
-        };
-        return {
-          tier: 'remote',
-          coarse: false,
-          catalogue: cat.label,
-          star: star,
-          offset: earthOffset(lat, lon, star.dec, star.ra),
-          distLy: null,                  // astrometric catalogues carry parallax, not distance
-          links: links(star)
-        };
+        if (text === null || text === undefined) return null;
+        return parseTsv(text, cat).map(function (row) {
+          var name = cat.label + ' ' + row.id;
+          if (!ucac4Agrees(row.id, row.dec)) {
+            try {
+              console.warn('[geosonify] star lookup discarded: ' + name +
+                           ' declination zone disagrees with ' + row.dec.toFixed(4));
+            } catch (e) {}
+            return null;
+          }
+          // Parallax in milliarcseconds -> parsecs -> light years. Negative and
+          // tiny parallaxes are noise, not distance, and are reported as absent
+          // rather than as an enormous number.
+          var ly = null;
+          if (row.plx !== null && row.plx > 0.05) {
+            ly = Math.round((1000 / row.plx) * PC_TO_LY * 10) / 10;
+          }
+          var star = {
+            ra: row.ra, dec: row.dec, mag: row.mag,
+            name: name, con: null, distLy: ly,
+            sepDeg: row.sepArcmin === null ? null : row.sepArcmin / 60
+          };
+          return {
+            tier: 'remote', coarse: false, catalogue: cat.label,
+            star: star, offset: earthOffset(lat, lon, star.dec, star.ra),
+            distLy: ly, links: links(star)
+          };
+        }).filter(Boolean);
       })
       .catch(function () { return null; });
   }
 
   /*
-    VizieR's TSV form: comment lines start with '#', then a header block, then
-    data. Written defensively because the exact column order is a property of the
-    catalogue rather than of the format.
+    VizieR TSV: comment lines start with '#', then a header line, then a rule
+    line of dashes, then data. Columns are looked up BY NAME from the header
+    rather than by position, and the request names them explicitly, so a change
+    in VizieR's default ordering cannot silently shift the parse.
   */
-  function parseTsv(text) {
-    var lines = text.split('\n').filter(function (l) {
+  function parseTsv(text, cat) {
+    var lines = String(text || '').split('\n').filter(function (l) {
       return l && l.charAt(0) !== '#';
     });
-    var header = null, cols = null;
+    var header = null, out = [];
+
     for (var i = 0; i < lines.length; i++) {
       var parts = lines[i].split('\t');
       if (!header) {
-        if (parts.length > 2 && /RA|_RAJ2000|RAJ2000/i.test(lines[i])) { header = parts; }
+        if (parts.length > 1 && parts.indexOf(cat.raCol) !== -1) header = parts;
         continue;
       }
-      if (/^-+\t/.test(lines[i]) || /^-+$/.test(parts[0])) continue;   // rule line
-      cols = parts;
-      break;
-    }
-    if (!header || !cols) return null;
+      if (/^-+$/.test((parts[0] || '').trim())) continue;      // rule line
+      if (parts.length < 2) continue;
 
-    function col(re) {
-      for (var i = 0; i < header.length; i++) {
-        if (re.test(header[i].trim())) {
-          var v = (cols[i] || '').trim();
-          return v === '' ? null : v;
-        }
+      var idx = {};
+      for (var h = 0; h < header.length; h++) idx[header[h].trim()] = h;
+      function num(name) {
+        if (name === null || idx[name] === undefined) return null;
+        var v = (parts[idx[name]] || '').trim();
+        if (v === '') return null;
+        var f = parseFloat(v);
+        return isFinite(f) ? f : null;
       }
-      return null;
+      function str(name) {
+        if (idx[name] === undefined) return null;
+        var v = (parts[idx[name]] || '').trim();
+        return v === '' ? null : v;
+      }
+
+      var ra = num(cat.raCol), dec = num(cat.decCol);
+      if (ra === null || dec === null) continue;
+
+      out.push({
+        ra: ra, dec: dec,
+        mag: num(cat.magCol),
+        plx: num(cat.plxCol),
+        sepArcmin: num('_r'),
+        id: str(cat.idCol) || (ra.toFixed(5) + (dec < 0 ? '' : '+') + dec.toFixed(5))
+      });
     }
-    var ra = parseFloat(col(/^_?RAJ?2000$|^RA_ICRS$/i));
-    var dec = parseFloat(col(/^_?DEJ?2000$|^DE_ICRS$/i));
-    if (!isFinite(ra) || !isFinite(dec)) return null;
-
-    var mag = parseFloat(col(/^(f\.)?mag$|^Gmag$|^Vmag$|^rmag$/i));
-    var sep = parseFloat(col(/^_r$/));
-    var id = col(/^UCAC4$|^Source$|^DR3Name$/i);
-
-    return {
-      ra: ra, dec: dec,
-      mag: isFinite(mag) ? mag : null,
-      sepArcmin: isFinite(sep) ? sep : null,
-      id: id || (ra.toFixed(5) + (dec < 0 ? '' : '+') + dec.toFixed(5))
-    };
-  }
-
-  /*
-    One sentence, the way a person would say it. Deliberately never uses the word
-    "nearest": see the naming note at the top.
-  */
-  function describe(result) {
-    if (!result) return '';
-    var s = result.star, o = result.offset;
-    var bits = [s.name];
-
-    if (o.metres < 1) bits.push('exactly at your coordinates');
-    else bits.push(formatDistance(o.metres) + ' ' + o.compass + ' of you, on the ground');
-
-    var ly = formatLightYears(result.distLy);
-    if (ly) bits.push(ly + ' away');
-    else if (result.tier === 'local') bits.push('distance unmeasured');
-
-    // The caveat belongs once per card, not once per line -- three neighbours
-    // each repeating it drowns the answer. describe() marks the line briefly;
-    // a caller showing a list should render coarseNote() beneath it.
-    if (result.coarse) bits.push('brightest here, not closest');
-    return bits.join(' \u2014 ');
+    return out;
   }
 
   /*
@@ -475,24 +509,86 @@
     when the request lands -- the same progressive pattern the sky view uses for
     Aladin imagery.
   */
-  function lookup(lat, lon, opts) {
-    opts = opts || {};
-    var local = lookupLocal(lat, lon, opts);
-    if (opts.remote === false) return Promise.resolve(local);
-    return lookupRemote(lat, lon, opts).then(function (remote) {
-      return remote || local;
-    });
+  /*
+    One line, the way a person would say it. Never uses the word "nearest": the
+    nearest star is the Sun.
+
+    The ground offset leads, because that is the part that makes the star yours
+    -- "170 m north-east" is a place you can stand. The light-year figure follows
+    as the star's real distance, which is the only distance to it that means
+    anything.
+  */
+  function describe(result) {
+    if (!result) return '';
+    var s = result.star, o = result.offset;
+    var bits = [s.name];
+
+    if (o.metres < 1) bits.push('exactly at your coordinates');
+    else bits.push(formatDistance(o.metres) + ' ' + o.compass + ' of you, on the ground');
+
+    var ly = formatLightYears(result.distLy);
+    if (ly) bits.push(ly + ' away');
+
+    if (result.coarse) bits.push('brightest here, not closest');
+    return bits.join(' \u2014 ');
   }
 
   /*
-    The one-time footnote for a coarse list. Says plainly why the distances are
-    hundreds of kilometres rather than hundreds of metres, so nobody reads the
-    embedded catalogue as a failure of the lookup.
+    REMOTE FIRST, AND NO SILENT SUBSTITUTION.
+
+    The embedded catalogue used to answer when the network could not, and that
+    was wrong. A neighbour 450 km away does not change as you cross the city, so
+    the card reads identically from one side of a life to the other -- it is
+    scenery, not information, and worse, it LOOKS like an answer. Across St
+    Martins there are 0.0 distinct embedded neighbours, 1.4 UCAC4 ones and 5.6
+    Gaia ones.
+
+    So the local tier is no longer a fallback. It is returned only when asked for
+    explicitly, and `status` says plainly which of the three things happened:
+
+      'ok'       real hyperlocal neighbours
+      'offline'  the deep catalogue could not be reached
+      'none'     it was reached and there is genuinely nothing within the radius
+
+    A caller showing 'offline' should say so rather than filling the space.
+    Nothing is better than something meaningless.
+  */
+  function lookup(lat, lon, opts) {
+    opts = opts || {};
+    if (opts.local === true) {
+      var l = lookupLocal(lat, lon, opts);
+      return Promise.resolve({ status: l ? 'ok' : 'none', tier: 'local',
+                               entries: l ? [l] : [] });
+    }
+    return lookupRemote(lat, lon, opts).then(function (entries) {
+      if (entries === null) return { status: 'offline', tier: 'remote', entries: [] };
+      if (entries.length) return { status: 'ok', tier: 'remote', entries: entries };
+      return { status: 'none', tier: 'remote', entries: [] };
+    }).catch(function () {
+      return { status: 'offline', tier: 'remote', entries: [] };
+    });
+  }
+
+  function offlineNote() {
+    return 'Could not reach the deep star catalogue. The stars at your exact ' +
+           'address are only in Gaia \u2014 the built-in list holds bright stars ' +
+           'a few hundred kilometres away, which would not change as you move.';
+  }
+
+  function emptyNote(radiusArcmin) {
+    return 'Nothing catalogued within ' + (radiusArcmin || 1) + '\u2032 of your ' +
+           'coordinates \u2014 about ' + Math.round((radiusArcmin || 1) * 60 / 3600 * 111319.9) +
+           ' m on the ground. Try a coarser cell or a wider radius.';
+  }
+
+  /*
+    Kept for the explicit local tier, which is now an opt-in curiosity rather
+    than a fallback.
   */
   function coarseNote() {
-    return 'From the built-in bright-star catalogue (1,765 stars), where the ' +
-           'typical gap is about 2.4\u00b0 \u2014 269 km read as ground distance. ' +
-           'A deep-catalogue lookup finds one within about a kilometre.';
+    return 'From the built-in bright-star catalogue (1,765 stars). These are ' +
+           'hundreds of kilometres away read as ground distance and will not ' +
+           'change as you move around a city.';
   }
 
   var API = {
@@ -509,6 +605,8 @@
     lookupRemote: lookupRemote,
     lookup: lookup,
     neighbours: neighbours,
+    offlineNote: offlineNote,
+    emptyNote: emptyNote,
     SURVEYS: SURVEYS,
     thumbnailUrl: thumbnailUrl,
     thumbnailMarkers: thumbnailMarkers,
