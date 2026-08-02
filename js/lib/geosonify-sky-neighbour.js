@@ -324,10 +324,26 @@
           if (row.plx !== null && row.plx > 0.05) {
             ly = Math.round((1000 / row.plx) * PC_TO_LY * 10) / 10;
           }
+          /*
+            SEPARATION IS COMPUTED, NOT READ FROM _r.
+
+            VizieR's _r column is expressed in the unit of the cone search, which
+            is a property of the request rather than the format -- and I cannot
+            verify it against the live service from here. Getting that unit wrong
+            by 60x would silently size the thumbnail field wrong and mis-order
+            the list, with nothing to indicate it.
+
+            The row already carries ra and dec, so the separation is derivable
+            with no assumption at all. Haversine, never arccos.
+          */
+          var sepDeg = _Stars()
+            ? _Stars().sepDeg(ra, lat, row.ra, row.dec)
+            : (row.sepArcmin === null ? null : row.sepArcmin / 60);
+
           var star = {
             ra: row.ra, dec: row.dec, mag: row.mag,
             name: name, con: null, distLy: ly,
-            sepDeg: row.sepArcmin === null ? null : row.sepArcmin / 60
+            sepDeg: sepDeg
           };
           return {
             tier: 'remote', coarse: false, catalogue: cat.label,
@@ -523,8 +539,18 @@
     var s = result.star, o = result.offset;
     var bits = [s.name];
 
-    if (o.metres < 1) bits.push('exactly at your coordinates');
-    else bits.push(formatDistance(o.metres) + ' ' + o.compass + ' of you, on the ground');
+    /*
+      "of you" is a claim about where the reader is standing, and the card is
+      just as often describing a pin dropped somewhere else entirely. The offset
+      is from the COORDINATE, not from the person -- so the phrasing says what is
+      true in both cases and asserts nothing about the reader's position.
+
+      "on the ground" stays, because that is the genuinely surprising part: the
+      distance is terrestrial, measured between two points on the Earth, while
+      the light-years that follow are the star's real distance from the Sun.
+    */
+    if (o.metres < 1) bits.push('exactly on these coordinates');
+    else bits.push(formatDistance(o.metres) + ' ' + o.compass + ' on the ground');
 
     var ly = formatLightYears(result.distLy);
     if (ly) bits.push(ly + ' away');

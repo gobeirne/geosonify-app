@@ -547,11 +547,11 @@
     // Every bail-out clears the label. Leaving the previous card's name and
     // size on screen while drawing a different card's cell is the same class of
     // quiet disagreement this whole feature exists to avoid.
-    if (!Cards || !Overlay || _privacyOn()) { clear(); return; }   // redacted like a GIS card
+    if (!Cards || !Overlay || _privacyOn()) { clear(); return false; }   // redacted like a GIS card
 
     var got;
-    try { got = Cards.activeCardRings(mark.dec, mark.ra); } catch (e) { clear(); return; }
-    if (!got || !got.rings || !got.rings.length) { clear(); return; }
+    try { got = Cards.activeCardRings(mark.dec, mark.ra); } catch (e) { clear(); return false; }
+    if (!got || !got.rings || !got.rings.length) { clear(); return false; }
 
     var vp = renderer.getSize();
     var drew = null;
@@ -592,6 +592,9 @@
       }
       els.cardTxt.textContent = label;
     }
+    // Whether a card grid was drawn. The HEALPix chain is skipped when it was,
+    // so the sky shows exactly one grid, like the Earth map.
+    return !!drew;
   }
 
   /*
@@ -675,21 +678,45 @@
     */
     var chain = Sky.ancestry(order, ipix, { fromOrder: Math.max(0, order - ancestryLevels) });
 
+    /*
+      ONE GRID AT A TIME — WHICHEVER CARD IS ACTIVE.
+
+      The Earth map draws only the active card's grid. Sky was drawing the
+      HEALPix cell AS WELL AS the card's, so a BIP39 box sat inside a HEALPix
+      diamond inside six faded parents, and flipping between the two frames
+      compared a cluttered picture with a clean one -- which defeats the whole
+      point of flipping, which is to feel the scale.
+
+      So the card cell is drawn FIRST, and it reports whether it drew. If it did,
+      the HEALPix chain is suppressed and the two views show the same single
+      cell, at the same size, in both frames.
+
+      The footer still reports the HEALPix order, MOC and cell size, because that
+      is the sky view's own address and the readout is labelled. What must never
+      happen is two grids drawn at once with nothing saying which is which.
+    */
+    var drewCard = drawCardCell(g);
+
+    /*
+      pickVisible runs either way: the legibility readout below reports whether
+      the CELL is resolvable at this zoom, which is true of the sky view's own
+      address regardless of which grid is drawn. Only the drawing is conditional.
+    */
     var picked = Overlay.pickVisible(chain, boundaryOf, renderer.project,
                                      { viewport: renderer.getSize(), minPx: 5 });
 
-    picked.draw.forEach(function (entry, i) {
-      var deepest = entry === picked.deepest;
-      var p = document.createElementNS(SVGNS, 'path');
-      p.setAttribute('d', Overlay.ringToPath(entry.projected));
-      p.setAttribute('fill', 'none');
-      p.setAttribute('stroke', deepest ? ACCENT : RAMP[Math.min(RAMP.length - 1, i)]);
-      p.setAttribute('stroke-width', deepest ? 1.8 : 1.1);
-      p.setAttribute('stroke-linejoin', 'round');
-      g.appendChild(p);
-    });
-
-    drawCardCell(g);
+    if (!drewCard) {
+      picked.draw.forEach(function (entry, i) {
+        var deepest = entry === picked.deepest;
+        var p = document.createElementNS(SVGNS, 'path');
+        p.setAttribute('d', Overlay.ringToPath(entry.projected));
+        p.setAttribute('fill', 'none');
+        p.setAttribute('stroke', deepest ? ACCENT : RAMP[Math.min(RAMP.length - 1, i)]);
+        p.setAttribute('stroke-width', deepest ? 1.8 : 1.1);
+        p.setAttribute('stroke-linejoin', 'round');
+        g.appendChild(p);
+      });
+    }
 
     drawShapes(g);
 
@@ -896,6 +923,24 @@
       try { global.GeosonifySkyCarry.carryToSky(global.__geosonifyLastSolution); } catch (e) {}
     }
 
+    /*
+      Carry the map's zoom across, so the sky opens showing the same amount of
+      sky the map was showing of ground. Matched on the VERTICAL, where
+      declination is latitude with no scaling at all -- see geosonify-sky-zoom.js
+      for why the horizontal cannot be made to agree.
+
+      After the first draw() so a working view exists first; a failure here costs
+      the scale continuity, not the view. An explicit opts.fovDeg wins, since a
+      caller that named a field meant it.
+    */
+    if (!opts.fovDeg && global.GeosonifySkyZoom && global.__geosonifyMap) {
+      try {
+        if (global.GeosonifySkyZoom.carryEarthZoomToSky(global.__geosonifyMap, renderer) !== null) {
+          draw();
+        }
+      } catch (e) {}
+    }
+
     watchCoordinate();      // GPS fixes and card-code edits move the sphere too
     return true;
   }
@@ -913,6 +958,18 @@
     */
     if (global.GeosonifySkyCarry && global.__geosonifyMap) {
       try { global.GeosonifySkyCarry.carryToEarth(global.__geosonifyMap); } catch (e) {}
+    }
+    /*
+      And zoom back the other way: whatever field you zoomed the sky to, the map
+      opens showing the same latitude span. Read BEFORE the teardown below
+      destroys the renderer.
+    */
+    if (global.GeosonifySkyZoom && global.__geosonifyMap && renderer) {
+      try {
+        global.GeosonifySkyZoom.carrySkyZoomToEarth(
+          renderer, global.__geosonifyMap, mark.dec,
+          mark.ra > 180 ? mark.ra - 360 : mark.ra);
+      } catch (e) {}
     }
     unwatchCoordinate();
     unwatchMapSize();          // else the observer outlives the view it feeds
