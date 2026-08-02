@@ -660,6 +660,8 @@
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-frames.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-url-formats.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-carry.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
@@ -2461,6 +2463,71 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
         if (urlFrame.warnings.length) {
           setTimeout(() => showToast(urlFrame.warnings[0]), 250);
+        }
+      }
+
+      /*
+        ── Sky interchange formats (?moc=, ?nuniq=, ?radec=, ?desig=) ──────────
+        A URL is a CONVERSION, not just a share link: hand the app a MOC from a
+        paper or an RA/Dec from SIMBAD, and read it back as BIP39 words, a
+        chessboard, a melody. These four are input parameters for exactly that.
+
+        Placed after the frame block because moc= and nuniq= are frame-FOLLOWING
+        — a MOC token is an order and a HEALPix index, the same digits a valid
+        Earth cell carries, so they obey frame= and default to earth like hphex.
+        radec= and desig= are sky-implying: right ascension in hours has no
+        terrestrial reading, so requiring frame= would only make hand-written
+        URLs fail for no safety gain.
+
+        A malformed value ABORTS rather than guessing, exactly as an unknown
+        frame does. A MOC that fails to parse must not quietly become a position
+        somewhere else.
+      */
+      if (typeof GeosonifySkyUrlFormats !== 'undefined') {
+        let skyFmt = null;
+        try {
+          skyFmt = GeosonifySkyUrlFormats.parse(urlParams, urlFrame ? urlFrame.sphere : 'earth');
+        } catch (e) {
+          setTimeout(() => showToast(e.message, 'error'), 200);
+          return;
+        }
+        if (skyFmt) {
+          if (skyFmt.sphere === 'sky' && typeof AppState !== 'undefined' && AppState.set) {
+            AppState.set('frame', { key: 'icrs', sphere: 'sky', epoch: 'J2000', explicit: true });
+          }
+          /*
+            Set the coordinate through CardRenderer, never by assigning
+            currentCardCoord: that binding is lexical to this script and an
+            external write lands on a different variable the inline script never
+            reads. setCoordinate fires onCoordChange, which is the only path that
+            updates the pin, the display, the cards and AppState together.
+          */
+          if (typeof CardRenderer !== 'undefined' && CardRenderer.setCoordinate) {
+            const lonSigned = skyFmt.lon > 180 ? skyFmt.lon - 360 : skyFmt.lon;
+            CardRenderer.setCoordinate(skyFmt.lat, lonSigned);
+          }
+          /*
+            Re-encode AT THE ORDER THE TOKEN CARRIED. A MOC names an index, and a
+            cell centre sits exactly on a boundary at every deeper order — 393 of
+            500 test points diverge at order 26. Matching the order is what keeps
+            the round trip exact.
+          */
+          if (skyFmt.order !== null && skyFmt.order !== undefined &&
+              typeof CardRenderer !== 'undefined' && CardRenderer.getCardState) {
+            try {
+              const cs = CardRenderer.getCardState();
+              ['hphex', 'hpquad', 'hp64', 'skymoc', 'skynuniq'].forEach(k => {
+                if (cs.iterations) cs.iterations[k] = skyFmt.order;
+              });
+            } catch (e) {}
+          }
+          if (skyFmt.exact === false && skyFmt.boxArcsec) {
+            setTimeout(() => showToast(
+              'Designations name a box, not a point — this one is ' +
+              skyFmt.boxArcsec.ra.toFixed(1) + '\u2033 \u00d7 ' +
+              skyFmt.boxArcsec.dec.toFixed(1) + '\u2033. Centre used.'), 300);
+          }
+          switchToTab('output');
         }
       }
 
