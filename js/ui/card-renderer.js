@@ -2266,13 +2266,29 @@
       pretending the neighbours are nearby. The caption states the field so the
       scale is never guessed.
     */
+    /*
+      FRAME THE FURTHEST NEIGHBOUR, NOT THE NEAREST.
+
+      Sizing on the nearest star gave a 20 arcsec field -- 618 m of ground --
+      which cropped the other two out entirely and showed a patch too small to
+      place yourself in. The interesting picture is the one that holds all three
+      and enough sky around them to be a neighbourhood.
+
+      So: the furthest neighbour must sit inside the half-field with margin.
+      half >= furthest, and 1.8x margin gives field = 3.6 x furthest. With the
+      three stars at 226/363/443 m that is 51 arcsec -- 1.6 km of ground -- which
+      is the frame worth looking at.
+
+      Uses star.sepDeg, the separation measured AT THE QUERY POINT, so it does
+      not drift as you walk; the offsets change but the field does not.
+    */
     function fovFor(entries) {
-      const nearest = entries.reduce((m, e) => {
+      const furthest = entries.reduce((m, e) => {
         const s = e.star && typeof e.star.sepDeg === 'number' ? e.star.sepDeg : null;
-        return (s !== null && (m === null || s < m)) ? s : m;
-      }, null);
-      if (nearest === null) return 60;
-      return Math.max(20, Math.min(300, nearest * 3600 * 2.5));
+        return (s !== null && s > m) ? s : m;
+      }, 0);
+      if (!furthest) return 60;
+      return Math.max(40, Math.min(300, furthest * 3600 * 3.6));
     }
 
     function fovCaption(fovArcsec, dec) {
@@ -2302,7 +2318,15 @@
     }
 
     function paint(entries) {
-      const FOV = (state() && !needsReanchor()) ? state().fov : fovFor(entries);
+      /*
+        Deterministic from the entries, never retained. Retaining it meant the
+        card kept a field computed from an OLDER entry set while fullscreen
+        computed a fresh one, so the two showed different scales for the same
+        stars. Since sepDeg is fixed at query time and the entries are cached,
+        recomputing is already stable -- the retention bought nothing and cost
+        agreement.
+      */
+      const FOV = fovFor(entries);
       const lines = entries.map(e => N.describe(e));
       const note = entries.some(e => e.coarse) ? N.coarseNote() : '';
       list.innerHTML = lines.map(l =>
@@ -2331,6 +2355,15 @@
         ? state().anchor
         : { dec: dec, ra: ra };
       const url = N.thumbnailUrl(anchor.dec, anchor.ra, { px: PX, fovArcsec: FOV });
+
+      /*
+        The height-reserving placeholder is a plain div, so the frame lookup
+        below does not find it and would append the real picture BENEATH it --
+        two black squares stacked, which is exactly what appeared on first load
+        and vanished on the next tick once a frame existed. Remove it first.
+      */
+      const ph = thumb.querySelector('.skyneighbours-placeholder');
+      if (ph) ph.remove();
 
       let wrap = thumb.querySelector('.skyneighbours-frame');
       const freshDom = !wrap;
@@ -2462,8 +2495,8 @@
       list.innerHTML = '<div class="skyneighbours-note">Looking up the stars at ' +
                        'your address\u2026</div>';
       // Reserve the picture's height so the card does not grow when it arrives.
-      thumb.innerHTML = '<div style="width:' + PX + 'px;height:' + PX +
-                        'px;border-radius:8px;background:#0b0f19;"></div>';
+      thumb.innerHTML = '<div class="skyneighbours-placeholder" style="width:' + PX +
+                        'px;height:' + PX + 'px;border-radius:8px;background:#0b0f19;"></div>';
     }
     try {
       N.lookup(dec, coord.lon, { limit: 3 }).then(res => {
