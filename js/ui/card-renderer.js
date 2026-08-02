@@ -2194,7 +2194,15 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function renderSkyNeighbours(card, coord, redacted) {
+  /*
+    The anchor the sky thumbnail is currently drawn at, so a repaint can tell
+    whether the picture actually needs re-requesting. Module-level rather than
+    per-card because only one Sky neighbours card can exist.
+  */
+  let _skyThumbState = { _card: null, _fs: null };
+
+  function renderSkyNeighbours(card, coord, redacted, opts) {
+    opts = opts || {};
     const thumb = card.querySelector('.skyneighbours-thumb');
     const list = card.querySelector('.skyneighbours-list');
     if (!thumb || !list || !coord) return;
@@ -2208,7 +2216,10 @@
 
     const dec = coord.lat;
     const ra = ((coord.lon % 360) + 360) % 360;
-    const PX = 120;
+    // Fullscreen passes a larger size. Its own anchor state, so opening
+    // fullscreen never invalidates the card's picture behind it.
+    const PX = opts.px || 120;
+    const stateKey = opts.px ? '_fs' : '_card';
 
     /*
       FIELD SIZED TO THE DATA, not fixed.
@@ -2244,35 +2255,111 @@
       return ang + ' across \u00b7 ' + ground + ' on the ground';
     }
 
+    /*
+      Re-anchor when the dot reaches 35% of the half-field from the anchor, so it
+      never gets near the edge. Compared in ANGLE, not metres, because the frame
+      is an angular field -- converting to ground and back would drag cos(dec) in
+      for no reason.
+    */
+    function state() { return _skyThumbState[stateKey]; }
+
+    function needsReanchor() {
+      if (!state()) return true;
+      const a = state().anchor;
+      const dRa = ((ra - a.ra + 540) % 360 - 180) * Math.cos(dec * Math.PI / 180);
+      const dDec = dec - a.dec;
+      const offArcsec = Math.sqrt(dRa * dRa + dDec * dDec) * 3600;
+      return offArcsec > (state().fov / 2) * 0.35;
+    }
+
     function paint(entries) {
-      const FOV = fovFor(entries);
+      const FOV = (state() && !needsReanchor()) ? state().fov : fovFor(entries);
       const lines = entries.map(e => N.describe(e));
       const note = entries.some(e => e.coarse) ? N.coarseNote() : '';
       list.innerHTML = lines.map(l =>
         '<div class="skyneighbours-line">' + escapeHtml(l) + '</div>').join('') +
         (note ? '<div class="skyneighbours-note">' + escapeHtml(note) + '</div>' : '');
 
-      thumb.innerHTML = '';
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'position:relative;width:' + PX + 'px;height:' + PX +
-        'px;border-radius:8px;overflow:hidden;background:#0b0f19;';
+      /*
+        THE IMAGE IS ANCHORED, NOT RECENTRED.
 
-      const img = document.createElement('img');
-      img.width = PX; img.height = PX;
-      img.alt = 'sky at these coordinates';
-      img.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;';
-      // Append only once it has actually loaded, so a 404 or an offline device
-      // shows the markers over plain sky rather than a broken-image icon.
-      img.onload = () => { wrap.insertBefore(img, wrap.firstChild); };
-      img.onerror = () => { /* leave the dark background */ };
-      img.src = N.thumbnailUrl(dec, ra, { px: PX, fovArcsec: FOV });
+        Centring the cutout on your LIVE position meant a new URL on every GPS
+        tick, so the image was re-requested and re-decoded continuously -- the
+        strobe. It also hammered CDS for pictures of almost the same patch of
+        sky.
+
+        The anchor is the point the star list was fetched for, and it holds as
+        long as the list does. Your dot then MOVES INSIDE the frame, which is
+        both cheaper and better: you can see yourself crossing the field toward a
+        star instead of the star jumping to stay centred.
+
+        Re-anchor only when the dot approaches the edge -- 35% of the half-field,
+        so it never actually leaves. The <img> element is replaced only when the
+        URL genuinely changes; on every other tick the markers move and the
+        picture stays put.
+      */
+      const anchor = (state() && state().url && !needsReanchor())
+        ? state().anchor
+        : { dec: dec, ra: ra };
+      const url = N.thumbnailUrl(anchor.dec, anchor.ra, { px: PX, fovArcsec: FOV });
+
+      let wrap = thumb.querySelector('.skyneighbours-frame');
+      if (!wrap) {
+        wrap = document.createElement('div');
+        wrap.className = 'skyneighbours-frame';
+        wrap.style.cssText = 'position:relative;width:' + PX + 'px;height:' + PX +
+          'px;border-radius:8px;overflow:hidden;background:#0b0f19;';
+        const img = document.createElement('img');
+        img.className = 'skyneighbours-img';
+        img.width = PX; img.height = PX;
+        img.alt = 'sky at these coordinates';
+        img.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;';
+        wrap.appendChild(img);
+        thumb.appendChild(wrap);
+      }
+
+      if (!state() || state().url !== url) {
+        /*
+          PRELOAD, THEN SWAP. Assigning a new src directly clears the element
+          while the replacement downloads, so every re-anchor flashed the dark
+          background -- a slower strobe, but a strobe. Fetching into a detached
+          Image first means the swap happens from cache and is instantaneous.
+
+          The isConnected guard matters because renderCards() replaces the whole
+          card: a load resolving afterwards must not write into an orphan.
+        */
+        // document.createElement rather than new Image(): the Image constructor
+        // is a window global, and this module is also exercised in contexts that
+        // provide a document without it. A throw here would kill the whole
+        // paint, taking the markers and the list down with the picture.
+        const pre = document.createElement('img');
+        pre.onload = () => {
+          if (!wrap.isConnected) return;
+          const live = wrap.querySelector('.skyneighbours-img');
+          if (live) live.src = url;
+        };
+        pre.onerror = () => { /* keep whatever is showing; dark is fine */ };
+        pre.src = url;
+        _skyThumbState[stateKey] = { url: url, anchor: anchor, fov: FOV };
+      }
+
+      // Markers are rebuilt every tick; the picture underneath is not.
+      const oldSvg = wrap.querySelector('svg');
+      if (oldSvg) oldSvg.remove();
 
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('width', PX);
       svg.setAttribute('height', PX);
       svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 
-      N.thumbnailMarkers(dec, ra, entries, { px: PX, fovArcsec: FOV }).forEach(m => {
+      N.thumbnailMarkers(anchor.dec, anchor.ra,
+                         entries.concat([{ star: { ra: ra, dec: dec, name: 'you' }, __self: true }]),
+                         { px: PX, fovArcsec: FOV }).forEach((m, i, all) => {
+        // thumbnailMarkers puts the ANCHOR at index 0; the real "you" is the
+        // extra entry appended above, since the anchor is no longer where you
+        // are standing.
+        if (i === 0) return;
+        m.self = (i === all.length - 1);
         if (!m.self && m.inFrame === false) return;
         const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         c.setAttribute('cx', m.x); c.setAttribute('cy', m.y);
@@ -2283,8 +2370,9 @@
         svg.appendChild(c);
       });
       wrap.appendChild(svg);
-      thumb.appendChild(wrap);
 
+      const oldCap = thumb.querySelector('.skyneighbours-scale');
+      if (oldCap) oldCap.remove();
       const cap = document.createElement('div');
       cap.className = 'skyneighbours-scale';
       cap.style.cssText = 'font-size:10.5px;opacity:0.55;margin-top:4px;text-align:center;';
@@ -3208,7 +3296,7 @@
           </div>
           <div class="card-title">${lockIcon}${obfIcon}${gridDef.name}${linkIcon}</div>
           <div class="card-actions">
-            ${gridDef.readOnly ? '' : `<button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>`}
+            ${(gridDef.readOnly || gridDef.noStar) ? '' : `<button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>`}
             ${chromaActions}
             ${barcodeActions}
             ${chessActions}
@@ -3232,7 +3320,15 @@
           <div class="footer-buttons">
             <button class="action-btn info-btn" title="Cell info">${ICONS.info}</button>
             ${gridDef.display === 'chessboard' ? `<button class="action-btn chess-letters-btn" title="Toggle Symbols / Letters">${chessUseLetters ? 'Aa' : '♟'}</button>` : ''}
-            ${(gridDef.gis || gridDef.healpix || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
+            ${/*
+                 3x3 shows the eight cells AROUND yours in the same vocabulary.
+                 A formatter has no vocabulary and no neighbouring cells to show:
+                 RA/Dec, IAU designation, MOC and NUNIQ are spellings of one
+                 position, and Sky neighbours is a lookup of what is nearby --
+                 for which the thumbnail already IS the neighbourhood view.
+                 gridDef.sky covers all five.
+              */''}
+            ${(gridDef.gis || gridDef.healpix || gridDef.sky || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
           </div>
         </div>
@@ -3910,7 +4006,26 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     function refreshDisplay(newCode) {
       displayCode = gridDef?.display === 'music' ? newCode.replace(/,\s*$/, '') : newCode;
       
-      if (gridDef?.display === 'chroma') {
+      if (gridDef?.display === 'skyneighbours') {
+        /*
+          Fullscreen for Sky neighbours is the PICTURE, large. The card's 120 px
+          thumbnail is a thumbnail; at full size the same cutout is worth
+          looking at, and the star markers stop being dots.
+
+          Rebuilt from the live coordinate rather than reusing the card's DOM, so
+          it is correct even if it opens mid-tracking.
+        */
+        codeEl.innerHTML = '';
+        const holder = document.createElement('div');
+        holder.className = 'skyneighbours-display';
+        holder.innerHTML = '<div class="skyneighbours-thumb"></div>' +
+                           '<div class="skyneighbours-list"></div>';
+        holder.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:10px;max-width:92vw;';
+        codeEl.appendChild(holder);
+        renderSkyNeighbours(holder, currentCardCoord, !!(passphrase || obfuscated), {
+          px: Math.min(Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.7), 520)
+        });
+      } else if (gridDef?.display === 'chroma') {
         codeEl.innerHTML = '';
         if (typeof RGB111Lib !== 'undefined' && RGB111Lib.generateCanvas) {
           const vmin = Math.min(window.innerWidth, window.innerHeight);
