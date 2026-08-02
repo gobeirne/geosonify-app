@@ -143,8 +143,23 @@
     }
   };
 
+  /*
+    readOnly on all five: none of them has a URL parameter.
+
+    Starring a card means "encode the position in this format for the map grid
+    and the shareable link". These have no param in the query grammar, so a
+    starred sky card fell through to raw mode and produced ?r=22/1642494... —
+    a link that cannot be opened. And Sky neighbours could not be starred even
+    in principle: it reports what is nearby, not where you are.
+
+    They are export formats. The copy button is the whole point; star and share
+    are not. Adding ?moc= / ?nuniq= / ?radec= is possible and additive, but the
+    query grammar is a public contract and that is a decision to take
+    deliberately.
+  */
   var DEFS = {
     sexagesimal: {
+      readOnly: true,
       name: 'RA / Dec',
       sky: 'sexagesimal',
       frames: 'sky',
@@ -155,6 +170,7 @@
       link: 'https://en.wikipedia.org/wiki/Sexagesimal'
     },
     designation: {
+      readOnly: true,
       name: 'IAU designation',
       sky: 'designation',
       frames: 'sky',
@@ -165,6 +181,7 @@
       link: 'https://cds.unistra.fr/Dic/iau-spec.html'
     },
     skymoc: {
+      readOnly: true,
       name: 'MOC',
       sky: 'moc',
       frames: 'sky',
@@ -177,6 +194,7 @@
       link: 'https://www.ivoa.net/documents/MOC/'
     },
     skystar: {
+      readOnly: true,
       name: 'Sky neighbours',
       sky: 'neighbour',
       // Its own display type: this card is a list and a picture, not a code.
@@ -196,6 +214,7 @@
       link: 'https://simbad.cds.unistra.fr/simbad/'
     },
     skynuniq: {
+      readOnly: true,
       name: 'NUNIQ',
       sky: 'nuniq',
       frames: 'sky',

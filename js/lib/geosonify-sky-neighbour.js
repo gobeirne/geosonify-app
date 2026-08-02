@@ -553,6 +553,58 @@
     A caller showing 'offline' should say so rather than filling the space.
     Nothing is better than something meaningless.
   */
+  /*
+    CACHING, WITH A RULE THAT IS PROVABLE RATHER THAN A GUESS.
+
+    While tracking, the coordinate changes several times a second. Re-querying on
+    every tick made the card flip to "Looking up..." and back continuously, which
+    is both useless to read and rude to CDS.
+
+    The fix rests on one fact: a cone search of radius R returns EVERY star
+    within R of the query point. Move a distance d from that point and you still
+    know, with certainty, every star within R - d of where you now stand. So if
+    the furthest star you kept is closer than R - d, your list is still provably
+    the correct nearest-three -- no unseen star can have slipped inside it.
+
+        re-query when   d  >=  R - sep(last kept star)
+
+    With R = 1 arcmin (1,855 m of ground) and the three stars from your card:
+
+        3rd star at 223 m  ->  1,632 m of walking before a re-query
+        3rd star at 448 m  ->  1,407 m
+        3rd star at 900 m  ->    955 m
+
+    So a whole suburb on one request. And crucially the card is NOT frozen in
+    between: the star positions are fixed, so every offset and bearing is
+    recomputed locally on each move. The distances tick down as you walk toward
+    one. Only the identity of the stars is cached, and only while it is provably
+    unchanged.
+
+    A tiny epsilon keeps a stationary GPS jitter from straddling the boundary.
+  */
+  var _cache = null;
+
+  function cacheValid(lat, lon, opts) {
+    if (!_cache) return false;
+    if (_cache.catalogue !== (opts.catalogue || 'gaia')) return false;
+    if (_cache.limit !== (opts.limit || 3)) return false;
+
+    var moved = earthOffset(_cache.lat, _cache.lon, lat, ((lon % 360) + 360) % 360).metres;
+    return moved < _cache.validForMetres;
+  }
+
+  function refreshOffsets(lat, lon) {
+    return _cache.entries.map(function (e) {
+      var off = earthOffset(lat, lon, e.star.dec, e.star.ra);
+      return {
+        tier: e.tier, coarse: e.coarse, catalogue: e.catalogue,
+        star: e.star, offset: off, distLy: e.distLy, links: e.links
+      };
+    }).sort(function (a, b) { return a.offset.metres - b.offset.metres; });
+  }
+
+  function clearCache() { _cache = null; }
+
   function lookup(lat, lon, opts) {
     opts = opts || {};
     if (opts.local === true) {
@@ -560,9 +612,29 @@
       return Promise.resolve({ status: l ? 'ok' : 'none', tier: 'local',
                                entries: l ? [l] : [] });
     }
+    if (cacheValid(lat, lon, opts)) {
+      return Promise.resolve({ status: 'ok', tier: 'remote', cached: true,
+                               entries: refreshOffsets(lat, lon) });
+    }
+
+    var radiusArcmin = opts.radiusArcmin || 1;
     return lookupRemote(lat, lon, opts).then(function (entries) {
       if (entries === null) return { status: 'offline', tier: 'remote', entries: [] };
-      if (entries.length) return { status: 'ok', tier: 'remote', entries: entries };
+      if (entries.length) {
+        var furthest = entries.reduce(function (m, e) {
+          return Math.max(m, e.offset.metres);
+        }, 0);
+        var radiusMetres = radiusArcmin * 60 / 3600 * M_PER_DEG;
+        _cache = {
+          lat: lat, lon: ((lon % 360) + 360) % 360,
+          catalogue: opts.catalogue || 'gaia', limit: opts.limit || 3,
+          entries: entries,
+          // Provable validity, minus a metre so GPS jitter cannot straddle it.
+          validForMetres: Math.max(0, radiusMetres - furthest - 1)
+        };
+        return { status: 'ok', tier: 'remote', cached: false, entries: entries };
+      }
+      _cache = null;
       return { status: 'none', tier: 'remote', entries: [] };
     }).catch(function () {
       return { status: 'offline', tier: 'remote', entries: [] };
@@ -606,6 +678,8 @@
     lookup: lookup,
     neighbours: neighbours,
     offlineNote: offlineNote,
+    clearCache: clearCache,
+    cacheValid: function (lat, lon, o) { return cacheValid(lat, lon, o || {}); },
     emptyNote: emptyNote,
     SURVEYS: SURVEYS,
     thumbnailUrl: thumbnailUrl,
