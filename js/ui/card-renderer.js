@@ -2300,11 +2300,21 @@
       like an answer, which is worse than an empty card. When the deep catalogue
       cannot be reached, the card says so.
     */
-    list.innerHTML = '<div class="skyneighbours-note">Looking up the stars at ' +
-                     'your address\u2026</div>';
-    thumb.innerHTML = '';
-
+    /*
+      Only announce a lookup when one is actually going to happen. While
+      tracking, the cached answer is reused for a suburb's worth of walking (see
+      the validity rule in geosonify-sky-neighbour.js), so replacing the list
+      with "Looking up..." on every GPS tick made the card strobe. If the cache
+      still holds, the previous lines stay on screen and are simply repainted
+      with fresh distances.
+    */
     if (!N.lookup) return;
+    const willFetch = !(N.cacheValid && N.cacheValid(dec, coord.lon, { limit: 3 }));
+    if (willFetch) {
+      list.innerHTML = '<div class="skyneighbours-note">Looking up the stars at ' +
+                       'your address\u2026</div>';
+      thumb.innerHTML = '';
+    }
     try {
       N.lookup(dec, coord.lon, { limit: 3 }).then(res => {
         if (!card.isConnected) return;        // renderCards() replaced us
@@ -3198,12 +3208,12 @@
           </div>
           <div class="card-title">${lockIcon}${obfIcon}${gridDef.name}${linkIcon}</div>
           <div class="card-actions">
-            <button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>
+            ${gridDef.readOnly ? '' : `<button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>`}
             ${chromaActions}
             ${barcodeActions}
             ${chessActions}
             ${checksumBtn}
-            <button class="card-btn share-btn" title="Share">${ICONS.share}</button>
+            ${gridDef.readOnly ? '' : `<button class="card-btn share-btn" title="Share">${ICONS.share}</button>`}
             <button class="card-btn copy-btn" title="Copy">${ICONS.copy}</button>
             <button class="card-btn close-btn" title="Hide">×</button>
           </div>
@@ -3245,8 +3255,30 @@
         reorderCards(fromKey, gridKey);
       };
       
+      /*
+        READ-ONLY CARDS HAVE NO STAR AND NO SHARE.
+
+        Starring a card means "encode the position in THIS format for the map
+        grid and the URL". Sky neighbours cannot: it is a lookup of what is
+        nearby, not an encoding of where you are, so there is nothing for the
+        star to select. The interoperability cards (RA/Dec, IAU designation,
+        MOC, NUNIQ) can be encoded but have no URL parameter, so starring them
+        fell through to raw mode and produced links that cannot be opened:
+
+            ?r=22/164249493046064
+            ?r=J113036.3-433319
+            ?r=11h 30m 36.310s -43d 33m 19.96s
+
+        Their job is to be COPIED OUT -- into SIMBAD, Aladin, a paper -- not to
+        round-trip through Geosonify's own URL, which already carries the same
+        cell as hphex. So the copy button stays and the other two go.
+
+        Giving them real URL params (?moc=, ?nuniq=, ?radec=) is possible and
+        additive, but the query grammar is a public contract and that is a
+        deliberate decision, not a bug fix.
+      */
       // Event handlers
-      card.querySelector('.active-btn').onclick = () => {
+      if (card.querySelector('.active-btn')) card.querySelector('.active-btn').onclick = () => {
         cardState.active = gridKey;
         rawModeActive = false;
         updateRawModeUI();
@@ -3372,7 +3404,7 @@
         showToast('Copied!');
       };
       
-      card.querySelector('.share-btn').onclick = () => {
+      if (card.querySelector('.share-btn')) card.querySelector('.share-btn').onclick = () => {
         if (gisRedacted) {
           showToast('Hidden while privacy mode is active', 'error');
           return;
