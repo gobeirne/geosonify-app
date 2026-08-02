@@ -2292,21 +2292,32 @@
       thumb.appendChild(cap);
     }
 
-    let entries = [];
-    try { entries = N.neighbours(dec, coord.lon, { limit: 3 }) || []; } catch (e) {}
-    if (entries.length) paint(entries);
+    /*
+      REMOTE FIRST. The embedded catalogue is not used as a fallback here.
 
-    // Upgrade to the deep catalogue if it answers. Guarded on the card still
-    // being in the document: renderCards() replaces every element, so a promise
-    // resolving after a re-render must not write into an orphan.
-    if (N.lookupRemote) {
-      try {
-        N.lookupRemote(dec, coord.lon).then(remote => {
-          if (!remote || !card.isConnected) return;
-          paint([remote].concat(entries.slice(0, 2)));
-        }).catch(() => {});
-      } catch (e) {}
-    }
+      A neighbour 450 km away reads the same from one side of a city to the
+      other, so it never changes and never tells you anything -- but it looks
+      like an answer, which is worse than an empty card. When the deep catalogue
+      cannot be reached, the card says so.
+    */
+    list.innerHTML = '<div class="skyneighbours-note">Looking up the stars at ' +
+                     'your address\u2026</div>';
+    thumb.innerHTML = '';
+
+    if (!N.lookup) return;
+    try {
+      N.lookup(dec, coord.lon, { limit: 3 }).then(res => {
+        if (!card.isConnected) return;        // renderCards() replaced us
+        if (res && res.status === 'ok' && res.entries.length) { paint(res.entries); return; }
+        const why = (res && res.status === 'none') ? N.emptyNote(1) : N.offlineNote();
+        list.innerHTML = '<div class="skyneighbours-note">' + escapeHtml(why) + '</div>';
+        thumb.innerHTML = '';
+      }).catch(() => {
+        if (!card.isConnected) return;
+        list.innerHTML = '<div class="skyneighbours-note">' +
+                         escapeHtml(N.offlineNote()) + '</div>';
+      });
+    } catch (e) {}
   }
 
   function renderChromaCoord(hexCode, container, variant) {
