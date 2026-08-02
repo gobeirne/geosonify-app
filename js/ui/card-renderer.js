@@ -2108,21 +2108,47 @@
       else if (code.length > 25) { fontSize = 9; charsPerLine = 8; }
       else { fontSize = Math.min(14, 80 / Math.max(1, code.length / 12)); charsPerLine = 20; }
       
-      if (code.length <= charsPerLine) {
-        container.style.fontSize = fontSize + 'vw';
-        container.textContent = code;
-      } else {
-        const numLines = Math.ceil(code.length / charsPerLine);
-        const perLine = Math.ceil(code.length / numLines);
-        const lines = [];
-        for (let i = 0; i < code.length; i += perLine) {
-          lines.push(code.slice(i, i + perLine));
-        }
-        container.style.fontSize = fontSize + 'vw';
-        container.style.lineHeight = '1.3';
-        container.style.textAlign = 'center';
-        container.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
-      }
+      /*
+        CAP THE SIZE BY THE WIDTH THE LINE ACTUALLY NEEDS.
+
+        The table above sets 14vw for anything up to 25 characters and only
+        splits past 20, which assumes about ten characters fit across the screen.
+        A monospace glyph advances roughly 0.62em, so 18 characters at 14vw wants
+        156vw and simply ran off the edge — MOC and NUNIQ lost their trailing
+        digits, which for a code is not a cosmetic problem: a truncated MOC is a
+        different cell, silently.
+
+        Measured for the four sky formats:
+            22/164249493047447   18 ch  ->  156vw   overflowed
+            234618237225107      15 ch  ->  130vw   overflowed
+            J113036.2-433319     16 ch  ->  139vw   overflowed
+            11h 30m ... 19.61s   31 ch  ->   45vw   was already fine
+
+        Shrinking to fit is applied to the LONGEST line after splitting, and only
+        ever reduces, so nothing that previously fitted changes size.
+      */
+      const lines = (code.length <= charsPerLine)
+        ? [code]
+        : (() => {
+            const numLines = Math.ceil(code.length / charsPerLine);
+            const perLine = Math.ceil(code.length / numLines);
+            const out = [];
+            for (let i = 0; i < code.length; i += perLine) out.push(code.slice(i, i + perLine));
+            return out;
+          })();
+
+      const widest = Math.max(...lines.map(l => l.length));
+      const CH_ADVANCE = 0.62;              // monospace em advance, measured
+      fontSize = Math.min(fontSize, 88 / Math.max(1, widest * CH_ADVANCE));
+
+      container.style.fontSize = fontSize + 'vw';
+      container.style.lineHeight = '1.3';
+      container.style.textAlign = 'center';
+      // Belt and braces: if a glyph is wider than assumed, break rather than
+      // clip. Losing a line break is survivable; losing digits is not.
+      container.style.overflowWrap = 'anywhere';
+      container.style.wordBreak = 'break-all';
+      container.innerHTML = lines.map(line => `<div>${line}</div>`).join('');
     }
   }
   
@@ -2200,6 +2226,9 @@
     per-card because only one Sky neighbours card can exist.
   */
   let _skyThumbState = { _card: null, _fs: null };
+  // The last successfully painted neighbours, so a rebuilt card can show the
+  // right thing at the right height before its lookup resolves.
+  let _skyLastEntries = null;
 
   function renderSkyNeighbours(card, coord, redacted, opts) {
     opts = opts || {};
@@ -2304,7 +2333,8 @@
       const url = N.thumbnailUrl(anchor.dec, anchor.ra, { px: PX, fovArcsec: FOV });
 
       let wrap = thumb.querySelector('.skyneighbours-frame');
-      if (!wrap) {
+      const freshDom = !wrap;
+      if (freshDom) {
         wrap = document.createElement('div');
         wrap.className = 'skyneighbours-frame';
         wrap.style.cssText = 'position:relative;width:' + PX + 'px;height:' + PX +
@@ -2314,11 +2344,25 @@
         img.width = PX; img.height = PX;
         img.alt = 'sky at these coordinates';
         img.style.cssText = 'display:block;width:100%;height:100%;object-fit:cover;';
+        /*
+          SET THE SRC IMMEDIATELY ON A FRESH ELEMENT.
+
+          renderCards() replaces the entire card on every coordinate change, so
+          `thumb` is a brand new node each GPS tick while _skyThumbState survives
+          in the closure. The result: a new empty <img>, then the URL-changed
+          test below sees the SAME url as last time and skips the preload — so
+          nothing ever assigned a src and the picture went black after the first
+          fix. State outliving the DOM it describes.
+
+          Assigning here is free: the browser has the image cached from the
+          previous tick, so it paints from cache without a request.
+        */
+        img.src = url;
         wrap.appendChild(img);
         thumb.appendChild(wrap);
       }
 
-      if (!state() || state().url !== url) {
+      if (!freshDom && (!state() || state().url !== url)) {
         /*
           PRELOAD, THEN SWAP. Assigning a new src directly clears the element
           while the replacement downloads, so every re-anchor flashed the dark
@@ -2340,8 +2384,8 @@
         };
         pre.onerror = () => { /* keep whatever is showing; dark is fine */ };
         pre.src = url;
-        _skyThumbState[stateKey] = { url: url, anchor: anchor, fov: FOV };
       }
+      _skyThumbState[stateKey] = { url: url, anchor: anchor, fov: FOV };
 
       // Markers are rebuilt every tick; the picture underneath is not.
       const oldSvg = wrap.querySelector('svg');
@@ -2397,16 +2441,39 @@
       with fresh distances.
     */
     if (!N.lookup) return;
+
+    /*
+      PAINT THE LAST KNOWN ANSWER SYNCHRONOUSLY, BEFORE THE PROMISE.
+
+      renderCards() rebuilds the card on every GPS tick, and even a cached lookup
+      resolves a microtask later. So for one frame the card was an empty box, then
+      three lines and a picture — and because a card growing by ~150 px pushes
+      everything below it, the whole list JERKED on every refresh. That is the
+      scroll jump: not a scroll bug, a layout one.
+
+      Repainting the remembered entries first means the fresh DOM is the right
+      height immediately. The promise then overwrites it with the same or better
+      content, and nothing moves.
+    */
     const willFetch = !(N.cacheValid && N.cacheValid(dec, coord.lon, { limit: 3 }));
-    if (willFetch) {
+    if (_skyLastEntries && _skyLastEntries.length) {
+      try { paint(_skyLastEntries); } catch (e) {}
+    } else if (willFetch) {
       list.innerHTML = '<div class="skyneighbours-note">Looking up the stars at ' +
                        'your address\u2026</div>';
-      thumb.innerHTML = '';
+      // Reserve the picture's height so the card does not grow when it arrives.
+      thumb.innerHTML = '<div style="width:' + PX + 'px;height:' + PX +
+                        'px;border-radius:8px;background:#0b0f19;"></div>';
     }
     try {
       N.lookup(dec, coord.lon, { limit: 3 }).then(res => {
         if (!card.isConnected) return;        // renderCards() replaced us
-        if (res && res.status === 'ok' && res.entries.length) { paint(res.entries); return; }
+        if (res && res.status === 'ok' && res.entries.length) {
+          _skyLastEntries = res.entries;
+          paint(res.entries);
+          return;
+        }
+        _skyLastEntries = null;
         const why = (res && res.status === 'none') ? N.emptyNote(1) : N.offlineNote();
         list.innerHTML = '<div class="skyneighbours-note">' + escapeHtml(why) + '</div>';
         thumb.innerHTML = '';
@@ -4105,7 +4172,30 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       }
     }
     
-    if (gridDef?.display === 'chroma') {
+    if (gridDef?.display === 'skyneighbours') {
+      /*
+        codeEl is built by THIS chain, not by refreshDisplay — which is why the
+        fullscreen branch added to refreshDisplay never ran on open and the
+        overlay showed the placeholder "..." that the synchronous formatter
+        returns. The picture has to be built here.
+      */
+      codeEl = document.createElement('div');
+      codeEl.id = 'fs-skyneighbours';
+      codeEl.style.cssText = 'display:flex;align-items:center;justify-content:center;max-width:92vw;';
+      const holder = document.createElement('div');
+      holder.className = 'skyneighbours-display';
+      holder.innerHTML = '<div class="skyneighbours-thumb"></div>' +
+                         '<div class="skyneighbours-list" style="font-size:13px;line-height:1.5;' +
+                         'max-width:92vw;overflow-wrap:anywhere;"></div>';
+      holder.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:12px;';
+      codeEl.appendChild(holder);
+      setTimeout(() => {
+        renderSkyNeighbours(holder, currentCardCoord, !!(passphrase || obfuscated), {
+          px: Math.min(Math.floor(Math.min(window.innerWidth, window.innerHeight) * 0.62), 460)
+        });
+      }, 10);
+
+    } else if (gridDef?.display === 'chroma') {
       codeEl = document.createElement('div');
       codeEl.id = 'fs-chroma';
       codeEl.style.cssText = 'display:flex;align-items:center;justify-content:center;';
