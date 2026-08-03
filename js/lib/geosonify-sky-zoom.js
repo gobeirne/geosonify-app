@@ -157,8 +157,30 @@
     };
   }
 
+  /*
+    ONE FLAT STRING, NOT AN OBJECT.
+
+    console.log(tag, obj) renders as "... Object" in any console that does not
+    auto-expand -- Edge and Safari both collapse it, and a log you have to click
+    to read is a log nobody reads. Everything worth seeing goes in the line
+    itself, with numbers formatted short enough to scan.
+  */
+  function num(v) {
+    if (v === null || v === undefined || !isFinite(v)) return String(v);
+    var a = Math.abs(v);
+    if (a === 0) return '0';
+    if (a < 1e-3 || a >= 1e6) return v.toExponential(4);
+    return String(Math.round(v * 1e4) / 1e4);
+  }
+
   function report(tag, obj) {
-    try { console.log('[geosonify] zoom carry ' + tag, obj); } catch (e) {}
+    var bits = [];
+    for (var k in obj) {
+      if (!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+      var v = obj[k];
+      bits.push(k + '=' + (typeof v === 'number' ? num(v) : String(v)));
+    }
+    try { console.log('[geosonify] zoom ' + tag + '  ' + bits.join('  ')); } catch (e) {}
   }
 
   /*
