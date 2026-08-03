@@ -254,18 +254,55 @@
     }
 
     var lon = raDeg > 180 ? raDeg - 360 : raDeg;
+
+    /*
+      LEAFLET SNAPS ZOOM TO WHOLE LEVELS UNLESS TOLD NOT TO.
+
+      map-manager.js does not set zoomSnap, so it defaults to 1 and setView
+      rounds any fractional zoom to an integer. The correction loop therefore
+      could not converge: it asked for 16.34, got 16, asked again, got 16 again,
+      and exhausted its passes. The console showed it exactly --
+
+          target=113.7154  achieved=100  errorPct=-12.06  passes=6  zoom=16
+          target=56.5478   achieved=50   errorPct=-11.58  passes=6  zoom=15
+
+      -- six passes every time, and a zoom landing on a suspiciously round
+      number. A whole zoom level is a factor of two, so the error can be
+      anything up to 100%; 12% was luck.
+
+      zoomSnap is relaxed only for the duration of this adjustment and then put
+      back, because it also governs how the map behaves under the user's own
+      pinch and scroll, and that is not this function's business to change.
+      zoomDelta is untouched, so the +/- buttons still step by whole levels.
+    */
+    var hadSnap = (map.options && 'zoomSnap' in map.options) ? map.options.zoomSnap : undefined;
+    var relaxed = false;
+    try {
+      if (map.options) { map.options.zoomSnap = 0; relaxed = true; }
+    } catch (e) {}
+
     var passes = 0, got = null, z = map.getZoom();
-    for (; passes < MAX_PASSES; passes++) {
-      got = spanPx(corners, eProj);
-      if (!got || got <= 0) break;
-      if (Math.abs(got - target) / target <= TOLERANCE) break;
-      var delta = Math.log(target / got) / Math.LN2;
-      if (!isFinite(delta)) break;
-      z = z + delta;
-      try { map.setView([decDeg, lon], z, { animate: false }); } catch (e) { break; }
+    try {
+      for (; passes < MAX_PASSES; passes++) {
+        got = spanPx(corners, eProj);
+        if (!got || got <= 0) break;
+        if (Math.abs(got - target) / target <= TOLERANCE) break;
+        var delta = Math.log(target / got) / Math.LN2;
+        if (!isFinite(delta)) break;
+        z = z + delta;
+        try { map.setView([decDeg, lon], z, { animate: false }); } catch (e) { break; }
+      }
+    } finally {
+      if (relaxed) {
+        try {
+          if (hadSnap === undefined) delete map.options.zoomSnap;
+          else map.options.zoomSnap = hadSnap;
+        } catch (e) {}
+      }
     }
 
     report('sky->earth', {
+      zoomSnapWas: (hadSnap === undefined ? 'unset(default 1)' : hadSnap),
       targetCellPx: target,
       achievedCellPx: got,
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
