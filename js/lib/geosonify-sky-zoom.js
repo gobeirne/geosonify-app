@@ -62,129 +62,210 @@
   }
 
   /*
-    Exact vertical half-field of an orthographic view: the declination offset
-    whose projected distance from centre is h/2 pixels.
+    ============================================================================
+    MATCH THE CELL, NOT THE FIELD.
+    ============================================================================
 
-    Returns null when the top of the viewport falls off the visible hemisphere,
-    which happens at very wide fields on a tall pane -- there is no vertical span
-    to speak of then, and the caller should leave the other view alone.
+    The first version computed an angular span on one side and asked the other
+    side to adopt it. That is modelling, and it kept losing to things the model
+    did not know: the two renderers disagreed about which axis fovDeg names,
+    Aladin applies its own clamps, and the pane is a different height when the
+    sky opens (546 px) from when it closes (493 px).
+
+    So stop asking. MEASURE THE CELL IN PIXELS in the frame you are leaving, and
+    then adjust the frame you are entering until its cell measures the same. The
+    cell is the one object both views draw, it has the same corners in both, and
+    pixels are the thing the eye actually compares -- which is the whole point of
+    flipping back and forth.
+
+    This is immune, by construction, to every failure above. It does not care
+    what setFovDeg means, whether a renderer clamps, or what the pane height is,
+    because it looks at the result rather than trusting the request. If a
+    renderer refuses to go where it is asked, the loop stops converging and says
+    so instead of silently landing somewhere else.
+
+    PRE-CALCULATED, AND INDEPENDENT OF IMAGERY LOADING.
+
+    The target is computed from the Earth map before the sky opens, and applied
+    to whichever renderer is live at the time -- the built-in one, immediately,
+    with no network involved. When Aladin arrives seconds later the same
+    correction runs again against Aladin. Neither depends on the other, so a slow
+    or failed download costs imagery, never scale.
   */
-  function skyVerticalSpanDeg(renderer) {
-    if (!renderer || !renderer.getSize || !renderer.getFovDeg) return null;
-    var size = renderer.getSize();
-    var h = size.height, w = size.width;
-    if (!h || !w) return null;
-    var minDim = Math.min(w, h);
-    var fov = renderer.getFovDeg();
-    var scale = (minDim / 2) / Math.sin(Math.max(1e-12, fov * D2R / 2));
-    var s = (h / 2) / scale;
-    if (s > 1) return null;                    // beyond the limb
-    return 2 * Math.asin(s) * R2D;
-  }
 
-  // Inverse: the fovDeg that makes the vertical span equal spanDeg.
-  function fovForVerticalSpan(renderer, spanDeg) {
-    if (!renderer || !renderer.getSize) return null;
-    var size = renderer.getSize();
-    var h = size.height, w = size.width;
-    if (!h || !w || !(spanDeg > 0)) return null;
-    var minDim = Math.min(w, h);
-    var s = Math.sin(Math.min(89.999, spanDeg / 2) * D2R);
-    if (s <= 0) return null;
-    var scale = (h / 2) / s;
-    var half = Math.min(1, (minDim / 2) / scale);
-    return Math.max(MIN_FOV_DEG, Math.min(180, 2 * Math.asin(half) * R2D));
+  var MAX_PASSES = 6;
+  var TOLERANCE = 0.005;              // 0.5% of the target height; sub-pixel
+
+  function _Sky() {
+    try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
+    return (global && global.GeosonifySky) || null;
+  }
+  function _HP() {
+    try { if (typeof HealpixGrids !== 'undefined' && HealpixGrids) return HealpixGrids; } catch (e) {}
+    return (global && global.HealpixGrids) || null;
   }
 
   /*
-    EARTH -> SKY. Called when the sky view opens.
-    Returns the fov applied, or null if it could not be determined.
-  */
-  /*
-    Every transition logs its numbers.
+    The cell to measure: whatever the sky view is marking, at its current order.
+    Corners rather than the full boundary -- four points are enough for a
+    bounding height and cost nothing.
 
-    This crosses two projections, two renderers with different fov conventions,
-    and Leaflet's zoom arithmetic -- and when it is wrong the symptom is just
-    "the view looks off", with no way to tell which stage did it. One line with
-    the span asked for and the span achieved makes the wrong stage obvious in a
-    glance rather than a bisect.
+    Returns [[dec, ra], ...] or null.
   */
+  function cellCorners(decDeg, raDeg, order) {
+    var S = _Sky(), HP = _HP();
+    if (!S || !HP || !S.cellCorners4) return null;
+    try {
+      var ipix = HP.nestIndex(decDeg, raDeg, order);
+      var c = S.cellCorners4(order, ipix);
+      return (c && c.length >= 3) ? c : null;
+    } catch (e) { return null; }
+  }
+
+  // Vertical pixel extent of a set of [dec, ra] points under an arbitrary
+  // projection. Vertical, because declination is latitude exactly -- see the
+  // note at the top of the file.
+  function spanPx(points, projectFn) {
+    if (!points || !points.length || typeof projectFn !== 'function') return null;
+    var lo = Infinity, hi = -Infinity, seen = 0;
+    for (var i = 0; i < points.length; i++) {
+      var p;
+      try { p = projectFn(points[i][0], points[i][1]); } catch (e) { p = null; }
+      if (!p) continue;
+      var y = (typeof p.y === 'number') ? p.y : p[1];
+      if (!isFinite(y)) continue;
+      if (y < lo) lo = y;
+      if (y > hi) hi = y;
+      seen++;
+    }
+    if (seen < 2 || !isFinite(lo) || !isFinite(hi)) return null;
+    return hi - lo;
+  }
+
+  function earthProjector(map) {
+    if (!map || !map.latLngToContainerPoint) return null;
+    return function (dec, ra) {
+      var lon = ra > 180 ? ra - 360 : ra;
+      try { return map.latLngToContainerPoint([dec, lon]); } catch (e) { return null; }
+    };
+  }
+
+  function skyProjector(renderer) {
+    if (!renderer || !renderer.project) return null;
+    return function (dec, ra) {
+      try { return renderer.project(ra, dec); } catch (e) { return null; }
+    };
+  }
+
   function report(tag, obj) {
     try { console.log('[geosonify] zoom carry ' + tag, obj); } catch (e) {}
   }
 
-  function carryEarthZoomToSky(map, renderer) {
-    var span = earthVerticalSpanDeg(map);
-    if (span === null) { report('earth->sky ABORT', { reason: 'no map bounds' }); return null; }
-    var fov = fovForVerticalSpan(renderer, span);
-    if (fov === null) { report('earth->sky ABORT', { reason: 'no renderer size', span: span }); return null; }
-    try { renderer.setFovDeg(fov); } catch (e) {
-      report('earth->sky ABORT', { reason: 'setFovDeg threw' }); return null;
-    }
-    var size = renderer.getSize ? renderer.getSize() : null;
-    report('earth->sky', {
-      earthLatSpanDeg: span,
-      fovRequested: fov,
-      fovReadBack: renderer.getFovDeg ? renderer.getFovDeg() : null,
-      skyVertSpanDeg: skyVerticalSpanDeg(renderer),
-      pane: size ? (size.width + 'x' + size.height) : null
-    });
-    return fov;
-  }
-
   /*
-    SKY -> EARTH. Called when the sky view closes.
+    EARTH -> SKY. Adjust the sky field until the cell is the same height on
+    screen as it was on the map.
 
-    Leaflet's own getBoundsZoom does the Mercator arithmetic, so this hands it a
-    bounds with the desired LATITUDE span and a longitude span small enough never
-    to be the binding dimension -- getBoundsZoom fits the larger of the two, so a
-    negligible longitude range guarantees latitude decides.
+    Pixel height goes as roughly 1/fov at small fields, so scaling the field by
+    (measured / target) converges geometrically -- typically two passes to well
+    under a pixel. Iterating rather than solving is what makes it renderer-blind.
   */
-  function carrySkyZoomToEarth(renderer, map, centreLat, centreLon) {
-    if (!map || !map.getBoundsZoom || !map.setView || !global.L) {
-      report('sky->earth ABORT', {
-        reason: 'missing map API',
-        hasMap: !!map, hasGetBoundsZoom: !!(map && map.getBoundsZoom),
-        hasSetView: !!(map && map.setView), hasL: !!global.L
+  function matchCellEarthToSky(map, renderer, decDeg, raDeg, order) {
+    var corners = cellCorners(decDeg, raDeg, order);
+    var eProj = earthProjector(map), sProj = skyProjector(renderer);
+    if (!corners || !eProj || !sProj || !renderer.setFovDeg) {
+      report('earth->sky ABORT', {
+        reason: 'cannot measure', hasCorners: !!corners,
+        hasEarthProjector: !!eProj, hasSkyProjector: !!sProj
       });
       return null;
     }
-    var span = skyVerticalSpanDeg(renderer);
-    if (span === null) { report('sky->earth ABORT', { reason: 'no vertical span (beyond limb?)' }); return null; }
 
-    var lat = (typeof centreLat === 'number') ? centreLat : map.getCenter().lat;
-    var lon = (typeof centreLon === 'number') ? centreLon : map.getCenter().lng;
-    var half = span / 2;
-    // Clamp so the bounds stay inside Mercator's usable latitude range.
-    var north = Math.min(85, lat + half), south = Math.max(-85, lat - half);
-    if (north <= south) return null;
+    var target = spanPx(corners, eProj);
+    if (!target || target <= 0) {
+      // The cell is sub-pixel or off-screen on the map: nothing to match to.
+      // Fall back to the angular span, which is still better than the default.
+      var span = earthVerticalSpanDeg(map);
+      if (span) { try { renderer.setFovDeg(span); } catch (e) {} }
+      report('earth->sky fallback', { reason: 'cell not measurable on map', span: span });
+      return span || null;
+    }
 
-    try {
-      var bounds = global.L.latLngBounds([south, lon - 1e-9], [north, lon + 1e-9]);
-      var z = map.getBoundsZoom(bounds);
-      if (!isFinite(z)) { report('sky->earth ABORT', { reason: 'getBoundsZoom NaN', span: span }); return null; }
-      var before = earthVerticalSpanDeg(map);
-      map.setView([lat, lon], z, { animate: false });
-      report('sky->earth', {
-        skyVertSpanDeg: span,
-        fov: renderer.getFovDeg ? renderer.getFovDeg() : null,
-        pane: renderer.getSize ? (renderer.getSize().width + 'x' + renderer.getSize().height) : null,
-        zoomBefore: map.getZoom ? map.getZoom() : null,
-        zoomApplied: z,
-        earthSpanBefore: before,
-        earthSpanAfter: earthVerticalSpanDeg(map)
-      });
-      return z;
-    } catch (e) { report('sky->earth ABORT', { reason: String(e && e.message) }); return null; }
+    var passes = 0, got = null;
+    for (; passes < MAX_PASSES; passes++) {
+      got = spanPx(corners, sProj);
+      if (!got || got <= 0) break;
+      if (Math.abs(got - target) / target <= TOLERANCE) break;
+      var next = renderer.getFovDeg() * (got / target);
+      if (!isFinite(next) || next <= 0) break;
+      try { renderer.setFovDeg(next); } catch (e) { break; }
+    }
+
+    report('earth->sky', {
+      targetCellPx: target,
+      achievedCellPx: got,
+      errorPct: (got && target) ? ((got - target) / target * 100) : null,
+      passes: passes,
+      fov: renderer.getFovDeg(),
+      order: order
+    });
+    return renderer.getFovDeg();
+  }
+
+  /*
+    SKY -> EARTH. Same idea, solving Leaflet's zoom instead.
+
+    Pixel size doubles per zoom level, so the correction is a log2 of the ratio
+    -- again applied and re-measured rather than trusted.
+  */
+  function matchCellSkyToEarth(renderer, map, decDeg, raDeg, order) {
+    var corners = cellCorners(decDeg, raDeg, order);
+    var eProj = earthProjector(map), sProj = skyProjector(renderer);
+    if (!corners || !eProj || !sProj || !map.setView || !map.getZoom) {
+      report('sky->earth ABORT', { reason: 'cannot measure' });
+      return null;
+    }
+
+    var target = spanPx(corners, sProj);
+    if (!target || target <= 0) {
+      report('sky->earth ABORT', { reason: 'cell not measurable in sky' });
+      return null;
+    }
+
+    var lon = raDeg > 180 ? raDeg - 360 : raDeg;
+    var passes = 0, got = null, z = map.getZoom();
+    for (; passes < MAX_PASSES; passes++) {
+      got = spanPx(corners, eProj);
+      if (!got || got <= 0) break;
+      if (Math.abs(got - target) / target <= TOLERANCE) break;
+      var delta = Math.log(target / got) / Math.LN2;
+      if (!isFinite(delta)) break;
+      z = z + delta;
+      try { map.setView([decDeg, lon], z, { animate: false }); } catch (e) { break; }
+    }
+
+    report('sky->earth', {
+      targetCellPx: target,
+      achievedCellPx: got,
+      errorPct: (got && target) ? ((got - target) / target * 100) : null,
+      passes: passes,
+      zoom: map.getZoom ? map.getZoom() : null,
+      order: order
+    });
+    return map.getZoom ? map.getZoom() : null;
   }
 
   var API = {
     VERSION: VERSION,
     earthVerticalSpanDeg: earthVerticalSpanDeg,
-    skyVerticalSpanDeg: skyVerticalSpanDeg,
-    fovForVerticalSpan: fovForVerticalSpan,
-    carryEarthZoomToSky: carryEarthZoomToSky,
-    carrySkyZoomToEarth: carrySkyZoomToEarth
+    cellCorners: cellCorners,
+    spanPx: spanPx,
+    earthProjector: earthProjector,
+    skyProjector: skyProjector,
+    matchCellEarthToSky: matchCellEarthToSky,
+    matchCellSkyToEarth: matchCellSkyToEarth,
+    // Kept under the old names so callers do not need to know this changed.
+    carryEarthZoomToSky: matchCellEarthToSky,
+    carrySkyZoomToEarth: matchCellSkyToEarth
   };
 
   global.GeosonifySkyZoom = API;

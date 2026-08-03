@@ -858,6 +858,24 @@
       attachRenderer(renderer);
       renderer.setCenter(liveCentre[0], liveCentre[1]);
       renderer.setFovDeg(liveFov);
+
+      /*
+        Re-match against Aladin by MEASUREMENT.
+
+        Handing the field across is a request, and Aladin applies its own clamps
+        and its own idea of which axis a field names -- the console showed a
+        7.4x jump appearing only on flips where Aladin had loaded. Measuring the
+        cell after the swap makes the outcome independent of all of that: if
+        Aladin lands somewhere else, the loop corrects it; if Aladin refuses to
+        move, the log says so rather than the scale silently drifting.
+      */
+      if (global.GeosonifySkyZoom && global.__geosonifyMap &&
+          global.GeosonifySkyZoom.matchCellEarthToSky) {
+        try {
+          global.GeosonifySkyZoom.matchCellEarthToSky(
+            global.__geosonifyMap, renderer, mark.dec, mark.ra, order);
+        } catch (e) {}
+      }
       showAttribution();
       draw();
       return true;
@@ -962,7 +980,8 @@
     */
     if (!opts.fovDeg && global.GeosonifySkyZoom && global.__geosonifyMap) {
       try {
-        if (global.GeosonifySkyZoom.carryEarthZoomToSky(global.__geosonifyMap, renderer) !== null) {
+        if (global.GeosonifySkyZoom.matchCellEarthToSky(
+              global.__geosonifyMap, renderer, mark.dec, mark.ra, order) !== null) {
           draw();
         }
       } catch (e) {}
@@ -993,9 +1012,8 @@
     */
     if (global.GeosonifySkyZoom && global.__geosonifyMap && renderer) {
       try {
-        global.GeosonifySkyZoom.carrySkyZoomToEarth(
-          renderer, global.__geosonifyMap, mark.dec,
-          mark.ra > 180 ? mark.ra - 360 : mark.ra);
+        global.GeosonifySkyZoom.matchCellSkyToEarth(
+          renderer, global.__geosonifyMap, mark.dec, mark.ra, order);
       } catch (e) {}
     }
     unwatchCoordinate();
