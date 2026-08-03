@@ -109,6 +109,37 @@
   */
   var REMATCH_AFTER_IMAGERY = true;
 
+  /*
+    THE ROUND TRIP MUST BE IDEMPOTENT.
+
+    Matching pixels in both directions is only self-cancelling if the same thing
+    is measured both times, and it is not. Between our match at open and the
+    measurement at close, the sky cell grows by about 13% -- the log shows it set
+    to 50.10 px and read back as 56.66 px -- because the Aladin host is 53 px
+    shorter than the built-in one (546 vs 493) and the chrome reflows when the
+    CDS attribution appears. Every flip therefore hands Earth a slightly larger
+    target than it started with:
+
+        50 -> 57 -> 65 -> 74 px      x1.140, x1.140, x1.139
+
+    which is the "flipping back and forth moves me further and further out" you
+    described, compounding at 14% a time.
+
+    Chasing each source of that 13% is a losing game -- pane heights, chrome
+    reflow, Aladin's own resize handling, all of them moving. So instead:
+    REMEMBER WHAT WE MATCHED FROM, and on the way back apply only the change the
+    USER made.
+
+        desiredEarthPx = earthPxAtOpen x (skyPxNow / skyPxAtOpen)
+
+    If nothing was touched in the sky, the ratio is exactly 1 and Earth returns
+    to precisely where it was -- byte-identical zoom, no drift, whatever the
+    panes did in between. If the sky was zoomed 2x, Earth follows by 2x, which is
+    the behaviour actually wanted. The anchor is the only thing that has to be
+    correct, and it is captured once, from a measurement we made ourselves.
+  */
+  var _anchor = null;
+
   var MAX_PASSES = 6;
   var TOLERANCE = 0.005;              // 0.5% of the target height; sub-pixel
 
@@ -346,9 +377,19 @@
       try { renderer.setFovDeg(next); } catch (e) { break; }
     }
 
+    /*
+      Anchor on the FIRST match of an opening only. The second pass (after the
+      imagery swap) re-measures in a different pane, and letting it overwrite the
+      anchor would bake the very discrepancy this exists to cancel.
+    */
+    if (!_anchor || _anchor.closed) {
+      _anchor = { earthPx: target, skyPx: got, closed: false };
+    }
+
     report('earth->sky', {
       targetCellPx: target,
       achievedCellPx: got,
+      anchorEarthPx: _anchor ? _anchor.earthPx : null,
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
       passes: passes,
       fov: renderer.getFovDeg(),
@@ -376,10 +417,21 @@
       return null;
     }
 
-    var target = spanPx(corners, sProj);
-    if (!target || target <= 0) {
+    var skyNow = spanPx(corners, sProj);
+    if (!skyNow || skyNow <= 0) {
       report('sky->earth ABORT', { reason: 'cell not measurable in sky' });
       return null;
+    }
+
+    /*
+      The target is the anchor, scaled by whatever the user did in the sky --
+      NOT the raw sky measurement, which drifts for reasons that have nothing to
+      do with the user (see the note on _anchor above).
+    */
+    var userZoom = 1, target = skyNow;
+    if (_anchor && !_anchor.closed && _anchor.skyPx > 0 && _anchor.earthPx > 0) {
+      userZoom = skyNow / _anchor.skyPx;
+      target = _anchor.earthPx * userZoom;
     }
 
     var lon = raDeg > 180 ? raDeg - 360 : raDeg;
@@ -430,8 +482,14 @@
       }
     }
 
+    if (_anchor) _anchor.closed = true;
+
     report('sky->earth', {
       zoomSnapWas: (hadSnap === undefined ? 'unset(default 1)' : hadSnap),
+      skyCellPxNow: skyNow,
+      anchorSkyPx: _anchor ? _anchor.skyPx : null,
+      anchorEarthPx: _anchor ? _anchor.earthPx : null,
+      userZoomFactor: userZoom,
       targetCellPx: target,
       achievedCellPx: got,
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
@@ -452,6 +510,7 @@
     earthVerticalSpanDeg: earthVerticalSpanDeg,
     cellCorners: cellCorners,
     orderForActiveCard: orderForActiveCard,
+    clearAnchor: function () { _anchor = null; },
     impliedVerticalDeg: impliedVerticalDeg,
     targetGeometry: targetGeometry,
     spanPx: spanPx,
