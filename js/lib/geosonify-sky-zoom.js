@@ -93,6 +93,22 @@
     or failed download costs imagery, never scale.
   */
 
+  /*
+    Whether to re-match after the imagery swaps in.
+
+    The built-in pass is exact (-0.0029% every time, in every log). The Aladin
+    pass is the one that regresses, so this exists as a switch you can flip from
+    the console while the cause is still being pinned down:
+
+        GeosonifySkyZoom.REMATCH_AFTER_IMAGERY = false
+
+    With it off, the field the built-in renderer converged on is handed to
+    Aladin and left alone. If that looks right on screen, the fault is in
+    Aladin's world2pix rather than in the matching -- which is exactly what the
+    implVertDeg figures in the log are there to confirm.
+  */
+  var REMATCH_AFTER_IMAGERY = true;
+
   var MAX_PASSES = 6;
   var TOLERANCE = 0.005;              // 0.5% of the target height; sub-pixel
 
@@ -241,6 +257,45 @@
     return String(Math.round(v * 1e4) / 1e4);
   }
 
+  /*
+    DEGREES PER PIXEL, STRAIGHT FROM THE PROJECTION.
+
+    Two renderers reported the same 50 px cell at fields differing by 1.59x,
+    which is only possible if their projections disagree about how many degrees
+    a pixel is worth. Neither the fov number nor the cell measurement can tell
+    them apart -- fov is a convention and the cell measurement is what the loop
+    optimised. This is the independent third quantity.
+
+    Project two points a known small angle apart in DECLINATION, either side of
+    the mark, and read off the pixel separation. Declination because it is
+    latitude exactly, with no cos anywhere; small because the projection is only
+    locally linear.
+
+    implVertDeg is then the angular height of the whole pane, which is directly
+    comparable between renderers, and comparable to the Earth map's latitude
+    span. If the built-in and Aladin report different implVertDeg while both
+    claim the same cell size, the disagreement is in Aladin's world2pix and no
+    amount of matching will fix it.
+  */
+  function impliedVerticalDeg(renderer, decDeg, raDeg) {
+    if (!renderer || !renderer.project || !renderer.getSize) return null;
+    var d = 1e-4;                       // 0.36 arcsec; safely inside linearity
+    var a, b;
+    try {
+      a = renderer.project(raDeg, decDeg - d);
+      b = renderer.project(raDeg, decDeg + d);
+    } catch (e) { return null; }
+    if (!a || !b) return null;
+    var ay = (typeof a.y === 'number') ? a.y : a[1];
+    var by = (typeof b.y === 'number') ? b.y : b[1];
+    if (!isFinite(ay) || !isFinite(by)) return null;
+    var px = Math.abs(by - ay);
+    if (!px) return null;
+    var degPerPx = (2 * d) / px;
+    var size = renderer.getSize();
+    return degPerPx * (size.height || 0);
+  }
+
   function report(tag, obj) {
     var bits = [];
     for (var k in obj) {
@@ -297,6 +352,9 @@
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
       passes: passes,
       fov: renderer.getFovDeg(),
+      implVertDeg: impliedVerticalDeg(renderer, decDeg, raDeg),
+      earthLatSpanDeg: earthVerticalSpanDeg(map),
+      pane: renderer.getSize ? (renderer.getSize().width + 'x' + renderer.getSize().height) : null,
       order: geom.order,
       cell: geom.source
     });
@@ -379,6 +437,8 @@
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
       passes: passes,
       zoom: map.getZoom ? map.getZoom() : null,
+      implVertDeg: impliedVerticalDeg(renderer, decDeg, raDeg),
+      earthLatSpanDeg: earthVerticalSpanDeg(map),
       order: geom.order,
       cell: geom.source
     });
@@ -387,9 +447,12 @@
 
   var API = {
     VERSION: VERSION,
+    get REMATCH_AFTER_IMAGERY() { return REMATCH_AFTER_IMAGERY; },
+    set REMATCH_AFTER_IMAGERY(v) { REMATCH_AFTER_IMAGERY = !!v; },
     earthVerticalSpanDeg: earthVerticalSpanDeg,
     cellCorners: cellCorners,
     orderForActiveCard: orderForActiveCard,
+    impliedVerticalDeg: impliedVerticalDeg,
     targetGeometry: targetGeometry,
     spanPx: spanPx,
     earthProjector: earthProjector,

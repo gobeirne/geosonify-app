@@ -870,7 +870,8 @@
         move, the log says so rather than the scale silently drifting.
       */
       if (global.GeosonifySkyZoom && global.__geosonifyMap &&
-          global.GeosonifySkyZoom.matchCellEarthToSky) {
+          global.GeosonifySkyZoom.matchCellEarthToSky &&
+          global.GeosonifySkyZoom.REMATCH_AFTER_IMAGERY) {
         try {
           global.GeosonifySkyZoom.matchCellEarthToSky(
             global.__geosonifyMap, renderer, mark.dec, mark.ra, order);
