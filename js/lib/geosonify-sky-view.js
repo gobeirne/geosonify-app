@@ -978,6 +978,28 @@
       the scale continuity, not the view. An explicit opts.fovDeg wins, since a
       caller that named a field meant it.
     */
+    if (!opts.order && global.GeosonifySkyZoom && global.GeosonifySkyZoom.orderForActiveCard) {
+      /*
+        ADOPT THE ACTIVE CARD'S ORDER BEFORE DRAWING.
+
+        The sky view's `order` defaulted to its own value (16) while the Earth
+        map draws the active card's cell at the card's depth. Opening
+        ?hphex=956250B00834 -- order 22 -- meant a 1.56 m cell on the map beside a
+        99.6 m cell in the sky, 64x apart, which is the five or six manual zoom
+        stops it took to reconcile them.
+
+        Set here rather than after, because drawing one cell and then measuring
+        another is the mistake that produced a log full of near-zero errors while
+        the screen plainly disagreed.
+      */
+      try {
+        var wantOrder = global.GeosonifySkyZoom.orderForActiveCard(order);
+        if (wantOrder > 0 && wantOrder !== order) {
+          order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, wantOrder));
+        }
+      } catch (e) {}
+    }
+
     if (!opts.fovDeg && global.GeosonifySkyZoom && global.__geosonifyMap) {
       try {
         if (global.GeosonifySkyZoom.matchCellEarthToSky(

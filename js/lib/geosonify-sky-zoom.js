@@ -112,6 +112,74 @@
 
     Returns [[dec, ra], ...] or null.
   */
+  /*
+    ============================================================================
+    MEASURE THE CELL EACH VIEW IS ACTUALLY DRAWING.
+    ============================================================================
+
+    Matching pixels was right; matching them on the wrong cell was not.
+
+    The Earth map draws the ACTIVE CARD's cell, at the card's own depth. The sky
+    view was drawing a HEALPix cell at its own `order`, which starts at 16 and
+    has nothing to do with the card. Opening ?hphex=956250B00834 -- twelve hex
+    characters, two levels each, so order 22 -- put a 1.56 m cell on the map and
+    a 99.6 m cell in the sky. Six orders apart is 2^6 = 64x, which is the five to
+    six manual zoom stops it took to reconcile them.
+
+    Both measurements were self-consistent and both were of a cell neither view
+    had on screen.
+
+    So the geometry to measure is chosen from the active card:
+
+      HEALPix card   the cell at the CARD's order, and the sky view adopts that
+                     order so it draws the same one
+      graticule card the card's own cell ring, which is identical lat/lon
+                     geometry in both frames and needs no order at all
+      no card        the sky view's order, as before
+
+    orderForActiveCard() is exported so the view can set its order BEFORE
+    drawing, rather than drawing one cell and measuring another.
+  */
+  function _Cards() { return global.GeosonifySkyCards || null; }
+
+  function orderForActiveCard(fallbackOrder) {
+    var Cards = _Cards(), HP = _HP();
+    if (!Cards || !Cards.activeCard) return fallbackOrder;
+    var card = null;
+    try { card = Cards.activeCard(); } catch (e) { return fallbackOrder; }
+    if (!card || card.kind !== 'healpix') return fallbackOrder;
+    var k = card.iterations;
+    if (!(k > 0)) return fallbackOrder;
+    return (HP && HP.clampOrder) ? HP.clampOrder(k) : k;
+  }
+
+  /*
+    The points to measure, and where they came from. Returns
+    { points, order, source } or null.
+  */
+  function targetGeometry(decDeg, raDeg, fallbackOrder) {
+    var Cards = _Cards(), card = null;
+    if (Cards && Cards.activeCard) {
+      try { card = Cards.activeCard(); } catch (e) {}
+    }
+
+    if (card && card.kind === 'graticule' && Cards.activeCardRings) {
+      try {
+        var got = Cards.activeCardRings(decDeg, raDeg, { levels: 1 });
+        if (got && got.rings && got.rings.length) {
+          var deepest = got.rings[got.rings.length - 1];
+          if (deepest && deepest.ring && deepest.ring.length >= 3) {
+            return { points: deepest.ring, order: null, source: card.key };
+          }
+        }
+      } catch (e) {}
+    }
+
+    var order = orderForActiveCard(fallbackOrder);
+    var c = cellCorners(decDeg, raDeg, order);
+    return c ? { points: c, order: order, source: (card ? card.key : 'healpix') } : null;
+  }
+
   function cellCorners(decDeg, raDeg, order) {
     var S = _Sky(), HP = _HP();
     if (!S || !HP || !S.cellCorners4) return null;
@@ -192,7 +260,8 @@
     under a pixel. Iterating rather than solving is what makes it renderer-blind.
   */
   function matchCellEarthToSky(map, renderer, decDeg, raDeg, order) {
-    var corners = cellCorners(decDeg, raDeg, order);
+    var geom = targetGeometry(decDeg, raDeg, order);
+    var corners = geom ? geom.points : null;
     var eProj = earthProjector(map), sProj = skyProjector(renderer);
     if (!corners || !eProj || !sProj || !renderer.setFovDeg) {
       report('earth->sky ABORT', {
@@ -228,7 +297,8 @@
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
       passes: passes,
       fov: renderer.getFovDeg(),
-      order: order
+      order: geom.order,
+      cell: geom.source
     });
     return renderer.getFovDeg();
   }
@@ -240,7 +310,8 @@
     -- again applied and re-measured rather than trusted.
   */
   function matchCellSkyToEarth(renderer, map, decDeg, raDeg, order) {
-    var corners = cellCorners(decDeg, raDeg, order);
+    var geom = targetGeometry(decDeg, raDeg, order);
+    var corners = geom ? geom.points : null;
     var eProj = earthProjector(map), sProj = skyProjector(renderer);
     if (!corners || !eProj || !sProj || !map.setView || !map.getZoom) {
       report('sky->earth ABORT', { reason: 'cannot measure' });
@@ -308,7 +379,8 @@
       errorPct: (got && target) ? ((got - target) / target * 100) : null,
       passes: passes,
       zoom: map.getZoom ? map.getZoom() : null,
-      order: order
+      order: geom.order,
+      cell: geom.source
     });
     return map.getZoom ? map.getZoom() : null;
   }
@@ -317,6 +389,8 @@
     VERSION: VERSION,
     earthVerticalSpanDeg: earthVerticalSpanDeg,
     cellCorners: cellCorners,
+    orderForActiveCard: orderForActiveCard,
+    targetGeometry: targetGeometry,
     spanPx: spanPx,
     earthProjector: earthProjector,
     skyProjector: skyProjector,
