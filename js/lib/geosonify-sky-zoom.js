@@ -100,12 +100,35 @@
     EARTH -> SKY. Called when the sky view opens.
     Returns the fov applied, or null if it could not be determined.
   */
+  /*
+    Every transition logs its numbers.
+
+    This crosses two projections, two renderers with different fov conventions,
+    and Leaflet's zoom arithmetic -- and when it is wrong the symptom is just
+    "the view looks off", with no way to tell which stage did it. One line with
+    the span asked for and the span achieved makes the wrong stage obvious in a
+    glance rather than a bisect.
+  */
+  function report(tag, obj) {
+    try { console.log('[geosonify] zoom carry ' + tag, obj); } catch (e) {}
+  }
+
   function carryEarthZoomToSky(map, renderer) {
     var span = earthVerticalSpanDeg(map);
-    if (span === null) return null;
+    if (span === null) { report('earth->sky ABORT', { reason: 'no map bounds' }); return null; }
     var fov = fovForVerticalSpan(renderer, span);
-    if (fov === null) return null;
-    try { renderer.setFovDeg(fov); } catch (e) { return null; }
+    if (fov === null) { report('earth->sky ABORT', { reason: 'no renderer size', span: span }); return null; }
+    try { renderer.setFovDeg(fov); } catch (e) {
+      report('earth->sky ABORT', { reason: 'setFovDeg threw' }); return null;
+    }
+    var size = renderer.getSize ? renderer.getSize() : null;
+    report('earth->sky', {
+      earthLatSpanDeg: span,
+      fovRequested: fov,
+      fovReadBack: renderer.getFovDeg ? renderer.getFovDeg() : null,
+      skyVertSpanDeg: skyVerticalSpanDeg(renderer),
+      pane: size ? (size.width + 'x' + size.height) : null
+    });
     return fov;
   }
 
@@ -118,9 +141,16 @@
     negligible longitude range guarantees latitude decides.
   */
   function carrySkyZoomToEarth(renderer, map, centreLat, centreLon) {
-    if (!map || !map.getBoundsZoom || !map.setView || !global.L) return null;
+    if (!map || !map.getBoundsZoom || !map.setView || !global.L) {
+      report('sky->earth ABORT', {
+        reason: 'missing map API',
+        hasMap: !!map, hasGetBoundsZoom: !!(map && map.getBoundsZoom),
+        hasSetView: !!(map && map.setView), hasL: !!global.L
+      });
+      return null;
+    }
     var span = skyVerticalSpanDeg(renderer);
-    if (span === null) return null;
+    if (span === null) { report('sky->earth ABORT', { reason: 'no vertical span (beyond limb?)' }); return null; }
 
     var lat = (typeof centreLat === 'number') ? centreLat : map.getCenter().lat;
     var lon = (typeof centreLon === 'number') ? centreLon : map.getCenter().lng;
@@ -132,10 +162,20 @@
     try {
       var bounds = global.L.latLngBounds([south, lon - 1e-9], [north, lon + 1e-9]);
       var z = map.getBoundsZoom(bounds);
-      if (!isFinite(z)) return null;
+      if (!isFinite(z)) { report('sky->earth ABORT', { reason: 'getBoundsZoom NaN', span: span }); return null; }
+      var before = earthVerticalSpanDeg(map);
       map.setView([lat, lon], z, { animate: false });
+      report('sky->earth', {
+        skyVertSpanDeg: span,
+        fov: renderer.getFovDeg ? renderer.getFovDeg() : null,
+        pane: renderer.getSize ? (renderer.getSize().width + 'x' + renderer.getSize().height) : null,
+        zoomBefore: map.getZoom ? map.getZoom() : null,
+        zoomApplied: z,
+        earthSpanBefore: before,
+        earthSpanAfter: earthVerticalSpanDeg(map)
+      });
       return z;
-    } catch (e) { return null; }
+    } catch (e) { report('sky->earth ABORT', { reason: String(e && e.message) }); return null; }
   }
 
   var API = {

@@ -299,9 +299,37 @@
         if (aladin) { try { aladin.gotoRaDec(ra, dec); } catch (e) {} }
       },
       getFovDeg: getFovDeg,
+      /*
+        SET AND GET MUST MEAN THE SAME AXIS.
+
+        getFovDeg returns min(fovX, fovY) -- the smaller dimension, matching the
+        built-in renderer's convention. But Aladin's setFoV sets fovX, the WIDTH.
+        On a pane 1060 x 800 that means
+
+            setFovDeg(x)  ->  fovX = x,  fovY = 0.755x
+            getFovDeg()   ->  min      = 0.755x
+
+        so setting and reading back disagreed by the aspect ratio, and any code
+        that computed a field and applied it -- the Earth/Sky zoom carry, the
+        +/- buttons, useAladin() handing the field over during the renderer
+        swap -- landed 1.33x off on a landscape pane, and did so silently.
+
+        Compensated here rather than at the call sites, because the contract is
+        what the call sites are entitled to rely on: setFovDeg(d) must make
+        getFovDeg() return d.
+      */
       setFovDeg: function (d) {
-        pendingFov = Math.max(1e-5, Math.min(180, d));
-        if (aladin) { try { aladin.setFoV(pendingFov); } catch (e) {} }   // capital V
+        var want = Math.max(1e-5, Math.min(180, d));
+        pendingFov = want;
+        if (aladin) {
+          try {
+            var sz = size();
+            // fovY = fovX * h/w, so min(fovX, fovY) = fovX * min(1, h/w).
+            // Invert that to get the fovX which yields the requested minimum.
+            var ratio = (sz.width && sz.height) ? Math.min(1, sz.height / sz.width) : 1;
+            aladin.setFoV(Math.min(180, want / (ratio || 1)));    // capital V
+          } catch (e) {}
+        }
       },
       getSize: size,
       on: function (evt, cb) { if (listeners[evt]) listeners[evt].push(cb); },
