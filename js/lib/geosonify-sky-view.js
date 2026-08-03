@@ -825,12 +825,39 @@
     });
     return candidate.init().then(function () {
       if (!host) { candidate.destroy(); return false; }   // view closed while loading
+
+      /*
+        RE-READ THE VIEW AT SWAP TIME, NOT AT REQUEST TIME.
+
+        `centre` and `fov` above were captured BEFORE candidate.init(), which
+        downloads 2.3 MB of Aladin and can take seconds. Anything that changed
+        the view in the meantime was then thrown away when the swap applied the
+        stale values.
+
+        That is exactly what broke the Earth/Sky zoom carry. The sequence was:
+
+          openView -> tryAladin captures fov = 1.5 (the default)
+          openView -> zoom carry sets the built-in to 0.000607 deg
+          ...seconds pass...
+          Aladin resolves -> swap applies the captured 1.5 deg
+
+        The console showed it plainly: earth->sky reported fovReadBack 0.000607,
+        and the following sky->earth reported skyVertSpanDeg 1.4969574 -- the
+        default, restored behind the carry's back. The map then returned at zoom
+        8 and every later flip compounded from there.
+
+        The same staleness would also discard a user's own zoom or pan performed
+        while the imagery downloaded, which is a long enough window to matter.
+      */
+      var liveCentre = renderer ? renderer.getCenter() : centre;
+      var liveFov = renderer ? renderer.getFovDeg() : fov;
+
       if (renderer) { try { renderer.destroy(); } catch (e) {} }
       renderer = candidate;
       rendererKind = 'aladin';
       attachRenderer(renderer);
-      renderer.setCenter(centre[0], centre[1]);
-      renderer.setFovDeg(fov);
+      renderer.setCenter(liveCentre[0], liveCentre[1]);
+      renderer.setFovDeg(liveFov);
       showAttribution();
       draw();
       return true;
