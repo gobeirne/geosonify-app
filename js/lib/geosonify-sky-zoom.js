@@ -408,7 +408,8 @@
     Pixel size doubles per zoom level, so the correction is a log2 of the ratio
     -- again applied and re-measured rather than trusted.
   */
-  function matchCellSkyToEarth(renderer, map, decDeg, raDeg, order) {
+  function matchCellSkyToEarth(renderer, map, decDeg, raDeg, order, opts) {
+    opts = opts || {};
     var geom = targetGeometry(decDeg, raDeg, order);
     var corners = geom ? geom.points : null;
     var eProj = earthProjector(map), sProj = skyProjector(renderer);
@@ -428,9 +429,29 @@
       NOT the raw sky measurement, which drifts for reasons that have nothing to
       do with the user (see the note on _anchor above).
     */
+    /*
+      THE RATIO COMES FROM THE USER, NOT FROM A MEASUREMENT ALADIN WILL OVERRULE.
+
+      Deriving it from skyNow / anchorSkyPx assumed the sky field only moves when
+      the user moves it. It does not: Aladin quantises to its own HiPS zoom
+      levels and settles there ASYNCHRONOUSLY, after our synchronous set and
+      measure. The log is unambiguous --
+
+          userZoomFactor=0.5659   on every single flip, untouched
+
+      -- and the implied vertical span nearly doubles between our match and the
+      close, x1.80, x1.77, x1.74, x1.78, x1.78. Aladin widening by a constant
+      1.77x got read as the user zooming in by a constant 0.566x, and was dutifully
+      applied to the map every time. That is the compounding.
+
+      So the caller reports whether the user actually touched the zoom -- the
+      +/- buttons and the wheel are the only ways they can -- and if they did
+      not, the ratio is exactly 1 by definition rather than by measurement.
+      Aladin can then settle wherever it likes without moving the Earth.
+    */
     var userZoom = 1, target = skyNow;
     if (_anchor && !_anchor.closed && _anchor.skyPx > 0 && _anchor.earthPx > 0) {
-      userZoom = skyNow / _anchor.skyPx;
+      if (opts.userZoomed) userZoom = skyNow / _anchor.skyPx;
       target = _anchor.earthPx * userZoom;
     }
 
@@ -489,7 +510,9 @@
       skyCellPxNow: skyNow,
       anchorSkyPx: _anchor ? _anchor.skyPx : null,
       anchorEarthPx: _anchor ? _anchor.earthPx : null,
+      userZoomed: !!opts.userZoomed,
       userZoomFactor: userZoom,
+      measuredRatio: (_anchor && _anchor.skyPx) ? (skyNow / _anchor.skyPx) : null,
       targetCellPx: target,
       achievedCellPx: got,
       errorPct: (got && target) ? ((got - target) / target * 100) : null,

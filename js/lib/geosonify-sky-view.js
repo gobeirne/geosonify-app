@@ -324,10 +324,12 @@
       ev.stopPropagation();
       if (!renderer) return;
       renderer.setCenter(mark.ra, mark.dec);      // zoom toward the selected cell
+      userZoomed = true;
       renderer.setFovDeg(renderer.getFovDeg() / 2);
     };
     zOut.onclick = function (ev) {
       ev.stopPropagation();
+      userZoomed = true;
       if (renderer) renderer.setFovDeg(renderer.getFovDeg() * 2);
     };
 
@@ -359,6 +361,17 @@
     Verified: onCoordChange does not call renderCards, so there is no recursion
     with renderCards -> CardRenderer.setCoordinate -> onCoordChange.
   */
+  /*
+    Did the USER change the zoom while in the sky?
+
+    Only the +/- buttons and the wheel can do it. Aladin also changes the field
+    on its own -- it quantises to its own zoom levels and settles there after we
+    have set and measured -- and a measurement cannot tell the two apart. Without
+    this flag Aladin's settling was read as a deliberate 0.566x zoom and applied
+    to the Earth map on every flip, compounding.
+  */
+  var userZoomed = false;
+
   var _coordUnsub = null;
   var _pushing = false;
 
@@ -1010,6 +1023,19 @@
       } catch (e) {}
     }
 
+    /*
+      The wheel is the other way the user can zoom, and it is handled inside the
+      renderer, so the flag is set from a listener here. Capture phase, passive,
+      so it observes without interfering with the renderer's own handler.
+    */
+    userZoomed = false;
+    try {
+      if (els && els.canvasWrap) {
+        els.canvasWrap.addEventListener('wheel', function () { userZoomed = true; },
+                                        { capture: true, passive: true });
+      }
+    } catch (e) {}
+
     watchCoordinate();      // GPS fixes and card-code edits move the sphere too
     return true;
   }
@@ -1036,7 +1062,8 @@
     if (global.GeosonifySkyZoom && global.__geosonifyMap && renderer) {
       try {
         global.GeosonifySkyZoom.matchCellSkyToEarth(
-          renderer, global.__geosonifyMap, mark.dec, mark.ra, order);
+          renderer, global.__geosonifyMap, mark.dec, mark.ra, order,
+          { userZoomed: userZoomed });
       } catch (e) {}
     }
     unwatchCoordinate();
