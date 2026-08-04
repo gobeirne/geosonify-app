@@ -202,7 +202,25 @@
       // the thumbnail and the deep-catalogue upgrade both need the coordinate
       // and one of them is a promise.
       display: 'skyneighbours',
-      frames: 'sky',
+      /*
+        EARTH, NOT SKY. The other four cards here are export formats for a
+        celestial position; this one is the opposite gesture. It reads your
+        TERRESTRIAL coordinate as a celestial one and reports what is standing
+        there, and everything it says -- "634 m south-east on the ground" -- is
+        a fact about two points on the Earth. You walk to it. That is an Earth
+        activity, and the card belongs in the frame where the walking happens.
+
+        In sky mode it is worse than useless: the offsets would be measured from
+        wherever the sky view is pointed, so "665 m west" would describe a walk
+        from a place you are not standing.
+
+        One word, but it drives both halves of the visibility rule at once.
+        applyGate('sky') already hides everything that does not work in sky, so
+        declaring 'earth' removes the card from sky mode; and no earth gate is
+        applied on the way back, so it simply stays visible on Earth. Nothing
+        else needs to change.
+      */
+      frames: 'earth',
       grid: null,
       // Not order-dependent: the star at an address does not change with how
       // finely you name the address. Fixed so the +/- stepper does not imply

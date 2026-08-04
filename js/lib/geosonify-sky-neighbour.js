@@ -265,6 +265,16 @@
   var PC_TO_LY = 3.2615638;
 
   /*
+    How many rows to keep from a cone search, regardless of how many the card
+    shows. See the note in lookupRemote(): retaining only the displayed few is
+    what made the cache unable to notice a star becoming nearest.
+
+    60 is generous for a 1 arcmin Gaia cone (typical occupancy is a few dozen)
+    and still a single small response.
+  */
+  var POOL = 60;
+
+  /*
     Up to `limit` stars, nearest first.
 
     UNVERIFIED against a live service: this sandbox cannot reach
@@ -284,13 +294,53 @@
   */
   function lookupRemote(lat, lon, opts) {
     opts = opts || {};
-    if (!isSky()) return Promise.resolve([]);        // never leak Earth coords
+    /*
+      THE FRAME GUARD IS GONE, AND THE PRIVACY ARGUMENT FOR IT DID NOT SURVIVE
+      INSPECTION.
+
+      It used to be `if (!isSky()) return Promise.resolve([])`, on the reasoning
+      that CDS must never see an Earth coordinate. But geosonify-sky-carry.js is
+      explicit that the two frames are "the same digits, read twice" -- latitude
+      IS declination, longitude IS right ascension, no scale factor and no
+      projection anywhere in the path. The number this sends in sky mode is
+      byte-for-byte the number it was refusing to send on Earth. The guard
+      prevented nothing it claimed to prevent.
+
+      What it did do was break the card, which is now an EARTH card
+      (frames: 'earth'), so the guard would have blocked every lookup it ever
+      made. And it failed in the most misleading way available: returning [] --
+      which this module defines as "looked and found nothing" -- rather than
+      null, "could not look". The card duly announced that the sky was empty
+      within an arcminute of you. A false statement, from the guard's own
+      wrong-constant.
+
+      If an egress consent is ever wanted, it belongs on a setting the person
+      can see, not on which map they happen to be looking at.
+    */
     if (typeof fetch !== 'function') return Promise.resolve(null);   // could not look
 
     var cat = CATALOGUES[opts.catalogue || 'gaia'] || CATALOGUES.gaia;
     var ra = ((lon % 360) + 360) % 360;
-    var limit = opts.limit || 3;
     var radiusArcmin = opts.radiusArcmin || 1;
+
+    /*
+      FETCH THE POOL, NOT THE THREE.
+
+      -out.max used to be the DISPLAY limit, which threw away the rest of the
+      cone the moment it arrived -- and with it every guarantee the cache rule
+      was built on. The retained three prove only "these are all the stars
+      within f of the query point". Walk any distance at all and the discarded
+      fourth can be the nearest thing to you, with nothing kept that could
+      notice. That is the "I moved the pin onto the star and nothing changed"
+      bug: the star you walked to was fetched, ranked fourth, and dropped on the
+      floor before the card ever saw it.
+
+      POOL rows cost nothing -- a Gaia TSV row is about 60 bytes, so this is a
+      4 KB response instead of 200 bytes, once per re-query rather than per tick
+      -- and they make the cache both correct and much longer-lived, because a
+      newly-nearest star is now already in hand.
+    */
+    var limit = POOL;
 
     var url = 'https://vizier.cds.unistra.fr/viz-bin/asu-tsv' +
       '?-source=' + encodeURIComponent(cat.source) +
@@ -608,18 +658,52 @@
 
     A tiny epsilon keeps a stationary GPS jitter from straddling the boundary.
   */
+  /*
+    THE OLD RULE WAS WRONG TWICE, AND BOTH ERRORS POINTED THE SAME WAY -- TOO
+    LONG A LEASE.
+
+    It stored a fixed distance at query time:
+
+        validForMetres = R - furthest - 1
+
+    First error, the triangle inequality. After moving d, the star you KEPT sits
+    at up to furthest + d from you, while a star you never saw can be as close
+    as R - d. Staying correct needs
+
+        furthest + d  <=  R - d      i.e.   d <= (R - furthest) / 2
+
+    so the shipped window was about twice what the geometry allows. With the
+    three stars from the card that is 1,287 m granted against 644 m earned.
+
+    Second error, and the fatal one: -out.max discarded everything past the
+    displayed few, so there was no "R" to reason about at all. The retained set
+    proved a fact about a radius of `furthest`, not of R.
+
+    THE FIX IS TO STOP STORING A DISTANCE AND START ASKING THE QUESTION.
+
+    Now that the whole pool is kept, validity is checkable exactly, at the
+    moment it matters, against the position you are actually at:
+
+        recompute every kept star's offset from HERE, sort, take the limit-th.
+        the answer is provably right iff  limitth + moved  <=  R
+
+    Because every star within R of the query point is in hand, and anything not
+    in hand is further than R from there, hence further than R - moved from
+    here. If our limit-th candidate beats that bound, nothing unseen can be
+    hiding inside our list. No margin guessed, no constant tuned.
+
+    It is also LONGER-LIVED than the broken rule in the common case, not
+    shorter: a pool with a star 40 m away stays valid for nearly the full
+    radius, because the bound scales with the answer rather than with the
+    query. The cases it correctly refuses are the sparse ones -- exactly the
+    ones where a fresh look changes the answer.
+  */
   var _cache = null;
 
-  function cacheValid(lat, lon, opts) {
-    if (!_cache) return false;
-    if (_cache.catalogue !== (opts.catalogue || 'gaia')) return false;
-    if (_cache.limit !== (opts.limit || 3)) return false;
-
-    var moved = earthOffset(_cache.lat, _cache.lon, lat, ((lon % 360) + 360) % 360).metres;
-    return moved < _cache.validForMetres;
-  }
-
-  function refreshOffsets(lat, lon) {
+  // Ranked from the CURRENT position, not the query position. This is the whole
+  // point of keeping the pool: a star that was fourth when fetched can be first
+  // once you have walked toward it, and it is already here to be promoted.
+  function rankFrom(lat, lon) {
     return _cache.entries.map(function (e) {
       var off = earthOffset(lat, lon, e.star.dec, e.star.ra);
       return {
@@ -627,6 +711,29 @@
         star: e.star, offset: off, distLy: e.distLy, links: e.links
       };
     }).sort(function (a, b) { return a.offset.metres - b.offset.metres; });
+  }
+
+  function cacheValid(lat, lon, opts) {
+    if (!_cache) return false;
+    if (_cache.catalogue !== (opts.catalogue || 'gaia')) return false;
+
+    var limit = opts.limit || 3;
+    // A pool answers any limit it can fill. A larger request than the pool held
+    // is a different question and needs asking again.
+    if (limit > _cache.entries.length) return false;
+    // A wider cone than the one that was searched cannot be answered from it.
+    if ((opts.radiusArcmin || 1) > _cache.radiusArcmin) return false;
+
+    var moved = earthOffset(_cache.lat, _cache.lon, lat, ((lon % 360) + 360) % 360).metres;
+    var ranked = rankFrom(lat, lon);
+    var limitth = ranked[limit - 1].offset.metres;
+
+    // Minus a metre so a stationary GPS jitter cannot straddle the boundary.
+    return limitth + moved <= _cache.radiusMetres - 1;
+  }
+
+  function refreshOffsets(lat, lon, limit) {
+    return rankFrom(lat, lon).slice(0, limit || 3);
   }
 
   function clearCache() { _cache = null; }
@@ -638,27 +745,34 @@
       return Promise.resolve({ status: l ? 'ok' : 'none', tier: 'local',
                                entries: l ? [l] : [] });
     }
+    var limit = opts.limit || 3;
     if (cacheValid(lat, lon, opts)) {
       return Promise.resolve({ status: 'ok', tier: 'remote', cached: true,
-                               entries: refreshOffsets(lat, lon) });
+                               entries: refreshOffsets(lat, lon, limit) });
     }
 
     var radiusArcmin = opts.radiusArcmin || 1;
     return lookupRemote(lat, lon, opts).then(function (entries) {
       if (entries === null) return { status: 'offline', tier: 'remote', entries: [] };
       if (entries.length) {
-        var furthest = entries.reduce(function (m, e) {
-          return Math.max(m, e.offset.metres);
-        }, 0);
-        var radiusMetres = radiusArcmin * 60 / 3600 * M_PER_DEG;
+        // -sort=_r asks VizieR for this order, but the separation shown to the
+        // reader is the one computed here (see the note in lookupRemote), so
+        // the ordering is made to agree with it rather than assumed to.
+        entries.sort(function (a, b) { return a.offset.metres - b.offset.metres; });
+        /*
+          The POOL is cached; the card is handed only its `limit`. Keeping the
+          two separate is what lets a star promote itself into the list later
+          without another request.
+        */
         _cache = {
           lat: lat, lon: ((lon % 360) + 360) % 360,
-          catalogue: opts.catalogue || 'gaia', limit: opts.limit || 3,
-          entries: entries,
-          // Provable validity, minus a metre so GPS jitter cannot straddle it.
-          validForMetres: Math.max(0, radiusMetres - furthest - 1)
+          catalogue: opts.catalogue || 'gaia',
+          radiusArcmin: radiusArcmin,
+          radiusMetres: radiusArcmin * 60 / 3600 * M_PER_DEG,
+          entries: entries
         };
-        return { status: 'ok', tier: 'remote', cached: false, entries: entries };
+        return { status: 'ok', tier: 'remote', cached: false,
+                 entries: entries.slice(0, limit) };
       }
       _cache = null;
       return { status: 'none', tier: 'remote', entries: [] };
