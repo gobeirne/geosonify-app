@@ -2230,6 +2230,36 @@
   // right thing at the right height before its lookup resolves.
   let _skyLastEntries = null;
 
+  /*
+    WHAT THE CARD ACTUALLY SAID, kept so the copy button has something to copy.
+
+    Every other card's clipboard content is its `code`, and the copy handler
+    ends in writeText(plainCodeWithChecksum). This card's code is the literal
+    '\u2026' placeholder from the skystar formatter -- the real content arrives
+    asynchronously and is written straight into the DOM -- so copy was faithfully
+    putting an ellipsis on the clipboard.
+
+    Recorded here rather than scraped back out of the DOM because there are two
+    DOMs (card and fullscreen) showing the same answer, and the fullscreen
+    long-press fires against whichever exists. One record, both paths.
+  */
+  let _skyLastCopy = null;
+
+  /*
+    Written for logging a visit, not for reading in place: coordinates first so
+    the entry is anchored, then one line per star with the walk and the
+    distance, then the picture's URL so the sky you saw can be recovered later.
+  */
+  function skyNeighboursCopyText() {
+    const c = _skyLastCopy;
+    if (!c || !c.lines || !c.lines.length) return null;
+    const head = 'Sky neighbours \u2014 ' +
+                 c.lat.toFixed(6) + ', ' + c.lon.toFixed(6);
+    return [head].concat(c.lines)
+                 .concat([c.caption, c.url])
+                 .filter(Boolean).join('\n');
+  }
+
   function renderSkyNeighbours(card, coord, redacted, opts) {
     opts = opts || {};
     const thumb = card.querySelector('.skyneighbours-thumb');
@@ -2429,6 +2459,54 @@
       svg.setAttribute('height', PX);
       svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 
+      /*
+        NAME THE MARKERS ONCE THERE IS ROOM TO NAME THEM.
+
+        At 120 px a Gaia designation is nineteen digits across a picture a
+        thumbnail wide -- it would cover the starfield it is labelling. At
+        fullscreen size the circles stop being dots and the label is the whole
+        point: you are looking at this to decide WHICH green ring to walk to,
+        and a ring with no name is not a destination.
+
+        So labels appear above a size threshold rather than on a fullscreen
+        flag. The threshold is a property of the picture, not of which code path
+        drew it, which means it stays right if the card is ever resized.
+
+        Two lines, because they answer different questions: the designation is
+        what you log, the offset is what you walk. The offset comes from the
+        entry rather than being recomputed, so the text beside the ring and the
+        text in the list below can never disagree.
+      */
+      const LABELS = PX >= 240;
+      const SVG_NS = 'http://www.w3.org/2000/svg';
+
+      /*
+        Halo via paint-order, not a duplicated shadow element. These sit on a
+        photograph of a starfield whose local brightness is unknown and varies
+        across the label itself -- a drop shadow is legible over the dark parts
+        and invisible over a bright star, which is precisely where a label is
+        most likely to land. A stroke drawn under the fill is legible over
+        anything.
+      */
+      function labelLine(x, y, text, anchorEnd, fill, size) {
+        const t = document.createElementNS(SVG_NS, 'text');
+        t.setAttribute('x', x); t.setAttribute('y', y);
+        t.setAttribute('text-anchor', anchorEnd ? 'end' : 'start');
+        t.setAttribute('font-size', size);
+        t.setAttribute('font-family', 'ui-monospace,SFMono-Regular,Menlo,monospace');
+        t.setAttribute('fill', fill);
+        t.setAttribute('stroke', '#000');
+        t.setAttribute('stroke-width', 3);
+        t.setAttribute('stroke-linejoin', 'round');
+        t.setAttribute('opacity', 0.95);
+        t.style.paintOrder = 'stroke fill';
+        // textContent, never innerHTML: these names arrive from a remote
+        // catalogue, and this is the one place in the card that could put them
+        // into the document unescaped.
+        t.textContent = text;
+        return t;
+      }
+
       N.thumbnailMarkers(anchor.dec, anchor.ra,
                          entries.concat([{ star: { ra: ra, dec: dec, name: 'you' }, __self: true }]),
                          { px: PX, fovArcsec: FOV }).forEach((m, i, all) => {
@@ -2438,13 +2516,37 @@
         if (i === 0) return;
         m.self = (i === all.length - 1);
         if (!m.self && m.inFrame === false) return;
-        const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        const c = document.createElementNS(SVG_NS, 'circle');
         c.setAttribute('cx', m.x); c.setAttribute('cy', m.y);
         c.setAttribute('r', m.self ? 3.5 : 2.5);
         c.setAttribute('fill', m.self ? '#f87171' : 'none');
         c.setAttribute('stroke', m.self ? '#fff' : '#4ade80');
         c.setAttribute('stroke-width', m.self ? 1 : 1.4);
         svg.appendChild(c);
+
+        if (!LABELS) return;
+
+        // Flip to the left of the ring in the right-hand third, so a long
+        // designation runs back into the picture instead of off the edge.
+        const flip = m.x > PX * 0.66;
+        const tx = flip ? m.x - 8 : m.x + 8;
+        // Nudge off the top and bottom edges so neither line is clipped.
+        const ty = Math.max(14, Math.min(PX - 6, m.y + 4));
+
+        if (m.self) {
+          svg.appendChild(labelLine(tx, ty, 'you are here', flip, '#fca5a5', 11));
+          return;
+        }
+
+        const entry = entries[i - 1];
+        const off = entry && entry.offset;
+        svg.appendChild(labelLine(tx, ty, m.label || '', flip, '#86efac', 11));
+        if (off) {
+          svg.appendChild(labelLine(
+            tx, Math.min(PX - 2, ty + 13),
+            N.formatDistance(off.metres) + ' ' + off.compass,
+            flip, '#e2e8f0', 10));
+        }
       });
       wrap.appendChild(svg);
 
@@ -2455,6 +2557,11 @@
       cap.style.cssText = 'font-size:10.5px;opacity:0.55;margin-top:4px;text-align:center;';
       cap.textContent = fovCaption(FOV, dec);
       thumb.appendChild(cap);
+
+      _skyLastCopy = {
+        lat: coord.lat, lon: coord.lon,
+        lines: lines, caption: cap.textContent, url: url
+      };
     }
 
     /*
@@ -2507,6 +2614,7 @@
           return;
         }
         _skyLastEntries = null;
+        _skyLastCopy = null;
         const why = (res && res.status === 'none') ? N.emptyNote(1) : N.offlineNote();
         list.innerHTML = '<div class="skyneighbours-note">' + escapeHtml(why) + '</div>';
         thumb.innerHTML = '';
@@ -3498,6 +3606,27 @@
           showToast('Hidden while privacy mode is active', 'error');
           return;
         }
+        /*
+          This card's `code` is the '\u2026' placeholder, so it must never reach
+          the writeText at the bottom of this handler. The list is the content.
+
+          Text and not an image: the thumbnail is a cross-origin <img> from
+          hips2fits, so drawing it to a canvas taints the canvas and toBlob
+          throws. The URL is included in the text instead, which is better for
+          logging anyway -- it is the picture, reproducible, rather than a copy
+          of it.
+        */
+        if (gridDef?.display === 'skyneighbours') {
+          if (passphrase || obfuscated) {
+            showToast('Hidden while privacy mode is active', 'error');
+            return;
+          }
+          const skyText = skyNeighboursCopyText();
+          if (!skyText) { showToast('Still looking up the stars\u2026', 'error'); return; }
+          await navigator.clipboard.writeText(skyText);
+          showToast('Copied!');
+          return;
+        }
         if (gridDef?.display === 'chroma' && typeof RGB111Lib !== 'undefined') {
           const canvas = RGB111Lib.generateCanvas(code, { size: 400, borderWidth: 0.5, notchSize: 0.5, variant: chromaVariantFor(gridKey) });
           const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
@@ -4360,6 +4489,19 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     const startPress = () => {
       copied = false;
       pressTimer = setTimeout(async () => {
+        // Same reasoning as the card's copy button: displayCode here is the
+        // '\u2026' placeholder, and both else-branches below end in writeText.
+        if (gridDef?.display === 'skyneighbours') {
+          const skyText = skyNeighboursCopyText();
+          if (skyText) {
+            await navigator.clipboard.writeText(skyText);
+            showToast('Copied!');
+            copied = true;
+          } else {
+            showToast('Still looking up the stars\u2026', 'error');
+          }
+          return;
+        }
         if (gridDef?.display === 'chroma' && fsCanvas && typeof RGB111Lib !== 'undefined') {
           try {
             const hiResCanvas = RGB111Lib.generateCanvas(displayCode, { 
