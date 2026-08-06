@@ -2460,25 +2460,46 @@
       svg.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
 
       /*
-        NAME THE MARKERS ONCE THERE IS ROOM TO NAME THEM.
+        CALLOUTS, NOT LABELS PINNED TO THE RINGS.
 
-        At 120 px a Gaia designation is nineteen digits across a picture a
-        thumbnail wide -- it would cover the starfield it is labelling. At
-        fullscreen size the circles stop being dots and the label is the whole
-        point: you are looking at this to decide WHICH green ring to walk to,
-        and a ring with no name is not a destination.
+        The first version put each name beside its own marker. That is fine
+        until the markers are close together, which is exactly the case that
+        matters: the field of view is computed as the furthest star times 3.6,
+        so the stars ALWAYS cluster in the middle third of the picture, and the
+        nearer they are to you the tighter they cluster. Three nineteen-digit
+        designations then land on top of each other and on the stars, and the
+        one picture that was supposed to answer "which ring do I walk to"
+        answers nothing.
 
-        So labels appear above a size threshold rather than on a fullscreen
-        flag. The threshold is a property of the picture, not of which code path
-        drew it, which means it stays right if the card is ever resized.
+        The fix is the one a field guide or an exploded diagram uses: put the
+        text where there is room, and draw a stem back to the thing it names.
+        Here the room is guaranteed -- the same 3.6x framing that crowds the
+        centre leaves the outer band empty sky, every time.
 
-        Two lines, because they answer different questions: the designation is
-        what you log, the offset is what you walk. The offset comes from the
-        entry rather than being recomputed, so the text beside the ring and the
-        text in the list below can never disagree.
+        Three parts to it:
+
+          1. MEASURE. Text is placed by its real width (getComputedTextLength),
+             not an estimate, so the right-hand column can be right-aligned to
+             the frame edge without guessing where a proper-font designation
+             ends.
+          2. STACK. Each callout wants to sit at its marker's height; when two
+             want the same band, they are pushed apart and the whole column
+             slides back inside the frame if it overflows.
+          3. STEM. A two-segment leader -- a diagonal from the marker to a
+             shoulder at the label's height, then a short horizontal run into
+             the text. The bend reads as deliberate; a single slanted line into
+             the middle of a word does not.
+
+        The designation is what you log and the offset is what you walk, so
+        both stay, on two lines. The offset is taken from the entry rather than
+        recomputed, so the stem's text and the list below can never disagree.
       */
       const LABELS = PX >= 240;
       const SVG_NS = 'http://www.w3.org/2000/svg';
+      const PAD = 6;
+      const FS = PX >= 420 ? 11 : 10;     // designation
+      const FS2 = FS - 1;                 // offset line
+      const LINE = FS + 2;
 
       /*
         Halo via paint-order, not a duplicated shadow element. These sit on a
@@ -2488,10 +2509,8 @@
         most likely to land. A stroke drawn under the fill is legible over
         anything.
       */
-      function labelLine(x, y, text, anchorEnd, fill, size) {
+      function labelLine(text, fill, size) {
         const t = document.createElementNS(SVG_NS, 'text');
-        t.setAttribute('x', x); t.setAttribute('y', y);
-        t.setAttribute('text-anchor', anchorEnd ? 'end' : 'start');
         t.setAttribute('font-size', size);
         t.setAttribute('font-family', 'ui-monospace,SFMono-Regular,Menlo,monospace');
         t.setAttribute('fill', fill);
@@ -2507,6 +2526,10 @@
         return t;
       }
 
+      // The SVG has to be in the document before any text can be measured.
+      wrap.appendChild(svg);
+
+      const marks = [];
       N.thumbnailMarkers(anchor.dec, anchor.ra,
                          entries.concat([{ star: { ra: ra, dec: dec, name: 'you' }, __self: true }]),
                          { px: PX, fovArcsec: FOV }).forEach((m, i, all) => {
@@ -2516,6 +2539,109 @@
         if (i === 0) return;
         m.self = (i === all.length - 1);
         if (!m.self && m.inFrame === false) return;
+        m.entry = m.self ? null : entries[i - 1];
+        marks.push(m);
+      });
+
+      if (LABELS && marks.length) {
+        const leaderLayer = document.createElementNS(SVG_NS, 'g');
+        const textLayer = document.createElementNS(SVG_NS, 'g');
+
+        // ---- 1. build and measure ----
+        marks.forEach(m => {
+          const g = document.createElementNS(SVG_NS, 'g');
+          const off = m.entry && m.entry.offset;
+          m.lines = [];
+          if (m.self) {
+            m.lines.push(labelLine('you are here', '#fca5a5', FS));
+          } else {
+            m.lines.push(labelLine(m.label || '', '#86efac', FS));
+            if (off) m.lines.push(labelLine(
+              N.formatDistance(off.metres) + ' ' + off.compass, '#e2e8f0', FS2));
+          }
+          m.lines.forEach(t => g.appendChild(t));
+          textLayer.appendChild(g);
+          m.g = g;
+        });
+        svg.appendChild(leaderLayer);
+        svg.appendChild(textLayer);
+
+        marks.forEach(m => {
+          m.w = m.lines.reduce((max, t) => {
+            // getComputedTextLength throws or returns 0 on a detached node;
+            // monospace makes the fallback estimate reliable enough to lay out.
+            let w = 0;
+            try { w = t.getComputedTextLength(); } catch (e) { w = 0; }
+            if (!w) w = (t.textContent || '').length * FS * 0.6;
+            return Math.max(max, w);
+          }, 0);
+          m.h = (m.lines.length - 1) * LINE;
+        });
+
+        /*
+          One column or two? Two long designations facing each other across a
+          narrow picture would collide in the middle no matter how carefully
+          each side is stacked, because the stacking is per-side. So if the
+          widest label cannot fit in half the frame, everything goes into a
+          single column on the emptier side.
+        */
+        const widest = marks.reduce((a, m) => Math.max(a, m.w), 0);
+        const twoSided = widest <= (PX - 3 * PAD) / 2;
+        const centroidX = marks.reduce((a, m) => a + m.x, 0) / marks.length;
+
+        marks.forEach(m => {
+          m.side = twoSided ? (m.x < PX / 2 ? 'left' : 'right')
+                            : (centroidX > PX / 2 ? 'left' : 'right');
+        });
+
+        // ---- 2. stack, per side ----
+        ['left', 'right'].forEach(side => {
+          const col = marks.filter(m => m.side === side)
+                           .sort((a, b) => a.y - b.y);
+          if (!col.length) return;
+          const top = PAD + FS, bottom = PX - PAD;
+          let cursor = top;
+          col.forEach(m => {
+            m.ly = Math.max(m.y, cursor);
+            cursor = m.ly + m.h + LINE * 0.7;
+          });
+          const overflow = (cursor - LINE * 0.7) - bottom;
+          if (overflow > 0) col.forEach(m => { m.ly = Math.max(top, m.ly - overflow); });
+        });
+
+        // ---- 3. place text, then draw the stem to it ----
+        marks.forEach(m => {
+          const lx = m.side === 'left' ? PAD : PX - PAD - m.w;
+          m.lines.forEach((t, k) => {
+            t.setAttribute('x', lx);
+            t.setAttribute('y', m.ly + k * LINE);
+          });
+
+          const attachX = m.side === 'left' ? lx + m.w + 5 : lx - 5;
+          const attachY = m.ly - FS * 0.35 + m.h / 2;
+          // A stem shorter than the marker itself is just clutter.
+          if (Math.hypot(attachX - m.x, attachY - m.y) < 14) return;
+          const shoulderX = attachX + (m.side === 'left' ? 14 : -14);
+          const pts = m.x + ',' + m.y + ' ' +
+                      shoulderX + ',' + attachY + ' ' +
+                      attachX + ',' + attachY;
+          [['#000', 3, 0.55], [m.self ? '#fca5a5' : '#4ade80', 1, 0.85]]
+            .forEach(([stroke, w, op]) => {
+              const p = document.createElementNS(SVG_NS, 'polyline');
+              p.setAttribute('points', pts);
+              p.setAttribute('fill', 'none');
+              p.setAttribute('stroke', stroke);
+              p.setAttribute('stroke-width', w);
+              p.setAttribute('stroke-linejoin', 'round');
+              p.setAttribute('stroke-linecap', 'round');
+              p.setAttribute('opacity', op);
+              leaderLayer.appendChild(p);
+            });
+        });
+      }
+
+      // Rings last, so a stem always tucks under the marker it points at.
+      marks.forEach(m => {
         const c = document.createElementNS(SVG_NS, 'circle');
         c.setAttribute('cx', m.x); c.setAttribute('cy', m.y);
         c.setAttribute('r', m.self ? 3.5 : 2.5);
@@ -2523,32 +2649,7 @@
         c.setAttribute('stroke', m.self ? '#fff' : '#4ade80');
         c.setAttribute('stroke-width', m.self ? 1 : 1.4);
         svg.appendChild(c);
-
-        if (!LABELS) return;
-
-        // Flip to the left of the ring in the right-hand third, so a long
-        // designation runs back into the picture instead of off the edge.
-        const flip = m.x > PX * 0.66;
-        const tx = flip ? m.x - 8 : m.x + 8;
-        // Nudge off the top and bottom edges so neither line is clipped.
-        const ty = Math.max(14, Math.min(PX - 6, m.y + 4));
-
-        if (m.self) {
-          svg.appendChild(labelLine(tx, ty, 'you are here', flip, '#fca5a5', 11));
-          return;
-        }
-
-        const entry = entries[i - 1];
-        const off = entry && entry.offset;
-        svg.appendChild(labelLine(tx, ty, m.label || '', flip, '#86efac', 11));
-        if (off) {
-          svg.appendChild(labelLine(
-            tx, Math.min(PX - 2, ty + 13),
-            N.formatDistance(off.metres) + ' ' + off.compass,
-            flip, '#e2e8f0', 10));
-        }
       });
-      wrap.appendChild(svg);
 
       const oldCap = thumb.querySelector('.skyneighbours-scale');
       if (oldCap) oldCap.remove();
