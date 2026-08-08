@@ -212,7 +212,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20260809e"></script>
-<script src="js/lib/geosonify-starpin-readout.js?v=20260809b"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
 <script>
 (function () {
   'use strict';
@@ -521,7 +521,16 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   $('recentre').addEventListener('click', function () { map.recentre(); });
 
   // ── the readout: one format at a time ────────────────────────────────────
-  var readout = GeosonifyStarpinReadout.mount($('readout'), { order: 14 });
+  // Geosonify declares its modules with top-level `const`, which never becomes
+  // a window property, so hand the references over explicitly from here —
+  // this script IS in the same scope and can see them by name.
+  var RO = GeosonifyStarpinReadout;
+  if (typeof HealpixGrids !== 'undefined') RO.register('HealpixGrids', HealpixGrids);
+  if (typeof GISGrids !== 'undefined') RO.register('GISGrids', GISGrids);
+  if (typeof CARD_GRIDS !== 'undefined') RO.register('CARD_GRIDS', CARD_GRIDS);
+  if (typeof encodeCardCoordinate !== 'undefined')
+    RO.register('encodeCardCoordinate', encodeCardCoordinate);
+  var readout = RO.mount($('readout'), { order: 14 });
 
   function readAt(lat, lon, label) {
     readout.set(lat, lon);
