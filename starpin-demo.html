@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Starpin — field demo</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <!--
   starpin-demo.html — open it directly, no build, no server needed.
 
@@ -96,10 +97,12 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   <h2>the lattice</h2>
   <div id="map"></div>
   <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
-  <p class="hint">No basemap, and none is needed — the grid is the terrain. Coarse
-     orders are drawn boldest because those are the rare ones; hairlines are the
-     commonplace. Bagged cornerstones are green, sized by how rare they are. The
-     blue halo is your actual fix accuracy, drawn to scale.</p>
+  <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
+     hairlines are the commonplace. The grid switches to yellow on aerial, where
+     purple would disappear. Bagged cornerstones are green dots sized by rarity;
+     the crosshair is the one you're heading for. The halo is your real fix
+     accuracy, drawn to scale. A straight line to a point is not a route —
+     use the map to find a way there.</p>
 </section>
 
 <section>
@@ -155,12 +158,13 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
      phone at any time — the downloaded file is the real backup.</p>
 </section>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260809"></script>
 <script>
 (function () {
   'use strict';
