@@ -78,11 +78,22 @@ var GeosonifyStarpinClock = (function () {
     return pad(t / 3600) + ':' + pad((t / 60) % 60) + ':' + pad(t % 60);
   }
 
+  // A culmination nearly a sidereal day away is usually tomorrow. Showing a
+  // bare time invites someone to turn up 24 hours early.
+  function whenText(ms, nowMs) {
+    var t = localTime(ms), a = new Date(ms), b = new Date(nowMs);
+    var days = Math.round((new Date(a.getFullYear(), a.getMonth(), a.getDate()) -
+                           new Date(b.getFullYear(), b.getMonth(), b.getDate())) / 86400000);
+    if (days === 0) return t;
+    if (days === 1) return 'tomorrow ' + t;
+    return a.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ' ' + t;
+  }
+
   function localTime(ms) {
     try {
       return new Date(ms).toLocaleTimeString(undefined,
-        { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    } catch (e) { return new Date(ms).toISOString().substr(11, 8) + 'Z'; }
+        { hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return new Date(ms).toISOString().substr(11, 5) + 'Z'; }
   }
 
   function mount(container, opts) {
@@ -163,10 +174,15 @@ var GeosonifyStarpinClock = (function () {
       var phase = S.phaseDeg(now);
 
       count.textContent = hms(next - now);
+      // The needle sits at the current phase; the teal arc is what is LEFT to
+      // sweep before it reaches the mark, so it shrinks as culmination nears.
+      // (An arc that grows would read as "almost there" at the wrong moment.)
+      var remaining = (360 - phase) % 360;
       needle.setAttribute('transform', 'rotate(' + phase.toFixed(3) + ' 50 50)');
-      arc.setAttribute('stroke-dashoffset', String(C * (1 - phase / 360)));
+      arc.setAttribute('stroke-dashoffset', String(C * (1 - remaining / 360)));
+      arc.setAttribute('transform', 'rotate(' + phase.toFixed(3) + ' 50 50)');
 
-      rNext.value.textContent = localTime(next);
+      rNext.value.textContent = whenText(next, now);
       rPhase.value.textContent = phase.toFixed(3) + '\u00B0';
 
       if (lat != null && lonEast != null) {
