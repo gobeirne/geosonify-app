@@ -59,6 +59,19 @@ dl{margin:.75rem 0 0}
 .pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
 .hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
 .bad{color:var(--kereru-pink)}
+.tune{display:flex;align-items:center;gap:.6rem;font-size:.72rem;
+  color:var(--ios-secondary);margin-top:.6rem}
+.tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ios-text);min-width:2.2rem}
+.tune input[type=range]{flex:1;margin:0;accent-color:var(--kereru-teal)}
+#info{margin-top:.6rem;padding:.75rem .85rem;border-radius:10px;
+  border:1px solid var(--ios-separator);background:transparent}
+#info h3{margin:0 0 .35rem;font-size:.9rem;font-family:'SF Mono',ui-monospace,monospace;
+  word-break:break-all}
+#info .meta{font-size:.75rem;color:var(--ios-secondary);line-height:1.5}
+#info img{width:100%;max-width:190px;border-radius:8px;margin:.5rem 0;display:block;
+  background:#111}
+#info a{color:var(--kereru-teal)}
+#info .close{font-size:.7rem;margin-top:.5rem;padding:.35rem .7rem;width:auto}
 ul{list-style:none;padding:0;margin:.5rem 0 .75rem;max-height:11rem;overflow:auto}
 li{font-size:.75rem;font-family:'SF Mono',ui-monospace,monospace;padding:.35rem .1rem;
   border-bottom:1px solid var(--ios-separator);display:flex;justify-content:space-between;gap:.5rem}
@@ -96,13 +109,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <section>
   <h2>the lattice</h2>
   <div id="map"></div>
+  <div id="info" hidden></div>
+  <label class="tune" for="wt">grid line weight <b id="wt-val">2.5</b>
+    <input id="wt" type="range" min="0.5" max="6" step="0.1" value="2.5"></label>
   <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
   <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
      hairlines are the commonplace. The grid switches to yellow on aerial, where
      purple would disappear. Bagged cornerstones are green dots sized by rarity;
      the crosshair is the one you're heading for. The halo is your real fix
      accuracy, drawn to scale. A straight line to a point is not a route —
-     use the map to find a way there.</p>
+     use the map to find a way there. Amber dots are catalogue stars whose
+     starpins fall in view; move the map and it looks up what is near the
+     centre. Tap any dot for its details.</p>
 </section>
 
 <section>
@@ -160,11 +178,13 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260808"></script>
+<script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260809"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260809b"></script>
 <script>
 (function () {
   'use strict';
@@ -263,7 +283,120 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   var L = GeosonifyStarpinLog, log = L.open();
   var F = GeosonifyStarpinFeedback;
   var prox = F.proximity($('cs-prox'));
-  var map = GeosonifyStarpinMap.mount($('map'));
+  var SN = (typeof GeosonifySkyNeighbour !== 'undefined') ? GeosonifySkyNeighbour : null;
+
+  var map = GeosonifyStarpinMap.mount($('map'), {
+    onSelect: showInfo,
+    onMove: function (lat, lon, spanM) { loadStars(lat, lon, spanM); }
+  });
+
+  $('wt').addEventListener('input', function () {
+    $('wt-val').textContent = map.setWeight(this.value).toFixed(1);
+  });
+
+  // ── the info box. Eventually this becomes the point's public log. ─────────
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls; if (text != null) n.textContent = text;
+    return n;
+  }
+  function showInfo(sel) {
+    var box = $('info'); box.textContent = '';
+    if (!sel) { box.hidden = true; return; }
+    box.hidden = false;
+
+    if (sel.kind === 'cornerstone') {
+      var d = sel.data;
+      box.appendChild(el('h3', null, d.name));
+      var visits = log.current().filter(function (r) {
+        return r.target && r.target.cornerstone === d.name; });
+      var m = el('div', 'meta');
+      m.appendChild(document.createTextNode(
+        'Intrinsic order ' + d.order + ' \u00B7 ' +
+        F.tierOf(d.order).label + ' \u00B7 one every ' +
+        (F.spacingM(d.order) < 1000 ? Math.round(F.spacingM(d.order)) + ' m'
+                                    : (F.spacingM(d.order) / 1000).toFixed(1) + ' km')));
+      m.appendChild(el('br'));
+      m.appendChild(document.createTextNode(d.lat.toFixed(7) + ', ' + d.lon.toFixed(7)));
+      visits.forEach(function (r) {
+        m.appendChild(el('br'));
+        var v = '?';
+        try { v = S.assessRecord(r).visit.verdict; } catch (e) {}
+        m.appendChild(document.createTextNode(
+          'visited ' + new Date(r.event.time_ms).toLocaleString() + ' \u2014 ' + v));
+      });
+      if (!visits.length) m.appendChild(el('div', null, 'not yet logged'));
+      box.appendChild(m);
+      box.appendChild(el('div', 'meta',
+        'A public log for this point will live here. Nothing is published today.'));
+
+    } else if (sel.kind === 'star') {
+      var st = sel.data;
+      box.appendChild(el('h3', null, st.name || 'unnamed source'));
+      if (SN && SN.thumbnailUrl) {
+        var img = document.createElement('img');
+        img.alt = 'sky around ' + (st.name || 'this source');
+        img.loading = 'lazy';
+        try { img.src = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: 40 }); } catch (e) {}
+        box.appendChild(img);
+      }
+      var sm = el('div', 'meta');
+      function row(k, v) { if (v == null || v === '') return;
+        sm.appendChild(document.createTextNode(k + ': ' + v)); sm.appendChild(el('br')); }
+      row('RA / Dec', st.ra.toFixed(6) + '\u00B0, ' + st.dec.toFixed(6) + '\u00B0');
+      row('starpin', st.lat.toFixed(7) + ', ' + st.lon.toFixed(7));
+      row('magnitude', st.mag == null ? null : st.mag.toFixed(2));
+      row('distance', st.distLy == null ? 'unknown parallax'
+                                        : st.distLy.toLocaleString() + ' light years');
+      if (fix) {
+        var dm = S.haversineM(fix.lat, fix.lon, st.lat, st.lon);
+        var bb = bearing(fix.lat, fix.lon, st.lat, st.lon);
+        row('from you', walk(dm, bb) + '  (' + (dm / S.M_PER_ARCSEC).toFixed(2) + '\u2033)');
+        row('visit', S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict);
+      }
+      box.appendChild(sm);
+      if (st.links && st.links.simbad) {
+        var a = document.createElement('a');
+        a.href = st.links.simbad; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'SIMBAD'; box.appendChild(a);
+      }
+    }
+    var c = el('button', 'close', 'close');
+    c.type = 'button';
+    c.addEventListener('click', function () { box.hidden = true; });
+    box.appendChild(c);
+  }
+
+  // ── stars near the map centre ─────────────────────────────────────────────
+  // The map centre's (lat, lon) IS a (dec, ra), so "what is near the pointer"
+  // is a cone search at the centre. And because 1 arcsec is 30.92 m on the
+  // ground at every latitude, the cone radius is just the view in metres
+  // divided by 30.92 — the map scale and the sky scale are the same number.
+  var starTimer = null, starKey = '';
+  function loadStars(lat, lon, spanM) {
+    if (!SN || !SN.lookupRemote) return;
+    if (spanM > 8000) { map.setStars([]); return; }        // too wide to be useful
+    var k = lat.toFixed(4) + ',' + lon.toFixed(4) + ',' + Math.round(spanM / 200);
+    if (k === starKey) return;
+    starKey = k;
+    clearTimeout(starTimer);
+    starTimer = setTimeout(function () {
+      // lookupRemote takes ARCMINUTES (checked against the module, not assumed).
+      // 1 arcsec is 30.92 m of ground at every latitude, so the cone that covers
+      // the view is just the view in metres / 30.92 / 60.
+      var radiusArcmin = Math.min(12, Math.max(0.3, spanM * 0.75 / S.M_PER_ARCSEC / 60));
+      Promise.resolve(SN.lookupRemote(lat, lon, { radiusArcmin: radiusArcmin, limit: 40 }))
+        .then(function (list) {
+          if (!list || !list.length) { map.setStars([]); return; }
+          map.setStars(list.map(function (n) {
+            var s2 = n.star, a = S.starpinAddress(String(s2.ra), String(s2.dec));
+            return { name: s2.name, ra: s2.ra, dec: s2.dec, mag: s2.mag,
+                     distLy: n.distLy, links: n.links, lat: a.lat, lon: a.lon };
+          }));
+        })
+        .catch(function () { map.setStars([]); });
+    }, 450);
+  }
 
   $('haptic-note').textContent = F.hapticsAvailable()
     ? 'Ticks speed up as you close in, and fuse into a steady tone when you arrive. Your device also buzzes.'
