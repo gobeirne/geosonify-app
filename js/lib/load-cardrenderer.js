@@ -80,7 +80,7 @@ function loadCardRenderer(opts = {}) {
   // Publish grid-data arrays onto global so refreshGridReferences()'s window[name]
   // late-binding finds them (top-level consts aren't auto-attached to the global).
   const arrayNames = ['alphanumericArray','emojiArray','emojiNamesArray','musicalArray','hexByteArray',
-    'base64Array','NATOArray','byteWordsArray','byteWordsMinimalArray','byteEmojiArray',
+    'base64Array','NATOArray',
     'BIP39EnglishArray','BIP39SpanishArray','BIP39FrenchArray','BIP39ItalianArray','BIP39PortugueseArray',
     'BIP39CzechArray','BIP39JapaneseArray','BIP39KoreanArray','BIP39ChineseSimplifiedArray',
     'BIP39ChineseTraditionalArray','DE2048GermanArray'];

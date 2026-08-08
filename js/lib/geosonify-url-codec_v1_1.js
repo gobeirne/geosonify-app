@@ -53,9 +53,6 @@
     'c': { grid: 'chromacoord', obfuscated: false },
     'm': { grid: 'music', obfuscated: false },
     'n': { grid: 'nato', obfuscated: false },
-    'b': { grid: 'bytewords', obfuscated: false },
-    'w': { grid: 'bytewordsmin', obfuscated: false },
-    'y': { grid: 'byteemoji', obfuscated: false },
     '6': { grid: 'base64', obfuscated: false },
     
     // Obfuscated
@@ -65,9 +62,6 @@
     'oc': { grid: 'chromacoord', obfuscated: true },
     'om': { grid: 'music', obfuscated: true },
     'on': { grid: 'nato', obfuscated: true },
-    'ob': { grid: 'bytewords', obfuscated: true },
-    'ow': { grid: 'bytewordsmin', obfuscated: true },
-    'oy': { grid: 'byteemoji', obfuscated: true },
     'o6': { grid: 'base64', obfuscated: true },
     
     // Raw coordinates (no grid encoding)

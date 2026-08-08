@@ -110,13 +110,13 @@ var GeosonifyStarpinReadout = (function () {
   var SKIP_DISPLAY = { qrhex: 1, qrbin: 1, qrurl: 1, datamatrix: 1,
                        chess: 1, chessboard: 1, staff: 1, swatch: 1 };
 
-  // Retired vocabularies. They remain in CARD_GRIDS and in the URL codec
-  // BECAUSE OLD CODES MUST STILL DECODE FOREVER — deleting a decode path does
-  // not error, it silently resolves old codes to plausible wrong places. But
-  // they must never be offered again, and a new surface that reads CARD_GRIDS
-  // dynamically would otherwise resurrect them the moment it is written.
-  // Keep decoding. Never encode. Never list.
-  var RETIRED = { bytewords: 1, bytewordsmin: 1, byteemoji: 1 };
+  // Vocabularies withdrawn from the project. The list is empty because the
+  // current withdrawals were deleted outright rather than deprecated: they had
+  // never been public, so no code existed in the wild for a decode path to
+  // protect, and the usual keep-old-decoders-forever rule had nothing to
+  // defend. The hook stays because a surface that reads CARD_GRIDS dynamically
+  // will otherwise resurrect anything left half-retired.
+  var RETIRED = {};
 
   function cardGrids() {
     var G = mod('CARD_GRIDS');

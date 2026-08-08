@@ -1,6 +1,5 @@
 /*
   geosonify-geo-core.v11.8o.js
-  - ByteWordsMin sentence mnemonic: generate ChatGPT prompts and parse sentences
   - Shuffler details hidden by default (left-aligned Show/Hide)
   - Hard iteration caps per grid (custom = unlimited)
   - Iterations clamp only after real clip (per grid+pass) + snap UI back
@@ -22,107 +21,6 @@
   function selectEl(){ return $('#gridSelect'); }
   function customEl(){ return $('#customText'); }
 
-  // ---------------- ByteWordsMin sentence helpers ----------------
-  function isByteWordsMin(){
-    const se = selectEl();
-    return se && se.value === 'bytewordsmin';
-  }
-
-  function looksLikeSentence(text){
-    // Has spaces AND has at least one component that's 2+ chars
-    if (!text || !text.includes(' ')) return false;
-    const words = text.trim().split(/\s+/);
-    return words.some(w => w.length >= 2);
-  }
-
-  function sentenceToByteWordsMin(sentence){
-    // Extract first letter of each word, apply alternating caps
-    const words = sentence.trim().split(/\s+/).filter(Boolean);
-    let result = '';
-    for (let i = 0; i < words.length; i++){
-      const letter = words[i][0];
-      // Odd positions (1st, 3rd, 5th...) = uppercase, even = lowercase
-      result += (i % 2 === 0) ? letter.toUpperCase() : letter.toLowerCase();
-    }
-    return result;
-  }
-
-  function normalizeByteWordsMinCode(code){
-    // Convert all-upper or all-lower to alternating caps
-    const clean = code.replace(/\s+/g, '');
-    let result = '';
-    for (let i = 0; i < clean.length; i++){
-      const char = clean[i];
-      result += (i % 2 === 0) ? char.toUpperCase() : char.toLowerCase();
-    }
-    return result;
-  }
-
-  function generateChatGPTLink(code){
-    const prompt = `Write a simple, natural-sounding English sentence where each word begins with the corresponding letter in this string (one word per letter, in order): ${code}.`;
-    return 'https://chat.openai.com/?q=' + encodeURIComponent(prompt);
-  }
-
-  function addSentenceButtons(){
-    if (!isByteWordsMin()) return;
-
-    const rawBox = $('#rawBox');
-    const obfBox = $('#obfBox');
-    const copyRawBtn = $('#copyRawBtn');
-    const copyObfBtn = $('#copyObfBtn');
-
-    if (rawBox && copyRawBtn && !$('#genSentenceRawBtn')){
-      const btn = document.createElement('button');
-      btn.id = 'genSentenceRawBtn';
-      btn.textContent = 'Generate Sentence';
-      btn.style.marginLeft = '8px';
-      btn.addEventListener('click', ()=>{
-        const code = rawBox.value.trim();
-        if (!code) return;
-        const normalized = normalizeByteWordsMinCode(code);
-        window.open(generateChatGPTLink(normalized), '_blank');
-      });
-      copyRawBtn.parentNode.insertBefore(btn, copyRawBtn.nextSibling);
-    }
-
-    if (obfBox && copyObfBtn && !$('#genSentenceObfBtn')){
-      const btn = document.createElement('button');
-      btn.id = 'genSentenceObfBtn';
-      btn.textContent = 'Generate Sentence';
-      btn.style.marginLeft = '8px';
-      btn.addEventListener('click', ()=>{
-        const code = obfBox.value.trim();
-        if (!code) return;
-        const normalized = normalizeByteWordsMinCode(code);
-        window.open(generateChatGPTLink(normalized), '_blank');
-      });
-      copyObfBtn.parentNode.insertBefore(btn, copyObfBtn.nextSibling);
-    }
-  }
-
-  function removeSentenceButtons(){
-    const rawBtn = $('#genSentenceRawBtn');
-    const obfBtn = $('#genSentenceObfBtn');
-    if (rawBtn) rawBtn.remove();
-    if (obfBtn) obfBtn.remove();
-  }
-
-  function preprocessByteWordsMinInput(text){
-    if (!isByteWordsMin() || !text) return text;
-    
-    // If it looks like a sentence, extract letters
-    if (looksLikeSentence(text)){
-      return sentenceToByteWordsMin(text);
-    }
-    
-    // If it's a code without spaces, normalize caps
-    if (!text.includes(' ')){
-      return normalizeByteWordsMinCode(text);
-    }
-    
-    return text;
-  }
-
   // ---------------- Defaults & caps ----------------
   const defaultIterationsByGrid = {
     "alphanumeric": 9,  // 6x6
@@ -130,9 +28,6 @@
     "music": 8,         // 7x7
     "base64": 8,        // 8x8
     "hexbyte": 6,       // 16x16
-    "bytewords": 6,     // 16x16
-    "bytewordsmin": 6,  // 16x16
-    "byteemoji": 6,     // 16x16
     "emoji": 5,         // 28x28
     "custom": 9
   };
@@ -144,9 +39,6 @@
     "music": 20,          // 7x7
     "base64": 19,         // 8x8
     "hexbyte": 14,        // 16x16
-    "bytewords": 14,      // 16x16
-    "bytewordsmin": 14,   // 16x16
-    "byteemoji": 14,      // 16x16
     "emoji": 12,          // 28x28
     "custom": Infinity    // unlimited
   };
@@ -349,13 +241,6 @@
           newHiddenInput.value = defaultIter;
         }
       }
-    }
-    
-    // Update sentence buttons
-    if (isByteWordsMin()){
-      addSentenceButtons();
-    } else {
-      removeSentenceButtons();
     }
   }
 
@@ -708,7 +593,6 @@
     
     let rawText = ($('#rawBox')||{}).value||'';
     const originalRawText = rawText;
-    rawText = preprocessByteWordsMinInput(rawText);
     
     // Write back the preprocessed text if it changed
     if (rawText !== originalRawText) {
@@ -748,7 +632,6 @@
     
     let obfText = ($('#obfBox')||{}).value||'';
     const originalObfText = obfText;
-    obfText = preprocessByteWordsMinInput(obfText);
     
     // Write back the preprocessed text if it changed
     if (obfText !== originalObfText) {

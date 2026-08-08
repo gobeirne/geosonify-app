@@ -49,7 +49,7 @@ const bip39Keys = adjustableKeys.filter(k => CARD_GRIDS[k].prefixLength !== unde
 
 // A card is TESTABLE here only if its resolution math has data to run against:
 // a bound vocab grid, or a HEALPix/GIS ladder. Cards whose grid array isn't loaded
-// in this environment (e.g. byteWords* — data lives in a file not in the snapshot)
+// in this environment (data may live in a file not in the snapshot)
 // can't have their math exercised; skip them and report, rather than fail.
 function resolvable(gridKey) {
   let gd = CARD_GRIDS[gridKey];
