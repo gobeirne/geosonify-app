@@ -1,0 +1,215 @@
+/*
+  geosonify-starpin-readout.js v0.1 — one address at a time
+
+  Says where a point is, in one chosen notation. Deliberately ONE AT A TIME:
+  a wall of eight encodings of the same place teaches nobody anything, while a
+  single line you can read aloud is a fact you can carry.
+
+  Formats come from the modules that own them. Nothing here re-implements an
+  encoder, because the grid formats are FROZEN — a plausible-looking
+  reimplementation would not error, it would quietly produce codes that decode
+  to the wrong place. If a module is absent the format says so and offers the
+  ones that are available.
+
+      var r = GeosonifyStarpinReadout.mount(el, { order: 14 });
+      r.set(lat, lon);            // repaint in the current format
+      r.format();                 // current key
+*/
+'use strict';
+
+var GeosonifyStarpinReadout = (function () {
+
+  function mod(name) {
+    try { return (typeof window !== 'undefined' && window[name]) ? window[name] : null; }
+    catch (e) { return null; }
+  }
+
+  // lead: signs go in FRONT for declination (+43 33 10.6), and hemispheres go
+  // BEHIND for latitude (43 33 10.6 S). Getting this backwards is the classic
+  // way to make an astronomer distrust an app on sight.
+  function dms(v, posChar, negChar, lead) {
+    var sign = v < 0 ? negChar : posChar, a = Math.abs(v);
+    var d = Math.floor(a), m = Math.floor((a - d) * 60), s = ((a - d) * 60 - m) * 60;
+    var body = d + '\u00B0 ' + (m < 10 ? '0' : '') + m + '\u2032 ' +
+               (s < 10 ? '0' : '') + s.toFixed(1) + '\u2033';
+    return lead ? sign + body : body + ' ' + sign;
+  }
+  function hms(raDeg) {
+    var h = raDeg / 15, hh = Math.floor(h), m = (h - hh) * 60,
+        mm = Math.floor(m), ss = (m - mm) * 60;
+    return hh + 'h ' + (mm < 10 ? '0' : '') + mm + 'm ' +
+           (ss < 10 ? '0' : '') + ss.toFixed(2) + 's';
+  }
+
+  // key -> { label, fn(lat, lon, order) -> string, note }
+  var FORMATS = {
+    latlon: { label: 'Latitude / Longitude', group: 'geographic',
+      fn: function (lat, lon) { return lat.toFixed(7) + ', ' + lon.toFixed(7); } },
+
+    dms: { label: 'Lat / Lon in degrees, minutes, seconds', group: 'geographic',
+      fn: function (lat, lon) { return dms(lat, 'N', 'S') + '   ' + dms(lon, 'E', 'W'); } },
+
+    radec: { label: 'RA / Dec (the same numbers, read as sky)', group: 'sky',
+      fn: function (lat, lon) {
+        var ra = lon < 0 ? lon + 360 : lon;
+        return 'RA ' + hms(ra) + '   Dec ' + dms(lat, '+', '\u2212', true);
+      } },
+
+    hpquad: { label: 'HEALPix \u00B7 quaternary', group: 'healpix', needs: 'HealpixGrids',
+      fn: function (lat, lon, order) {
+        return mod('HealpixGrids').encode('hpquad', lat, lon, order);
+      } },
+    hphex: { label: 'HEALPix \u00B7 hex', group: 'healpix', needs: 'HealpixGrids',
+      fn: function (lat, lon, order) {
+        return mod('HealpixGrids').encode('hphex', lat, lon, order);
+      } },
+    hp64: { label: 'HEALPix \u00B7 base64', group: 'healpix', needs: 'HealpixGrids',
+      fn: function (lat, lon, order) {
+        return mod('HealpixGrids').encode('hp64', lat, lon, order);
+      } },
+
+    localgrid: { label: 'Local Grid', group: 'geographic', needs: 'GISGrids',
+      fn: function (lat, lon, order) {
+        // Local Grid iterations are metres-of-resolution steps, not HEALPix
+        // orders, so map across rather than passing the order straight through.
+        var it = Math.max(1, Math.min(8, Math.round((order - 6) / 2)));
+        return mod('GISGrids').encode('localgrid', lat, lon, it);
+      } },
+
+  };
+
+  // ── Geosonify's own vocabularies ─────────────────────────────────────────
+  //
+  // card-renderer.js already exposes window.encodeCardCoordinate and
+  // window.CARD_GRIDS, so nothing here reimplements an encoder. That matters:
+  // these are FROZEN formats, and a plausible reimplementation would not
+  // error, it would quietly emit codes that decode to the wrong place.
+  //
+  // The list is read from CARD_GRIDS at mount time rather than hard-coded, so
+  // every vocabulary Geosonify gains — new BIP39 languages, new grids — turns
+  // up here for free. Visual and barcode cards are skipped: they render to a
+  // picture, not to a line you can read out.
+  var SKIP_DISPLAY = { qrhex: 1, qrbin: 1, qrurl: 1, datamatrix: 1,
+                       chess: 1, chessboard: 1, staff: 1, swatch: 1 };
+
+  function cardGrids() {
+    var G = mod('CARD_GRIDS');
+    if (!G || typeof mod('encodeCardCoordinate') !== 'function') return {};
+    var out = {};
+    Object.keys(G).forEach(function (k) {
+      var d = G[k];
+      if (!d || (d.display && SKIP_DISPLAY[d.display])) return;
+      out['card:' + k] = {
+        label: 'Geosonify \u00B7 ' + (d.name || k),
+        group: 'geosonify', needs: 'encodeCardCoordinate', gridKey: k,
+        fn: function (lat, lon, order) {
+          var max = d.maxIterations || 21;
+          var it = d.fixedIterations || Math.max(1, Math.min(max, order - 3));
+          return mod('encodeCardCoordinate')(k, lat, lon, it);
+        }
+      };
+    });
+    return out;
+  }
+  var CARD_FORMATS_LOADED = false;
+  function ensureCardFormats() {
+    if (CARD_FORMATS_LOADED) return;
+    var extra = cardGrids();
+    if (!Object.keys(extra).length) return;
+    Object.keys(extra).forEach(function (k) { FORMATS[k] = extra[k]; });
+    CARD_FORMATS_LOADED = true;
+  }
+
+  function available(key) {
+    var f = FORMATS[key];
+    if (!f) return false;
+    if (!f.needs) return true;
+    var m = mod(f.needs);
+    if (!m) return false;
+    if (f.needs === 'encodeCardCoordinate') return typeof m === 'function';
+    return true;
+  }
+
+  var CSS_ID = 'starpin-readout-css';
+  var CSS = [
+    '.spr{display:flex;flex-direction:column;gap:.4rem}',
+    '.spr-top{display:flex;gap:.5rem;align-items:center}',
+    '.spr select{font:inherit;font-size:.78rem;flex:1;padding:.4rem .5rem;border-radius:8px;',
+    '  border:1px solid var(--ios-separator,#C6C6C8);background:transparent;color:inherit}',
+    '.spr-val{font-family:"SF Mono",ui-monospace,monospace;font-size:.95rem;',
+    '  word-break:break-all;line-height:1.4;padding:.5rem .6rem;border-radius:8px;',
+    '  background:color-mix(in srgb,currentColor 6%,transparent);min-height:1.2rem}',
+    '.spr-sub{font-size:.68rem;opacity:.65;font-family:"SF Mono",ui-monospace,monospace}',
+    '.spr-copy{font-size:.7rem;padding:.35rem .7rem;width:auto;flex:0 0 auto}'
+  ].join('');
+
+  function mount(container, opts) {
+    opts = opts || {};
+    var doc = container.ownerDocument || document;
+    if (!doc.getElementById(CSS_ID)) {
+      var st = doc.createElement('style'); st.id = CSS_ID; st.textContent = CSS;
+      doc.head.appendChild(st);
+    }
+
+    ensureCardFormats();
+    var order = opts.order || 14, lat = null, lon = null;
+    var root = doc.createElement('div'); root.className = 'spr';
+    var top = doc.createElement('div'); top.className = 'spr-top';
+    var sel = doc.createElement('select');
+    sel.setAttribute('aria-label', 'address format');
+
+    Object.keys(FORMATS).forEach(function (k) {
+      var o = doc.createElement('option');
+      o.value = k;
+      o.textContent = FORMATS[k].label + (available(k) ? '' : '  (module not loaded)');
+      o.disabled = !available(k);
+      sel.appendChild(o);
+    });
+    sel.value = available(opts.format) ? opts.format : 'latlon';
+
+    var copy = doc.createElement('button');
+    copy.type = 'button'; copy.className = 'spr-copy'; copy.textContent = 'copy';
+    top.appendChild(sel); top.appendChild(copy);
+
+    var val = doc.createElement('div'); val.className = 'spr-val';
+    var sub = doc.createElement('div'); sub.className = 'spr-sub';
+    root.appendChild(top); root.appendChild(val); root.appendChild(sub);
+    container.appendChild(root);
+
+    function paint() {
+      if (lat == null) { val.textContent = '\u2014'; sub.textContent = ''; return; }
+      var f = FORMATS[sel.value];
+      try {
+        val.textContent = f.fn(lat, lon, order) || '\u2014';
+      } catch (e) {
+        val.textContent = '\u2014';
+        sub.textContent = f.needs + ' is not loaded, so this format is unavailable. ' +
+                          'It is a frozen format and will not be approximated.';
+        return;
+      }
+      sub.textContent = f.group === 'healpix' ? 'order ' + order
+                      : f.group === 'geosonify' ? 'Geosonify vocabulary \u00B7 order ' + order
+                      : f.group;
+    }
+
+    sel.addEventListener('change', paint);
+    copy.addEventListener('click', function () {
+      try { doc.defaultView.navigator.clipboard.writeText(val.textContent); } catch (e) {}
+      copy.textContent = 'copied'; setTimeout(function () { copy.textContent = 'copy'; }, 1200);
+    });
+
+    return {
+      el: root,
+      set: function (la, lo) { lat = la; lon = lo; paint(); },
+      setOrder: function (o) { order = o; paint(); },
+      format: function () { return sel.value; },
+      setFormat: function (k) { if (available(k)) { sel.value = k; paint(); } },
+      destroy: function () { if (root.parentNode) root.parentNode.removeChild(root); }
+    };
+  }
+
+  return { VERSION: '0.2', mount: mount, FORMATS: FORMATS, available: available,
+           ensureCardFormats: ensureCardFormats };
+})();
+
+if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinReadout;

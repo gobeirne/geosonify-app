@@ -140,6 +140,7 @@ var GeosonifyStarpinLog = (function () {
     opts = opts || {};
     var key = opts.storeKey || STORE;
     var mem = {};                                       // record_id -> record
+    var gone = {};                                      // record_id -> deleted_ms
     var storage = null;
     try { storage = (opts.storage !== undefined) ? opts.storage
                   : (typeof localStorage !== 'undefined' ? localStorage : null); } catch (e) {}
@@ -147,7 +148,11 @@ var GeosonifyStarpinLog = (function () {
     if (storage) {
       try {
         var raw = storage.getItem(key);
-        if (raw) JSON.parse(raw).records.forEach(function (r) { mem[r.record_id] = r; });
+        if (raw) {
+          var parsed = JSON.parse(raw);
+          (parsed.records || []).forEach(function (r) { mem[r.record_id] = r; });
+          gone = parsed.deleted || {};
+        }
       } catch (e) { /* corrupt or absent; start empty rather than throw away the app */ }
     }
     // Browser storage is evictable. Ask to keep it, but never rely on the answer.
@@ -179,7 +184,12 @@ var GeosonifyStarpinLog = (function () {
       return JSON.stringify({
         schema: 'starpin.export/1',
         exported_ms: Date.now(),
-        records: all()
+        records: all(),
+        // Tombstones travel with the export. Records are immutable, but the
+        // person still owns their collection and may retract something logged
+        // by mistake; without this, one merge with a friend hands it straight
+        // back. An id and a timestamp reveal nothing about what was deleted.
+        deleted: gone
       }, null, 0);
     }
 
@@ -189,6 +199,20 @@ var GeosonifyStarpinLog = (function () {
         mem[rec.record_id] = rec; save(); return rec;
       },
       get: function (id) { return mem[id] || null; },
+
+      // A local retraction. The record leaves the collection and stays out,
+      // even across merges.
+      remove: function (id) {
+        if (!mem[id]) return false;
+        delete mem[id];
+        gone[id] = Date.now();
+        save(); return true;
+      },
+      deleted: function () { return Object.keys(gone); },
+      undelete: function (id) {
+        if (!gone[id]) return false;
+        delete gone[id]; save(); return true;
+      },
       all: all,
       current: current,
       count: function () { return Object.keys(mem).length; },
@@ -199,18 +223,25 @@ var GeosonifyStarpinLog = (function () {
         var data = (typeof json === 'string') ? JSON.parse(json) : json;
         var recs = (data && data.records) || [];
         var added = 0, seen = 0;
+        var refused = 0;
+        Object.keys((data && data.deleted) || {}).forEach(function (id) {
+          if (!gone[id]) gone[id] = data.deleted[id];
+        });
         recs.forEach(function (r) {
           if (!r || r.schema !== SCHEMA || !r.record_id) return;
+          if (gone[r.record_id]) { refused++; return; }      // retracted, stays out
           if (mem[r.record_id]) { seen++; return; }
           mem[r.record_id] = r; added++;
         });
+        Object.keys(gone).forEach(function (id) { delete mem[id]; });
         save();
-        return { added: added, alreadyHeld: seen, total: Object.keys(mem).length };
+        return { added: added, alreadyHeld: seen, retracted: refused,
+                 total: Object.keys(mem).length };
       },
 
       export: exportString,
       persisted: function () { return !!storage; },
-      clear: function () { mem = {}; save(); }
+      clear: function () { mem = {}; gone = {}; save(); }
     };
   }
 

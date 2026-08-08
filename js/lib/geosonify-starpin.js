@@ -339,14 +339,35 @@ var GeosonifyStarpin = (function () {
       var dm = haversineM(lat, lon, ll[0], ll[1]);
       if (!best || dm < best.distanceM) best = { lat: ll[0], lon: ll[1], distanceM: dm };
     });
-    var intrinsic = order;
+    // TWO orders meet at every vertex, and they need not be equal.
+    //
+    // In the face grid a vertex sits at integer (i, j). The line x = i survives
+    // to the coarsest order where i is still a multiple of the cell step, and
+    // the line y = j does likewise — independently. So a vertex can be the
+    // crossing of a major order-8 boundary and a mundane order-13 one.
+    //
+    // Detected without touching face coordinates: at an order where BOTH lines
+    // survive, four cells meet; where only ONE survives, the point lies on an
+    // edge and two cells meet; where neither does, it is interior to one cell.
+    //
+    //   crossOrder     coarsest order with >= 2 incident cells  (the major line)
+    //   intrinsicOrder coarsest order with >= 3 incident cells  (a true vertex)
+    //
+    // A crossing of one rare line and one common one therefore sits between two
+    // rare and two common, exactly as intuition says, and tierOrder is the mean.
+    var intrinsic = order, cross = order;
     for (var k = 1; k <= order; k++) {
-      if (incidentCells(H, best.lat, best.lon, k).length >= 3) { intrinsic = k; break; }
+      if (incidentCells(H, best.lat, best.lon, k).length >= 2) { cross = k; break; }
+    }
+    for (var k2 = cross; k2 <= order; k2++) {
+      if (incidentCells(H, best.lat, best.lon, k2).length >= 3) { intrinsic = k2; break; }
     }
     var inc = incidentCells(H, best.lat, best.lon, intrinsic);
     return {
       lat: best.lat, lon: best.lon, distanceM: best.distanceM,
       intrinsicOrder: intrinsic,
+      crossOrder: cross,
+      tierOrder: (intrinsic + cross) / 2,
       degree: inc.length,                                   // 3 => one of the exceptional eight
       name: 'V:' + pathStr(H, inc[0], intrinsic),
       incident: inc.map(function (i) { return pathStr(H, i, intrinsic); })
@@ -406,6 +427,13 @@ var GeosonifyStarpin = (function () {
                 rules: { visit: 'visit-geometry-v1', attendance: 'attendance-v1' } };
 
     var point = opts.point || null;
+    // A starpin record carries the catalogue address it was logged against.
+    // That is a FACT about the target at log time, not an assessment, so it
+    // belongs in the record — and without it the record cannot be re-assessed
+    // on a device that has no catalogue.
+    if (!point && rec.target.lat_1e7 != null) {
+      point = { lat: rec.target.lat_1e7 / UNIT, lon: rec.target.lon_1e7 / UNIT };
+    }
     if (!point && rec.target.cornerstone) {
       try { point = cornerstonePoint(rec.target.cornerstone); }
       catch (e) { out.targetError = e.message; }
@@ -426,6 +454,40 @@ var GeosonifyStarpin = (function () {
     return out;
   }
 
+  // Personal best per target, DERIVED. Nothing about "your closest" is stored:
+  // log a closer approach and the earlier ones simply stop being your best.
+  // Ranked by distance, with a supported visit always beating an unsupported
+  // one at the same distance.
+  function rankByTarget(records, opts) {
+    var groups = {}, out = {};
+    (records || []).forEach(function (r) {
+      if (!r || !r.target) return;
+      var k = r.target.cornerstone || r.target.starpin || 'unknown';
+      (groups[k] = groups[k] || []).push(r);
+    });
+    Object.keys(groups).forEach(function (k) {
+      var scored = groups[k].map(function (r) {
+        var a = null;
+        try { a = assessRecord(r, opts); } catch (e) {}
+        var d = (a && a.visit && a.visit.distanceM != null) ? a.visit.distanceM : Infinity;
+        var supported = !!(a && a.visit && a.visit.verdict === 'well-supported');
+        return { record: r, distanceM: d, supported: supported, assessment: a };
+      }).sort(function (x, y) {
+        if (x.supported !== y.supported) return x.supported ? -1 : 1;
+        if (x.distanceM !== y.distanceM) return x.distanceM - y.distanceM;
+        return x.record.event.time_ms - y.record.event.time_ms;
+      });
+      scored.forEach(function (e, i) {
+        out[e.record.record_id] = {
+          target: k, rank: i, best: i === 0, count: scored.length,
+          distanceM: e.distanceM, supported: e.supported,
+          bestDistanceM: scored[0].distanceM, assessment: e.assessment
+        };
+      });
+    });
+    return out;
+  }
+
   // ── exports ───────────────────────────────────────────────────────────────
 
   return {
@@ -439,7 +501,7 @@ var GeosonifyStarpin = (function () {
     assessVisit: assessVisit, haversineM: haversineM,
     nearestCornerstone: nearestCornerstone, cellCornerstones: cellCornerstones,
     cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
-    assessRecord: assessRecord
+    assessRecord: assessRecord, rankByTarget: rankByTarget
   };
 })();
 

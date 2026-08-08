@@ -156,8 +156,7 @@ var GeosonifyStarpinClock = (function () {
     root.appendChild(rows);
 
     root.appendChild(el(doc, 'p', 'spc-note',
-      'The same instant everywhere on Earth. It arrives 3m 56s earlier each day, ' +
-      'so a dark culmination is a season, not a failure.'));
+      'The same instant everywhere on Earth. It arrives 3m 56s earlier each day.'));
 
     container.appendChild(root);
 

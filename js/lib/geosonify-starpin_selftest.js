@@ -184,5 +184,64 @@ if (haveHp) {
                       fix: REC.fix }).visit.verdict === 'target-coordinates-unknown');
 }
 
+head('10: rankByTarget — your personal best, derived every time');
+if (haveHp) {
+  function rec(dLatUnits, t) {
+    return { schema: 'starpin.record/1', record_id: 'r' + dLatUnits, kind: 'visit',
+      target: { cornerstone: 'V:f9.11120211002122' },
+      event: { time_ms: t || 1786160642206 },
+      fix: { lat_1e7: -435529316 - dLatUnits, lon_1e7: 1726521153,
+             accuracy_m: 5, source: 'web-geolocation' } };
+  }
+  var far = rec(30000), mid = rec(9000), near = rec(20);
+  var rk = S.rankByTarget([far, mid, near]);
+  ok('the closest is best', rk[near.record_id].best === true);
+  ok('the others are not', rk[mid.record_id].best === false && rk[far.record_id].best === false);
+  ok('ranks are ordered by distance',
+     rk[near.record_id].rank === 0 && rk[mid.record_id].rank === 1 && rk[far.record_id].rank === 2);
+  ok('every record knows the best distance for its target',
+     Math.abs(rk[far.record_id].bestDistanceM - rk[near.record_id].distanceM) < 0.01);
+  ok('a supported visit outranks an unsupported one', rk[near.record_id].supported === true);
+  ok('logging a CLOSER one demotes the earlier best', (function () {
+     var only = S.rankByTarget([mid]);
+     if (!only[mid.record_id].best) return false;
+     var both = S.rankByTarget([mid, near]);
+     return both[mid.record_id].best === false && both[near.record_id].best === true;
+  })(), 'nothing about "your closest" is stored, so it just changes');
+  ok('separate targets rank separately', (function () {
+     var other = rec(50); other.record_id = 'other';
+     other.target = { starpin: 'starpin:gdr3:5382127323687128576',
+                      lat_1e7: -435547019, lon_1e7: 1726538020 };
+     var r2 = S.rankByTarget([near, other]);
+     return r2[near.record_id].best && r2.other.best;
+  })());
+  ok('a starpin record carries its own target address so it can be assessed',
+     S.assessRecord({ target: { starpin: 'x', lat_1e7: -435529318, lon_1e7: 1726521327 },
+                      event: { time_ms: 0 },
+                      fix: { lat_1e7: -435529316, lon_1e7: 1726521153, accuracy_m: 5 } })
+       .visit.verdict === 'well-supported');
+}
+
+head('11: a starpin is not a vertex');
+var FB = require('./geosonify-starpin-feedback.js');
+var starWords = [null, 4.2, 11.7, 16.3].map(function (m) {
+  var t = FB.starTier(m); return t.label + ' ' + t.blurb;
+}).join(' ');
+ok('no HEALPix order language leaks into star copy', !/order \d/i.test(starWords), starWords.slice(0, 60));
+ok('no "one every N m"', !/one every/i.test(starWords));
+// Match the vertex-rarity PHRASINGS, not the words. "its place on Earth" is
+// the project's own sentence and must not trip this.
+ok('no vertex counts', !/one of [\d,]+ on Earth|within 50 km of here|only eight/i.test(starWords),
+   starWords.slice(0, 80));
+ok('but the project sentence is still allowed',
+   /place on Earth/i.test(FB.starTier(16.3).blurb));
+ok('magnitude is hedged with an approximation sign', /\u2248/.test(FB.starTier(4.2).label));
+ok('unknown magnitude says so rather than guessing',
+   FB.starTier(null).key === 'unmeasured' && !/\u2248/.test(FB.starTier(null).label));
+ok('brighter stars celebrate harder',
+   FB.starTier(4.2).particles > FB.starTier(11.7).particles);
+ok('a cornerstone still gets lattice language',
+   /on Earth|within 50 km/.test(FB.tierOf(12).label + FB.tierOf(12).blurb));
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

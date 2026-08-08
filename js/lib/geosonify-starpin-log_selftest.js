@@ -125,5 +125,37 @@ ok('corrupt storage does not throw the app away', (function () {
   return L.open({ storage: s, storeKey: 'F' }).count() === 0;
 })());
 
+head('11: retraction — your collection, but not by mutating history');
+var G = L.open({ storage: mem(), storeKey: 'G' });
+var keep = G.add(L.visit({ target: TARGET, fix: FIX, eventMs: 100 }));
+var oops = G.add(L.visit({ target: TARGET, fix: FIX, eventMs: 200 }));
+ok('two held', G.count() === 2);
+ok('remove reports success', G.remove(oops.record_id) === true);
+ok('gone from the collection', G.count() === 1 && !G.has(oops.record_id));
+ok('the keeper is untouched', G.has(keep.record_id));
+ok('removing twice is harmless', G.remove(oops.record_id) === false);
+ok('it is tombstoned, not merely absent', G.deleted().indexOf(oops.record_id) >= 0);
+
+var Friend = L.open({ storage: mem(), storeKey: 'Fr' });
+Friend.add(keep); Friend.add(oops);
+var mr = Friend.export();
+var back = G.merge(mr);
+ok('a friend\'s file does NOT hand back a retracted record',
+   !G.has(oops.record_id), JSON.stringify(back));
+ok('merge says how many it refused', back.retracted === 1);
+ok('but still accepts everything else', G.count() === 1);
+ok('tombstones survive a reopen', (function () {
+  var st = mem(); var X = L.open({ storage: st, storeKey: 'X' });
+  var r1 = X.add(L.visit({ target: TARGET, fix: FIX }));
+  X.remove(r1.record_id);
+  return L.open({ storage: st, storeKey: 'X' }).deleted().length === 1;
+})());
+ok('undelete is possible', (function () {
+  var Y = L.open({ storage: mem(), storeKey: 'Y' });
+  var r1 = Y.add(L.visit({ target: TARGET, fix: FIX }));
+  Y.remove(r1.record_id); Y.undelete(r1.record_id);
+  return Y.merge(JSON.stringify({ records: [r1] })).added === 1;
+})());
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

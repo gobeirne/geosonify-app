@@ -56,14 +56,17 @@ var GeosonifyStarpinFeedback = (function () {
   // should stay one rule for every kind of target.
   var COLLECTIBLE_FLOOR = 12;
 
+  // order may be fractional: a crossing of a rare line and a common one sits
+  // between the two, so its tier does too.
   function tierOf(order, degree) {
+    order = Math.round(Number(order) * 2) / 2;
     if (degree === 3) return {
       key: 'exceptional', label: 'one of only eight',
       rarity: 1, particles: 400,
       blurb: 'A three-cell vertex. There are eight on the planet, at every ' +
              'order, forever. They are worth no points at all.'
     };
-    var n = vertexCount(order), r;
+    var n = vertexCount(Math.round(order)), r;
     if (order > COLLECTIBLE_FLOOR) return {
       key: 'commonplace', rarity: 0.04, particles: 0,
       label: 'about ' + nearbyCount(order, 50).toLocaleString() + ' within 50 km of here',
@@ -82,6 +85,47 @@ var GeosonifyStarpinFeedback = (function () {
       label: 'one of ' + n.toLocaleString() + ' on Earth',
       blurb: 'Order ' + order + ', about ' + nearbyCount(order, 50).toLocaleString() +
              ' within 50 km. It is a corner at every finer order too, and always will be.'
+    };
+  }
+
+  // Stars are not vertices, and their rarity is NOT vertex arithmetic. Feeding
+  // a starpin a made-up HEALPix order produced sentences like "one every 398 m,
+  // try order 12 or coarser" about a Gaia source — true of the lattice,
+  // nonsense about a star.
+  //
+  // What the data actually supports here is OBSERVABILITY, and even that is
+  // hedged: Gaia G is a broad passband, not a visual magnitude, and what you
+  // can see depends on sky brightness, moon, altitude and eyes. So the wording
+  // says "around" and never promises a sighting. No badge is minted here.
+  function starTier(mag) {
+    if (mag == null || !isFinite(mag)) return {
+      key: 'unmeasured', rarity: 0.3, particles: 70,
+      label: 'brightness unknown',
+      blurb: 'No usable magnitude in the catalogue. The address is exact all the same.'
+    };
+    if (mag < 6.5) return {
+      key: 'unaided', rarity: 1, particles: 300,
+      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 around the unaided-eye limit',
+      blurb: 'Only a few thousand stars on the whole sky are this bright, so ' +
+             'their starpins are scattered thousands of kilometres apart. ' +
+             'Whether you can actually see it depends on the sky, not the catalogue.'
+    };
+    if (mag < 10) return {
+      key: 'binocular', rarity: 0.65, particles: 190,
+      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 binocular range',
+      blurb: 'Too faint for the unaided eye in most skies, easy in binoculars ' +
+             'once you know where to point them.'
+    };
+    if (mag < 14) return {
+      key: 'telescopic', rarity: 0.4, particles: 110,
+      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 a small telescope',
+      blurb: 'A backyard telescope will show it. You are standing on its address ' +
+             'either way.'
+    };
+    return {
+      key: 'deep', rarity: 0.22, particles: 60,
+      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 camera or a serious telescope',
+      blurb: 'Far too faint to see by eye. Its place on Earth is no less exact.'
     };
   }
 
@@ -221,6 +265,9 @@ var GeosonifyStarpinFeedback = (function () {
     '.spf-halo{width:100%;height:100%;background:currentColor;opacity:.10}',
     '.spf-you{width:14%;height:14%;background:currentColor;opacity:.9}',
     '.spf-word{font-size:.95rem;font-weight:600;text-align:center;line-height:1.25}',
+    '.spf-arrow{position:absolute;width:100%;height:100%;pointer-events:none;',
+    '  transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .3s}',
+    '.spf-here .spf-arrow{opacity:0}',
     '.spf-sub{font-size:.75rem;opacity:.7;font-family:"SF Mono",ui-monospace,monospace}',
     '.spf-here .spf-word{font-size:1.15rem}',
     '@keyframes spf-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}',
@@ -265,6 +312,14 @@ var GeosonifyStarpinFeedback = (function () {
     var halo = doc.createElement('i');   halo.className = 'spf-halo';
     var you  = doc.createElement('i');   you.className  = 'spf-you';
     ring.appendChild(halo); ring.appendChild(you);
+    var arrow = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    arrow.setAttribute('viewBox', '0 0 100 100');
+    arrow.setAttribute('class', 'spf-arrow');
+    var tri = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+    tri.setAttribute('d', 'M50 12 L69 62 L50 51 L31 62 Z');
+    tri.setAttribute('fill', 'currentColor');
+    arrow.appendChild(tri);
+    ring.appendChild(arrow);
     var word = doc.createElement('div'); word.className = 'spf-word';
     var sub  = doc.createElement('div'); sub.className  = 'spf-sub';
     wrap.appendChild(ring); wrap.appendChild(word); wrap.appendChild(sub);
@@ -282,15 +337,26 @@ var GeosonifyStarpinFeedback = (function () {
     //
     // Saying "you're standing on it" at 60 m would be a lie, and would also
     // devalue the moment when it is true.
-    var ARRIVE_FLOOR_M = 10;
+    // A laptop reporting +/-89 m must not be told it is standing on the point
+    // when it is 90 m away. Accuracy buys some slack, but only a little:
+    //
+    //   ON IT            within 15 m, and the fix is good enough to mean it
+    //   WITHIN ERROR     closer than your own uncertainty, which is a real and
+    //                    honest state, but is not the same as being there
+    //
+    var ARRIVE_FLOOR_M = 15;      // how close counts as "on it"
+    var ARRIVE_MAX_ACC = 30;      // a fix worse than this cannot claim arrival
 
-    // r: a visit-geometry-v1 result from assessVisit(). compassText optional.
-    function update(r, compassText) {
+    // r: a visit-geometry-v1 result from assessVisit().
+    // compassText: e.g. "NE". bearingDeg: true bearing, drives the arrow.
+    function update(r, compassText, bearingDeg) {
       if (!r || r.distanceM == null) {
         word.textContent = 'no fix yet'; sub.textContent = ''; return false;
       }
       var d = r.distanceM, a = r.accuracyM, R = r.radiusM;
-      var arrived = d <= Math.max(a == null ? 0 : a, ARRIVE_FLOOR_M);
+      var acc = (a == null) ? Infinity : a;
+      var arrived = d <= ARRIVE_FLOOR_M && acc <= ARRIVE_MAX_ACC;
+      var withinError = !arrived && d <= acc;
       var accepted = r.verdict === 'well-supported';
 
       // Scale: the halo is R. Beyond 4R everything looks the same, and should.
@@ -304,6 +370,11 @@ var GeosonifyStarpinFeedback = (function () {
         // RULE 1: no metres here. There is nothing left to chase, and shuffling
         // about for the last metre earns exactly nothing.
         sub.textContent = accepted ? 'well-supported' : r.verdict;
+      } else if (withinError) {
+        wrap.classList.remove('spf-here');
+        wrap.style.color = 'var(--kereru-teal,#325756)';
+        word.textContent = 'Within device error';
+        sub.textContent = d.toFixed(0) + ' m away, fix \u00B1' + acc.toFixed(0) + ' m';
       } else if (accepted) {
         wrap.classList.remove('spf-here');
         wrap.style.color = 'var(--kereru-teal,#325756)';
@@ -320,6 +391,12 @@ var GeosonifyStarpinFeedback = (function () {
         word.textContent = (d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(2) + ' km') +
                            (compassText ? ' ' + compassText : '');
         sub.textContent = r.verdict === 'compatible' ? 'your fix cannot be sure' : 'keep going';
+      }
+
+      if (bearingDeg == null || arrived) arrow.style.opacity = arrived ? '0' : '.35';
+      else {
+        arrow.style.opacity = '1';
+        arrow.style.transform = 'rotate(' + bearingDeg.toFixed(1) + 'deg)';
       }
 
       pulse.lastD = d; pulse.R = R; pulse.arrived = arrived;
@@ -383,12 +460,16 @@ var GeosonifyStarpinFeedback = (function () {
 
   // ── the moment ────────────────────────────────────────────────────────────
   //
-  // opts: { name, order, degree, digits, kicker, doc }
+  // opts: { kind: 'cornerstone'|'starpin', name, digits, kicker, doc,
+  //          order, degree            (cornerstone)
+  //          mag                      (starpin) }
   function celebrate(opts) {
     opts = opts || {};
     var doc = opts.doc || document;
     injectCss(doc);
-    var tier = tierOf(opts.order == null ? 14 : opts.order, opts.degree);
+    var isStar = opts.kind === 'starpin';
+    var tier = isStar ? starTier(opts.mag)
+                      : tierOf(opts.order == null ? 14 : opts.order, opts.degree);
     var quiet = reduced(doc);
 
     var b = doc.createElement('div');
@@ -406,8 +487,12 @@ var GeosonifyStarpinFeedback = (function () {
     doc.defaultView.requestAnimationFrame(function () { b.classList.add('on'); });
 
     if (!quiet) confetti(doc, tier.particles);
-    ring(opts.digits || (opts.name || '').replace(/\D/g, ''),
-         opts.order == null ? 14 : opts.order, tier.rarity);
+    // A star's arpeggio comes from its own source_id digits, and its root pitch
+    // from brightness rather than from a lattice order it does not have.
+    var pitchOrder = isStar
+      ? 14 - Math.max(0, Math.min(6, (20 - (opts.mag == null ? 16 : opts.mag)) / 2.4))
+      : (opts.order == null ? 14 : opts.order);
+    ring(opts.digits || (opts.name || '').replace(/\D/g, ''), pitchOrder, tier.rarity);
     try {
       if (doc.defaultView.navigator.vibrate)
         doc.defaultView.navigator.vibrate(tier.rarity > 0.5 ? [40, 60, 90] : [35]);
@@ -427,7 +512,7 @@ var GeosonifyStarpinFeedback = (function () {
     VERSION: '0.1',
     unlock: unlock, proximity: proximity, celebrate: celebrate,
     setPulse: setPulse, pulseEnabled: pulseEnabled, hapticsAvailable: hapticsAvailable,
-    tierOf: tierOf, vertexCount: vertexCount, nearbyCount: nearbyCount,
+    tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
 })();

@@ -99,7 +99,7 @@ var GeosonifyStarpinMap = (function () {
   // at any depth. Alpha falls with it, because thin AND faint separates far
   // better than thin alone.
   var REF_ORDER = 8, BASE_W = 3.0, BASE_A = 0.85;
-  var WEIGHT = 2.0, FALLOFF = 0.78;
+  var WEIGHT = 2.0, FALLOFF = 0.75;
 
   // PERSIST: how strongly a coarse line keeps its authority when you zoom in.
   //
@@ -188,6 +188,9 @@ var GeosonifyStarpinMap = (function () {
 
     var fix = null, bagged = [], highlight = null, cache = {};
     var stars = [], hits = [];          // hits: screen-space targets for tapping
+    var pin = null;                     // a read-only probe, never a claim
+    var selected = null;                // {kind, id} -> gets the throb
+    var phase = 0, throbTimer = null;
     var onSelect = opts.onSelect || null;
     var onMove = opts.onMove || null;
 
@@ -308,6 +311,14 @@ var GeosonifyStarpinMap = (function () {
         g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
         g.fillStyle = pal.star; g.fill();
         g.lineWidth = 1.5; g.strokeStyle = pal.starRing; g.stroke();
+        var sid = st.name || (st.ra + ',' + st.dec);
+        if (selected && selected.kind === 'star' && selected.id === sid) {
+          var pulseR = r + 6 + Math.sin(phase * 6.2832) * 5;
+          g.beginPath(); g.arc(xy[0], xy[1], pulseR, 0, 6.2832);
+          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
+          g.globalAlpha = 0.35 + 0.5 * (1 - Math.abs(Math.sin(phase * 3.1416)));
+          g.stroke(); g.globalAlpha = 1;
+        }
         hits.push({ x: xy[0], y: xy[1], r: r + 10, kind: 'star', data: st });
       });
 
@@ -319,6 +330,13 @@ var GeosonifyStarpinMap = (function () {
         g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
         g.fillStyle = pal.bagged; g.fill();
         g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
+        if (selected && selected.kind === 'cornerstone' && selected.id === name) {
+          var pr = r + 6 + Math.sin(phase * 6.2832) * 5;
+          g.beginPath(); g.arc(xy[0], xy[1], pr, 0, 6.2832);
+          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
+          g.globalAlpha = 0.35 + 0.5 * (1 - Math.abs(Math.sin(phase * 3.1416)));
+          g.stroke(); g.globalAlpha = 1;
+        }
         hits.push({ x: xy[0], y: xy[1], r: r + 12, kind: 'cornerstone',
                     data: { name: name, lat: p.lat, lon: p.lon, order: p.order } });
       });
@@ -349,6 +367,17 @@ var GeosonifyStarpinMap = (function () {
         g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
       }
 
+      if (pin) {
+        var q = pt(pin.lat, pin.lon);
+        g.strokeStyle = pal.highlight; g.lineWidth = 2;
+        g.beginPath(); g.arc(q[0], q[1], 7, 0, 6.2832); g.stroke();
+        g.beginPath();
+        g.moveTo(q[0], q[1] + 7); g.lineTo(q[0], q[1] + 17);
+        g.moveTo(q[0] - 11, q[1]); g.lineTo(q[0] - 4, q[1]);
+        g.moveTo(q[0] + 4, q[1]); g.lineTo(q[0] + 11, q[1]);
+        g.stroke();
+      }
+
       orderTag.textContent = drawn.length
         ? 'HEALPix orders ' + drawn[0] + '\u2013' + drawn[drawn.length - 1] : '';
     }
@@ -377,14 +406,32 @@ var GeosonifyStarpinMap = (function () {
     var grid = new GridLayer().addTo(map);
     function redraw() { if (grid && grid._render) grid._render(); }
 
+    function throb() {
+      phase = (Date.now() % 1400) / 1400;
+      if (selected) redraw();
+      throbTimer = setTimeout(throb, selected ? 90 : 400);
+    }
+    throb();
+
     map.on('click', function (e) {
-      if (!onSelect) return;
       var p = e.containerPoint, best = null, bestD = Infinity;
       hits.forEach(function (h) {
         var d = Math.hypot(h.x - p.x, h.y - p.y);
         if (d <= h.r && d < bestD) { bestD = d; best = h; }
       });
-      onSelect(best ? { kind: best.kind, data: best.data } : null);
+      if (best) {
+        selected = { kind: best.kind, id: best.kind === 'star'
+          ? (best.data.name || best.data.ra + ',' + best.data.dec) : best.data.name };
+        pin = null;
+      } else {
+        // Empty ground: drop a READ-ONLY pin. Reading what a place is worth is
+        // not the same act as claiming it, and must never be confused with one.
+        pin = { lat: e.latlng.lat, lon: e.latlng.lng };
+        selected = { kind: 'pin', id: 'pin' };
+      }
+      redraw();
+      if (onSelect) onSelect(best ? { kind: best.kind, data: best.data }
+                                  : { kind: 'pin', data: pin });
     });
     map.on('moveend zoomend', function () {
       if (onMove) {
@@ -407,6 +454,8 @@ var GeosonifyStarpinMap = (function () {
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
       setStars: function (list) { stars = (list || []).slice(); redraw(); },
+      clearPin: function () { pin = null; selected = null; redraw(); },
+      pin: function () { return pin; },
       stars: function () { return stars.slice(); },
       setWeight: function (w) { setWeight(w); redraw(); return weight(); },
       weight: weight,
@@ -423,7 +472,10 @@ var GeosonifyStarpinMap = (function () {
       basemap: function () { return key; },
       invalidate: function () { map.invalidateSize(); redraw(); },
       redraw: redraw,
-      destroy: function () { map.remove(); if (root.parentNode) root.parentNode.removeChild(root); }
+      destroy: function () {
+        if (throbTimer) clearTimeout(throbTimer);
+        map.remove(); if (root.parentNode) root.parentNode.removeChild(root);
+      }
     };
   }
 
