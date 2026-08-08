@@ -86,17 +86,36 @@ var GeosonifyStarpinMap = (function () {
 
   function cellWidthM(order) { return Math.sqrt(510.1e12 / (12 * Math.pow(4, order))); }
 
-  // WEIGHT is a tuning knob, exposed on screen so the right value can be found
-  // in the field and then hard-coded here. Raise the base rather than the ramp
-  // if fine orders vanish; raise the ramp if the hierarchy stops reading.
-  var WEIGHT = 2.5;
-  function setWeight(w) { WEIGHT = Math.max(0.5, Math.min(6, Number(w) || 1)); return WEIGHT; }
+  // TWO KNOBS, exposed on screen so the right values can be found in the field
+  // and then hard-coded here.
+  //
+  //   WEIGHT   overall multiplier
+  //   FALLOFF  the ratio between one order and the next finer one
+  //
+  // The old ramp was base + t^2, and its floor swamped everything: orders 14
+  // through 17 all came out between 0.50 and 0.64 px, which is why 12 and 13
+  // were indistinguishable from the hairlines below them. A GEOMETRIC ramp
+  // gives every adjacent pair the same visible ratio, so the hierarchy reads
+  // at any depth. Alpha falls with it, because thin AND faint separates far
+  // better than thin alone.
+  var REF_ORDER = 8, BASE_W = 3.0, BASE_A = 0.85;
+  var WEIGHT = 2.0, FALLOFF = 0.78;
+
+  function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, Number(w) || 1)); return WEIGHT; }
   function weight() { return WEIGHT; }
+  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, Number(f) || 0.78)); return FALLOFF; }
+  function falloff() { return FALLOFF; }
 
   function strokeFor(order) {
-    var t = Math.max(0, Math.min(1, (16 - order) / 10));      // 0 at 16, 1 at 6
-    return { width: (0.5 + t * t * 3.6) * WEIGHT,
-             alpha: Math.min(0.95, (0.22 + t * t * 0.62) * (0.75 + WEIGHT * 0.12)) };
+    var k = Math.pow(FALLOFF, order - REF_ORDER);
+    return {
+      width: Math.max(0.25, BASE_W * k * WEIGHT),
+      alpha: Math.max(0.05, Math.min(0.95, BASE_A * Math.pow(FALLOFF, (order - REF_ORDER) * 0.6))),
+      // Below this the line is a smudge and only adds clutter, so the draw
+      // loop stops. FALLOFF therefore controls DEPTH as well as contrast:
+      // one knob, two jobs, and they are the same judgement.
+      visible: BASE_W * k * WEIGHT >= 0.45
+    };
   }
   function dotRadius(order) {
     var t = Math.max(0, Math.min(1, (15 - order) / 9));
@@ -208,10 +227,11 @@ var GeosonifyStarpinMap = (function () {
         var cw = cellWidthM(order);
         if (cw > spanM * 3) continue;
         if (cw < spanM / 26) break;
+        var st = strokeFor(order);
+        if (!st.visible) break;                              // too faint to help
         var cells = cellsInView(order, size, spanM);
         if (!cells.length) continue;
         drawn.push(order);
-        var st = strokeFor(order);
         var nside = Math.pow(2, order);
 
         // Halo first, then the line, so the grid holds on any basemap.
@@ -353,6 +373,8 @@ var GeosonifyStarpinMap = (function () {
       stars: function () { return stars.slice(); },
       setWeight: function (w) { setWeight(w); redraw(); return weight(); },
       weight: weight,
+      setFalloff: function (f) { setFalloff(f); redraw(); return falloff(); },
+      falloff: falloff,
       centre: function () { var c = map.getCenter(); return { lat: c.lat, lon: c.lng }; },
       spanM: function () {
         var b = map.getBounds(); return map.distance(b.getNorthWest(), b.getNorthEast());
@@ -368,7 +390,8 @@ var GeosonifyStarpinMap = (function () {
 
   return { VERSION: '0.3', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
-           orderOfName: orderOfName, setWeight: setWeight, weight: weight };
+           orderOfName: orderOfName, setWeight: setWeight, weight: weight,
+           setFalloff: setFalloff, falloff: falloff };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinMap;
