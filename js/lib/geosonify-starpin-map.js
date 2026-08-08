@@ -101,6 +101,23 @@ var GeosonifyStarpinMap = (function () {
   var REF_ORDER = 8, BASE_W = 3.0, BASE_A = 0.85;
   var WEIGHT = 2.0, FALLOFF = 0.78;
 
+  // PERSIST: how strongly a coarse line keeps its authority when you zoom in.
+  //
+  // A cell far larger than the view is a RARE boundary, and at close zoom its
+  // edge is the most valuable line on the screen — yet it renders identically
+  // to the hairlines around it, so it vanishes. This boosts a line in
+  // proportion to how much bigger its cell is than the view, which is exactly
+  // the thing that makes it worth noticing.
+  var PERSIST = 0.30;
+  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, Number(p))); return PERSIST; }
+  function persist() { return PERSIST; }
+
+  // rel = cellWidth / viewWidth. 1 means the cell fills the view.
+  function zoomBoost(rel) {
+    if (!(rel > 1)) return 1;
+    return 1 + PERSIST * (Math.log(Math.min(rel, 512)) / Math.LN2);
+  }
+
   function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, Number(w) || 1)); return WEIGHT; }
   function weight() { return WEIGHT; }
   function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, Number(f) || 0.78)); return FALLOFF; }
@@ -111,6 +128,7 @@ var GeosonifyStarpinMap = (function () {
     return {
       width: Math.max(0.25, BASE_W * k * WEIGHT),
       alpha: Math.max(0.05, Math.min(0.95, BASE_A * Math.pow(FALLOFF, (order - REF_ORDER) * 0.6))),
+      rawWidth: BASE_W * Math.pow(FALLOFF, order - REF_ORDER) * WEIGHT,
       // Below this the line is a smudge and only adds clutter, so the draw
       // loop stops. FALLOFF therefore controls DEPTH as well as contrast:
       // one knob, two jobs, and they are the same judgement.
@@ -223,12 +241,20 @@ var GeosonifyStarpinMap = (function () {
 
       function pt(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
 
-      for (var order = 5; order <= 18; order++) {
+      for (var order = 3; order <= 18; order++) {
         var cw = cellWidthM(order);
-        if (cw > spanM * 3) continue;
+        // No coarse skip. A cell 60x the view still has an edge that may run
+        // straight through the street you are standing in, and that edge is
+        // the rarest line on screen. Dropping it was the bug.
         if (cw < spanM / 26) break;
         var st = strokeFor(order);
-        if (!st.visible) break;                              // too faint to help
+        if (!st.visible) break;
+        // Width grows sub-linearly and is capped: a coarse line should be
+        // unmistakable, not a stripe that hides the street you navigate by.
+        // Most of the emphasis goes into opacity, which costs no map.
+        var boost = zoomBoost(cw / spanM);
+        st = { width: Math.min(9, st.width * (1 + (boost - 1) * 0.45)),
+               alpha: Math.min(0.95, st.alpha * boost) };
         var cells = cellsInView(order, size, spanM);
         if (!cells.length) continue;
         drawn.push(order);
@@ -239,17 +265,28 @@ var GeosonifyStarpinMap = (function () {
         .forEach(function (layer) {
           g.strokeStyle = layer[0]; g.lineWidth = layer[1]; g.globalAlpha = layer[2];
           g.beginPath();
+          // Edges are subdivided, not drawn corner to corner. A HEALPix edge
+          // bows by about 3 m over a 25 km order-8 cell — invisible when the
+          // whole cell is on screen, but at street zoom that same edge is the
+          // only line in view and 3 m is metres of pavement.
+          var segs = Math.max(1, Math.min(24, Math.round(4 * Math.min(8, cw / spanM) + 1)));
           for (var i = 0; i < cells.length; i++) {
             var ip = BigInt(cells[i]);
-            var pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(function (uv) {
-              var v = HP._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
-              var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
-                  z = v.z != null ? v.z : v[2];
-              return pt(Math.asin(z / Math.hypot(x, y, z)) / D2R, Math.atan2(y, x) / D2R);
-            });
-            g.moveTo(pts[0][0], pts[0][1]);
-            for (var k = 1; k < 4; k++) g.lineTo(pts[k][0], pts[k][1]);
-            g.closePath();
+            var first = null, started = false;
+            for (var e = 0; e < 4; e++) {
+              for (var t = 0; t < segs; t++) {
+                var f = t / segs;
+                var uv = e === 0 ? [f, 0] : e === 1 ? [1, f]
+                       : e === 2 ? [1 - f, 1] : [0, 1 - f];
+                var v = HP._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
+                var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
+                    z = v.z != null ? v.z : v[2];
+                var q = pt(Math.asin(z / Math.hypot(x, y, z)) / D2R, Math.atan2(y, x) / D2R);
+                if (!started) { g.moveTo(q[0], q[1]); first = q; started = true; }
+                else g.lineTo(q[0], q[1]);
+              }
+            }
+            if (first) g.lineTo(first[0], first[1]);
           }
           g.stroke();
         });
@@ -375,6 +412,8 @@ var GeosonifyStarpinMap = (function () {
       weight: weight,
       setFalloff: function (f) { setFalloff(f); redraw(); return falloff(); },
       falloff: falloff,
+      setPersist: function (p) { setPersist(p); redraw(); return persist(); },
+      persist: persist,
       centre: function () { var c = map.getCenter(); return { lat: c.lat, lon: c.lng }; },
       spanM: function () {
         var b = map.getBounds(); return map.distance(b.getNorthWest(), b.getNorthEast());
@@ -391,7 +430,8 @@ var GeosonifyStarpinMap = (function () {
   return { VERSION: '0.3', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName, setWeight: setWeight, weight: weight,
-           setFalloff: setFalloff, falloff: falloff };
+           setFalloff: setFalloff, falloff: falloff,
+           setPersist: setPersist, persist: persist, zoomBoost: zoomBoost };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinMap;
