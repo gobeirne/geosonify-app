@@ -93,15 +93,30 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 </section>
 
 <section>
+  <h2>the lattice</h2>
+  <div id="map"></div>
+  <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
+  <p class="hint">No basemap, and none is needed — the grid is the terrain. Coarse
+     orders are drawn boldest because those are the rare ones; hairlines are the
+     commonplace. Bagged cornerstones are green, sized by how rare they are. The
+     blue halo is your actual fix accuracy, drawn to scale.</p>
+</section>
+
+<section>
   <h2>nearest cornerstone</h2>
-  <input id="order" inputmode="numeric" value="14" aria-label="HEALPix order">
+  <div id="cs-prox"></div>
+  <button id="pulse" type="button" aria-pressed="false">Guide me by sound</button>
+  <p class="hint" id="haptic-note" style="margin-bottom:.5rem"></p>
+  <input id="order" inputmode="numeric" value="12" aria-label="HEALPix order">
   <dl>
     <div class="r"><dt>name</dt><dd id="cs-name">—</dd></div>
     <div class="r"><dt>intrinsic order</dt><dd id="cs-order">—</dd></div>
-    <div class="r"><dt>walk</dt><dd id="cs-dist">—</dd></div>
+    <div class="r"><dt>others within 50 km</dt><dd id="cs-near">—</dd></div>
+    <div class="r"><dt>direction</dt><dd id="cs-dist">—</dd></div>
     <div class="r"><dt>corners of this cell</dt><dd id="cs-pips" class="pips">—</dd></div>
+    <div class="r"><dt>visit</dt><dd id="cs-verdict">—</dd></div>
   </dl>
-  <button id="log-cs" type="button">Log this cornerstone</button>
+  <button id="log-cs" type="button">Bag this cornerstone</button>
   <p class="hint">A vertex is shared by up to four cells and is named by the
      lowest of them, so only one of a cell's four corners carries the cell's own
      name. Intrinsic order is the coarsest order at which the point is still a
@@ -144,13 +159,15 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260808"></script>
 <script>
 (function () {
   'use strict';
   var S = GeosonifyStarpin;
   var $ = function (id) { return document.getElementById(id); };
   var clock = GeosonifyStarpinClock.mount($('clock'));
-  var fix = null, collected = {};   // in-memory only; export is the real store
+  var fix = null, collected = {};   // DERIVED from the log on every draw
 
   function bearing(a1, o1, a2, o2) {
     var d = Math.PI / 180, y = Math.sin((o2 - o1) * d) * Math.cos(a2 * d);
@@ -166,6 +183,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   }
 
   $('locate').addEventListener('click', function () {
+    F.unlock();
     if (!navigator.geolocation) { $('fix').textContent = 'no geolocation here'; return; }
     $('fix').textContent = 'locating\u2026';
     navigator.geolocation.getCurrentPosition(function (p) {
@@ -173,6 +191,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
               accuracy_m: p.coords.accuracy };
       $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
       $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
+      map.setFix(fix.lat, fix.lon, fix.accuracy_m);
       clock.setPosition(fix.lat, fix.lon < 0 ? fix.lon + 360 : fix.lon);
       redraw();
     }, function (e) { $('fix').textContent = 'no fix: ' + e.message; },
@@ -189,8 +208,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     lastCs = v;
     $('cs-name').textContent = v.name;
     $('cs-order').textContent = v.intrinsicOrder + (v.degree === 3 ? '  (degree 3!)' : '');
-    $('cs-dist').textContent = walk(v.distanceM, b);
-    var cell = 'f' + v.incident[0].slice(1);
+    $('cs-near').textContent = F.nearbyCount(v.intrinsicOrder, 50).toLocaleString() +
+      '   (one every ' + (F.spacingM(v.intrinsicOrder) < 1000
+        ? Math.round(F.spacingM(v.intrinsicOrder)) + ' m'
+        : (F.spacingM(v.intrinsicOrder) / 1000).toFixed(1) + ' km') + ')';
+    $('cs-dist').textContent = compass(b) + ' (' + b.toFixed(0) + '\u00B0)';
+    var vr = S.assessVisit(fix, { lat: v.lat, lon: v.lon });
+    prox.update(vr, compass(b));
+    map.setHighlight(v.name);
+    var cv = $('cs-verdict');
+    cv.textContent = vr.verdict + '  (' + vr.separationArcsec.toFixed(2) + '\u2033)';
+    cv.className = vr.verdict === 'well-supported' ? 'ok'
+                 : vr.verdict === 'not-supported' ? 'bad' : '';
     try {
       var st = S.cellComplete(v.incident[0], Object.keys(collected));
       $('cs-pips').textContent =
@@ -228,6 +257,21 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
+  var F = GeosonifyStarpinFeedback;
+  var prox = F.proximity($('cs-prox'));
+  var map = GeosonifyStarpinMap.mount($('map'));
+
+  $('haptic-note').textContent = F.hapticsAvailable()
+    ? 'Ticks speed up as you close in, and fuse into a steady tone when you arrive. Your device also buzzes.'
+    : 'Ticks speed up as you close in, and fuse into a steady tone when you arrive. '
+      + 'This device has no vibration API (Safari on iOS does not provide one), so it is sound only.';
+
+  $('pulse').addEventListener('click', function () {
+    var on = F.setPulse(!F.pulseEnabled());
+    this.setAttribute('aria-pressed', on ? 'true' : 'false');
+    this.textContent = on ? 'Stop the sound guide' : 'Guide me by sound';
+  });
+  $('recentre').addEventListener('click', function () { map.recentre(); });
   var lastCs = null, lastSp = null;
 
   function shortId(t) {
@@ -239,13 +283,22 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     var ul = $('lg-list'); ul.textContent = '';
     log.current().slice(0, 40).forEach(function (r) {
       var li = document.createElement('li');
-      var when = document.createElement('span');
-      when.textContent = new Date(r.event.time_ms).toLocaleDateString();
+      var verdict = '';
+      // Re-derived on every render. Nothing about the outcome is stored.
+      try { verdict = S.assessRecord(r).visit.verdict; } catch (e) { verdict = '?'; }
+      var right = document.createElement('span');
+      right.textContent = verdict + '  ' + new Date(r.event.time_ms).toLocaleDateString();
       li.appendChild(document.createTextNode(shortId(r.target)));
-      li.appendChild(when);
+      li.appendChild(right);
       ul.appendChild(li);
     });
-    if (lastCs) collected[lastCs.name] = 1;
+    // Collected cornerstones are derived from the records, never tracked
+    // separately — otherwise the pips and the log can disagree.
+    collected = {};
+    log.current().forEach(function (r) {
+      if (r.target && r.target.cornerstone) collected[r.target.cornerstone] = 1;
+    });
+    map.setBagged(Object.keys(collected));
   }
 
   function logIt(target) {
@@ -261,8 +314,25 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
   $('log-cs').addEventListener('click', function () {
     if (!lastCs) return;
-    collected[lastCs.name] = 1;
+    F.unlock();
+    if (log.current().some(function (r) {
+          return r.target && r.target.cornerstone === lastCs.name; })) {
+      F.celebrate({ name: lastCs.name, order: lastCs.intrinsicOrder, degree: lastCs.degree,
+                    kicker: 'already yours' });
+      return;
+    }
     logIt({ cornerstone: lastCs.name });
+    // RULE 2: the single vertex is the reward. Set completion is a footnote,
+    // announced separately and only when it actually happens.
+    F.celebrate({ name: lastCs.name, order: lastCs.intrinsicOrder, degree: lastCs.degree,
+                  digits: lastCs.name.replace(/\D/g, '') });
+    try {
+      var st = S.cellComplete(lastCs.incident[0], Object.keys(collected));
+      if (st.complete) setTimeout(function () {
+        F.celebrate({ name: lastCs.incident[0], order: lastCs.intrinsicOrder,
+                      kicker: 'all four corners' });
+      }, 1500);
+    } catch (e) {}
   });
   $('log-sp').addEventListener('click', function () {
     var sid = $('sid').value.trim();
