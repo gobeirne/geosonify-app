@@ -297,8 +297,16 @@ var GeosonifyStarpin = (function () {
   function hp() {
     var H = (typeof HealpixGrids !== 'undefined') ? HealpixGrids
           : (typeof require === 'function' ? (function () {
-              try { return require('./geosonify-healpix.js'); } catch (e) { return null; } })() : null);
-    if (!H) throw new Error('cornerstones need geosonify-healpix.js (HealpixGrids)');
+              var tries = ['./geosonify-healpix.js', './js/lib/geosonify-healpix.js',
+                           '../lib/geosonify-healpix.js', '../../js/lib/geosonify-healpix.js'];
+              for (var i = 0; i < tries.length; i++) {
+                try { return require(tries[i]); } catch (e) {}
+              }
+              return null;
+            })() : null);
+    if (!H) throw new Error('cornerstones need geosonify-healpix.js \u2014 the global ' +
+                            'HealpixGrids is absent. Check the <script> path (it lives in ' +
+                            'js/lib/) and the browser console for a 404.');
     return H;
   }
 
