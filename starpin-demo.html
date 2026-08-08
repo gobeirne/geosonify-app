@@ -110,8 +110,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   <h2>the lattice</h2>
   <div id="map"></div>
   <div id="info" hidden></div>
-  <label class="tune" for="wt">grid line weight <b id="wt-val">2.5</b>
-    <input id="wt" type="range" min="0.5" max="6" step="0.1" value="2.5"></label>
+  <label class="tune" for="wt">weight <b id="wt-val">2.0</b>
+    <input id="wt" type="range" min="0.3" max="8" step="0.1" value="2"></label>
+  <label class="tune" for="fo">falloff <b id="fo-val">0.78</b>
+    <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.78"></label>
+  <p class="hint" id="ramp" style="margin-top:.3rem"></p>
   <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
   <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
      hairlines are the commonplace. The grid switches to yellow on aerial, where
@@ -184,7 +187,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260809b"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260809c"></script>
 <script>
 (function () {
   'use strict';
@@ -290,8 +293,20 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     onMove: function (lat, lon, spanM) { loadStars(lat, lon, spanM); }
   });
 
+  function showRamp() {
+    var out = [];
+    for (var o = 8; o <= 18; o++) {
+      var st = GeosonifyStarpinMap.strokeFor(o);
+      if (!st.visible) break;
+      out.push('o' + o + ' ' + st.width.toFixed(1));
+    }
+    $('ramp').textContent = out.join('  ') + '   (falloff also sets how deep it draws)';
+  }
   $('wt').addEventListener('input', function () {
-    $('wt-val').textContent = map.setWeight(this.value).toFixed(1);
+    $('wt-val').textContent = map.setWeight(this.value).toFixed(1); showRamp();
+  });
+  $('fo').addEventListener('input', function () {
+    $('fo-val').textContent = map.setFalloff(this.value).toFixed(2); showRamp();
   });
 
   // ── the info box. Eventually this becomes the point's public log. ─────────
@@ -355,10 +370,39 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         row('visit', S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict);
       }
       box.appendChild(sm);
+      // You can always log. The verdict is DERIVED, so a record made from
+      // 252 m away is a perfectly good closest-approach record and can be
+      // re-assessed later; refusing to store it would lose a real fact.
+      if (fix) {
+        var vr2 = S.assessVisit(fix, { lat: st.lat, lon: st.lon });
+        var supported = vr2.verdict === 'well-supported' || vr2.verdict === 'compatible';
+        var lb = el('button', null, supported ? 'Bag this starpin' : 'Log a closest approach');
+        lb.type = 'button'; lb.style.marginTop = '.6rem';
+        lb.addEventListener('click', function () {
+          var id = (st.name || '').replace(/^\D+/, '').trim();
+          var target = /^\d+$/.test(id) ? { starpin: 'starpin:gdr3:' + id }
+                                        : { starpin: 'starpin:name:' + (st.name || 'unknown') };
+          F.unlock();
+          log.add(L.build(supported ? 'visit' : 'closest-approach', {
+            target: target,
+            fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m,
+                   source: 'web-geolocation' },
+            approachReason: supported ? null : 'logged from the map at ' +
+                            Math.round(vr2.distanceM) + ' m',
+            provenance: { app: 'starpin-demo', app_version: '0.1',
+                          protocol: { visit: 'visit-geometry-v1' } }
+          }));
+          drawLog(); redraw();
+          F.celebrate({ name: st.name || 'starpin', order: supported ? 11 : 14,
+                        kicker: supported ? 'starpin bagged' : 'closest approach logged' });
+        });
+        box.appendChild(lb);
+      }
       if (st.links && st.links.simbad) {
         var a = document.createElement('a');
         a.href = st.links.simbad; a.target = '_blank'; a.rel = 'noopener';
-        a.textContent = 'SIMBAD'; box.appendChild(a);
+        a.textContent = 'SIMBAD'; a.style.display = 'inline-block';
+        a.style.marginTop = '.5rem'; box.appendChild(a);
       }
     }
     var c = el('button', 'close', 'close');
@@ -499,6 +543,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     $(id).addEventListener('input', redraw);
   });
   drawLog();
+  showRamp();
   redraw();
 })();
 </script>
