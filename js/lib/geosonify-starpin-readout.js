@@ -19,9 +19,27 @@
 
 var GeosonifyStarpinReadout = (function () {
 
+  // Geosonify declares its modules with `const HealpixGrids = ...` at the top
+  // level of a classic script. A top-level `const` does NOT become a property
+  // of window — only `var` and function declarations do. Looking them up as
+  // window[name] therefore reports every HEALPix format as "module not loaded"
+  // while the module is sitting right there and working.
+  // Explicitly registered references win, then window, then a global-scope
+  // probe. The registry exists because the probe cannot be TESTED: a
+  // `new Function` body evaluates in whichever realm the module was loaded
+  // into, so it works in a browser and silently fails under a test harness.
+  // Anything this important gets a path that can be proved.
+  var REG = {};
+  function register(name, ref) { if (ref != null) REG[name] = ref; return !!ref; }
+
   function mod(name) {
-    try { return (typeof window !== 'undefined' && window[name]) ? window[name] : null; }
-    catch (e) { return null; }
+    if (REG[name] != null) return REG[name];
+    try { if (typeof window !== 'undefined' && window[name] != null) return window[name]; }
+    catch (e) {}
+    try {
+      return (new Function('try { return typeof ' + name + ' !== "undefined" ? ' +
+                           name + ' : null; } catch (e) { return null; }'))();
+    } catch (e) { return null; }
   }
 
   // lead: signs go in FRONT for declination (+43 33 10.6), and hemispheres go
@@ -92,21 +110,34 @@ var GeosonifyStarpinReadout = (function () {
   var SKIP_DISPLAY = { qrhex: 1, qrbin: 1, qrurl: 1, datamatrix: 1,
                        chess: 1, chessboard: 1, staff: 1, swatch: 1 };
 
+  // Retired vocabularies. They remain in CARD_GRIDS and in the URL codec
+  // BECAUSE OLD CODES MUST STILL DECODE FOREVER — deleting a decode path does
+  // not error, it silently resolves old codes to plausible wrong places. But
+  // they must never be offered again, and a new surface that reads CARD_GRIDS
+  // dynamically would otherwise resurrect them the moment it is written.
+  // Keep decoding. Never encode. Never list.
+  var RETIRED = { bytewords: 1, bytewordsmin: 1, byteemoji: 1 };
+
   function cardGrids() {
     var G = mod('CARD_GRIDS');
     if (!G || typeof mod('encodeCardCoordinate') !== 'function') return {};
     var out = {};
     Object.keys(G).forEach(function (k) {
       var d = G[k];
-      if (!d || (d.display && SKIP_DISPLAY[d.display])) return;
+      if (!d || RETIRED[k] || (d.display && SKIP_DISPLAY[d.display])) return;
       out['card:' + k] = {
         label: 'Geosonify \u00B7 ' + (d.name || k),
         group: 'geosonify', needs: 'encodeCardCoordinate', gridKey: k,
-        fn: function (lat, lon, order) {
-          var max = d.maxIterations || 21;
-          var it = d.fixedIterations || Math.max(1, Math.min(max, order - 3));
-          return mod('encodeCardCoordinate')(k, lat, lon, it);
-        }
+        // HUMAN SCALE. encodeCardCoordinate already falls back to
+        // fixedIterations -> cardState.iterations -> defaultIterations when
+        // iterations is omitted, and those defaults ARE the human-scale
+        // settings: 4 BIP39 words, 9 alphanumeric characters, 6 emoji.
+        // Deriving a count from the HEALPix order instead gave eight-word
+        // mouthfuls nobody could read out, which was the whole point of these.
+        fn: function (lat, lon) {
+          return mod('encodeCardCoordinate')(k, lat, lon);
+        },
+        defaultIterations: d.fixedIterations || d.defaultIterations || null
       };
     });
     return out;
@@ -188,7 +219,9 @@ var GeosonifyStarpinReadout = (function () {
         return;
       }
       sub.textContent = f.group === 'healpix' ? 'order ' + order
-                      : f.group === 'geosonify' ? 'Geosonify vocabulary \u00B7 order ' + order
+                      : f.group === 'geosonify'
+                        ? 'Geosonify vocabulary' + (f.defaultIterations
+                            ? ' \u00B7 ' + f.defaultIterations + ' steps, human scale' : '')
                       : f.group;
     }
 
@@ -208,8 +241,9 @@ var GeosonifyStarpinReadout = (function () {
     };
   }
 
-  return { VERSION: '0.2', mount: mount, FORMATS: FORMATS, available: available,
-           ensureCardFormats: ensureCardFormats };
+  return { VERSION: '0.3', mount: mount, FORMATS: FORMATS, available: available,
+           ensureCardFormats: ensureCardFormats, RETIRED: RETIRED,
+           mod: mod, register: register };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinReadout;
