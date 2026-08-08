@@ -378,6 +378,54 @@ var GeosonifyStarpin = (function () {
     return { cell: quaternary, corners: want, missing: missing, complete: missing.length === 0 };
   }
 
+  // ── the evaluator ─────────────────────────────────────────────────────────
+  //
+  // Assessments are DERIVED, never stored. Given a record and whatever the
+  // target's coordinates are, this recomputes the verdict from scratch. A
+  // better evaluator re-reads history rather than rewriting it, so every
+  // result carries the rule versions that produced it.
+
+  // 'V:f9.1112...' -> the point. Resolved by naming all four corners of the
+  // cell and taking the one whose canonical name matches, so this does not
+  // depend on which corner index the HEALPix implementation calls first.
+  function cornerstonePoint(name) {
+    var m = /^V:(f\d{1,2}\.[0-3]+)$/.exec(String(name).trim());
+    if (!m) throw new Error('cornerstonePoint: expected V:f<face>.<base-4 digits>');
+    var hit = cellCornerstones(m[1]).filter(function (c) { return c.name === name; })[0];
+    if (!hit) throw new Error('cornerstonePoint: "' + name + '" is not the canonical ' +
+                              'name of any corner of ' + m[1]);
+    return { lat: hit.lat, lon: hit.lon };
+  }
+
+  // opts.point supplies the target for a starpin, whose coordinates come from
+  // the catalogue and are not derivable from the record.
+  function assessRecord(rec, opts) {
+    opts = opts || {};
+    if (!rec || !rec.target) throw new Error('assessRecord: not a record');
+    var out = { evaluator: 'starpin-eval-v0.1',
+                rules: { visit: 'visit-geometry-v1', attendance: 'attendance-v1' } };
+
+    var point = opts.point || null;
+    if (!point && rec.target.cornerstone) {
+      try { point = cornerstonePoint(rec.target.cornerstone); }
+      catch (e) { out.targetError = e.message; }
+    }
+    out.target = point;
+
+    if (point && rec.fix) {
+      out.visit = assessVisit({
+        lat: rec.fix.lat_1e7 / UNIT, lon: rec.fix.lon_1e7 / UNIT,
+        accuracy_m: rec.fix.accuracy_m
+      }, point, opts);
+    } else {
+      out.visit = { rule: 'visit-geometry-v1',
+                    verdict: point ? 'no-fix-recorded' : 'target-coordinates-unknown' };
+    }
+
+    if (rec.event && rec.event.time_ms != null) out.attendance = attendance(rec.event.time_ms);
+    return out;
+  }
+
   // ── exports ───────────────────────────────────────────────────────────────
 
   return {
@@ -390,7 +438,8 @@ var GeosonifyStarpin = (function () {
     sunPosition: sunPosition, sunAltitude: sunAltitude, darkness: darkness,
     assessVisit: assessVisit, haversineM: haversineM,
     nearestCornerstone: nearestCornerstone, cellCornerstones: cellCornerstones,
-    cellComplete: cellComplete
+    cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
+    assessRecord: assessRecord
   };
 })();
 

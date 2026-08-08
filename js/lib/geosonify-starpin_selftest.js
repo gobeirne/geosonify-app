@@ -147,5 +147,42 @@ if (haveHp) {
      S.cellComplete('f9.11120211002300', corners).complete === true);
 }
 
+// ── 9. the evaluator: assessments are derived, never stored ──────────────────
+head('9: assessRecord — derived, re-derivable, versioned');
+if (haveHp) {
+  var REC = { schema: 'starpin.record/1', kind: 'visit',
+    target: { cornerstone: 'V:f9.11120211002122' }, membership: null,
+    event: { time_ms: 1786160642206, time_uncertainty_ms: null },
+    fix: { lat_1e7: -435529316, lon_1e7: 1726521153, datum: 'WGS84',
+           accuracy_m: 2.1, time_ms: 1786160642206, source: 'web-geolocation' } };
+
+  ok('resolves a cornerstone name to a point',
+     Math.abs(S.cornerstonePoint('V:f9.11120211002122').lat + 43.5529318) < 1e-6);
+  ok('rejects a malformed cornerstone name', throws(function () {
+    S.cornerstonePoint('f9.11120211002122'); }));
+  ok('rejects a bad face', throws(function () { S.cornerstonePoint('V:f99.0000'); }));
+  var A9 = S.assessRecord(REC);
+  ok('verdict is well-supported', A9.visit.verdict === 'well-supported', A9.visit.verdict);
+  ok('distance about 1.4 m', Math.abs(A9.visit.distanceM - 1.40) < 0.05, String(A9.visit.distanceM));
+  ok('carries the evaluator version', /^starpin-eval-/.test(A9.evaluator));
+  ok('names both rules it applied',
+     A9.rules.visit === 'visit-geometry-v1' && A9.rules.attendance === 'attendance-v1');
+  ok('attendance derived from the raw timestamp', A9.attendance.attended === false);
+  ok('SAME record, tighter R, tighter verdict',
+     S.assessRecord(REC, { radiusArcsec: 0.1 }).visit.verdict === 'compatible',
+     'R=3.1 m: d=1.4 a=2.1 so d+a>R but d-a<R');
+  ok('R below the fix accuracy gives FIX-TOO-COARSE, not "you were not there"',
+     S.assessRecord(REC, { radiusArcsec: 0.05 }).visit.verdict === 'fix-too-coarse',
+     'R=1.55 m but the fix is +/-2.1 m, so the honest answer is that the fix cannot tell');
+  ok('a genuinely distant fix IS not-supported', (function () {
+     var far = JSON.parse(JSON.stringify(REC)); far.fix.lat_1e7 -= 30000;   // ~333 m
+     return S.assessRecord(far).visit.verdict === 'not-supported'; })());
+  ok('the record itself is never modified by assessment',
+     REC.visit === undefined && REC.verdict === undefined);
+  ok('a starpin target with no coordinates says so, rather than guessing',
+     S.assessRecord({ target: { starpin: 'starpin:gdr3:1' }, event: { time_ms: 0 },
+                      fix: REC.fix }).visit.verdict === 'target-coordinates-unknown');
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

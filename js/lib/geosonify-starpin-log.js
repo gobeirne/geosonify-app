@@ -74,7 +74,7 @@ var GeosonifyStarpinLog = (function () {
       fix = {
         lat_1e7: units(fix.lat), lon_1e7: units(fix.lon),
         datum: 'WGS84',
-        accuracy_m: fix.accuracy_m == null ? null : Number(fix.accuracy_m),
+        accuracy_m: fix.accuracy_m == null ? null : Math.round(Number(fix.accuracy_m) * 10) / 10,
         altitude_m: fix.altitude_m == null ? null : Number(fix.altitude_m),
         altitude_accuracy_m: fix.altitude_accuracy_m == null ? null : Number(fix.altitude_accuracy_m),
         time_ms: fix.time_ms == null ? now : Math.floor(fix.time_ms),
