@@ -56,9 +56,11 @@ var GeosonifyStarpinMap = (function () {
   var PALETTE = {
     light:   { grid: '#8e44ad', highlight: '#C582B2', bagged: '#1f7a4d',
                baggedRing: '#ffffff', you: '#4d5f8e', halo: '125,159,194',
+               star: '#f4b400', starRing: '#5a3d00',
                under: 'rgba(255,255,255,.75)' },
     imagery: { grid: '#ffd400', highlight: '#00e5ff', bagged: '#3ddc84',
                baggedRing: '#0b1f14', you: '#00e5ff', halo: '0,229,255',
+               star: '#ffffff', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.55)' }
   };
 
@@ -84,9 +86,17 @@ var GeosonifyStarpinMap = (function () {
 
   function cellWidthM(order) { return Math.sqrt(510.1e12 / (12 * Math.pow(4, order))); }
 
+  // WEIGHT is a tuning knob, exposed on screen so the right value can be found
+  // in the field and then hard-coded here. Raise the base rather than the ramp
+  // if fine orders vanish; raise the ramp if the hierarchy stops reading.
+  var WEIGHT = 2.5;
+  function setWeight(w) { WEIGHT = Math.max(0.5, Math.min(6, Number(w) || 1)); return WEIGHT; }
+  function weight() { return WEIGHT; }
+
   function strokeFor(order) {
     var t = Math.max(0, Math.min(1, (16 - order) / 10));      // 0 at 16, 1 at 6
-    return { width: 0.5 + t * t * 3.6, alpha: 0.22 + t * t * 0.62 };
+    return { width: (0.5 + t * t * 3.6) * WEIGHT,
+             alpha: Math.min(0.95, (0.22 + t * t * 0.62) * (0.75 + WEIGHT * 0.12)) };
   }
   function dotRadius(order) {
     var t = Math.max(0, Math.min(1, (15 - order) / 9));
@@ -140,6 +150,9 @@ var GeosonifyStarpinMap = (function () {
     root.appendChild(orderTag);
 
     var fix = null, bagged = [], highlight = null, cache = {};
+    var stars = [], hits = [];          // hits: screen-space targets for tapping
+    var onSelect = opts.onSelect || null;
+    var onMove = opts.onMove || null;
 
     function resolve(name) {
       if (cache[name] !== undefined) return cache[name];
@@ -223,6 +236,24 @@ var GeosonifyStarpinMap = (function () {
       }
       g.globalAlpha = 1;
 
+      hits = [];
+
+      // Stars first, so a bagged cornerstone on the same spot sits on top.
+      stars.forEach(function (st) {
+        if (st.lat == null || st.lon == null) return;
+        var xy = pt(st.lat, st.lon);
+        if (xy[0] < -30 || xy[0] > size.x + 30 || xy[1] < -30 || xy[1] > size.y + 30) return;
+        // Brighter stars draw bigger. Magnitude runs backwards, hence the flip.
+        var m = (st.mag == null) ? 14 : st.mag;
+        var r = Math.max(3, 9 - (m - 6) * 0.5);
+        g.beginPath(); g.arc(xy[0], xy[1], r + 2.5, 0, 6.2832);
+        g.fillStyle = 'rgba(' + pal.halo + ',.30)'; g.fill();
+        g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
+        g.fillStyle = pal.star; g.fill();
+        g.lineWidth = 1.5; g.strokeStyle = pal.starRing; g.stroke();
+        hits.push({ x: xy[0], y: xy[1], r: r + 10, kind: 'star', data: st });
+      });
+
       bagged.forEach(function (name) {
         var p = resolve(name); if (!p) return;
         var xy = pt(p.lat, p.lon);
@@ -231,6 +262,8 @@ var GeosonifyStarpinMap = (function () {
         g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
         g.fillStyle = pal.bagged; g.fill();
         g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
+        hits.push({ x: xy[0], y: xy[1], r: r + 12, kind: 'cornerstone',
+                    data: { name: name, lat: p.lat, lon: p.lon, order: p.order } });
       });
 
       if (highlight) {
@@ -287,6 +320,22 @@ var GeosonifyStarpinMap = (function () {
     var grid = new GridLayer().addTo(map);
     function redraw() { if (grid && grid._render) grid._render(); }
 
+    map.on('click', function (e) {
+      if (!onSelect) return;
+      var p = e.containerPoint, best = null, bestD = Infinity;
+      hits.forEach(function (h) {
+        var d = Math.hypot(h.x - p.x, h.y - p.y);
+        if (d <= h.r && d < bestD) { bestD = d; best = h; }
+      });
+      onSelect(best ? { kind: best.kind, data: best.data } : null);
+    });
+    map.on('moveend zoomend', function () {
+      if (onMove) {
+        var c = map.getCenter(), b = map.getBounds();
+        onMove(c.lat, c.lng, map.distance(b.getNorthWest(), b.getNorthEast()));
+      }
+    });
+
     applyBasemap(key);
     setTimeout(function () { map.invalidateSize(); redraw(); }, 60);
 
@@ -300,6 +349,14 @@ var GeosonifyStarpinMap = (function () {
       },
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
+      setStars: function (list) { stars = (list || []).slice(); redraw(); },
+      stars: function () { return stars.slice(); },
+      setWeight: function (w) { setWeight(w); redraw(); return weight(); },
+      weight: weight,
+      centre: function () { var c = map.getCenter(); return { lat: c.lat, lon: c.lng }; },
+      spanM: function () {
+        var b = map.getBounds(); return map.distance(b.getNorthWest(), b.getNorthEast());
+      },
       setHighlight: function (n) { highlight = n || null; redraw(); },
       setBasemap: applyBasemap,
       basemap: function () { return key; },
@@ -309,9 +366,9 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.2', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.3', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
-           orderOfName: orderOfName };
+           orderOfName: orderOfName, setWeight: setWeight, weight: weight };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinMap;
