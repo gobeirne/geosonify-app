@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Starpin — field demo</title>
+<!--
+  starpin-demo.html — open it directly, no build, no server needed.
+
+  Sits beside geosonify-healpix.js, geosonify-starpin.js and
+  geosonify-starpin-clock.js. Everything here works with NO catalogue data:
+  the culmination clock is global, and cornerstones are pure geometry.
+
+  The starpin panel needs ra/dec because a source_id alone only gives the
+  order-12 cell (1.6 km across). Paste them from a card until the seed
+  dataset exists.
+-->
+<style>
+:root{
+  --kereru-teal:#325756; --kereru-blue:#7d9fc2; --kereru-pink:#C582B2;
+  --kereru-green:#51806a; --kereru-purple:#4d5f8e; --kereru-lavender:#A092B7;
+  --ios-text:#000; --ios-secondary:#3C3C43; --ios-separator:#C6C6C8;
+  --ios-bg:#fff; --ios-card:#fff;
+}
+@media (prefers-color-scheme:dark){
+  :root{--ios-text:#fff;--ios-secondary:#EBEBF5;--ios-separator:#38383A;
+        --ios-bg:#000;--ios-card:#1C1C1E;--kereru-teal:#5f9b98}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ios-bg);color:var(--ios-text);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,sans-serif;
+  padding:1.25rem 1rem calc(2rem + env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;align-items:center;gap:1.5rem}
+header{text-align:center;max-width:26rem}
+h1{font-size:1.05rem;font-weight:600;letter-spacing:.01em;margin:0}
+header p{margin:.4rem 0 0;font-size:.8rem;color:var(--ios-secondary);line-height:1.5}
+section{width:100%;max-width:26rem;background:var(--ios-card);
+  border:1px solid var(--ios-separator);border-radius:14px;padding:1rem}
+h2{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ios-secondary);margin:0 0 .75rem;font-weight:600}
+button{font:inherit;font-size:.85rem;padding:.55rem 1rem;border-radius:10px;
+  border:1px solid var(--kereru-teal);background:transparent;color:var(--kereru-teal);
+  cursor:pointer;width:100%}
+button:hover{background:color-mix(in srgb,var(--kereru-teal) 12%,transparent)}
+button:focus-visible{outline:2px solid var(--kereru-lavender);outline-offset:2px}
+input{font:inherit;font-family:'SF Mono',ui-monospace,monospace;font-size:.8rem;width:100%;
+  padding:.5rem .6rem;border-radius:8px;border:1px solid var(--ios-separator);
+  background:transparent;color:inherit;margin-bottom:.5rem}
+input:focus-visible{outline:2px solid var(--kereru-lavender);outline-offset:1px}
+dl{margin:.75rem 0 0}
+.r{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .1rem;
+  border-bottom:1px solid var(--ios-separator);font-size:.85rem}
+.r:last-child{border-bottom:0}
+.r dt{color:var(--ios-secondary)}
+.r dd{margin:0;font-family:'SF Mono',ui-monospace,monospace;text-align:right;
+  word-break:break-all}
+.pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
+.hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
+.bad{color:var(--kereru-pink)}
+.ok{color:var(--kereru-green)}
+@media (prefers-color-scheme:dark){.ok{color:#7fc4a3}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Every star already has a place on Earth</h1>
+  <p>Declination reads as latitude, right ascension as longitude. Nobody arranged
+     that. Once per sidereal day, every star stands over its own place at the
+     same instant.</p>
+</header>
+
+<section id="clock-panel">
+  <h2>the clock</h2>
+  <div id="clock"></div>
+</section>
+
+<section>
+  <h2>where you are</h2>
+  <button id="locate" type="button">Use my location</button>
+  <dl>
+    <div class="r"><dt>fix</dt><dd id="fix">not yet</dd></div>
+    <div class="r"><dt>accuracy</dt><dd id="acc">—</dd></div>
+  </dl>
+  <p class="hint">Nothing has been hidden or placed at any of these locations.
+     They exist because of the stars' coordinates. The arrow shows direction,
+     not a safe or legal route — follow normal paths and access rules.</p>
+</section>
+
+<section>
+  <h2>nearest cornerstone</h2>
+  <input id="order" inputmode="numeric" value="14" aria-label="HEALPix order">
+  <dl>
+    <div class="r"><dt>name</dt><dd id="cs-name">—</dd></div>
+    <div class="r"><dt>intrinsic order</dt><dd id="cs-order">—</dd></div>
+    <div class="r"><dt>walk</dt><dd id="cs-dist">—</dd></div>
+    <div class="r"><dt>corners of this cell</dt><dd id="cs-pips" class="pips">—</dd></div>
+  </dl>
+  <p class="hint">A vertex is shared by up to four cells and is named by the
+     lowest of them, so only one of a cell's four corners carries the cell's own
+     name. Intrinsic order is the coarsest order at which the point is still a
+     vertex — the shorter the address, the rarer the cornerstone.</p>
+</section>
+
+<section>
+  <h2>a starpin</h2>
+  <input id="sid" value="5382127323687128576" aria-label="Gaia source_id">
+  <input id="ra"  value="" placeholder="right ascension, degrees" aria-label="RA">
+  <input id="dec" value="" placeholder="declination, degrees" aria-label="Dec">
+  <dl>
+    <div class="r"><dt>alias</dt><dd id="sp-alias">—</dd></div>
+    <div class="r"><dt>cell</dt><dd id="sp-cell">—</dd></div>
+    <div class="r"><dt>address</dt><dd id="sp-addr">enter ra and dec</dd></div>
+    <div class="r"><dt>distance</dt><dd id="sp-dist">—</dd></div>
+    <div class="r"><dt>visit</dt><dd id="sp-verdict">—</dd></div>
+  </dl>
+  <p class="hint">A source_id alone gives only the order-12 cell, 1.6 km across.
+     The exact address needs the catalogue coordinates.</p>
+</section>
+
+<script src="geosonify-healpix.js"></script>
+<script src="geosonify-starpin.js"></script>
+<script src="geosonify-starpin-clock.js"></script>
+<script>
+(function () {
+  'use strict';
+  var S = GeosonifyStarpin;
+  var $ = function (id) { return document.getElementById(id); };
+  var clock = GeosonifyStarpinClock.mount($('clock'));
+  var fix = null, collected = {};   // in-memory only; export is the real store
+
+  function bearing(a1, o1, a2, o2) {
+    var d = Math.PI / 180, y = Math.sin((o2 - o1) * d) * Math.cos(a2 * d);
+    var x = Math.cos(a1 * d) * Math.sin(a2 * d) -
+            Math.sin(a1 * d) * Math.cos(a2 * d) * Math.cos((o2 - o1) * d);
+    return (Math.atan2(y, x) / d + 360) % 360;
+  }
+  var COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  function compass(b) { return COMPASS[Math.round(b / 22.5) % 16]; }
+  function walk(m, b) {
+    return (m < 1000 ? m.toFixed(0) + ' m' : (m / 1000).toFixed(2) + ' km') +
+           ' ' + compass(b) + ' (' + b.toFixed(0) + '\u00B0)';
+  }
+
+  $('locate').addEventListener('click', function () {
+    if (!navigator.geolocation) { $('fix').textContent = 'no geolocation here'; return; }
+    $('fix').textContent = 'locating\u2026';
+    navigator.geolocation.getCurrentPosition(function (p) {
+      fix = { lat: p.coords.latitude, lon: p.coords.longitude,
+              accuracy_m: p.coords.accuracy };
+      $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
+      $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
+      clock.setPosition(fix.lat, fix.lon < 0 ? fix.lon + 360 : fix.lon);
+      redraw();
+    }, function (e) { $('fix').textContent = 'no fix: ' + e.message; },
+       { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+
+  function cornerstone() {
+    if (!fix) return;
+    var order = Math.max(1, Math.min(20, parseInt($('order').value, 10) || 14));
+    var v;
+    try { v = S.nearestCornerstone(fix.lat, fix.lon, order); }
+    catch (e) { $('cs-name').textContent = e.message; return; }
+    var b = bearing(fix.lat, fix.lon, v.lat, v.lon);
+    $('cs-name').textContent = v.name;
+    $('cs-order').textContent = v.intrinsicOrder + (v.degree === 3 ? '  (degree 3!)' : '');
+    $('cs-dist').textContent = walk(v.distanceM, b);
+    var cell = 'f' + v.incident[0].slice(1);
+    try {
+      var st = S.cellComplete(v.incident[0], Object.keys(collected));
+      $('cs-pips').textContent =
+        st.corners.map(function (n) { return collected[n] ? '\u25CF' : '\u25CB'; }).join('') +
+        '  ' + (4 - st.missing.length) + ' of 4';
+    } catch (e) { $('cs-pips').textContent = '—'; }
+  }
+
+  function starpin() {
+    var sid = $('sid').value.trim();
+    try {
+      var d = S.decodeSourceId(sid);
+      $('sp-alias').textContent = S.alias(sid);
+      $('sp-cell').textContent = d.quaternary;
+    } catch (e) {
+      $('sp-alias').textContent = e.message; $('sp-cell').textContent = '—';
+      return;
+    }
+    var ra = $('ra').value.trim(), dec = $('dec').value.trim();
+    if (!ra || !dec) { $('sp-addr').textContent = 'enter ra and dec'; return; }
+    var a;
+    try { a = S.starpinAddress(ra, dec); }
+    catch (e) { $('sp-addr').textContent = e.message; return; }
+    $('sp-addr').textContent = a.lat.toFixed(7) + ', ' + a.lon.toFixed(7);
+    if (!fix) { $('sp-dist').textContent = 'needs your position'; return; }
+    var m = S.haversineM(fix.lat, fix.lon, a.lat, a.lon);
+    var b = bearing(fix.lat, fix.lon, a.lat, a.lon);
+    $('sp-dist').textContent = walk(m, b);
+    var r = S.assessVisit(fix, { lat: a.lat, lon: a.lon });
+    var vd = $('sp-verdict');
+    vd.textContent = r.verdict + '  (' + r.separationArcsec.toFixed(2) + '\u2033)';
+    vd.className = r.verdict === 'well-supported' ? 'ok'
+                 : r.verdict === 'not-supported' ? 'bad' : '';
+  }
+
+  function redraw() { cornerstone(); starpin(); }
+  ['order', 'sid', 'ra', 'dec'].forEach(function (id) {
+    $(id).addEventListener('input', redraw);
+  });
+  redraw();
+})();
+</script>
+</body>
+</html>
