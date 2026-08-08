@@ -59,6 +59,10 @@ dl{margin:.75rem 0 0}
 .pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
 .hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
 .bad{color:var(--kereru-pink)}
+.btnrow{display:flex;gap:.5rem;margin-top:.6rem}
+.btnrow button{flex:1}
+button[aria-pressed="true"]{background:var(--kereru-teal);color:#fff;
+  border-color:var(--kereru-teal)}
 .tune{display:flex;align-items:center;gap:.6rem;font-size:.72rem;
   color:var(--ios-secondary);margin-top:.6rem}
 .tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ios-text);min-width:2.2rem}
@@ -112,12 +116,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   <div id="info" hidden></div>
   <label class="tune" for="wt">weight <b id="wt-val">2.0</b>
     <input id="wt" type="range" min="0.3" max="8" step="0.1" value="2"></label>
-  <label class="tune" for="fo">falloff <b id="fo-val">0.78</b>
-    <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.78"></label>
+  <label class="tune" for="fo">falloff <b id="fo-val">0.75</b>
+    <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.75"></label>
   <label class="tune" for="ps">zoom persist <b id="ps-val">0.30</b>
     <input id="ps" type="range" min="0" max="1.2" step="0.05" value="0.3"></label>
   <p class="hint" id="ramp" style="margin-top:.3rem"></p>
-  <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
+  <div class="btnrow">
+    <button id="recentre" type="button">Recentre on me</button>
+    <button id="track" type="button" aria-pressed="false">Track me</button>
+  </div>
+  <div id="readout" style="margin-top:.75rem"></div>
+  <p class="hint" id="readout-src">Tap the map to drop a pin and read what is there.
+     Tap a dot to select it. Nothing here logs anything.</p>
   <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
      hairlines are the commonplace. The grid switches to yellow on aerial, where
      purple would disappear. Bagged cornerstones are green dots sized by rarity;
@@ -173,6 +183,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     <div class="r"><dt>storage</dt><dd id="lg-store">—</dd></div>
   </dl>
   <ul id="lg-list"></ul>
+  <button id="lg-show" type="button" style="margin-bottom:.5rem">Look back through my records</button>
   <button id="lg-export" type="button">Download my records</button>
   <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
   <input id="lg-file" type="file" accept="application/json" hidden>
@@ -183,13 +194,25 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260808"></script>
+<script src="js/lib/gis-grids.js?v=20260808"></script>
+<!-- Geosonify vocabularies: card-renderer already exposes encodeCardCoordinate
+     and CARD_GRIDS, so the readout uses the real frozen encoders rather than
+     approximating them. This is card-renderer's own dependency order from
+     index.html, trimmed to what encoding needs. -->
+<script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.2/build/sha3.min.js"></script>
+<script src="js/lib/geosonify-grids-data.js?v=20260109"></script>
+<script src="js/lib/geosonify-codec-engine_v11_8a.js?v=20260109"></script>
+<script src="js/lib/geosonify-rgb111-lib_v2_5.js?v=20260627c"></script>
+<script src="js/lib/decimal.min.js?v=20260622"></script>
+<script src="js/ui/card-renderer.js?v=20260703b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260809d"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260809e"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20260809b"></script>
 <script>
 (function () {
   'use strict';
@@ -243,7 +266,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         : (F.spacingM(v.intrinsicOrder) / 1000).toFixed(1) + ' km') + ')';
     $('cs-dist').textContent = compass(b) + ' (' + b.toFixed(0) + '\u00B0)';
     var vr = S.assessVisit(fix, { lat: v.lat, lon: v.lon });
-    prox.update(vr, compass(b));
+    prox.update(vr, compass(b), b);
     map.setHighlight(v.name);
     var cv = $('cs-verdict');
     cv.textContent = vr.verdict + '  (' + vr.separationArcsec.toFixed(2) + '\u2033)';
@@ -329,7 +352,33 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     if (!sel) { box.hidden = true; return; }
     box.hidden = false;
 
-    if (sel.kind === 'cornerstone') {
+    if (sel.kind === 'pin') {
+      var d0 = sel.data;
+      readAt(d0.lat, d0.lon, 'dropped pin');
+      box.appendChild(el('h3', null, 'dropped pin'));
+      var pm = el('div', 'meta');
+      var v0 = null;
+      try { v0 = S.nearestCornerstone(d0.lat, d0.lon, 14); } catch (e) {}
+      if (v0) {
+        var t0 = F.tierOf(v0.tierOrder, v0.degree);
+        pm.appendChild(document.createTextNode('nearest cornerstone ' + v0.name));
+        pm.appendChild(el('br'));
+        pm.appendChild(document.createTextNode(
+          Math.round(v0.distanceM) + ' m away \u00B7 lines of order ' + v0.crossOrder +
+          ' and ' + v0.intrinsicOrder + ' cross here \u00B7 tier ' +
+          v0.tierOrder.toFixed(1) + ', ' + t0.key));
+        pm.appendChild(el('br'));
+        pm.appendChild(document.createTextNode(t0.label));
+        pm.appendChild(el('br'));
+        pm.appendChild(document.createTextNode(
+          collected['V:' + v0.incident[0].slice(1)] || collected[v0.name]
+            ? 'you have this one' : 'not yet bagged'));
+      }
+      box.appendChild(pm);
+      box.appendChild(el('div', 'meta',
+        'Reading only. Dropping a pin claims nothing \u2014 walk there to log it.'));
+
+    } else if (sel.kind === 'cornerstone') {
       var d = sel.data;
       box.appendChild(el('h3', null, d.name));
       var visits = log.current().filter(function (r) {
@@ -389,8 +438,13 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         lb.type = 'button'; lb.style.marginTop = '.6rem';
         lb.addEventListener('click', function () {
           var id = (st.name || '').replace(/^\D+/, '').trim();
+          var addr = S.starpinAddress(String(st.ra), String(st.dec));
           var target = /^\d+$/.test(id) ? { starpin: 'starpin:gdr3:' + id }
                                         : { starpin: 'starpin:name:' + (st.name || 'unknown') };
+          // The catalogue address travels with the record: a fact about the
+          // target at log time, so the visit stays assessable offline.
+          target.lat_1e7 = addr.lat_1e7; target.lon_1e7 = addr.lon_1e7;
+          target.catalogue = 'gaia-dr3';
           F.unlock();
           log.add(L.build(supported ? 'visit' : 'closest-approach', {
             target: target,
@@ -402,8 +456,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
                           protocol: { visit: 'visit-geometry-v1' } }
           }));
           drawLog(); redraw();
-          F.celebrate({ name: st.name || 'starpin', order: supported ? 11 : 14,
-                        kicker: supported ? 'starpin bagged' : 'closest approach logged' });
+          F.celebrate({ kind: 'starpin', name: st.name || 'starpin', mag: st.mag,
+                        digits: String(id || ''),
+                        kicker: supported ? 'starpin bagged'
+                                          : 'closest approach logged \u00B7 ' +
+                                            Math.round(vr2.distanceM) + ' m' });
         });
         box.appendChild(lb);
       }
@@ -462,6 +519,49 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     this.textContent = on ? 'Stop the sound guide' : 'Guide me by sound';
   });
   $('recentre').addEventListener('click', function () { map.recentre(); });
+
+  // ── the readout: one format at a time ────────────────────────────────────
+  var readout = GeosonifyStarpinReadout.mount($('readout'), { order: 14 });
+
+  function readAt(lat, lon, label) {
+    readout.set(lat, lon);
+    var v = null;
+    try { v = S.nearestCornerstone(lat, lon, 14); } catch (e) {}
+    var txt = label;
+    if (v) {
+      var t = F.tierOf(v.tierOrder, v.degree);
+      txt += ' \u00B7 nearest cornerstone ' + v.name + ' (' + Math.round(v.distanceM) +
+             ' m) \u00B7 orders ' + v.crossOrder + '\u00D7' + v.intrinsicOrder +
+             ' \u2192 tier ' + v.tierOrder.toFixed(1) + ', ' + t.key;
+    }
+    $('readout-src').textContent = txt;
+  }
+
+  // ── tracking: watchPosition, so the readout follows you ──────────────────
+  var watchId = null;
+  $('track').addEventListener('click', function () {
+    if (watchId != null) {
+      navigator.geolocation.clearWatch(watchId); watchId = null;
+      this.setAttribute('aria-pressed', 'false'); this.textContent = 'Track me';
+      return;
+    }
+    if (!navigator.geolocation) return;
+    F.unlock();
+    this.setAttribute('aria-pressed', 'true'); this.textContent = 'Tracking\u2026';
+    watchId = navigator.geolocation.watchPosition(function (p) {
+      fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy };
+      $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
+      $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
+      map.setFix(fix.lat, fix.lon, fix.accuracy_m);
+      map.clearPin();
+      readAt(fix.lat, fix.lon, 'you, live');
+      redraw();
+    }, function (e) {
+      $('fix').textContent = 'tracking stopped: ' + e.message;
+      navigator.geolocation.clearWatch(watchId); watchId = null;
+      $('track').setAttribute('aria-pressed', 'false'); $('track').textContent = 'Track me';
+    }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  });
   var lastCs = null, lastSp = null;
 
   function shortId(t) {
@@ -507,20 +607,22 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     F.unlock();
     if (log.current().some(function (r) {
           return r.target && r.target.cornerstone === lastCs.name; })) {
-      F.celebrate({ name: lastCs.name, order: lastCs.intrinsicOrder, degree: lastCs.degree,
-                    kicker: 'already yours' });
+      F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
+                    degree: lastCs.degree, kicker: 'already yours' });
       return;
     }
     logIt({ cornerstone: lastCs.name });
     // RULE 2: the single vertex is the reward. Set completion is a footnote,
     // announced separately and only when it actually happens.
-    F.celebrate({ name: lastCs.name, order: lastCs.intrinsicOrder, degree: lastCs.degree,
-                  digits: lastCs.name.replace(/\D/g, '') });
+    // tierOrder, not intrinsicOrder: a rare line crossing a common one sits
+    // between the two, and the celebration should reflect that.
+    F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
+                  degree: lastCs.degree, digits: lastCs.name.replace(/\D/g, '') });
     try {
       var st = S.cellComplete(lastCs.incident[0], Object.keys(collected));
       if (st.complete) setTimeout(function () {
-        F.celebrate({ name: lastCs.incident[0], order: lastCs.intrinsicOrder,
-                      kicker: 'all four corners' });
+        F.celebrate({ kind: 'cornerstone', name: lastCs.incident[0],
+                      order: lastCs.intrinsicOrder, kicker: 'all four corners' });
       }, 1500);
     } catch (e) {}
   });
@@ -528,6 +630,75 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     var sid = $('sid').value.trim();
     try { S.decodeSourceId(sid); } catch (e) { alert(e.message); return; }
     logIt({ starpin: 'starpin:gdr3:' + sid });
+  });
+
+  $('lg-show').addEventListener('click', function () {
+    var box = $('info'); box.textContent = ''; box.hidden = false;
+    box.appendChild(el('h3', null, 'your records'));
+    var recs = log.current();
+    if (!recs.length) {
+      box.appendChild(el('div', 'meta', 'Nothing yet. Go and stand somewhere.'));
+    }
+    var rank = S.rankByTarget(recs);
+    recs.forEach(function (r) {
+      var rk = rank[r.record_id] || {};
+      var d = el('div', 'meta');
+      d.style.borderTop = '1px solid var(--ios-separator)';
+      d.style.padding = '.5rem 0';
+      // Beaten by a closer approach of your own: dimmed, never hidden. It still
+      // happened, and if you retract the closer one it lights up again.
+      if (rk.best === false) { d.style.opacity = '.45'; }
+      var name = r.target.cornerstone || (r.target.starpin || '').replace('starpin:gdr3:', 'Gaia DR3 ');
+      var a = rk.assessment || null;
+      if (!a) { try { a = S.assessRecord(r); } catch (e) {} }
+      d.appendChild(el('strong', null, name));
+      if (rk.best && rk.count > 1) {
+        var badge = el('span', null, '  your closest');
+        badge.style.color = 'var(--kereru-green)'; badge.style.fontWeight = '600';
+        d.appendChild(badge);
+      }
+      d.appendChild(el('br'));
+      d.appendChild(document.createTextNode(new Date(r.event.time_ms).toLocaleString()));
+      d.appendChild(el('br'));
+      d.appendChild(document.createTextNode(
+        r.kind + ' \u00B7 ' + (a && a.visit ? a.visit.verdict : '?') +
+        (a && a.visit && a.visit.distanceM != null
+          ? ' at ' + a.visit.distanceM.toFixed(1) + ' m' : '') +
+        ' \u00B7 fix \u00B1' + (r.fix ? Math.round(r.fix.accuracy_m) + ' m' : 'none')));
+      if (rk.best === false && isFinite(rk.bestDistanceM)) {
+        d.appendChild(el('br'));
+        d.appendChild(document.createTextNode(
+          'beaten by your own ' + rk.bestDistanceM.toFixed(1) + ' m approach'));
+      }
+      var del = el('button', 'close', 'delete');
+      del.type = 'button'; del.style.marginLeft = '.4rem';
+      del.addEventListener('click', function () {
+        if (!confirm('Delete this record? It will not come back if you merge a friend\'s file.')) return;
+        log.remove(r.record_id);
+        drawLog(); redraw(); $('lg-show').click();
+      });
+      if (r.target.cornerstone) {
+        var vv = null;
+        try { vv = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
+        if (vv) {
+          var go = el('button', 'close', 'show on map');
+          go.type = 'button';
+          go.addEventListener('click', function () {
+            map.leaflet.setView([vv.lat, vv.lon], 18);
+            map.setHighlight(r.target.cornerstone);
+          });
+          d.appendChild(el('br')); d.appendChild(go);
+        }
+      }
+      d.appendChild(del);
+      box.appendChild(d);
+    });
+    box.appendChild(el('div', 'meta',
+      'Verdicts and "your closest" are re-derived every time this list is drawn, ' +
+      'never stored. Dimmed entries are ones you later beat.'));
+    var c = el('button', 'close', 'close'); c.type = 'button';
+    c.addEventListener('click', function () { box.hidden = true; });
+    box.appendChild(c);
   });
 
   $('lg-export').addEventListener('click', function () {
@@ -542,7 +713,9 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     var f = e.target.files && e.target.files[0]; if (!f) return;
     f.text().then(function (t) {
       var r = log.merge(t);
-      alert(r.added + ' new, ' + r.alreadyHeld + ' already held. ' + r.total + ' in total.');
+      alert(r.added + ' new, ' + r.alreadyHeld + ' already held' +
+            (r.retracted ? ', ' + r.retracted + ' refused (you deleted them)' : '') +
+            '. ' + r.total + ' in total.');
       drawLog(); redraw();
     }).catch(function (err) { alert('Could not read that file: ' + err.message); });
   });
