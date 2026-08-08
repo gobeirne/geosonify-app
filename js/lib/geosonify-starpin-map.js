@@ -1,58 +1,80 @@
 /*
-  geosonify-starpin-map.js v0.1 — the lattice map
+  geosonify-starpin-map.js v0.2 — the lattice over a real map
 
-  A map with NO BASEMAP. It draws the HEALPix grid, your fix, and the vertices
-  you have bagged. Nothing else, and that is deliberate:
+  v0.1 drew the HEALPix grid on a blank canvas and called it "the terrain".
+  That was a cop-out: you cannot walk in a straight line across a river, a
+  motorway or somebody's paddock, and a map implying you can is unsafe as well
+  as unhelpful. This version puts the lattice over OSM, Esri topo or Esri
+  aerial exactly as Geosonify does, and keeps a canvas overlay only for the
+  grid itself.
 
-    - zero bytes of map data, so it works on a prepaid connection and offline,
-      which is the whole Tier-0 argument;
-    - the grid IS the terrain here. A basemap would be scenery behind the thing
-      you actually came to see.
+  Providers and the contrast convention come straight from map-manager.js so
+  the two products agree:
 
-  Coarser orders are drawn bolder and finer orders fainter, so the hierarchy is
-  legible at a glance: the thick lines are the rare cornerstones, the hairlines
-  are the commonplace ones.
+     osm / topo   light maps    -> purple grid, pink highlight
+     aerial       dark imagery  -> vivid yellow grid, cyan highlight
+                  (purple and blue both sink into aerial photography)
 
-  Needs geosonify-healpix.js and geosonify-starpin.js.
+  Coarse orders are drawn boldest, because those are the rare cornerstones;
+  hairlines are the commonplace ones. Every line also gets a contrasting halo
+  underneath so the grid survives a busy street map and a noisy aerial alike.
+
+  Needs Leaflet, geosonify-healpix.js and geosonify-starpin.js.
 
       var map = GeosonifyStarpinMap.mount(el);
       map.setFix(lat, lon, accuracyM);
-      map.setBagged(['V:f9.111202110020', ...]);   // from the log
-      map.setHighlight('V:f9.111202110020');
-      map.zoomTo(2000);                            // metres across
+      map.setBagged(names); map.setHighlight(name);
+      map.setBasemap('aerial');
 */
 'use strict';
 
 var GeosonifyStarpinMap = (function () {
 
   var S = (typeof GeosonifyStarpin !== 'undefined') ? GeosonifyStarpin
-        : (typeof require === 'function' ? require('./geosonify-starpin.js') : null);
-  var H = (typeof HealpixGrids !== 'undefined') ? HealpixGrids
+        : (typeof require === 'function' ? (function () {
+            try { return require('./geosonify-starpin.js'); } catch (e) { return null; } })() : null);
+  var HP = (typeof HealpixGrids !== 'undefined') ? HealpixGrids
         : (typeof require === 'function' ? (function () {
             try { return require('./geosonify-healpix.js'); } catch (e) { return null; } })() : null);
 
-  var M_PER_DEG = 111319.9, D2R = Math.PI / 180;
+  var D2R = Math.PI / 180;
   var CSS_ID = 'starpin-map-css';
 
-  var CSS = [
-    '.spm{position:relative;width:100%;aspect-ratio:1;border-radius:12px;overflow:hidden;',
-    '  border:1px solid var(--ios-separator,#C6C6C8);touch-action:none;',
-    '  background:var(--ios-bg,#fff)}',
-    '.spm canvas{display:block;width:100%;height:100%}',
-    '.spm-hud{position:absolute;left:.5rem;bottom:.5rem;right:.5rem;display:flex;',
-    '  justify-content:space-between;align-items:flex-end;pointer-events:none;',
-    '  font-family:"SF Mono",ui-monospace,monospace;font-size:.62rem;',
-    '  color:var(--ios-secondary,#3C3C43)}',
-    '.spm-scale{border-left:1px solid currentColor;border-right:1px solid currentColor;',
-    '  border-bottom:1px solid currentColor;padding:0 .25rem 1px;text-align:center}',
-    '.spm-zoom{position:absolute;right:.5rem;top:.5rem;display:flex;flex-direction:column;gap:.25rem}',
-    '.spm-zoom button{width:2rem;height:2rem;padding:0;border-radius:8px;font-size:1rem;',
-    '  line-height:1;background:var(--ios-card,#fff);opacity:.92}'
-  ].join('');
+  // Lifted from map-manager.js so a Starpin map and a Geosonify map match.
+  var BASEMAPS = {
+    osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+           attrib: '\u00A9 OpenStreetMap contributors', imagery: false, label: 'map' },
+    topo: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+            attrib: '\u00A9 Esri \u2014 World Topographic Map', imagery: false, label: 'topo' },
+    aerial: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+              attrib: 'Imagery \u00A9 Esri, Maxar, Earthstar Geographics', imagery: true, label: 'aerial' }
+  };
 
-  // Zoom stops in metres across the viewport. Each roughly doubles, and the
-  // set spans "the four corners of an order-12 cell" to "an order-8 cell".
-  var STOPS = [200, 400, 800, 1600, 3200, 6400, 12800, 25600, 51200, 102400];
+  // Green stays green in both palettes so "bagged" never changes meaning; on
+  // imagery it just brightens and takes a dark outline so it holds against
+  // foliage.
+  var PALETTE = {
+    light:   { grid: '#8e44ad', highlight: '#C582B2', bagged: '#1f7a4d',
+               baggedRing: '#ffffff', you: '#4d5f8e', halo: '125,159,194',
+               under: 'rgba(255,255,255,.75)' },
+    imagery: { grid: '#ffd400', highlight: '#00e5ff', bagged: '#3ddc84',
+               baggedRing: '#0b1f14', you: '#00e5ff', halo: '0,229,255',
+               under: 'rgba(0,0,0,.55)' }
+  };
+
+  var CSS = [
+    '.spm{position:relative;width:100%;height:min(80vw,360px);border-radius:12px;',
+    '  overflow:hidden;border:1px solid var(--ios-separator,#C6C6C8);background:#dcdcdc}',
+    '.spm-pane{position:absolute;inset:0}',
+    '.spm-bm{position:absolute;right:.5rem;top:.5rem;z-index:600;display:flex;gap:.25rem}',
+    '.spm-bm button{font:inherit;font-size:.7rem;padding:.3rem .55rem;border-radius:7px;',
+    '  border:1px solid rgba(0,0,0,.25);background:rgba(255,255,255,.93);color:#222;',
+    '  cursor:pointer;width:auto}',
+    '.spm-bm button[aria-pressed="true"]{background:#325756;color:#fff;border-color:#325756}',
+    '.spm-orders{position:absolute;left:.5rem;bottom:1.5rem;z-index:600;pointer-events:none;',
+    '  font-family:"SF Mono",ui-monospace,monospace;font-size:.6rem;padding:.15rem .4rem;',
+    '  border-radius:5px;background:rgba(255,255,255,.82);color:#333}'
+  ].join('');
 
   function injectCss(doc) {
     if (doc.getElementById(CSS_ID)) return;
@@ -60,230 +82,236 @@ var GeosonifyStarpinMap = (function () {
     doc.head.appendChild(st);
   }
 
-  function cellWidthM(order) {
-    return Math.sqrt(510.1e12 / (12 * Math.pow(4, order)));
-  }
+  function cellWidthM(order) { return Math.sqrt(510.1e12 / (12 * Math.pow(4, order))); }
 
-  // Coarse = bold and opaque. Fine = hairline and faint.
   function strokeFor(order) {
-    var t = Math.max(0, Math.min(1, (16 - order) / 10));       // 0 at 16, 1 at 6
-    return { width: 0.4 + t * t * 3.4, alpha: 0.10 + t * t * 0.72 };
+    var t = Math.max(0, Math.min(1, (16 - order) / 10));      // 0 at 16, 1 at 6
+    return { width: 0.5 + t * t * 3.6, alpha: 0.22 + t * t * 0.62 };
   }
   function dotRadius(order) {
     var t = Math.max(0, Math.min(1, (15 - order) / 9));
     return 3 + t * t * 11;
   }
+  function orderOfName(name) {
+    var m = /\.([0-3]+)$/.exec(String(name || '')); return m ? m[1].length : 12;
+  }
 
   function mount(container, opts) {
-    if (!S || !H) throw new Error('starpin-map needs geosonify-healpix.js and geosonify-starpin.js');
+    if (typeof L === 'undefined') throw new Error('starpin-map v0.2 needs Leaflet');
+    if (!S || !HP) throw new Error('starpin-map needs geosonify-healpix.js and geosonify-starpin.js');
     var doc = container.ownerDocument || document;
     injectCss(doc);
     opts = opts || {};
 
     var root = doc.createElement('div'); root.className = 'spm';
-    var cv = doc.createElement('canvas');
-    root.appendChild(cv);
-    var hud = doc.createElement('div'); hud.className = 'spm-hud';
-    var scale = doc.createElement('div'); scale.className = 'spm-scale';
-    var orders = doc.createElement('div');
-    hud.appendChild(scale); hud.appendChild(orders);
-    root.appendChild(hud);
-
-    var zoomBox = doc.createElement('div'); zoomBox.className = 'spm-zoom';
-    var zin = doc.createElement('button'); zin.type = 'button'; zin.textContent = '+';
-    zin.setAttribute('aria-label', 'zoom in');
-    var zout = doc.createElement('button'); zout.type = 'button'; zout.textContent = '\u2212';
-    zout.setAttribute('aria-label', 'zoom out');
-    zoomBox.appendChild(zin); zoomBox.appendChild(zout);
-    root.appendChild(zoomBox);
+    var pane = doc.createElement('div'); pane.className = 'spm-pane';
+    root.appendChild(pane);
     container.appendChild(root);
 
-    var fix = null, bagged = [], highlight = null, pointCache = {};
-    var stop = 3, centre = null, panning = null;
+    var map = L.map(pane, { zoomControl: true, maxZoom: 22 })
+                .setView([opts.lat != null ? opts.lat : 0,
+                          opts.lon != null ? opts.lon : 0], opts.zoom || 16);
+
+    var key = (opts.basemap && BASEMAPS[opts.basemap]) ? opts.basemap : 'osm';
+    var tiles = null, btns = {};
+
+    function applyBasemap(k) {
+      key = BASEMAPS[k] ? k : 'osm';
+      if (tiles) map.removeLayer(tiles);
+      tiles = L.tileLayer(BASEMAPS[key].url, {
+        attribution: BASEMAPS[key].attrib, maxNativeZoom: 19, maxZoom: 22
+      }).addTo(map);
+      Object.keys(btns).forEach(function (b) {
+        btns[b].setAttribute('aria-pressed', b === key ? 'true' : 'false');
+      });
+      redraw();
+    }
+
+    var bar = doc.createElement('div'); bar.className = 'spm-bm';
+    Object.keys(BASEMAPS).forEach(function (k) {
+      var b = doc.createElement('button');
+      b.type = 'button'; b.textContent = BASEMAPS[k].label;
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', function (e) { e.stopPropagation(); applyBasemap(k); });
+      btns[k] = b; bar.appendChild(b);
+    });
+    root.appendChild(bar);
+    var orderTag = doc.createElement('div'); orderTag.className = 'spm-orders';
+    root.appendChild(orderTag);
+
+    var fix = null, bagged = [], highlight = null, cache = {};
 
     function resolve(name) {
-      if (pointCache[name] !== undefined) return pointCache[name];
+      if (cache[name] !== undefined) return cache[name];
       var p = null;
       try { p = S.cornerstonePoint(name); } catch (e) { p = null; }
-      // intrinsic order is the digit count of the address
-      if (p) { var m = /\.([0-3]+)$/.exec(name); p.order = m ? m[1].length : 12; }
-      pointCache[name] = p;
-      return p;
+      if (p) p.order = orderOfName(name);
+      cache[name] = p; return p;
     }
 
-    // Local equirectangular about the centre. Good to a fraction of a pixel at
-    // these scales, and it keeps the grid square, which is the point.
-    function project(lat, lon, w, h, span) {
-      var mpp = span / Math.min(w, h);
-      return [w / 2 + (lon - centre.lon) * M_PER_DEG * Math.cos(centre.lat * D2R) / mpp,
-              h / 2 - (lat - centre.lat) * M_PER_DEG / mpp];
-    }
-    function unproject(px, py, w, h, span) {
-      var mpp = span / Math.min(w, h);
-      return [centre.lat - (py - h / 2) * mpp / M_PER_DEG,
-              centre.lon + (px - w / 2) * mpp / (M_PER_DEG * Math.cos(centre.lat * D2R))];
-    }
-
-    // Collect the cells of an order that intersect the viewport by sampling.
+    // Cells of an order intersecting the view, found by sampling the viewport.
     // Sampling rather than neighbour-walking because it crosses HEALPix face
-    // boundaries without any special cases.
-    function cellsInView(order, w, h, span) {
+    // boundaries with no special cases.
+    function cellsInView(order, size, spanM) {
       var cw = cellWidthM(order);
-      var step = Math.max(2, Math.round(Math.min(w, h) / (span / (cw / 2.5))));
+      var step = Math.max(3, Math.round(size.x / (spanM / (cw / 2.5))));
       var seen = {}, out = [];
-      for (var px = -step; px <= w + step; px += step) {
-        for (var py = -step; py <= h + step; py += step) {
-          var ll = unproject(px, py, w, h, span);
-          if (ll[0] > 89.9 || ll[0] < -89.9) continue;
+      for (var px = -step; px <= size.x + step; px += step) {
+        for (var py = -step; py <= size.y + step; py += step) {
+          var ll = map.containerPointToLatLng([px, py]);
+          if (ll.lat > 89.9 || ll.lat < -89.9) continue;
           var ip;
-          try { ip = H.nestIndex(ll[0], ll[1], order).toString(); } catch (e) { continue; }
+          try { ip = HP.nestIndex(ll.lat, ll.lng, order).toString(); } catch (e) { continue; }
           if (seen[ip]) continue;
           seen[ip] = 1; out.push(ip);
-          if (out.length > 600) return out;                 // hard cap, keeps it responsive
+          if (out.length > 700) return out;                  // cap: stay responsive
         }
       }
       return out;
     }
 
-    function draw() {
-      var w = root.clientWidth || 320, h = root.clientHeight || 320;
-      var dpr = (doc.defaultView.devicePixelRatio || 1);
-      cv.width = w * dpr; cv.height = h * dpr;
-      var g;
-      try { g = cv.getContext('2d'); } catch (e) { return; }
+    function draw(cv) {
+      if (!cv || !map) return;
+      var size = map.getSize();
+      var dpr = doc.defaultView.devicePixelRatio || 1;
+      cv.width = size.x * dpr; cv.height = size.y * dpr;
+      cv.style.width = size.x + 'px'; cv.style.height = size.y + 'px';
+      L.DomUtil.setPosition(cv, map.containerPointToLayerPoint([0, 0]));
+
+      var g; try { g = cv.getContext('2d'); } catch (e) { return; }
       if (!g) return;
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      g.clearRect(0, 0, w, h);
-      if (!centre) return;
+      g.clearRect(0, 0, size.x, size.y);
 
-      var span = STOPS[stop];
-      var ink = (opts.ink) || getComputedStyle(root).color || '#000';
+      var pal = PALETTE[BASEMAPS[key].imagery ? 'imagery' : 'light'];
+      var b = map.getBounds();
+      var spanM = map.distance(b.getNorthWest(), b.getNorthEast()) || 1000;
+      var mpp = spanM / size.x;
       var drawn = [];
 
-      // Grid, coarsest first so fine lines sit on top of thick ones.
-      for (var order = 6; order <= 16; order++) {
+      function pt(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
+
+      for (var order = 5; order <= 18; order++) {
         var cw = cellWidthM(order);
-        if (cw > span * 3) continue;                        // too coarse to see
-        if (cw < span / 26) break;                          // finer than useful
-        var st = strokeFor(order);
-        var nside = Math.pow(2, order);
-        var cells = cellsInView(order, w, h, span);
+        if (cw > spanM * 3) continue;
+        if (cw < spanM / 26) break;
+        var cells = cellsInView(order, size, spanM);
         if (!cells.length) continue;
         drawn.push(order);
-        g.lineWidth = st.width; g.globalAlpha = st.alpha; g.strokeStyle = ink;
-        g.beginPath();
-        for (var i = 0; i < cells.length; i++) {
-          var ip = BigInt(cells[i]);
-          var pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(function (uv) {
-            var v = H._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
-            var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
-                z = v.z != null ? v.z : v[2];
-            return project(Math.asin(z / Math.hypot(x, y, z)) / D2R,
-                           Math.atan2(y, x) / D2R, w, h, span);
-          });
-          g.moveTo(pts[0][0], pts[0][1]);
-          for (var k = 1; k < 4; k++) g.lineTo(pts[k][0], pts[k][1]);
-          g.closePath();
-        }
-        g.stroke();
+        var st = strokeFor(order);
+        var nside = Math.pow(2, order);
+
+        // Halo first, then the line, so the grid holds on any basemap.
+        [[pal.under, st.width + 1.8, st.alpha * 0.85], [pal.grid, st.width, st.alpha]]
+        .forEach(function (layer) {
+          g.strokeStyle = layer[0]; g.lineWidth = layer[1]; g.globalAlpha = layer[2];
+          g.beginPath();
+          for (var i = 0; i < cells.length; i++) {
+            var ip = BigInt(cells[i]);
+            var pts = [[0, 0], [1, 0], [1, 1], [0, 1]].map(function (uv) {
+              var v = HP._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
+              var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
+                  z = v.z != null ? v.z : v[2];
+              return pt(Math.asin(z / Math.hypot(x, y, z)) / D2R, Math.atan2(y, x) / D2R);
+            });
+            g.moveTo(pts[0][0], pts[0][1]);
+            for (var k = 1; k < 4; k++) g.lineTo(pts[k][0], pts[k][1]);
+            g.closePath();
+          }
+          g.stroke();
+        });
       }
       g.globalAlpha = 1;
 
-      // Bagged vertices: green, and bigger the rarer they are.
       bagged.forEach(function (name) {
         var p = resolve(name); if (!p) return;
-        var xy = project(p.lat, p.lon, w, h, span);
-        if (xy[0] < -40 || xy[0] > w + 40 || xy[1] < -40 || xy[1] > h + 40) return;
+        var xy = pt(p.lat, p.lon);
+        if (xy[0] < -40 || xy[0] > size.x + 40 || xy[1] < -40 || xy[1] > size.y + 40) return;
         var r = dotRadius(p.order);
-        g.beginPath(); g.arc(xy[0], xy[1], r + 3, 0, 6.2832);
-        g.fillStyle = 'rgba(81,128,106,.22)'; g.fill();
         g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
-        g.fillStyle = '#51806a'; g.fill();
+        g.fillStyle = pal.bagged; g.fill();
+        g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
       });
 
-      // The one you are heading for.
       if (highlight) {
         var hp = resolve(highlight);
         if (hp) {
-          var hxy = project(hp.lat, hp.lon, w, h, span);
-          g.strokeStyle = '#C582B2'; g.lineWidth = 2; g.globalAlpha = 1;
-          g.beginPath(); g.arc(hxy[0], hxy[1], dotRadius(hp.order) + 7, 0, 6.2832); g.stroke();
+          var h = pt(hp.lat, hp.lon);
+          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
+          g.beginPath(); g.arc(h[0], h[1], dotRadius(hp.order) + 8, 0, 6.2832); g.stroke();
+          g.beginPath();
+          g.moveTo(h[0] - 6, h[1]); g.lineTo(h[0] + 6, h[1]);
+          g.moveTo(h[0], h[1] - 6); g.lineTo(h[0], h[1] + 6);
+          g.stroke();
         }
       }
 
-      // You, with your actual uncertainty drawn to scale — not a dot that lies.
+      // You, with your real uncertainty drawn to scale rather than a dot that lies.
       if (fix) {
-        var f = project(fix.lat, fix.lon, w, h, span);
-        var mpp = span / Math.min(w, h);
+        var f = pt(fix.lat, fix.lon);
         if (fix.accuracy_m) {
           g.beginPath(); g.arc(f[0], f[1], Math.max(3, fix.accuracy_m / mpp), 0, 6.2832);
-          g.fillStyle = 'rgba(125,159,194,.25)'; g.fill();
+          g.fillStyle = 'rgba(' + pal.halo + ',.22)'; g.fill();
+          g.strokeStyle = 'rgba(' + pal.halo + ',.65)'; g.lineWidth = 1; g.stroke();
         }
-        g.beginPath(); g.arc(f[0], f[1], 5, 0, 6.2832);
-        g.fillStyle = '#4d5f8e'; g.fill();
+        g.beginPath(); g.arc(f[0], f[1], 5.5, 0, 6.2832);
+        g.fillStyle = pal.you; g.fill();
         g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
       }
 
-      // Scale bar: a round number of metres, sized to about a quarter of view.
-      var target = span / 4, pow = Math.pow(10, Math.floor(Math.log(target) / Math.LN10));
-      var nice = [1, 2, 5, 10].map(function (m) { return m * pow; })
-                  .filter(function (v) { return v <= target * 1.6; }).pop() || pow;
-      scale.style.width = (nice / span * Math.min(w, h)) + 'px';
-      scale.textContent = nice < 1000 ? nice + ' m' : (nice / 1000) + ' km';
-      orders.textContent = drawn.length ? 'orders ' + drawn[0] + '\u2013' + drawn[drawn.length - 1] : '';
+      orderTag.textContent = drawn.length
+        ? 'HEALPix orders ' + drawn[0] + '\u2013' + drawn[drawn.length - 1] : '';
     }
 
-    // ── interaction ───────────────────────────────────────────────────────
-    root.addEventListener('pointerdown', function (e) {
-      if (e.target.tagName === 'BUTTON') return;
-      panning = { x: e.clientX, y: e.clientY, lat: centre && centre.lat, lon: centre && centre.lon };
-      try { root.setPointerCapture(e.pointerId); } catch (err) {}
+    var GridLayer = L.Layer.extend({
+      onAdd: function (m) {
+        this._cv = L.DomUtil.create('canvas', 'leaflet-zoom-animated');
+        this._cv.style.pointerEvents = 'none';
+        m.getPanes().overlayPane.appendChild(this._cv);
+        m.on('moveend zoomend resize', this._render, this);
+        if (m.options.zoomAnimation && L.Browser.any3d) m.on('zoomanim', this._animateZoom, this);
+        this._render();
+      },
+      onRemove: function (m) {
+        m.off('moveend zoomend resize', this._render, this);
+        m.off('zoomanim', this._animateZoom, this);
+        if (this._cv.parentNode) this._cv.parentNode.removeChild(this._cv);
+      },
+      _animateZoom: function (e) {
+        var s = this._map.getZoomScale(e.zoom);
+        var o = this._map._latLngBoundsToNewLayerBounds(this._map.getBounds(), e.zoom, e.center).min;
+        L.DomUtil.setTransform(this._cv, o, s);
+      },
+      _render: function () { draw(this._cv); }
     });
-    root.addEventListener('pointermove', function (e) {
-      if (!panning || !centre) return;
-      var w = root.clientWidth, h = root.clientHeight, span = STOPS[stop];
-      var mpp = span / Math.min(w, h);
-      centre = {
-        lat: panning.lat + (e.clientY - panning.y) * mpp / M_PER_DEG,
-        lon: panning.lon - (e.clientX - panning.x) * mpp / (M_PER_DEG * Math.cos(panning.lat * D2R))
-      };
-      draw();
-    });
-    ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
-      root.addEventListener(ev, function () { panning = null; });
-    });
-    zin.addEventListener('click', function () { stop = Math.max(0, stop - 1); draw(); });
-    zout.addEventListener('click', function () { stop = Math.min(STOPS.length - 1, stop + 1); draw(); });
+    var grid = new GridLayer().addTo(map);
+    function redraw() { if (grid && grid._render) grid._render(); }
 
-    try {
-      new doc.defaultView.ResizeObserver(function () { draw(); }).observe(root);
-    } catch (e) { doc.defaultView.addEventListener('resize', draw); }
+    applyBasemap(key);
+    setTimeout(function () { map.invalidateSize(); redraw(); }, 60);
 
     return {
-      el: root,
+      el: root, leaflet: map,
       setFix: function (lat, lon, acc) {
         var first = !fix;
         fix = { lat: lat, lon: lon, accuracy_m: acc };
-        if (first || !centre) centre = { lat: lat, lon: lon };
-        draw();
+        if (first) map.setView([lat, lon], Math.max(map.getZoom(), 17));
+        redraw();
       },
-      recentre: function () { if (fix) { centre = { lat: fix.lat, lon: fix.lon }; draw(); } },
-      setBagged: function (names) { bagged = (names || []).slice(); draw(); },
-      setHighlight: function (n) { highlight = n || null; draw(); },
-      zoomTo: function (metres) {
-        var best = 0;
-        STOPS.forEach(function (v, i) {
-          if (Math.abs(v - metres) < Math.abs(STOPS[best] - metres)) best = i; });
-        stop = best; draw();
-      },
-      span: function () { return STOPS[stop]; },
-      redraw: draw,
-      destroy: function () { if (root.parentNode) root.parentNode.removeChild(root); }
+      recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
+      setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
+      setHighlight: function (n) { highlight = n || null; redraw(); },
+      setBasemap: applyBasemap,
+      basemap: function () { return key; },
+      invalidate: function () { map.invalidateSize(); redraw(); },
+      redraw: redraw,
+      destroy: function () { map.remove(); if (root.parentNode) root.parentNode.removeChild(root); }
     };
   }
 
-  return { VERSION: '0.1', mount: mount, cellWidthM: cellWidthM,
-           strokeFor: strokeFor, dotRadius: dotRadius, STOPS: STOPS };
+  return { VERSION: '0.2', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+           cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
+           orderOfName: orderOfName };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinMap;
