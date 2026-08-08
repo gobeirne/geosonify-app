@@ -58,6 +58,10 @@ dl{margin:.75rem 0 0}
 .pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
 .hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
 .bad{color:var(--kereru-pink)}
+ul{list-style:none;padding:0;margin:.5rem 0 .75rem;max-height:11rem;overflow:auto}
+li{font-size:.75rem;font-family:'SF Mono',ui-monospace,monospace;padding:.35rem .1rem;
+  border-bottom:1px solid var(--ios-separator);display:flex;justify-content:space-between;gap:.5rem}
+li span{color:var(--ios-secondary);flex:0 0 auto}
 .ok{color:var(--kereru-green)}
 @media (prefers-color-scheme:dark){.ok{color:#7fc4a3}}
 </style>
@@ -97,6 +101,7 @@ dl{margin:.75rem 0 0}
     <div class="r"><dt>walk</dt><dd id="cs-dist">—</dd></div>
     <div class="r"><dt>corners of this cell</dt><dd id="cs-pips" class="pips">—</dd></div>
   </dl>
+  <button id="log-cs" type="button">Log this cornerstone</button>
   <p class="hint">A vertex is shared by up to four cells and is named by the
      lowest of them, so only one of a cell's four corners carries the cell's own
      name. Intrinsic order is the coarsest order at which the point is still a
@@ -115,13 +120,30 @@ dl{margin:.75rem 0 0}
     <div class="r"><dt>distance</dt><dd id="sp-dist">—</dd></div>
     <div class="r"><dt>visit</dt><dd id="sp-verdict">—</dd></div>
   </dl>
+  <button id="log-sp" type="button">Log this starpin</button>
   <p class="hint">A source_id alone gives only the order-12 cell, 1.6 km across.
      The exact address needs the catalogue coordinates.</p>
+</section>
+
+<section>
+  <h2>your records</h2>
+  <dl>
+    <div class="r"><dt>held</dt><dd id="lg-count">0</dd></div>
+    <div class="r"><dt>storage</dt><dd id="lg-store">—</dd></div>
+  </dl>
+  <ul id="lg-list"></ul>
+  <button id="lg-export" type="button">Download my records</button>
+  <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
+  <input id="lg-file" type="file" accept="application/json" hidden>
+  <p class="hint">Records are immutable and merge by set union, so importing a
+     friend's file never overwrites yours. Browser storage can be cleared by the
+     phone at any time — the downloaded file is the real backup.</p>
 </section>
 
 <script src="js/lib/geosonify-healpix.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script>
 (function () {
   'use strict';
@@ -164,6 +186,7 @@ dl{margin:.75rem 0 0}
     try { v = S.nearestCornerstone(fix.lat, fix.lon, order); }
     catch (e) { $('cs-name').textContent = e.message; return; }
     var b = bearing(fix.lat, fix.lon, v.lat, v.lon);
+    lastCs = v;
     $('cs-name').textContent = v.name;
     $('cs-order').textContent = v.intrinsicOrder + (v.degree === 3 ? '  (degree 3!)' : '');
     $('cs-dist').textContent = walk(v.distanceM, b);
@@ -203,10 +226,72 @@ dl{margin:.75rem 0 0}
                  : r.verdict === 'not-supported' ? 'bad' : '';
   }
 
+  // ── records ────────────────────────────────────────────────────────────
+  var L = GeosonifyStarpinLog, log = L.open();
+  var lastCs = null, lastSp = null;
+
+  function shortId(t) {
+    return t.cornerstone || (t.starpin || '').replace('starpin:gdr3:', 'DR3 ');
+  }
+  function drawLog() {
+    $('lg-count').textContent = log.count();
+    $('lg-store').textContent = log.persisted() ? 'on this device' : 'memory only';
+    var ul = $('lg-list'); ul.textContent = '';
+    log.current().slice(0, 40).forEach(function (r) {
+      var li = document.createElement('li');
+      var when = document.createElement('span');
+      when.textContent = new Date(r.event.time_ms).toLocaleDateString();
+      li.appendChild(document.createTextNode(shortId(r.target)));
+      li.appendChild(when);
+      ul.appendChild(li);
+    });
+    if (lastCs) collected[lastCs.name] = 1;
+  }
+
+  function logIt(target) {
+    if (!fix) { alert('Use my location first — a record without a fix cannot be assessed.'); return; }
+    log.add(L.visit({
+      target: target,
+      fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
+      provenance: { app: 'starpin-demo', app_version: '0.1',
+                    protocol: { visit: 'visit-geometry-v1', culmination: 'culmination-v1' } }
+    }));
+    drawLog(); redraw();
+  }
+
+  $('log-cs').addEventListener('click', function () {
+    if (!lastCs) return;
+    collected[lastCs.name] = 1;
+    logIt({ cornerstone: lastCs.name });
+  });
+  $('log-sp').addEventListener('click', function () {
+    var sid = $('sid').value.trim();
+    try { S.decodeSourceId(sid); } catch (e) { alert(e.message); return; }
+    logIt({ starpin: 'starpin:gdr3:' + sid });
+  });
+
+  $('lg-export').addEventListener('click', function () {
+    var blob = new Blob([log.export()], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'starpin-records-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+  $('lg-import').addEventListener('click', function () { $('lg-file').click(); });
+  $('lg-file').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0]; if (!f) return;
+    f.text().then(function (t) {
+      var r = log.merge(t);
+      alert(r.added + ' new, ' + r.alreadyHeld + ' already held. ' + r.total + ' in total.');
+      drawLog(); redraw();
+    }).catch(function (err) { alert('Could not read that file: ' + err.message); });
+  });
+
   function redraw() { cornerstone(); starpin(); }
   ['order', 'sid', 'ra', 'dec'].forEach(function (id) {
     $(id).addEventListener('input', redraw);
   });
+  drawLog();
   redraw();
 })();
 </script>
