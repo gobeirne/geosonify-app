@@ -974,21 +974,6 @@
         }
       }
       
-      // ByteWords (PascalCase words, 4+ chars each) - deprecated but kept for decoding
-      if (/^([A-Z][a-z]{2,5})+$/.test(code) && code.length >= 16) {
-        const words = code.match(/[A-Z][a-z]+/g);
-        if (words && words.length >= 4) {
-          if (CARD_GRIDS.bytewords && CARD_GRIDS.bytewords.grid) {
-            const flat = CARD_GRIDS.bytewords.grid.flat();
-            if (flat.includes(words[0])) return 'bytewords';
-          }
-          if (CARD_GRIDS.bytewordsmin && CARD_GRIDS.bytewordsmin.grid) {
-            const flat = CARD_GRIDS.bytewordsmin.grid.flat();
-            if (flat.includes(words[0])) return 'bytewordsmin';
-          }
-        }
-      }
-      
       // HexByte / ChromaCoord (uppercase hex, 8+ chars, even length)
       if (/^[A-F0-9]+$/i.test(code) && code.length >= 8 && code.length % 2 === 0) {
         if (code.length === 12) return 'chromacoord';
@@ -2788,8 +2773,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Base param -> grid key mapping
       const baseParamMap = {
         'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-        'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
-        'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
+        'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
         'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
         'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
         'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
@@ -3136,7 +3120,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         : {}),
       'alphanumeric': 'a',
       'emoji': 'e',
-      'byteemoji': 'be',
       'hexbyte': 'h',
       'chromacoord': 'c',
       'music': 'm',
@@ -3151,8 +3134,6 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       'bip39korean': 'bipko',
       'bip39chinesesimplified': 'bipzhs',
       'bip39chinesetraditional': 'bipzht',
-      'bytewords': 'bw',
-      'bytewordsmin': 'bm',
       'base64': 'b64'
     };
     
@@ -3163,8 +3144,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // Rule: a GIS param name EQUALS its GISGrids.SCHEMES key. No new object.
     const BASE_PARAM_MAP = {
       'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
-      'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
+      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
       'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
       'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
       'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional',
@@ -7056,7 +7036,6 @@ function encodeRaw(sol) {
         const firstLooksLikeCode = !firstPart.includes(',') && (
           /^[a-z0-9]{6,12}$/.test(firstPart) ||    // alphanumeric
           /^[A-Fa-f0-9]{8,16}$/.test(firstPart) || // hexbyte
-          /^([A-Z][a-z]+){3,8}$/.test(firstPart) || // bytewords
           /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+$/u.test(firstPart) // emoji
         );
         
@@ -9145,8 +9124,7 @@ function encodeRaw(sol) {
     // Grid short-code → grid key mapping (reuse the URL param map)
     const PIPELINE_GRID_MAP = {
       'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
-      'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
+      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
       'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
       'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
       'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
