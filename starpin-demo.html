@@ -114,6 +114,8 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     <input id="wt" type="range" min="0.3" max="8" step="0.1" value="2"></label>
   <label class="tune" for="fo">falloff <b id="fo-val">0.78</b>
     <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.78"></label>
+  <label class="tune" for="ps">zoom persist <b id="ps-val">0.30</b>
+    <input id="ps" type="range" min="0" max="1.2" step="0.05" value="0.3"></label>
   <p class="hint" id="ramp" style="margin-top:.3rem"></p>
   <button id="recentre" type="button" style="margin-top:.6rem">Recentre on me</button>
   <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
@@ -187,7 +189,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260809c"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260809d"></script>
 <script>
 (function () {
   'use strict';
@@ -300,13 +302,20 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       if (!st.visible) break;
       out.push('o' + o + ' ' + st.width.toFixed(1));
     }
-    $('ramp').textContent = out.join('  ') + '   (falloff also sets how deep it draws)';
+    var sp = map.spanM ? map.spanM() : 0;
+    $('ramp').textContent = out.join('  ') +
+      (sp ? '   \u00B7 view ' + (sp < 1000 ? Math.round(sp) + ' m'
+                                           : (sp / 1000).toFixed(1) + ' km') : '') +
+      '   (falloff sets depth too; persist keeps coarse lines bold when zoomed in)';
   }
   $('wt').addEventListener('input', function () {
     $('wt-val').textContent = map.setWeight(this.value).toFixed(1); showRamp();
   });
   $('fo').addEventListener('input', function () {
     $('fo-val').textContent = map.setFalloff(this.value).toFixed(2); showRamp();
+  });
+  $('ps').addEventListener('input', function () {
+    $('ps-val').textContent = map.setPersist(this.value).toFixed(2); showRamp();
   });
 
   // ── the info box. Eventually this becomes the point's public log. ─────────
