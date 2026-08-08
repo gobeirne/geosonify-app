@@ -243,32 +243,6 @@
       maxIterations: 12,  // 24 hex chars / 12 bytes — fits 16×16 ECC 200
       display: 'datamatrix',
       isEmoji: false
-    },
-    // Deprecated but kept for backwards compatibility decoding
-    bytewords: { 
-      name: 'ByteWords', 
-      grid: typeof byteWordsArray !== 'undefined' ? byteWordsArray : null, 
-      defaultIterations: 6, 
-      maxIterations: 14, 
-      isEmoji: false,
-      deprecated: true
-    },
-    bytewordsmin: { 
-      name: 'ByteWordsMin', 
-      grid: typeof byteWordsMinimalArray !== 'undefined' ? byteWordsMinimalArray : null, 
-      defaultIterations: 6, 
-      maxIterations: 14, 
-      isEmoji: false,
-      deprecated: true
-    },
-    byteemoji: { 
-      name: 'ByteEmoji', 
-      grid: typeof byteEmojiArray !== 'undefined' ? byteEmojiArray : null, 
-      defaultIterations: 6, 
-      maxIterations: 14, 
-      display: 'emoji', 
-      isEmoji: true,
-      deprecated: true
     }
   };
 
@@ -325,7 +299,7 @@
   
   let cardState = {
     visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'bytewords', 'bytewordsmin', 'byteemoji', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -529,10 +503,7 @@
       // Barcode cards (all use hexByteArray)
       qrhex: 'hexByteArray',
       qrurl: 'hexByteArray',
-      datamatrix: 'hexByteArray',
-      bytewords: 'byteWordsArray',
-      bytewordsmin: 'byteWordsMinimalArray',
-      byteemoji: 'byteEmojiArray'
+      datamatrix: 'hexByteArray'
     };
     
     for (const [gridKey, arrayName] of Object.entries(gridArrayMap)) {
@@ -1694,8 +1665,6 @@
     bip39chinesesimplified: 4, bip39chinesetraditional: 4,
     // barcode cards (16×16 like hexbyte; qrurl is dynamic)
     qrhex: 6, qrbin: 6, datamatrix: 6, qrurl: 6,
-    // byteword family (grid data not always loaded; safe friendly mid value)
-    bytewords: 4, bytewordsmin: 4, byteemoji: 4,
     // HEALPix (order) — ~1.6 m
     hphex: 22, hpquad: 22, hp64: 22, hpmatrix: 22,
     // GIS — each standard's ~1–2 m level
@@ -1957,7 +1926,7 @@
     const isEmoji = gridDef?.display === 'emoji';
     const isMusic = gridDef?.display === 'music';
     // PascalCase word-based grids (BIP39 grids have prefixLength)
-    const isWordBased = gridDef?.prefixLength || gridKey === 'nato' || gridKey === 'bytewords';
+    const isWordBased = gridDef?.prefixLength || gridKey === 'nato';
     const delimiter = gridDef?.delimiter;
     
     // Check if checksum should be displayed
@@ -2158,7 +2127,7 @@
     const isEmoji = gridDef?.display === 'emoji';
     const isMusic = gridDef?.display === 'music';
     // PascalCase word-based grids (BIP39 grids have prefixLength)
-    const isWordBased = gridDef?.prefixLength || gridKey === 'nato' || gridKey === 'bytewords';
+    const isWordBased = gridDef?.prefixLength || gridKey === 'nato';
     const delimiter = gridDef?.delimiter;
     
     if (isEmoji) {
@@ -3362,7 +3331,7 @@
         const codeForChecksum = delimiter ? code.split(delimiter).join('') : code;
         checksumValue = computeChecksumNumeric(codeForChecksum, gridKey);
       }
-      const isWordBased = gridDef.prefixLength || gridKey === 'nato' || gridKey === 'bytewords';
+      const isWordBased = gridDef.prefixLength || gridKey === 'nato';
       const isBarcodeDisplay = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
       
       // Update code display
@@ -3507,7 +3476,7 @@
       const plainCodeWithChecksum = checksumValue ? `${code}.${checksumValue}` : code;
       
       // For word-based grids, use formatted HTML with line breaks
-      const isWordBased = gridDef.prefixLength || gridKey === 'nato' || gridKey === 'bytewords';
+      const isWordBased = gridDef.prefixLength || gridKey === 'nato';
       const formattedCode = isWordBased 
         ? formatCodeForDisplay(code, gridKey, checksumValue)
         : codeWithChecksum;
@@ -4703,7 +4672,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     const isEmoji = gridDef?.display === 'emoji';
     const isChroma = gridDef?.display === 'chroma';
     const isBarcode3x3 = (gridDef?.display === 'qrhex' || gridDef?.display === 'qrbin' || gridDef?.display === 'qrurl' || gridDef?.display === 'datamatrix');
-    const isWordBased = gridDef?.prefixLength || gridKey === 'nato' || gridKey === 'bytewords';
+    const isWordBased = gridDef?.prefixLength || gridKey === 'nato';
     const delimiter = gridDef?.delimiter;
     const checksumOn = !!gridDef?.prefixLength;
     
@@ -5173,8 +5142,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
 
     const prefixMap = {
       alphanumeric: 'a', emoji: 'e', hexbyte: 'h', chromacoord: 'c',
-      music: 'm', nato: 'n', bip39english: 'bip', bytewords: 'bw', 
-      bytewordsmin: 'bm', byteemoji: 'be', base64: 'b64',
+      music: 'm', nato: 'n', bip39english: 'bip', base64: 'b64',
       bip39spanish: 'bipes', bip39french: 'bipfr', bip39italian: 'bipit',
       bip39portuguese: 'bippt', bip39czech: 'bipcs', bip39japanese: 'bipja',
       bip39korean: 'bipko', bip39chinesesimplified: 'bipzhs', bip39chinesetraditional: 'bipzht',
