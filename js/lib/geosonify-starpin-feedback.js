@@ -466,15 +466,20 @@ var GeosonifyStarpinFeedback = (function () {
     dial.setAttribute('class', 'spf-dial');
     var rose = doc.createElementNS(NS, 'g');            // rotates in compass mode
     dial.appendChild(rose);
+    var labels = [];
     [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(function (c) {
       var a = (c[1] - 90) * Math.PI / 180;
+      var x = 50 + Math.cos(a) * 44, y = 50 + Math.sin(a) * 44;
       var t = doc.createElementNS(NS, 'text');
-      t.setAttribute('x', (50 + Math.cos(a) * 44).toFixed(2));
-      t.setAttribute('y', (50 + Math.sin(a) * 44 + 2.6).toFixed(2));
+      t.setAttribute('x', x.toFixed(2));
+      t.setAttribute('y', (y + 2.6).toFixed(2));
       t.setAttribute('text-anchor', 'middle');
       t.setAttribute('class', c[0] === 'N' ? 'spf-card-n' : 'spf-card');
       t.textContent = c[0];
       rose.appendChild(t);
+      // The rose turns; the letters must not. A sideways or upside-down "S" is
+      // unreadable exactly when you most need to read it.
+      labels.push({ el: t, x: x, y: y });
     });
     var arrows = doc.createElementNS(NS, 'g');
     rose.appendChild(arrows);
@@ -493,6 +498,10 @@ var GeosonifyStarpinFeedback = (function () {
       while (arrows.firstChild) arrows.removeChild(arrows.firstChild);
       rose.setAttribute('transform',
         heading == null ? '' : 'rotate(' + (-heading).toFixed(1) + ' 50 50)');
+      labels.forEach(function (l) {
+        l.el.setAttribute('transform', heading == null ? ''
+          : 'rotate(' + heading.toFixed(1) + ' ' + l.x.toFixed(2) + ' ' + l.y.toFixed(2) + ')');
+      });
       targets.forEach(function (t, i) {
         if (t.bearingDeg == null) return;
         var g = doc.createElementNS(NS, 'g');

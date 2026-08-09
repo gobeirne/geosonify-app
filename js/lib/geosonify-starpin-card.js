@@ -67,6 +67,13 @@ var GeosonifyStarpinCard = (function () {
     '.spc-title .id{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:19px;',
     '  line-height:1.25;margin-top:3px;word-break:break-word}',
     '.spc-med{display:flex;justify-content:center;margin:2px 0 10px}',
+    '.spc-sky{position:relative;width:112px;height:112px}',
+    '.spc-sky img{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#070A14;',
+    '  display:block}',
+    '.spc-ring{position:absolute;inset:0;width:100%;height:100%;overflow:visible}',
+    '.spc-target{position:absolute;left:50%;top:50%;width:13px;height:13px;',
+    '  margin:-6.5px 0 0 -6.5px;border:2px solid #39ff88;border-radius:2px;',
+    '  box-shadow:0 0 0 1px rgba(0,0,0,.6) inset,0 0 6px rgba(57,255,136,.55)}',
     '.spc-coords{text-align:center;font-family:"IBM Plex Mono",monospace;font-size:10.5px;',
     '  color:var(--muted);margin-bottom:12px}',
     '.spc-coords b{color:var(--text);font-weight:500}',
@@ -119,7 +126,6 @@ var GeosonifyStarpinCard = (function () {
     return s + d + '\u00B0 ' + (mm < 10 ? '0' : '') + mm + '\u2032 ' +
            ((m - mm) * 60 < 10 ? '0' : '') + ((m - mm) * 60).toFixed(0) + '\u2033';
   }
-  var COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
   function compass(b) { return COMPASS[Math.round(b / 22.5) % 16]; }
   function fmtDate(ms) {
     try {
@@ -129,47 +135,54 @@ var GeosonifyStarpinCard = (function () {
     } catch (e) { return new Date(ms).toISOString().slice(0, 16).replace('T', ' '); }
   }
 
-  // Deterministic: the same star always draws the same medallion.
-  function seeded(str) {
-    var h = 2166136261 >>> 0;
-    for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
-    return function () { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
-  }
-  function colourForBpRp(c) {
-    if (c == null || !isFinite(c)) return '#B7C0CC';
-    if (c < 0.3) return '#AFC8FF'; if (c < 0.7) return '#DCE6FF';
-    if (c < 1.1) return '#FFF3D6'; if (c < 1.7) return '#FFD9A8';
-    return '#FFB08A';
-  }
+  var COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
 
-  // ── the star medallion ────────────────────────────────────────────────────
-  function medallionSVG(d) {
-    var rng = seeded(String(d.id || d.name || 'x'));
-    var col = colourForBpRp(d.bpRp), R = 46, cx = 56, cy = 56, out = [];
-    out.push('<svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true">');
-    out.push('<defs><radialGradient id="g1"><stop offset="0" stop-color="' + col +
-             '" stop-opacity=".95"/><stop offset="1" stop-color="' + col + '" stop-opacity="0"/></radialGradient></defs>');
-    out.push('<circle cx="56" cy="56" r="52" fill="none" stroke="#C6A15B" stroke-opacity=".45"/>');
-    out.push('<circle cx="56" cy="56" r="47" fill="none" stroke="#C6A15B" stroke-opacity=".18"/>');
-    // a fixed field of faint neighbours, seeded so it never changes
-    for (var i = 0; i < 34; i++) {
-      var a = rng() * 6.2832, r = Math.sqrt(rng()) * (R - 6);
-      out.push('<circle cx="' + (cx + Math.cos(a) * r).toFixed(1) + '" cy="' +
-               (cy + Math.sin(a) * r).toFixed(1) + '" r="' + (0.5 + rng() * 1.1).toFixed(2) +
-               '" fill="#B7C0CC" opacity="' + (0.18 + rng() * 0.4).toFixed(2) + '"/>');
+  // ── the sky window ────────────────────────────────────────────────────────
+  //
+  // This used to be a seeded random star field: stable per source_id, pretty,
+  // and ENTIRELY MADE UP. On a card whose whole claim is that everything on it
+  // is true, a decorative constellation was the one dishonest element. It is
+  // now the actual DSS cutout centred on the star, with a target square at the
+  // centre and a bearing notch on the ring.
+  //
+  // If the image cannot load there is no fallback field of invented stars —
+  // just an empty ring. Better a blank than a fiction.
+  function skyWindow(doc, d) {
+    var box = doc.createElement('div');
+    box.className = 'spc-sky';
+    if (d.ra != null && d.dec != null) {
+      var img = doc.createElement('img');
+      img.alt = 'DSS image of the sky around this source';
+      img.crossOrigin = 'anonymous';
+      img.referrerPolicy = 'no-referrer';
+      var fov = d.fovArcsec || 48;
+      img.src = 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
+        '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
+        '&width=240&height=240&fov=' + (fov / 3600) +
+        '&projection=TAN&coordsys=icrs&format=jpg' +
+        '&ra=' + Number(d.ra).toFixed(6) + '&dec=' + Number(d.dec).toFixed(6);
+      box.appendChild(img);
+      var mk = doc.createElement('i'); mk.className = 'spc-target';
+      box.appendChild(mk);
     }
-    out.push('<circle cx="56" cy="56" r="13" fill="url(#g1)"/>');
-    out.push('<circle cx="56" cy="56" r="4.2" fill="' + col + '"/>');
-    // the bearing notch: a real compass bearing, not decoration
+    var ring = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    ring.setAttribute('viewBox', '0 0 112 112');
+    ring.setAttribute('class', 'spc-ring');
+    function add(tag, attrs) {
+      var n = doc.createElementNS('http://www.w3.org/2000/svg', tag);
+      for (var k in attrs) n.setAttribute(k, attrs[k]);
+      ring.appendChild(n); return n;
+    }
+    add('circle', { cx: 56, cy: 56, r: 53, fill: 'none',
+                    stroke: '#C6A15B', 'stroke-opacity': '.5' });
     if (d.bearingDeg != null) {
       var t = (d.bearingDeg - 90) * D2R;
-      out.push('<line x1="' + (cx + Math.cos(t) * 44).toFixed(1) + '" y1="' +
-               (cy + Math.sin(t) * 44).toFixed(1) + '" x2="' + (cx + Math.cos(t) * 51).toFixed(1) +
-               '" y2="' + (cy + Math.sin(t) * 51).toFixed(1) +
-               '" stroke="#C6A15B" stroke-width="2.5" stroke-linecap="round"/>');
+      add('line', { x1: (56 + Math.cos(t) * 47).toFixed(1), y1: (56 + Math.sin(t) * 47).toFixed(1),
+                    x2: (56 + Math.cos(t) * 55).toFixed(1), y2: (56 + Math.sin(t) * 55).toFixed(1),
+                    stroke: '#C6A15B', 'stroke-width': '3', 'stroke-linecap': 'round' });
     }
-    out.push('</svg>');
-    return out.join('');
+    box.appendChild(ring);
+    return box;
   }
 
   // ── the cornerstone grid background ───────────────────────────────────────
@@ -253,7 +266,17 @@ var GeosonifyStarpinCard = (function () {
           row('Lines', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder) +
           row('Tier', (c.tierOrder != null ? c.tierOrder.toFixed(1) : '\u2014') +
               (tier ? ' \u00B7 ' + tier.key : '')) +
-          (tier ? row('Frequency', esc(tier.label)) : '') +
+          // ALWAYS the same measure. One card saying "12,399 within 50 km" and
+          // another saying "one of 201,326,594 on Earth" cannot be compared at
+          // a glance, which defeats the point of having a tier at all.
+          (F ? row('Frequency', F.nearbyCount(Math.round(c.intrinsicOrder != null
+                 ? c.intrinsicOrder : c.order), 50).toLocaleString() +
+                 ' within 50 km') : '') +
+          (F ? row('Spacing', (function (m) {
+                 return m < 1000 ? 'one every ' + Math.round(m) + ' m'
+                                 : 'one every ' + (m / 1000).toFixed(1) + ' km';
+               })(F.spacingM(Math.round(c.intrinsicOrder != null
+                 ? c.intrinsicOrder : c.order)))) : '') +
           (v.distanceM != null ? row('Approach',
             v.distanceM.toFixed(1) + ' m ' + (v.bearingDeg != null ? compass(v.bearingDeg) : ''),
             'mono') : '') +
@@ -272,8 +295,7 @@ var GeosonifyStarpinCard = (function () {
         '<div class="spc-kicker">Geosonify \u00B7 Starpin Record</div><div class="spc-rule"></div>' +
         '<div class="spc-title"><div class="cat">' + esc(d.catalogue || 'Gaia DR3') + '</div>' +
         '<div class="id">' + esc((d.name || d.id || '').replace(/^Gaia DR3\s*/, '')) + '</div></div>' +
-        '<div class="spc-med">' + medallionSVG({ id: d.id || d.name, bpRp: d.bpRp,
-            bearingDeg: v.bearingDeg }) + '</div>' +
+        '<div class="spc-med" data-sky="1"></div>' +
         (d.ra != null ? '<div class="spc-coords"><b>RA</b> ' + raToHMS(d.ra) +
           ' &nbsp; <b>DEC</b> ' + decToDMS(d.dec) + '</div>' : '') +
         '<div class="spc-ledger">' +
@@ -310,7 +332,14 @@ var GeosonifyStarpinCard = (function () {
     injectCss(doc);
     var wrap = doc.createElement('div');
     wrap.innerHTML = html(opts);
-    return wrap.firstChild;
+    var card = wrap.firstChild;
+    var slot = card.querySelector('.spc-med[data-sky]');
+    if (slot) slot.appendChild(skyWindow(doc, {
+      ra: (opts.star || {}).ra, dec: (opts.star || {}).dec,
+      bearingDeg: (opts.visit || {}).bearingDeg,
+      fovArcsec: (opts.star || {}).fovArcsec
+    }));
+    return card;
   }
 
   // Full screen, for the moment of bagging.
@@ -341,8 +370,163 @@ var GeosonifyStarpinCard = (function () {
     return { dismiss: dismiss, el: stage };
   }
 
-  return { VERSION: '0.1', render: render, show: show, html: html,
-           medallionSVG: medallionSVG, gridSVG: gridSVG };
+  // ── sharing ───────────────────────────────────────────────────────────────
+  //
+  // Drawn natively onto a canvas rather than screenshotting the DOM. The sky
+  // cutout is cross-origin, and any DOM-to-canvas route taints the canvas and
+  // makes toBlob() throw — so the card is redrawn here with the same data,
+  // requesting the image with crossOrigin so it can be composited legally.
+  // If CDS declines CORS the image is simply omitted and everything else still
+  // exports; a card with a blank window beats no card at all.
+  function toBlob(opts, doc) {
+    doc = doc || document;
+    var W = 680, H = 1000, pad = 46;
+    var cv = doc.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var g = cv.getContext('2d');
+    var isStar = opts.kind !== 'cornerstone';
+    var d = opts.star || {}, c = opts.cornerstone || {}, v = opts.visit || {};
+
+    var grad = g.createLinearGradient(0, 0, W * 0.4, H);
+    grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
+    grad.addColorStop(1, '#0A0E1C');
+    g.fillStyle = grad; g.fillRect(0, 0, W, H);
+    g.strokeStyle = 'rgba(198,161,91,.28)'; g.lineWidth = 2;
+    g.strokeRect(1, 1, W - 2, H - 2);
+
+    function text(t, x, y, font, colour, align) {
+      g.font = font; g.fillStyle = colour; g.textAlign = align || 'left';
+      g.fillText(String(t), x, y);
+    }
+    var MONO = '"SF Mono",ui-monospace,Menlo,monospace';
+    var SANS = 'system-ui,-apple-system,"Segoe UI",sans-serif';
+
+    text(isStar ? 'GEOSONIFY \u00B7 STARPIN RECORD' : 'CORNERSTONE',
+         W / 2, 62, '600 19px ' + MONO, '#C6A15B', 'center');
+    var rg = g.createLinearGradient(pad, 0, W - pad, 0);
+    rg.addColorStop(0, 'rgba(198,161,91,0)'); rg.addColorStop(0.5, '#C6A15B');
+    rg.addColorStop(1, 'rgba(198,161,91,0)');
+    g.fillStyle = rg; g.fillRect(pad, 78, W - pad * 2, 2);
+
+    text(isStar ? (d.catalogue || 'Gaia DR3') : 'HEALPIX VERTEX',
+         W / 2, 118, '17px ' + MONO, '#8891A8', 'center');
+    var title = isStar ? String(d.id || d.name || '') : String(c.name || '');
+    var size = title.length > 20 ? 30 : 36;
+    text(title, W / 2, 160, '600 ' + size + 'px Georgia,serif', '#E9E4D6', 'center');
+
+    var rows = [];
+    if (isStar) {
+      if (opts.findNumber) rows.push(['FOUND', '#' + opts.findNumber + ' in your log']);
+      if (d.lat != null) rows.push(['STARPIN', d.lat.toFixed(6) + ', ' + d.lon.toFixed(6)]);
+      if (d.address) rows.push(['ADDRESS', d.address]);
+      if (v.distanceM != null) rows.push(['APPROACH', (v.distanceM < 1000
+        ? v.distanceM.toFixed(0) + ' m' : (v.distanceM / 1000).toFixed(2) + ' km') +
+        (v.bearingDeg != null ? ' ' + compass(v.bearingDeg) : '')]);
+      rows.push(['BRIGHTNESS', d.mag == null ? 'unknown' : 'G \u2248 ' + d.mag.toFixed(2)]);
+      rows.push(['DISTANCE', d.distLy == null ? 'unknown parallax'
+        : Number(d.distLy).toLocaleString() + ' ly']);
+    } else {
+      rows.push(['LINES', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder]);
+      if (c.tierOrder != null) rows.push(['TIER', c.tierOrder.toFixed(1)]);
+      if (F) {
+        var o = Math.round(c.intrinsicOrder != null ? c.intrinsicOrder : c.order);
+        rows.push(['FREQUENCY', F.nearbyCount(o, 50).toLocaleString() + ' within 50 km']);
+        rows.push(['SPACING', F.spacingM(o) < 1000
+          ? 'one every ' + Math.round(F.spacingM(o)) + ' m'
+          : 'one every ' + (F.spacingM(o) / 1000).toFixed(1) + ' km']);
+      }
+      if (v.distanceM != null) rows.push(['APPROACH', v.distanceM.toFixed(1) + ' m' +
+        (v.bearingDeg != null ? ' ' + compass(v.bearingDeg) : '')]);
+    }
+    rows.push(['VISITED', v.whenMs ? fmtDate(v.whenMs) : '\u2014']);
+    rows.push(['ACCURACY', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014']);
+    rows.push(['GEOMETRY', v.verdict || '\u2014']);
+
+    function paintRows(top) {
+      rows.forEach(function (r, i) {
+        var y = top + i * 52;
+        text(r[0], pad, y, '16px ' + MONO, '#8891A8');
+        text(r[1], W - pad, y, '22px ' + SANS,
+             r[1] === 'well-supported' ? '#4ade80' : '#E9E4D6', 'right');
+        g.fillStyle = 'rgba(184,192,212,.12)';
+        g.fillRect(pad, y + 16, W - pad * 2, 1);
+      });
+      var fy = top + rows.length * 52 + 34;
+      g.font = '17px ' + SANS; g.fillStyle = '#8891A8'; g.textAlign = 'center';
+      g.fillText(isStar ? 'Nothing was hidden or placed here.' : 'A vertex of the HEALPix lattice.',
+                 W / 2, fy);
+      g.fillText(isStar ? 'This point exists because of the star\u2019s coordinates.'
+                        : 'It is a corner at every finer order too.', W / 2, fy + 26);
+      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, 'rgba(198,161,91,.75)', 'center');
+    }
+
+    return new Promise(function (resolve) {
+      function finish() {
+        paintRows(isStar ? 470 : 420);
+        cv.toBlob(function (b) { resolve(b); }, 'image/png');
+      }
+      if (!isStar || d.ra == null) { finish(); return; }
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.referrerPolicy = 'no-referrer';
+      var done = false;
+      function drawSky(ok) {
+        if (done) return; done = true;
+        var R = 116, cx = W / 2, cy = 320;
+        if (ok) {
+          g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 6.2832); g.clip();
+          g.drawImage(img, cx - R, cy - R, R * 2, R * 2); g.restore();
+        }
+        g.strokeStyle = 'rgba(198,161,91,.5)'; g.lineWidth = 2;
+        g.beginPath(); g.arc(cx, cy, R + 6, 0, 6.2832); g.stroke();
+        if (v.bearingDeg != null) {
+          var t = (v.bearingDeg - 90) * D2R;
+          g.strokeStyle = '#C6A15B'; g.lineWidth = 5; g.lineCap = 'round';
+          g.beginPath();
+          g.moveTo(cx + Math.cos(t) * (R + 1), cy + Math.sin(t) * (R + 1));
+          g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
+          g.stroke();
+        }
+        g.strokeStyle = '#39ff88'; g.lineWidth = 3;
+        g.strokeRect(cx - 9, cy - 9, 18, 18);
+        finish();
+      }
+      img.onload = function () { drawSky(true); };
+      img.onerror = function () { drawSky(false); };
+      setTimeout(function () { drawSky(false); }, 6000);
+      img.src = 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
+        '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
+        '&width=480&height=480&fov=' + ((d.fovArcsec || 48) / 3600) +
+        '&projection=TAN&coordsys=icrs&format=jpg' +
+        '&ra=' + Number(d.ra).toFixed(6) + '&dec=' + Number(d.dec).toFixed(6);
+    });
+  }
+
+  // Share sheet where there is one, download where there is not.
+  function share(opts, doc) {
+    doc = doc || document;
+    var name = (opts.kind === 'cornerstone'
+      ? String((opts.cornerstone || {}).name || 'cornerstone')
+      : 'starpin-' + String((opts.star || {}).id || '')).replace(/[^\w.-]+/g, '-');
+    return toBlob(opts, doc).then(function (blob) {
+      if (!blob) throw new Error('could not draw the card');
+      var file = null;
+      try { file = new File([blob], name + '.png', { type: 'image/png' }); } catch (e) {}
+      var nav = doc.defaultView.navigator;
+      if (file && nav.canShare && nav.canShare({ files: [file] })) {
+        return nav.share({ files: [file], title: name });
+      }
+      var a = doc.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name + '.png';
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    });
+  }
+
+  return { VERSION: '0.2', render: render, show: show, html: html,
+           toBlob: toBlob, share: share,
+           skyWindow: skyWindow, gridSVG: gridSVG };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinCard;

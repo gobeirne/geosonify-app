@@ -107,11 +107,12 @@ var GeosonifyStarpinMap = (function () {
   var BASE_W = 3.0, BASE_A = 0.85;
   var WEIGHT = 2.0, FALLOFF = 0.75, PERSIST = 0.30;
 
-  function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, Number(w) || 1)); return WEIGHT; }
+  function num(v, dflt) { v = Number(v); return isFinite(v) ? v : dflt; }
+  function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, num(w, 2))); return WEIGHT; }
   function weight() { return WEIGHT; }
-  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, Number(f) || 0.75)); return FALLOFF; }
+  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, num(f, 0.75))); return FALLOFF; }
   function falloff() { return FALLOFF; }
-  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, Number(p))); return PERSIST; }
+  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, num(p, 0.3))); return PERSIST; }
   function persist() { return PERSIST; }
 
   var MAX_W = 9, MIN_W = 0.45, MAX_ACROSS = 44;
@@ -252,20 +253,16 @@ var GeosonifyStarpinMap = (function () {
 
       function pt(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
 
-      for (var order = 3; order <= 18; order++) {
+      for (var order = 0; order <= 20; order++) {
         var cw = cellWidthM(order);
-        // No coarse skip. A cell 60x the view still has an edge that may run
+        // No coarse skip: a cell 60x the view still has an edge that may run
         // straight through the street you are standing in, and that edge is
-        // the rarest line on screen. Dropping it was the bug.
-        if (cw < spanM / 26) break;
-        var st = strokeFor(order);
-        if (!st.visible) break;
-        // Width grows sub-linearly and is capped: a coarse line should be
-        // unmistakable, not a stripe that hides the street you navigate by.
-        // Most of the emphasis goes into opacity, which costs no map.
-        var boost = zoomBoost(cw / spanM);
-        st = { width: Math.min(9, st.width * (1 + (boost - 1) * 0.45)),
-               alpha: Math.min(0.95, st.alpha * boost) };
+        // the rarest line on screen. strokeFor() is anchored to CELLS ACROSS
+        // THE VIEW, so it already handles both ends and there is no second
+        // boost to apply here.
+        var st = strokeFor(order, spanM);
+        if (st.across < MIN_ACROSS) continue;                 // too coarse to matter
+        if (st.across > MAX_ACROSS || !st.visible) break;     // too fine to help
         var cells = cellsInView(order, size, spanM);
         if (!cells.length) continue;
         drawn.push(order);
