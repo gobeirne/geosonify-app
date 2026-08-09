@@ -151,6 +151,52 @@ var GeosonifyStarpinReadout = (function () {
     CARD_FORMATS_LOADED = true;
   }
 
+  // Reading a code back. Only formats that can round-trip are offered as
+  // input: the whole argument for these vocabularies is that a friend can say
+  // four words down a phone and you end up in the right paddock, so an input
+  // that silently could not decode would be worse than none.
+  var PARSERS = {
+    latlon: function (t) {
+      var m = String(t).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+      return m ? [parseFloat(m[1]), parseFloat(m[2])] : null;
+    },
+    radec: function (t) {
+      var m = String(t).match(/(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+      if (!m) return null;
+      var ra = parseFloat(m[1]), dec = parseFloat(m[2]);
+      return [dec, ra > 180 ? ra - 360 : ra];
+    }
+  };
+  ['hpquad', 'hphex', 'hp64'].forEach(function (k) {
+    PARSERS[k] = function (t) {
+      var H = mod('HealpixGrids');
+      if (!H || !H.decode) return null;
+      try { var r = H.decode(k, String(t).trim()); return r ? [r[0], r[1]] : null; }
+      catch (e) { return null; }
+    };
+  });
+
+  function parse(key, text) {
+    if (PARSERS[key]) return PARSERS[key](text);
+    var f = FORMATS[key];
+    if (f && f.gridKey) {
+      var CR = mod('CardRenderer');
+      if (!CR || !CR.decode) return null;
+      try {
+        var r = CR.decode(f.gridKey, String(text).trim());
+        return (r && r.length >= 2 && isFinite(r[0])) ? [r[0], r[1]] : null;
+      } catch (e) { return null; }
+    }
+    return null;
+  }
+  function canParse(key) {
+    if (PARSERS[key]) return true;
+    var f = FORMATS[key];
+    if (!f || !f.gridKey) return false;
+    var CR = mod('CardRenderer');
+    return !!(CR && typeof CR.decode === 'function');
+  }
+
   function available(key) {
     var f = FORMATS[key];
     if (!f) return false;
@@ -243,7 +289,7 @@ var GeosonifyStarpinReadout = (function () {
 
   return { VERSION: '0.3', mount: mount, FORMATS: FORMATS, available: available,
            ensureCardFormats: ensureCardFormats, RETIRED: RETIRED,
-           mod: mod, register: register };
+           mod: mod, register: register, parse: parse, canParse: canParse };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinReadout;
