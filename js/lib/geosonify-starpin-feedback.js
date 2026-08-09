@@ -513,6 +513,13 @@ var GeosonifyStarpinFeedback = (function () {
                             ' L50 ' + (base - 5 * scale) + ' L' + (50 - half) + ' ' + base + ' Z');
         p.setAttribute('fill', t.colour || 'currentColor');
         p.setAttribute('opacity', t.primary ? '1' : '.55');
+        // The active arrow sits on a tinted disc in its own colour, so without
+        // an outline it can vanish into the very fill that marks it active.
+        if (t.primary) {
+          p.setAttribute('stroke', 'rgba(0,0,0,.75)');
+          p.setAttribute('stroke-width', '1.1');
+          p.setAttribute('stroke-linejoin', 'round');
+        }
         g.appendChild(p);
         arrows.appendChild(g);
       });
@@ -558,8 +565,9 @@ var GeosonifyStarpinFeedback = (function () {
         word.textContent = (d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(2) + ' km') +
                            (main.compassText ? ' ' + main.compassText : '');
         sub.textContent = accepted ? 'already close enough to count'
-                        : r.verdict === 'fix-too-coarse' ? 'fix too coarse to tell'
-                        : r.verdict === 'compatible' ? 'your fix cannot be sure' : 'keep going';
+                        : r.verdict === 'fix-too-coarse' ? 'your fix is too rough to tell'
+                        : r.verdict === 'compatible' ? 'might already count \u2014 get closer to be sure'
+                        : 'keep going';
       }
 
       pulse.lastD = d; pulse.R = R; pulse.arrived = arrived;

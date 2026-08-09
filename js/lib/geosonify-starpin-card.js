@@ -351,7 +351,7 @@ var GeosonifyStarpinCard = (function () {
     var wrap = doc.createElement('div'); wrap.className = 'wrap';
     wrap.appendChild(render(opts, doc));
     var close = doc.createElement('button');
-    close.type = 'button'; close.className = 'spc-close'; close.textContent = 'Keep it';
+    close.type = 'button'; close.className = 'spc-close'; close.textContent = 'Close';
     wrap.appendChild(close);
     stage.appendChild(wrap);
     doc.body.appendChild(stage);

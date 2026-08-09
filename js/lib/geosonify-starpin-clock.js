@@ -156,7 +156,10 @@ var GeosonifyStarpinClock = (function () {
     root.appendChild(rows);
 
     root.appendChild(el(doc, 'p', 'spc-note',
-      'The same instant everywhere on Earth. It arrives 3m 56s earlier each day.'));
+      'The culmination clock counts down to the same instant everywhere on Earth. ' +
+      'It arrives 3m 56s earlier each day. If you are standing on a starpin at ' +
+      'that moment, its star is as close to directly overhead as it ever gets ' +
+      'from there \u2014 whether or not the sky is dark enough to see it.'));
 
     container.appendChild(root);
 
