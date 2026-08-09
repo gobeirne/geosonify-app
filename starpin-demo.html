@@ -18,127 +18,235 @@
   dataset exists.
 -->
 <style>
+/* ─────────────────────────────────────────────────────────────────────────
+   Kākāpō (Manu, Strigops habroptilus) pushed toward the saturated end. The
+   earthy originals stay as the "ink" tones; the brighter siblings carry the
+   play. A child should want to press things.
+   ───────────────────────────────────────────────────────────────────────── */
 :root{
-  /* Kākāpō — Manu (Strigops habroptilus) */
-  --kakapo-moss:#7D9D33; --kakapo-lichen:#CED38C; --kakapo-yellow:#DCC949;
-  --kakapo-fawn:#BCA888; --kakapo-rust:#CD8862; --kakapo-bark:#775B24;
-  /* the old kererū names stay as aliases so nothing has to be renamed twice */
-  --kereru-teal:var(--kakapo-bark); --kereru-blue:var(--kakapo-fawn);
-  --kereru-pink:var(--kakapo-rust); --kereru-green:var(--kakapo-moss);
-  --kereru-purple:var(--kakapo-bark); --kereru-lavender:var(--kakapo-lichen);
-  --ios-text:#000; --ios-secondary:#3C3C43; --ios-separator:#C6C6C8;
-  --ios-bg:#fff; --ios-card:#fff;
+  --moss:#7D9D33;  --moss-lit:#9BC23F;  --moss-deep:#4F6620;
+  --lichen:#CED38C; --lichen-lit:#E4E9AE;
+  --sun:#DCC949;   --sun-lit:#F2DE5C;   --sun-deep:#9A8A22;
+  --fawn:#BCA888;  --rust:#CD8862;      --rust-lit:#E79E72; --rust-deep:#8E5433;
+  --bark:#775B24;  --bark-lit:#A98A45;
+
+  --ink:#1B2013; --ink-2:#5A6348; --line:#DFE3CE;
+  --bg:#F6F7EE; --card:#FFFFFF; --card-2:#FBFCF3;
+  --shadow:0 2px 0 rgba(27,32,19,.10), 0 10px 24px -12px rgba(27,32,19,.35);
+  --r:22px;
 }
 @media (prefers-color-scheme:dark){
-  :root{--ios-text:#fff;--ios-secondary:#EBEBF5;--ios-separator:#38383A;
-        --ios-bg:#000;--ios-card:#1C1C1E;
-        --kereru-teal:var(--kakapo-moss);--kakapo-bark:#A98A45}
+  :root{
+    --ink:#F2F4E6; --ink-2:#A9B492; --line:#2E3626;
+    --bg:#12160E; --card:#1C2216; --card-2:#222A1A;
+    --shadow:0 2px 0 rgba(0,0,0,.35), 0 12px 28px -14px rgba(0,0,0,.8);
+    --moss:#9BC23F; --moss-deep:#3C5117; --sun:#F2DE5C; --bark-lit:#C8A75B;
+  }
 }
+/* legacy names still referenced by the modules */
+:root{
+  --kakapo-moss:var(--moss); --kakapo-lichen:var(--lichen); --kakapo-yellow:var(--sun);
+  --kakapo-fawn:var(--fawn); --kakapo-rust:var(--rust); --kakapo-bark:var(--bark);
+  --kereru-teal:var(--bark); --kereru-blue:var(--fawn); --kereru-pink:var(--rust);
+  --kereru-green:var(--moss); --kereru-purple:var(--bark); --kereru-lavender:var(--lichen);
+  --ios-text:var(--ink); --ios-secondary:var(--ink-2); --ios-separator:var(--line);
+  --ios-bg:var(--bg); --ios-card:var(--card);
+}
+
 *{box-sizing:border-box}
-body{margin:0;background:var(--ios-bg);color:var(--ios-text);
-  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Roboto,sans-serif;
-  padding:1rem 1rem calc(5.2rem + env(safe-area-inset-bottom,0px));
-  display:flex;flex-direction:column;align-items:center;gap:1.25rem}
-/* One screen at a time. The whole app on one page was a scroll nobody could
-   hold in their head, and it hid the panel that answered whatever you tapped. */
+body{margin:0;background:var(--bg);color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Rounded','SF Pro Display',
+    'Segoe UI Variable','Segoe UI',Roboto,sans-serif;
+  padding:.9rem .85rem calc(5.6rem + env(safe-area-inset-bottom,0px));
+  display:flex;flex-direction:column;align-items:center;gap:1rem;
+  -webkit-text-size-adjust:100%}
+
+/* one screen at a time */
 section[data-tab]{display:none}
 body[data-active="go"]  section[data-tab="go"],
 body[data-active="map"] section[data-tab="map"],
 body[data-active="sky"] section[data-tab="sky"],
-body[data-active="log"] section[data-tab="log"]{display:block}
-#tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;
-  background:color-mix(in srgb,var(--ios-card) 92%,transparent);
-  -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
-  border-top:1px solid var(--ios-separator);
-  padding-bottom:env(safe-area-inset-bottom,0px)}
-#tabbar button{flex:1;width:auto;border:0;background:none;border-radius:0;
-  padding:.55rem .2rem .6rem;font-size:.66rem;letter-spacing:.04em;
-  color:var(--ios-secondary);display:flex;flex-direction:column;align-items:center;
-  gap:.15rem;cursor:pointer}
-#tabbar button span{font-size:1.15rem;line-height:1}
-#tabbar button[aria-selected="true"]{color:var(--kakapo-moss);font-weight:600}
-header{margin-bottom:-.25rem}
-header{text-align:center;max-width:26rem}
-h1{font-size:1.05rem;font-weight:600;letter-spacing:.01em;margin:0}
-header p{margin:.4rem 0 0;font-size:.8rem;color:var(--ios-secondary);line-height:1.5}
-section{width:100%;max-width:26rem;background:var(--ios-card);
-  border:1px solid var(--ios-separator);border-radius:14px;padding:1rem}
-h2{font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--ios-secondary);margin:0 0 .75rem;font-weight:600}
-button{font:inherit;font-size:.85rem;padding:.55rem 1rem;border-radius:10px;
-  border:1px solid var(--kereru-teal);background:transparent;color:var(--kereru-teal);
-  cursor:pointer;width:100%}
-button:hover{background:color-mix(in srgb,var(--kereru-teal) 12%,transparent)}
-button:focus-visible{outline:2px solid var(--kereru-lavender);outline-offset:2px}
-input{font:inherit;font-family:'SF Mono',ui-monospace,monospace;font-size:.8rem;width:100%;
-  padding:.5rem .6rem;border-radius:8px;border:1px solid var(--ios-separator);
-  background:transparent;color:inherit;margin-bottom:.5rem}
-input:focus-visible{outline:2px solid var(--kereru-lavender);outline-offset:1px}
-dl{margin:.75rem 0 0}
-.r{display:flex;justify-content:space-between;gap:1rem;padding:.45rem .1rem;
-  border-bottom:1px solid var(--ios-separator);font-size:.85rem}
+body[data-active="log"] section[data-tab="log"]{display:block;
+  animation:rise .34s cubic-bezier(.2,.9,.25,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(10px) scale(.99)}}
+
+header{text-align:center;max-width:30rem;margin-bottom:-.2rem}
+h1{font-size:1.32rem;font-weight:800;letter-spacing:-.015em;margin:0;line-height:1.2}
+header p{margin:.45rem 0 0;font-size:.84rem;color:var(--ink-2);line-height:1.5}
+
+section{width:100%;max-width:30rem;background:var(--card);
+  border:1.5px solid var(--line);border-radius:var(--r);padding:1.05rem 1rem;
+  box-shadow:var(--shadow);position:relative;overflow:hidden}
+section::before{content:"";position:absolute;left:0;right:0;top:0;height:5px;
+  background:var(--accent,var(--moss))}
+section[data-tab="go"]{--accent:linear-gradient(90deg,var(--sun),var(--moss))}
+section[data-tab="map"]{--accent:linear-gradient(90deg,var(--moss),var(--lichen))}
+section[data-tab="sky"]{--accent:linear-gradient(90deg,var(--bark-lit),var(--sun))}
+section[data-tab="log"]{--accent:linear-gradient(90deg,var(--rust),var(--sun))}
+
+h2{font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;
+  color:var(--ink-2);margin:.15rem 0 .8rem;font-weight:800}
+
+/* Duolingo-ish press: a solid bottom edge that compresses when you push it. */
+button{font:inherit;font-weight:700;font-size:.9rem;padding:.72rem 1rem;
+  border-radius:16px;border:2px solid var(--moss);background:var(--card-2);
+  color:var(--moss-deep);cursor:pointer;width:100%;
+  box-shadow:0 4px 0 color-mix(in srgb,var(--moss) 55%,transparent);
+  transition:transform .07s,box-shadow .07s,background .2s}
+@media (prefers-color-scheme:dark){button{color:var(--moss)}}
+button:active{transform:translateY(4px);box-shadow:0 0 0 rgba(0,0,0,0)}
+button:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss);
+  box-shadow:0 4px 0 var(--moss-deep)}
+
+input,select{font:inherit;font-size:.86rem;width:100%;padding:.65rem .8rem;
+  border-radius:14px;border:2px solid var(--line);background:var(--card-2);
+  color:inherit;font-weight:600}
+input:focus-visible,select:focus-visible{outline:3px solid var(--sun);outline-offset:1px;
+  border-color:var(--sun)}
+input[type=range]{padding:0;border:0;background:none;accent-color:var(--moss)}
+
+dl{margin:.7rem 0 0}
+.r{display:flex;justify-content:space-between;gap:1rem;padding:.55rem .15rem;
+  border-bottom:1.5px dotted var(--line);font-size:.86rem}
 .r:last-child{border-bottom:0}
-.r dt{color:var(--ios-secondary)}
+.r dt{color:var(--ink-2);font-weight:600}
 .r dd{margin:0;font-family:'SF Mono',ui-monospace,monospace;text-align:right;
-  word-break:break-all}
-.pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
-.hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
-.bad{color:var(--kereru-pink)}
-.tabs{display:flex;gap:.5rem;margin:.75rem 0 .5rem}
-.tab{flex:1;border-width:2px}
-.tab-star{border-color:var(--kakapo-yellow);color:#8a7413}
-.tab-corner{border-color:var(--kereru-green);color:var(--kereru-green)}
-.tab-star[aria-pressed="true"]{background:var(--kakapo-yellow);color:#241d05;border-color:var(--kakapo-yellow)}
-.tab-corner[aria-pressed="true"]{background:var(--kereru-green);color:#fff}
-@media (prefers-color-scheme:dark){.tab-star{color:var(--kakapo-yellow)}}
-.btnrow{display:flex;gap:.5rem;margin-top:.6rem}
+  word-break:break-all;font-weight:600}
+.pips{letter-spacing:.3em;color:var(--rust);font-size:1.05rem}
+.hint{font-size:.74rem;color:var(--ink-2);line-height:1.55;margin:.7rem 0 0}
+.ok{color:var(--moss-deep)} .bad{color:var(--rust-deep)}
+@media (prefers-color-scheme:dark){.ok{color:var(--moss)} .bad{color:var(--rust-lit)}}
+.meta{font-size:.8rem;color:var(--ink-2);line-height:1.55}
+.visited{color:var(--moss-deep);font-weight:800}
+@media (prefers-color-scheme:dark){.visited{color:var(--moss)}}
+
+.btnrow{display:flex;gap:.55rem;margin-top:.7rem}
 .btnrow button{flex:1}
-button[aria-pressed="true"]{background:var(--kereru-teal);color:#fff;
-  border-color:var(--kereru-teal)}
-.tune{display:flex;align-items:center;gap:.6rem;font-size:.72rem;
-  color:var(--ios-secondary);margin-top:.6rem}
-.tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ios-text);min-width:2.2rem}
-.tune input[type=range]{flex:1;margin:0;accent-color:var(--kereru-teal)}
-select{font:inherit;font-size:.8rem;padding:.5rem;border-radius:10px;
-  border:1px solid var(--ios-separator);background:transparent;color:inherit}
-#info{margin-top:.6rem;padding:.75rem .85rem;border-radius:10px;
-  border:1px solid var(--ios-separator);background:transparent}
-#info h3{margin:0 0 .35rem;font-size:.9rem;font-family:'SF Mono',ui-monospace,monospace;
-  word-break:break-all}
-#info .meta{font-size:.75rem;color:var(--ios-secondary);line-height:1.5}
-#info img{width:100%;max-width:190px;border-radius:8px;display:block;background:#111}
-.thumb{width:100%;max-width:240px;margin:.5rem 0}
+.btnrow select{width:auto;flex:0 0 auto}
+
+/* target tabs: big, colour-coded, unmistakable */
+.tabs{display:flex;gap:.55rem;margin:.9rem 0 .7rem}
+.tab{flex:1;font-size:.92rem;font-weight:800}
+.tab-star{border-color:var(--sun);color:var(--sun-deep);
+  box-shadow:0 4px 0 color-mix(in srgb,var(--sun) 60%,transparent)}
+.tab-corner{border-color:var(--moss);color:var(--moss-deep);
+  box-shadow:0 4px 0 color-mix(in srgb,var(--moss) 60%,transparent)}
+.tab-star[aria-pressed="true"]{background:var(--sun);color:#2A2405;border-color:var(--sun);
+  box-shadow:0 4px 0 var(--sun-deep)}
+.tab-corner[aria-pressed="true"]{background:var(--moss);color:#fff;border-color:var(--moss);
+  box-shadow:0 4px 0 var(--moss-deep)}
+@media (prefers-color-scheme:dark){.tab-star{color:var(--sun)}.tab-corner{color:var(--moss)}}
+
+/* bottom bar */
+#tabbar{position:fixed;left:0;right:0;bottom:0;z-index:9000;display:flex;gap:.2rem;
+  padding:.4rem .4rem calc(.4rem + env(safe-area-inset-bottom,0px));
+  background:color-mix(in srgb,var(--card) 90%,transparent);
+  -webkit-backdrop-filter:blur(16px);backdrop-filter:blur(16px);
+  border-top:1.5px solid var(--line)}
+#tabbar button{flex:1;width:auto;border:0;background:none;border-radius:14px;
+  padding:.4rem .2rem .45rem;font-size:.66rem;font-weight:800;letter-spacing:.02em;
+  color:var(--ink-2);display:flex;flex-direction:column;align-items:center;gap:.1rem;
+  box-shadow:none;transition:background .18s,color .18s,transform .18s}
+#tabbar button span{font-size:1.3rem;line-height:1.1;transition:transform .25s cubic-bezier(.2,1.6,.4,1)}
+#tabbar button[aria-selected="true"]{color:var(--moss-deep);
+  background:color-mix(in srgb,var(--moss) 16%,transparent)}
+#tabbar button[aria-selected="true"] span{transform:scale(1.22) translateY(-1px)}
+@media (prefers-color-scheme:dark){#tabbar button[aria-selected="true"]{color:var(--moss)}}
+#tabbar button:active{transform:none}
+
+/* the map */
+.spm{border-radius:18px!important;border-width:2px!important}
+
+/* the sky thumbnail */
+#info img{width:100%;border-radius:14px;display:block;background:#0d1108}
+.thumb{width:100%;max-width:240px;margin:.6rem auto}
 .thumb .frame{position:relative;line-height:0}
 .thumb .mark{position:absolute;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;
-  border:2px solid #39ff88;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,
-  0 0 6px rgba(57,255,136,.5);pointer-events:none}
+  border:2.5px solid var(--moss-lit);border-radius:4px;
+  box-shadow:0 0 0 1.5px rgba(0,0,0,.6) inset,0 0 8px rgba(155,194,63,.6);
+  pointer-events:none;animation:pop .45s cubic-bezier(.2,1.8,.4,1) both}
 .thumb .mark.other{width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
-  border-color:rgba(206,211,140,.9);box-shadow:0 0 0 1px rgba(0,0,0,.5) inset}
-.thumb .cap{font-size:.62rem;color:var(--ios-secondary);margin-top:.25rem;text-align:center}
-.visited{color:var(--kereru-green);font-weight:600}
-.swipe{position:relative;overflow:hidden}
-.swipeface{position:relative;z-index:1;transition:transform .22s cubic-bezier(.2,.8,.2,1);
+  border-color:var(--lichen);box-shadow:0 0 0 1px rgba(0,0,0,.5) inset;animation:none}
+@keyframes pop{from{transform:scale(2.4);opacity:0}}
+.thumb .cap{font-size:.68rem;color:var(--ink-2);margin-top:.4rem;text-align:center;
+  line-height:1.4}
+#info{margin-top:.7rem;padding:.9rem;border-radius:18px;
+  border:2px solid var(--line);background:var(--card-2)}
+#info h3{margin:0 0 .4rem;font-size:.95rem;font-family:'SF Mono',ui-monospace,monospace;
+  font-weight:700;word-break:break-all}
+#info a{color:var(--moss-deep);font-weight:700}
+@media (prefers-color-scheme:dark){#info a{color:var(--moss)}}
+.close,.danger{font-size:.78rem;padding:.45rem .85rem;width:auto;border-radius:12px;
+  box-shadow:0 3px 0 color-mix(in srgb,var(--moss) 50%,transparent)}
+.danger{border-color:var(--rust);color:var(--rust-deep);
+  box-shadow:0 3px 0 color-mix(in srgb,var(--rust) 55%,transparent)}
+@media (prefers-color-scheme:dark){.danger{color:var(--rust-lit)}}
+
+/* ── the log: a collection, not a laundry list ────────────────────────── */
+.tally{display:flex;gap:.55rem;margin-bottom:.9rem}
+.tally div{flex:1;border-radius:18px;padding:.7rem .5rem;text-align:center;
+  border:2px solid var(--line);background:var(--card-2)}
+.tally b{display:block;font-size:1.55rem;font-weight:800;line-height:1.1}
+.tally span{font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--ink-2);font-weight:700}
+.tally .t-star{border-color:var(--sun);background:color-mix(in srgb,var(--sun) 15%,var(--card))}
+.tally .t-corner{border-color:var(--moss);background:color-mix(in srgb,var(--moss) 14%,var(--card))}
+.tally .t-best{border-color:var(--rust);background:color-mix(in srgb,var(--rust) 13%,var(--card))}
+
+.rec{display:flex;gap:.75rem;align-items:flex-start;padding:.8rem;background:var(--card);
+  border:2px solid var(--line);border-radius:18px}
+.rec.dim{opacity:.5}
+.rec .disc{flex:0 0 auto;width:44px;height:44px;border-radius:14px;display:grid;
+  place-items:center;font-size:1.35rem;color:#fff;
+  box-shadow:0 3px 0 rgba(0,0,0,.18)}
+.rec .disc.star{background:linear-gradient(150deg,var(--sun-lit),var(--sun-deep))}
+.rec .disc.corner{background:linear-gradient(150deg,var(--moss-lit),var(--moss-deep))}
+.rec .body{flex:1;min-width:0}
+.rec .title{font-family:'SF Mono',ui-monospace,monospace;font-weight:700;font-size:.83rem;
+  word-break:break-all;line-height:1.3}
+.chips{display:flex;flex-wrap:wrap;gap:.3rem;margin-top:.4rem}
+.chip{font-size:.66rem;font-weight:800;padding:.2rem .5rem;border-radius:999px;
+  background:color-mix(in srgb,var(--ink) 8%,transparent);color:var(--ink-2);
+  white-space:nowrap}
+.chip.good{background:color-mix(in srgb,var(--moss) 24%,transparent);color:var(--moss-deep)}
+.chip.warn{background:color-mix(in srgb,var(--rust) 22%,transparent);color:var(--rust-deep)}
+.chip.best{background:var(--sun);color:#2A2405}
+@media (prefers-color-scheme:dark){
+  .chip.good{color:var(--moss-lit)} .chip.warn{color:var(--rust-lit)}}
+.rec .acts{display:flex;gap:.4rem;margin-top:.55rem}
+.rec .acts button{flex:1;font-size:.72rem;padding:.4rem .5rem;border-radius:11px;
+  box-shadow:0 3px 0 color-mix(in srgb,var(--moss) 45%,transparent)}
+
+/* swipe: deliberately stiff — see the JS for why */
+.swipe{position:relative;overflow:hidden;border-radius:18px;margin-bottom:.6rem}
+.swipeface{position:relative;z-index:1;transition:transform .3s cubic-bezier(.2,.9,.25,1);
   touch-action:pan-y}
-.swipeback{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:center}
-.swipeback .danger{width:auto;padding:.5rem .9rem;border-radius:8px;font-size:.75rem;
-  border-color:#b3261e;color:#b3261e;background:transparent}
-#info a{color:var(--kereru-teal)}
-#info .close{font-size:.7rem;margin-top:.5rem;padding:.35rem .7rem;width:auto}
-ul{list-style:none;padding:0;margin:.5rem 0 .75rem;max-height:11rem;overflow:auto}
-li{font-size:.75rem;font-family:'SF Mono',ui-monospace,monospace;padding:.35rem .1rem;
-  border-bottom:1px solid var(--ios-separator);display:flex;justify-content:space-between;gap:.5rem}
-li span{color:var(--ios-secondary);flex:0 0 auto}
-.ok{color:var(--kereru-green)}
-@media (prefers-color-scheme:dark){.ok{color:#7fc4a3}}
+.swipeback{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:center;
+  padding-right:.7rem;border-radius:18px;
+  background:color-mix(in srgb,var(--rust) 22%,var(--card))}
+.swipeback .danger{width:auto;background:var(--card)}
+
+/* tuning, behind the word "lattice" */
+#tune-key{all:unset;cursor:pointer;border-bottom:2px dotted currentColor}
+#tune-key:focus-visible{outline:3px solid var(--sun);outline-offset:3px}
+#tuning{margin-top:.7rem;padding-top:.7rem;border-top:2px dotted var(--line)}
+.tune{display:flex;align-items:center;gap:.6rem;font-size:.74rem;color:var(--ink-2);
+  margin-top:.6rem;font-weight:700}
+.tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ink);min-width:2.4rem}
+.tune input[type=range]{flex:1}
+
+.goto{display:flex;gap:.5rem;margin-top:.7rem}
+.goto input{font-family:'SF Mono',ui-monospace,monospace;font-size:.8rem}
+.goto button{flex:0 0 auto;width:auto}
 </style>
 </head>
 <body>
 
 <header>
   <h1>Every star already has a place on Earth</h1>
-  <p>Declination reads as latitude, right ascension as longitude. Nobody arranged
-     that. Once per sidereal day, every star stands over its own place at the
-     same instant.</p>
+  <p>Declination reads as latitude, right ascension as longitude. Once per
+     sidereal day, every star stands over its own place at the same instant.</p>
 </header>
 
 <section id="clock-panel" data-tab="sky">
@@ -159,16 +267,23 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 </section>
 
 <section data-tab="map">
-  <h2>the lattice</h2>
+  <h2>the <button type="button" id="tune-key">lattice</button></h2>
   <div id="map"></div>
+  <div class="goto">
+    <input id="pin-ll" inputmode="decimal" placeholder="lat, lon \u2014 paste to fly there"
+           aria-label="pin coordinates">
+    <button id="pin-go" type="button">Go</button>
+  </div>
   <div id="info" hidden></div>
-  <label class="tune" for="wt">weight <b id="wt-val">2.0</b>
-    <input id="wt" type="range" min="0.3" max="8" step="0.1" value="2"></label>
-  <label class="tune" for="fo">falloff <b id="fo-val">0.75</b>
-    <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.75"></label>
-  <label class="tune" for="ps">zoom persist <b id="ps-val">0.30</b>
-    <input id="ps" type="range" min="0" max="1.2" step="0.05" value="0.3"></label>
+  <div id="tuning" hidden>
+  <label class="tune" for="wt">weight <b id="wt-val">1.1</b>
+    <input id="wt" type="range" min="0.3" max="8" step="0.1" value="1.1"></label>
+  <label class="tune" for="fo">falloff <b id="fo-val">0.50</b>
+    <input id="fo" type="range" min="0.5" max="0.98" step="0.01" value="0.5"></label>
+  <label class="tune" for="ps">zoom persist <b id="ps-val">0.50</b>
+    <input id="ps" type="range" min="0" max="1.2" step="0.05" value="0.5"></label>
   <p class="hint" id="ramp" style="margin-top:.3rem"></p>
+  </div>
   <div class="btnrow">
     <button id="recentre" type="button">Recentre on me</button>
     <button id="track" type="button" aria-pressed="false">Track me</button>
@@ -519,7 +634,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
   var map = GeosonifyStarpinMap.mount($('map'), {
     onSelect: showInfo,
-    onMove: function (lat, lon, spanM) { loadStars(lat, lon, spanM); }
+    onMove: function (lat, lon, spanM) {
+      loadStars(lat, lon, spanM);
+      var p = map.pin();
+      showPinLL(p ? p.lat : lat, p ? p.lon : lon);
+    }
   });
 
   function showRamp() {
@@ -535,6 +654,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
                                            : (sp / 1000).toFixed(1) + ' km') : '') +
       '   (falloff sets depth too; persist keeps coarse lines bold when zoomed in)';
   }
+  $('tune-key').addEventListener('click', function () {
+    var t = $('tuning'); t.hidden = !t.hidden;
+    if (!t.hidden) showRamp();
+  });
+
   $('wt').addEventListener('input', function () {
     $('wt-val').textContent = map.setWeight(this.value).toFixed(1); showRamp();
   });
@@ -608,6 +732,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 
     if (sel.kind === 'pin') {
       var d0 = sel.data;
+      showPinLL(d0.lat, d0.lon);
       readAt(d0.lat, d0.lon, 'dropped pin');
       box.appendChild(el('h3', null, 'dropped pin'));
       var pm = el('div', 'meta');
@@ -789,6 +914,38 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   });
   $('recentre').addEventListener('click', function () { map.recentre(); });
 
+  // ── the coordinate box ───────────────────────────────────────────────────
+  // Shows wherever the pin is (or the map centre), and accepts a pasted pair
+  // to fly there. Deliberately forgiving about what a "pair" looks like:
+  // people paste from Google Maps, from a card, from a text message.
+  var pinEditing = false;
+  $('pin-ll').addEventListener('focus', function () { pinEditing = true; });
+  $('pin-ll').addEventListener('blur', function () { pinEditing = false; });
+  function showPinLL(lat, lon) {
+    if (pinEditing) return;
+    $('pin-ll').value = lat.toFixed(6) + ', ' + lon.toFixed(6);
+  }
+  function flyToTyped() {
+    var m = String($('pin-ll').value).match(
+      /(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
+    if (!m) { alert('Give me two numbers, like  -43.552932, 172.652115'); return; }
+    var la = parseFloat(m[1]), lo = parseFloat(m[2]);
+    if (!(la >= -90 && la <= 90) || !(lo >= -180 && lo <= 360)) {
+      alert('That is not a place on Earth: latitude runs \u00B190, longitude \u00B1180.');
+      return;
+    }
+    if (lo > 180) lo -= 360;
+    goTab('map');
+    map.leaflet.setView([la, lo], Math.max(map.leaflet.getZoom(), 17));
+    map.dropPin(la, lo);
+    readAt(la, lo, 'typed position');
+    $('pin-ll').blur();
+  }
+  $('pin-go').addEventListener('click', flyToTyped);
+  $('pin-ll').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); flyToTyped(); }
+  });
+
   // ── tabs ─────────────────────────────────────────────────────────────────
   function goTab(name) {
     document.body.setAttribute('data-active', name);
@@ -959,18 +1116,33 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   }
 
   $('lg-show').addEventListener('click', function () {
-    // Renders in the records section. The map's info box is a different
-    // surface, and opening this there scrolled the page to the top.
     var box = $('lg-panel'); box.textContent = ''; box.hidden = false;
-    box.appendChild(el('h3', null, 'your records'));
     var recs = log.current();
     if (!recs.length) {
-      box.appendChild(el('div', 'meta', 'Nothing yet. Go and stand somewhere.'));
+      box.appendChild(el('p', 'hint', 'Nothing yet. Go and stand somewhere.'));
+      return;
     }
+
+    // A tally first. A list of rows is a receipt; a count is a collection.
+    var stars = {}, corners = {}, best = 0;
     var rank = S.rankByTarget(recs);
-    // Rarity ordering: a cornerstone's tier order (lower = rarer) and a star's
-    // magnitude are different scales, so they are normalised to a single
-    // "scarcity" number rather than pretended to be comparable in the raw.
+    recs.forEach(function (r) {
+      if (r.target.cornerstone) corners[r.target.cornerstone] = 1;
+      else if (r.target.starpin) stars[r.target.starpin] = 1;
+      var rk = rank[r.record_id];
+      if (rk && rk.best && rk.supported) best++;
+    });
+    var tally = el('div', 'tally');
+    [['t-star', Object.keys(stars).length, 'starpins'],
+     ['t-corner', Object.keys(corners).length, 'cornerstones'],
+     ['t-best', best, 'stood on']].forEach(function (t) {
+      var d = el('div', t[0]);
+      d.appendChild(el('b', null, String(t[1])));
+      d.appendChild(el('span', null, t[2]));
+      tally.appendChild(d);
+    });
+    box.appendChild(tally);
+
     function scarcity(r) {
       if (r.target.cornerstone) {
         var m = /\.([0-3]+)$/.exec(r.target.cornerstone);
@@ -981,9 +1153,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         return m ? m[1].length : 14;
       }
       var sid = sourceIdOf(r.target.starpin);
-      var cached = map.stars().filter(function (x) {
-        return sourceIdOf(x.name) === sid; })[0];
-      // Map magnitude onto the same axis: brighter is rarer, like a lower order.
+      var cached = map.stars().filter(function (x) { return sourceIdOf(x.name) === sid; })[0];
       return cached && cached.mag != null ? Math.max(1, cached.mag - 2) : 13;
     }
     var mode = $('lg-sort').value;
@@ -995,87 +1165,104 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       }
       return b.event.time_ms - a.event.time_ms;
     });
-    recs.forEach(function (r) {
+
+    recs.forEach(function (r, i) {
       var rk = rank[r.record_id] || {};
-      var d = el('div', 'meta');
-      d.style.borderTop = '1px solid var(--ios-separator)';
-      d.style.padding = '.5rem 0';
-      d.style.background = 'var(--ios-bg)';
-      // Beaten by a closer approach of your own: dimmed, never hidden. It still
-      // happened, and if you retract the closer one it lights up again.
-      if (rk.best === false) { d.style.opacity = '.45'; }
-      var name = r.target.cornerstone || (r.target.starpin || '').replace('starpin:gdr3:', 'Gaia DR3 ');
+      var isStar = !r.target.cornerstone;
       var a = rk.assessment || null;
       if (!a) { try { a = S.assessRecord(r); } catch (e) {} }
-      d.appendChild(el('strong', null, name));
-      if (rk.best && rk.count > 1) {
-        var badge = el('span', null, '  your closest');
-        badge.style.color = 'var(--kereru-green)'; badge.style.fontWeight = '600';
-        d.appendChild(badge);
-      }
-      d.appendChild(el('br'));
-      d.appendChild(document.createTextNode(new Date(r.event.time_ms).toLocaleString()));
-      d.appendChild(el('br'));
-      d.appendChild(document.createTextNode(
-        r.kind + ' \u00B7 ' + (a && a.visit ? a.visit.verdict : '?') +
-        (a && a.visit && a.visit.distanceM != null
-          ? ' at ' + a.visit.distanceM.toFixed(1) + ' m' : '') +
-        ' \u00B7 fix \u00B1' + (r.fix ? Math.round(r.fix.accuracy_m) + ' m' : 'none')));
-      if (rk.best === false && isFinite(rk.bestDistanceM)) {
-        d.appendChild(el('br'));
-        d.appendChild(document.createTextNode(
-          'beaten by your own ' + rk.bestDistanceM.toFixed(1) + ' m approach'));
-      }
-      var card = el('button', 'close', 'card');
-      card.type = 'button';
-      card.addEventListener('click', function () { showCardFor(r, rk); });
-      d.appendChild(el('br')); d.appendChild(card);
+      var verdict = a && a.visit ? a.visit.verdict : '?';
 
-      // Deleting a record should be rare and deliberate: swipe the entry to
-      // the left to reveal it, then confirm. A delete button sitting next to
-      // "card" invites the accident it is describing.
       var slot = el('div', 'swipe');
       var face = el('div', 'swipeface');
-      var back = el('div', 'swipeback');
+      var backd = el('div', 'swipeback');
       var del = el('button', 'danger', 'delete');
       del.type = 'button';
       del.addEventListener('click', function () {
         var what = r.target.cornerstone || sourceIdOf(r.target.starpin);
         if (!confirm('Delete your record of ' + what + '?\n\n' +
                      'This is your only copy unless you have downloaded a backup.')) return;
-        log.remove(r.record_id);
-        drawLog(); redraw(); $('lg-show').click();
+        log.remove(r.record_id); drawLog(); redraw(); $('lg-show').click();
       });
-      back.appendChild(del);
-      slot.appendChild(back); slot.appendChild(face);
-      var x0 = null;
-      face.addEventListener('pointerdown', function (e) { x0 = e.clientX; });
+      backd.appendChild(del);
+
+      var d = el('div', 'rec' + (rk.best === false ? ' dim' : ''));
+      d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
+      d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
+
+      var disc = el('div', 'disc ' + (isStar ? 'star' : 'corner'), isStar ? '\u2726' : '\u25C6');
+      d.appendChild(disc);
+
+      var body = el('div', 'body');
+      body.appendChild(el('div', 'title', isStar
+        ? 'Gaia DR3 ' + sourceIdOf(r.target.starpin) : r.target.cornerstone));
+
+      var chips = el('div', 'chips');
+      function chip(txt, cls) { chips.appendChild(el('span', 'chip' + (cls ? ' ' + cls : ''), txt)); }
+      chip(new Date(r.event.time_ms).toLocaleDateString(undefined,
+        { day: 'numeric', month: 'short', year: 'numeric' }));
+      if (a && a.visit && a.visit.distanceM != null) chip(a.visit.distanceM.toFixed(1) + ' m');
+      chip(verdict, verdict === 'well-supported' ? 'good'
+                  : verdict === 'not-supported' ? 'warn' : null);
+      if (rk.best && rk.count > 1) chip('your closest', 'best');
+      if (rk.best === false && isFinite(rk.bestDistanceM))
+        chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
+      if (r.kind === 'closest-approach') chip('approach');
+      body.appendChild(chips);
+
+      var acts = el('div', 'acts');
+      var cardBtn = el('button', null, 'card');
+      cardBtn.type = 'button';
+      cardBtn.addEventListener('click', function () { showCardFor(r, rk); });
+      acts.appendChild(cardBtn);
+
+      // Show on map works for starpins too — the record carries the frozen
+      // catalogue address, so there was never a reason it could not.
+      var pt2 = null;
+      if (isStar && r.target.lat_1e7 != null) {
+        pt2 = { lat: r.target.lat_1e7 / 1e7, lon: r.target.lon_1e7 / 1e7 };
+      } else if (!isStar) {
+        try { pt2 = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
+      }
+      if (pt2) {
+        var go = el('button', null, 'on map');
+        go.type = 'button';
+        go.addEventListener('click', function () {
+          goTab('map');
+          map.leaflet.setView([pt2.lat, pt2.lon], 18);
+          if (!isStar) map.setHighlight(r.target.cornerstone);
+        });
+        acts.appendChild(go);
+      }
+      body.appendChild(acts);
+      d.appendChild(body);
+
+      face.appendChild(d);
+      slot.appendChild(backd); slot.appendChild(face);
+      var DEAD = 28, GEAR = 0.45, OPEN = 92, LATCH = 62, HOLD_MS = 260;
+      var x0 = null, t0 = 0, open = false;
+      face.addEventListener('pointerdown', function (e) {
+        x0 = e.clientX; t0 = Date.now();
+      });
       face.addEventListener('pointermove', function (e) {
         if (x0 == null) return;
-        var dx = Math.max(-92, Math.min(0, e.clientX - x0));
-        face.style.transform = 'translateX(' + dx + 'px)';
+        var raw = e.clientX - x0;
+        if (open) raw -= OPEN / GEAR;
+        var eff = raw > -DEAD ? 0 : (raw + DEAD) * GEAR;
+        face.style.transition = 'none';
+        face.style.transform = 'translateX(' + Math.max(-OPEN - 12, Math.min(0, eff)) + 'px)';
       });
       ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
         face.addEventListener(ev, function (e) {
           if (x0 == null) return;
-          var dx = e.clientX - x0; x0 = null;
-          face.style.transform = 'translateX(' + (dx < -40 ? -92 : 0) + 'px)';
+          var raw = e.clientX - x0, held = Date.now() - t0;
+          x0 = null;
+          face.style.transition = '';
+          var eff = raw > -DEAD ? 0 : (raw + DEAD) * GEAR;
+          open = (eff <= -LATCH && held >= HOLD_MS) || (open && raw < DEAD);
+          face.style.transform = 'translateX(' + (open ? -OPEN : 0) + 'px)';
         });
       });
-      if (r.target.cornerstone) {
-        var vv = null;
-        try { vv = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
-        if (vv) {
-          var go = el('button', 'close', 'show on map');
-          go.type = 'button';
-          go.addEventListener('click', function () {
-            map.leaflet.setView([vv.lat, vv.lon], 18);
-            map.setHighlight(r.target.cornerstone);
-          });
-          d.appendChild(el('br')); d.appendChild(go);
-        }
-      }
-      face.appendChild(d);
       box.appendChild(slot);
     });
     box.appendChild(el('div', 'meta',
@@ -1149,27 +1336,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     });
   }
 
+  // Both kinds get the full-screen treatment. A cornerstone card tucked into
+  // the page while a starpin card took over the screen made one collection
+  // feel like the real one and the other like a footnote.
   function showCardFor(r, rk) {
     var o = cardOptsFor(r, rk);
-    if (o.kind === 'starpin') {
-      var st = GeosonifyStarpinCard.show(o);
-      var sh = el('button', 'spc-close', 'Save or share');
-      sh.type = 'button';
-      sh.style.marginTop = '.5rem';
-      sh.addEventListener('click', function () { shareCard(o); });
-      st.el.querySelector('.wrap').appendChild(sh);
-      return;
-    }
-    var box = $('lg-panel');
-    var holder = document.getElementById('cardslot');
-    if (!holder) { holder = el('div'); holder.id = 'cardslot';
-                   holder.style.margin = '.75rem 0'; box.insertBefore(holder, box.firstChild); }
-    holder.textContent = '';
-    holder.appendChild(GeosonifyStarpinCard.render(o));
-    var sh = el('button', 'close', 'save or share this card');
-    sh.type = 'button'; sh.style.marginTop = '.5rem';
+    o.mini = false;
+    var st = GeosonifyStarpinCard.show(o);
+    var sh = el('button', 'spc-close', 'Save or share');
+    sh.type = 'button';
+    sh.style.marginTop = '.5rem';
     sh.addEventListener('click', function () { shareCard(o); });
-    holder.appendChild(sh);
+    st.el.querySelector('.wrap').appendChild(sh);
   }
 
   $('lg-sort').addEventListener('change', function () {
