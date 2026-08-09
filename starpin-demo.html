@@ -83,11 +83,19 @@ select{font:inherit;font-size:.8rem;padding:.5rem;border-radius:10px;
 #info .meta{font-size:.75rem;color:var(--ios-secondary);line-height:1.5}
 #info img{width:100%;max-width:190px;border-radius:8px;display:block;background:#111}
 .thumb{position:relative;width:100%;max-width:190px;margin:.5rem 0}
-.thumb .mark{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;
+.thumb .mark{position:absolute;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;
   border:2px solid #39ff88;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,
   0 0 6px rgba(57,255,136,.5);pointer-events:none}
+.thumb .mark.other{width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
+  border-color:rgba(140,200,255,.85);box-shadow:0 0 0 1px rgba(0,0,0,.5) inset}
 .thumb .cap{font-size:.62rem;color:var(--ios-secondary);margin-top:.25rem;text-align:center}
 .visited{color:var(--kereru-green);font-weight:600}
+.swipe{position:relative;overflow:hidden}
+.swipeface{position:relative;z-index:1;transition:transform .22s cubic-bezier(.2,.8,.2,1);
+  touch-action:pan-y}
+.swipeback{position:absolute;inset:0;display:flex;justify-content:flex-end;align-items:center}
+.swipeback .danger{width:auto;padding:.5rem .9rem;border-radius:8px;font-size:.75rem;
+  border-color:#b3261e;color:#b3261e;background:transparent}
 #info a{color:var(--kereru-teal)}
 #info .close{font-size:.7rem;margin-top:.5rem;padding:.35rem .7rem;width:auto}
 ul{list-style:none;padding:0;margin:.5rem 0 .75rem;max-height:11rem;overflow:auto}
@@ -182,23 +190,6 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 </section>
 
 <section>
-  <h2>a starpin</h2>
-  <input id="sid" value="5382127323687128576" aria-label="Gaia source_id">
-  <input id="ra"  value="" placeholder="right ascension, degrees" aria-label="RA">
-  <input id="dec" value="" placeholder="declination, degrees" aria-label="Dec">
-  <dl>
-    <div class="r"><dt>alias</dt><dd id="sp-alias">—</dd></div>
-    <div class="r"><dt>cell</dt><dd id="sp-cell">—</dd></div>
-    <div class="r"><dt>address</dt><dd id="sp-addr">enter ra and dec</dd></div>
-    <div class="r"><dt>distance</dt><dd id="sp-dist">—</dd></div>
-    <div class="r"><dt>visit</dt><dd id="sp-verdict">—</dd></div>
-  </dl>
-  <button id="log-sp" type="button">Log this starpin</button>
-  <p class="hint">A source_id alone gives only the order-12 cell, 1.6 km across.
-     The exact address needs the catalogue coordinates.</p>
-</section>
-
-<section>
   <h2>your records</h2>
   <dl>
     <div class="r"><dt>held</dt><dd id="lg-count">0</dd></div>
@@ -217,9 +208,14 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   <button id="lg-export" type="button">Download my records</button>
   <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
   <input id="lg-file" type="file" accept="application/json" hidden>
-  <p class="hint">Records are immutable and merge by set union, so importing a
-     friend's file never overwrites yours. Browser storage can be cleared by the
-     phone at any time — the downloaded file is the real backup.</p>
+  <p class="hint"><b>Download</b> saves everything you have logged to a file.
+     That file is the real backup: your phone can clear browser storage at any
+     time, and there is no server holding a copy.<br><br>
+     <b>Add records from a file</b> reads one back in — your own backup on a new
+     phone, or a file someone sends you so their finds appear alongside yours.
+     Nothing is ever overwritten: records you already hold are recognised and
+     skipped, and anything you have deleted stays deleted.<br><br>
+     Swipe a record left to delete it.</p>
 </section>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -243,7 +239,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20260810"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20260809"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20260810"></script>
 <script>
 (function () {
   'use strict';
@@ -302,10 +298,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     return best;
   }
 
+  // Pull the trailing digit run, never `replace(/\D/g,'')` — that turns
+  // "Gaia DR3 5382…" into "35382…" and matches nothing, which is why a star
+  // you had already bagged still showed as unvisited.
+  function sourceIdOf(v) {
+    return (String(v == null ? '' : v).match(/(\d{5,})\s*$/) || [])[1] || '';
+  }
   function visitedOn(key) {
+    if (!key) return null;
     var hits = log.current().filter(function (r) {
-      return (r.target.cornerstone === key) ||
-             (r.target.starpin && r.target.starpin.indexOf(key) >= 0); });
+      if (r.target.cornerstone) return r.target.cornerstone === key;
+      return r.target.starpin && sourceIdOf(r.target.starpin) === key;
+    });
     hits.sort(function (a, b) { return a.event.time_ms - b.event.time_ms; });
     return hits[0] || null;
   }
@@ -339,7 +343,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       if (!nearestStar) { b.appendChild(el('p', 'hint',
         'No starpins in view. Move the map, or zoom in below 8 km.')); return; }
       var sp = nearestStar.star;
-      var vd = visitedOn(String(sp.name || '').replace(/\D/g, ''));
+      var vd = visitedOn(sourceIdOf(sp.name));
       b.appendChild(el('div', 'meta', (sp.name || 'unnamed') + '  \u00B7  ' +
         (sp.mag == null ? 'mag unknown' : 'G \u2248 ' + sp.mag.toFixed(1)) + '  \u00B7  ' +
         walk(nearestStar.distanceM, bearing(fix.lat, fix.lon, sp.lat, sp.lon))));
@@ -384,13 +388,21 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   // Compass mode. Without a heading the dial is a north-up MAP; with one it is
   // a compass and the whole rose counter-rotates. iOS needs an explicit
   // permission grant from inside a user gesture.
+  var compassOn = false;
   $('compass').addEventListener('click', function () {
     var btn = this;
-    if (heading != null) {
-      heading = null; btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
+    if (compassOn) {
+      // Clearing `heading` was not enough: the orientation listeners kept
+      // firing and set it straight back, so the dial could never return to
+      // north-up. Detach them.
+      compassOn = false; heading = null;
+      window.removeEventListener('deviceorientationabsolute', onOrient, true);
+      window.removeEventListener('deviceorientation', onOrient, true);
+      btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
       paintTargets(); return;
     }
     function listen() {
+      compassOn = true;
       btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'North up';
       window.addEventListener('deviceorientationabsolute', onOrient, true);
       window.addEventListener('deviceorientation', onOrient, true);
@@ -404,6 +416,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     } else listen();
   });
   function onOrient(e) {
+    if (!compassOn) return;
     var h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading
           : (e.alpha != null && e.absolute !== false) ? (360 - e.alpha) : null;
     if (h == null) return;
@@ -438,33 +451,6 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         st.corners.map(function (n) { return collected[n] ? '\u25CF' : '\u25CB'; }).join('') +
         '  ' + (4 - st.missing.length) + ' of 4';
     } catch (e) { $('cs-pips').textContent = '—'; }
-  }
-
-  function starpin() {
-    var sid = $('sid').value.trim();
-    try {
-      var d = S.decodeSourceId(sid);
-      $('sp-alias').textContent = S.alias(sid);
-      $('sp-cell').textContent = d.quaternary;
-    } catch (e) {
-      $('sp-alias').textContent = e.message; $('sp-cell').textContent = '—';
-      return;
-    }
-    var ra = $('ra').value.trim(), dec = $('dec').value.trim();
-    if (!ra || !dec) { $('sp-addr').textContent = 'enter ra and dec'; return; }
-    var a;
-    try { a = S.starpinAddress(ra, dec); }
-    catch (e) { $('sp-addr').textContent = e.message; return; }
-    $('sp-addr').textContent = a.lat.toFixed(7) + ', ' + a.lon.toFixed(7);
-    if (!fix) { $('sp-dist').textContent = 'needs your position'; return; }
-    var m = S.haversineM(fix.lat, fix.lon, a.lat, a.lon);
-    var b = bearing(fix.lat, fix.lon, a.lat, a.lon);
-    $('sp-dist').textContent = walk(m, b);
-    var r = S.assessVisit(fix, { lat: a.lat, lon: a.lon });
-    var vd = $('sp-verdict');
-    vd.textContent = r.verdict + '  (' + skySep(r.distanceM) + ')';
-    vd.className = r.verdict === 'well-supported' ? 'ok'
-                 : r.verdict === 'not-supported' ? 'bad' : '';
   }
 
   // ── records ────────────────────────────────────────────────────────────
@@ -507,6 +493,47 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     if (cls) n.className = cls; if (text != null) n.textContent = text;
     return n;
   }
+  // The sky cutout with EVERY source marked, target distinguished. Positions
+  // come from the repo's own thumbnailMarkers(), which does the tangent-plane
+  // maths and knows that right ascension runs leftward across the sky. A single
+  // square at the container's centre was only ever a claim; with the neighbours
+  // plotted too you can see for yourself that the registration is right.
+  function skyThumb(st, fovArcsec) {
+    fovArcsec = fovArcsec || 48;
+    var PX = 240;
+    var th = el('div', 'thumb');
+    var img = document.createElement('img');
+    img.alt = 'sky around ' + (st.name || 'this source');
+    img.loading = 'lazy';
+    try {
+      img.src = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: fovArcsec, px: PX });
+    } catch (e) {}
+    th.appendChild(img);
+
+    var others = map.stars().filter(function (x) {
+      return sourceIdOf(x.name) !== sourceIdOf(st.name) && x.ra != null;
+    });
+    var marks = [];
+    try {
+      marks = SN.thumbnailMarkers(st.dec, st.ra, others.map(function (x) {
+        return { star: { ra: x.ra, dec: x.dec, name: x.name } };
+      }), { px: PX, fovArcsec: fovArcsec });
+    } catch (e) { marks = [{ x: PX / 2, y: PX / 2, self: true }]; }
+
+    marks.forEach(function (m) {
+      if (!m.self && m.inFrame === false) return;
+      var d = el('div', m.self ? 'mark' : 'mark other');
+      d.style.left = (m.x / PX * 100).toFixed(2) + '%';
+      d.style.top = (m.y / PX * 100).toFixed(2) + '%';
+      if (m.label) d.title = m.label;
+      th.appendChild(d);
+    });
+    th.appendChild(el('div', 'cap', fovArcsec + '\u2033 across \u00B7 ' +
+      Math.round(fovArcsec * S.M_PER_ARCSEC) + ' m on the ground \u00B7 ' +
+      'green square is your target, circles are its neighbours'));
+    return th;
+  }
+
   function showInfo(sel) {
     var box = $('info'); box.textContent = '';
     if (!sel) { box.hidden = true; return; }
@@ -568,18 +595,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       var st = sel.data;
       box.appendChild(el('h3', null, st.name || 'unnamed source'));
       if (SN && SN.thumbnailUrl) {
-        // The thumbnail usually shows several sources. The marker says which
-        // one you are walking to — the cutout is centred on the target, so a
-        // fixed centre mark is exactly right and needs no projection maths.
-        var th = el('div', 'thumb');
-        var img = document.createElement('img');
-        img.alt = 'sky around ' + (st.name || 'this source');
-        img.loading = 'lazy';
-        try { img.src = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: 40 }); } catch (e) {}
-        th.appendChild(img);
-        th.appendChild(el('div', 'mark'));
-        th.appendChild(el('div', 'cap', '40\u2033 across \u00B7 marked source is your target'));
-        box.appendChild(th);
+        box.appendChild(skyThumb(st, 48));
       }
       var sm = el('div', 'meta');
       function row(k, v) { if (v == null || v === '') return;
@@ -595,7 +611,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         row('from you', walk(dm, bb) + '  (' + skySep(dm) + ')');
         row('visit', S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict);
       }
-      var vrec = visitedOn(String(st.name || '').replace(/\D/g, ''));
+      var vrec = visitedOn(sourceIdOf(st.name));
       if (vrec) sm.appendChild(visitedLine(vrec));
       box.appendChild(sm);
       // You can always log. The verdict is DERIVED, so a record made from
@@ -640,7 +656,12 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
             return x.target.starpin === target.starpin; })
             .sort(function (a2, b2) { return b2.event.time_ms - a2.event.time_ms; })[0];
           if (justLogged) setTimeout(function () {
-            GeosonifyStarpinCard.show(cardOptsFor(justLogged, null));
+            var o2 = cardOptsFor(justLogged, null);
+            var stage = GeosonifyStarpinCard.show(o2);
+            var sh2 = el('button', 'spc-close', 'Save or share');
+            sh2.type = 'button'; sh2.style.marginTop = '.5rem';
+            sh2.addEventListener('click', function () { shareCard(o2); });
+            stage.el.querySelector('.wrap').appendChild(sh2);
           }, 1600);
         });
         box.appendChild(lb);
@@ -816,12 +837,6 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       }, 1500);
     } catch (e) {}
   });
-  $('log-sp').addEventListener('click', function () {
-    var sid = $('sid').value.trim();
-    try { S.decodeSourceId(sid); } catch (e) { alert(e.message); return; }
-    logIt({ starpin: 'starpin:gdr3:' + sid });
-  });
-
   $('lg-show').addEventListener('click', function () {
     // Renders in the records section. The map's info box is a different
     // surface, and opening this there scrolled the page to the top.
@@ -844,9 +859,9 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
                  catch (e) {} }
         return m ? m[1].length : 14;
       }
-      var sid = (r.target.starpin || '').replace(/\D/g, '');
+      var sid = sourceIdOf(r.target.starpin);
       var cached = map.stars().filter(function (x) {
-        return String(x.name || '').indexOf(sid) >= 0; })[0];
+        return sourceIdOf(x.name) === sid; })[0];
       // Map magnitude onto the same axis: brighter is rarer, like a lower order.
       return cached && cached.mag != null ? Math.max(1, cached.mag - 2) : 13;
     }
@@ -864,6 +879,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       var d = el('div', 'meta');
       d.style.borderTop = '1px solid var(--ios-separator)';
       d.style.padding = '.5rem 0';
+      d.style.background = 'var(--ios-bg)';
       // Beaten by a closer approach of your own: dimmed, never hidden. It still
       // happened, and if you retract the closer one it lights up again.
       if (rk.best === false) { d.style.opacity = '.45'; }
@@ -894,12 +910,36 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       card.addEventListener('click', function () { showCardFor(r, rk); });
       d.appendChild(el('br')); d.appendChild(card);
 
-      var del = el('button', 'close', 'delete');
-      del.type = 'button'; del.style.marginLeft = '.4rem';
+      // Deleting a record should be rare and deliberate: swipe the entry to
+      // the left to reveal it, then confirm. A delete button sitting next to
+      // "card" invites the accident it is describing.
+      var slot = el('div', 'swipe');
+      var face = el('div', 'swipeface');
+      var back = el('div', 'swipeback');
+      var del = el('button', 'danger', 'delete');
+      del.type = 'button';
       del.addEventListener('click', function () {
-        if (!confirm('Delete this record? It will not come back if you merge a friend\'s file.')) return;
+        var what = r.target.cornerstone || sourceIdOf(r.target.starpin);
+        if (!confirm('Delete your record of ' + what + '?\n\n' +
+                     'This is your only copy unless you have downloaded a backup.')) return;
         log.remove(r.record_id);
         drawLog(); redraw(); $('lg-show').click();
+      });
+      back.appendChild(del);
+      slot.appendChild(back); slot.appendChild(face);
+      var x0 = null;
+      face.addEventListener('pointerdown', function (e) { x0 = e.clientX; });
+      face.addEventListener('pointermove', function (e) {
+        if (x0 == null) return;
+        var dx = Math.max(-92, Math.min(0, e.clientX - x0));
+        face.style.transform = 'translateX(' + dx + 'px)';
+      });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
+        face.addEventListener(ev, function (e) {
+          if (x0 == null) return;
+          var dx = e.clientX - x0; x0 = null;
+          face.style.transform = 'translateX(' + (dx < -40 ? -92 : 0) + 'px)';
+        });
       });
       if (r.target.cornerstone) {
         var vv = null;
@@ -914,8 +954,8 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
           d.appendChild(el('br')); d.appendChild(go);
         }
       }
-      d.appendChild(del);
-      box.appendChild(d);
+      face.appendChild(d);
+      box.appendChild(slot);
     });
     box.appendChild(el('div', 'meta',
       'Verdicts and "your closest" are re-derived every time this list is drawn, ' +
@@ -957,9 +997,9 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         tierOrder: probe ? probe.tierOrder : ord,
         degree: probe ? probe.degree : 4 } };
     }
-    var sid = (r.target.starpin || '').replace('starpin:gdr3:', '');
+    var sid = sourceIdOf(r.target.starpin);
     var cached = map.stars().filter(function (x) {
-      return String(x.name || '').indexOf(sid) >= 0; })[0] || {};
+      return sourceIdOf(x.name) === sid; })[0] || {};
     var addr = null;
     try { addr = S.decodeSourceId(sid).quaternary; } catch (e) {}
     var n = 0, seen = {};
@@ -970,21 +1010,45 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     return { kind: 'starpin', visit: visit,
       findNumber: seen[r.target.starpin] || null,
       star: { id: sid, name: 'Gaia DR3 ' + sid, catalogue: 'Gaia DR3',
-              ra: cached.ra, dec: cached.dec, mag: cached.mag, distLy: cached.distLy,
+              ra: cached.ra != null ? cached.ra
+                 : (r.target.lon_1e7 != null ? (r.target.lon_1e7 < 0
+                      ? r.target.lon_1e7 / 1e7 + 360 : r.target.lon_1e7 / 1e7) : null),
+              dec: cached.dec != null ? cached.dec
+                 : (r.target.lat_1e7 != null ? r.target.lat_1e7 / 1e7 : null),
+              mag: cached.mag, distLy: cached.distLy,
               address: addr,
               lat: r.target.lat_1e7 != null ? r.target.lat_1e7 / 1e7 : null,
               lon: r.target.lon_1e7 != null ? r.target.lon_1e7 / 1e7 : null } };
   }
 
+  function shareCard(o) {
+    GeosonifyStarpinCard.share(o).catch(function (e) {
+      if (e && e.name === 'AbortError') return;      // the person closed the sheet
+      alert('Could not make an image: ' + (e && e.message ? e.message : e));
+    });
+  }
+
   function showCardFor(r, rk) {
     var o = cardOptsFor(r, rk);
-    if (o.kind === 'starpin') { GeosonifyStarpinCard.show(o); return; }
+    if (o.kind === 'starpin') {
+      var st = GeosonifyStarpinCard.show(o);
+      var sh = el('button', 'spc-close', 'Save or share');
+      sh.type = 'button';
+      sh.style.marginTop = '.5rem';
+      sh.addEventListener('click', function () { shareCard(o); });
+      st.el.querySelector('.wrap').appendChild(sh);
+      return;
+    }
     var box = $('lg-panel');
     var holder = document.getElementById('cardslot');
     if (!holder) { holder = el('div'); holder.id = 'cardslot';
                    holder.style.margin = '.75rem 0'; box.insertBefore(holder, box.firstChild); }
     holder.textContent = '';
     holder.appendChild(GeosonifyStarpinCard.render(o));
+    var sh = el('button', 'close', 'save or share this card');
+    sh.type = 'button'; sh.style.marginTop = '.5rem';
+    sh.addEventListener('click', function () { shareCard(o); });
+    holder.appendChild(sh);
   }
 
   $('lg-sort').addEventListener('change', function () {
@@ -1036,10 +1100,8 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     return broken.length;
   }
 
-  function redraw() { cornerstone(); starpin(); }
-  ['order', 'sid', 'ra', 'dec'].forEach(function (id) {
-    $(id).addEventListener('input', redraw);
-  });
+  function redraw() { cornerstone(); }
+  $('order').addEventListener('input', redraw);
   var repaired = repairIdentities();
   if (repaired) {
     drawLog();
