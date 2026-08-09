@@ -258,17 +258,25 @@ dl{margin:.7rem 0 0}
 .tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ink);min-width:2.4rem}
 .tune input[type=range]{flex:1}
 
-.mapaddr{margin-top:.7rem;padding:.6rem .75rem;border-radius:14px;
-  background:color-mix(in srgb,var(--moss) 12%,var(--card-2));
-  border:2px solid color-mix(in srgb,var(--moss) 30%,transparent);
-  font-family:'SF Mono',ui-monospace,monospace;font-size:.9rem;font-weight:600;
-  word-break:break-all;text-align:center;line-height:1.35}
-.mapaddr small{display:block;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--ink-2);font-family:inherit;font-weight:700;margin-top:.25rem}
+.addrbox{margin-top:.7rem;padding:.7rem .75rem;border-radius:16px;
+  background:color-mix(in srgb,var(--moss) 10%,var(--card-2));
+  border:2px solid color-mix(in srgb,var(--moss) 32%,transparent)}
+.addrlabel{display:flex;justify-content:space-between;gap:.6rem;font-size:.62rem;
+  letter-spacing:.1em;text-transform:uppercase;font-weight:800;color:var(--ink-2);
+  margin-bottom:.4rem}
+.addrlabel b{color:var(--moss-deep)}
+@media (prefers-color-scheme:dark){.addrlabel b{color:var(--moss)}}
+.addrbox input{font-family:'SF Mono',ui-monospace,monospace;font-size:.92rem;
+  background:var(--card);text-align:center}
+.apps{margin-top:.6rem}
 .credits{margin-top:1.2rem;padding-top:1rem;border-top:2px dotted var(--line);
   font-size:.7rem;line-height:1.6;color:var(--ink-2)}
 .credits p{margin:.5rem 0}
 .credits b{color:var(--ink)}
+.credits a{color:var(--moss-deep);text-decoration:underline;text-underline-offset:2px;
+  text-decoration-thickness:1.5px;text-decoration-color:color-mix(in srgb,var(--moss) 50%,transparent)}
+.credits a b{color:inherit}
+@media (prefers-color-scheme:dark){.credits a{color:var(--moss-lit)}}
 .cr-mark{font-family:'Source Code Pro','SF Mono',ui-monospace,monospace;
   font-size:1.15rem;font-weight:600;color:var(--moss-deep);margin-bottom:.3rem}
 .cr-mark span{color:var(--sun-deep)}
@@ -309,21 +317,7 @@ dl{margin:.7rem 0 0}
     <div class="r"><dt>accuracy</dt><dd id="acc">—</dd></div>
   </dl>
   <div id="readout" style="margin-top:.8rem"></div>
-  <div class="btnrow">
-    <button id="open-google" type="button">Google Maps</button>
-    <button id="open-apple" type="button">Apple Maps</button>
-    <button id="open-more" type="button" style="flex:0 0 auto;width:auto">+</button>
-  </div>
-  <div id="more-apps" hidden>
-    <div class="btnrow">
-      <button id="open-organic" type="button">Organic Maps</button>
-      <button id="open-osm" type="button">OpenStreetMap</button>
-    </div>
-    <div class="btnrow">
-      <button id="dl-gpx" type="button">Download GPX</button>
-      <button id="copy-ll" type="button">Copy coordinates</button>
-    </div>
-  </div>
+
   <p class="hint">Nothing has been hidden or placed at any of these locations.
      They exist because of the stars' coordinates. The arrow shows direction,
      not a safe or legal route — follow normal paths and access rules.</p>
@@ -332,11 +326,15 @@ dl{margin:.7rem 0 0}
 <section data-tab="map">
   <h2>the <button type="button" id="tune-key">lattice</button></h2>
   <div id="map"></div>
-  <div id="map-addr" class="mapaddr">—</div>
-  <div class="goto">
-    <input id="pin-ll" inputmode="decimal" placeholder="lat, lon &mdash; paste to fly there"
-           aria-label="pin coordinates">
-    <button id="pin-go" type="button">Go</button>
+  <div class="addrbox">
+    <div class="addrlabel"><span id="addr-fmt">Latitude / Longitude</span>
+      <b id="addr-src">map centre</b></div>
+    <div class="goto">
+      <input id="pin-ll" aria-label="position in the chosen notation"
+             autocapitalize="off" autocorrect="off" spellcheck="false">
+      <button id="pin-go" type="button">Go</button>
+    </div>
+    <p class="hint" id="addr-hint" style="margin-top:.45rem"></p>
   </div>
   <div id="info" hidden></div>
   <div id="tuning" hidden>
@@ -352,6 +350,7 @@ dl{margin:.7rem 0 0}
     <button id="recentre" type="button">Recentre on me</button>
     <button id="track" type="button" aria-pressed="false">Track me</button>
   </div>
+  <div class="apps" data-apps="map"></div>
 
   <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
      hairlines are the commonplace. The grid switches to yellow on aerial, where
@@ -376,6 +375,7 @@ dl{margin:.7rem 0 0}
     <button id="compass" type="button" aria-pressed="false">Compass</button>
   </div>
   <p class="hint" id="haptic-note" style="margin-bottom:.5rem"></p>
+  <div class="apps" data-apps="go"></div>
   <label class="tune" for="order">cornerstone order <b id="order-val">12</b>
     <input id="order" type="range" min="7" max="15" step="1" value="12"></label>
   <p class="hint">A vertex is shared by up to four cells and is named by the
@@ -413,20 +413,20 @@ dl{margin:.7rem 0 0}
 
   <div class="credits">
     <div class="cr-mark">starpin<span>!</span></div>
-    <p>A spin-off of <b>Geosonify</b>. Every star already has a place on Earth:
+    <p>A spin-off of <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Geosonify</b></a>. Every star already has a place on Earth:
        declination reads as latitude, right ascension as longitude.</p>
-    <p>&copy; 2026 <b>Greg O&rsquo;Beirne</b>. Built on the Geosonify engine.</p>
-    <p>Star positions and photometry from the <b>ESA Gaia</b> mission, processed by
-       the Gaia Data Processing and Analysis Consortium (DPAC). Funding for DPAC
+    <p>&copy; 2026 <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Greg O&rsquo;Beirne</b></a>. Built on the Geosonify engine.</p>
+    <p>Star positions and photometry from the <a href="https://www.cosmos.esa.int/gaia" target="_blank" rel="noopener"><b>ESA Gaia</b></a> mission, processed by
+       the <a href="https://www.cosmos.esa.int/web/gaia/dpac" target="_blank" rel="noopener">Gaia Data Processing and Analysis Consortium (DPAC)</a>. Funding for DPAC
        has been provided by national institutions, in particular those
        participating in the Gaia Multilateral Agreement.</p>
-    <p>Sky images from <b>CDS, Strasbourg</b> (hips2fits / DSS2). Cross-identifications
-       via <b>VizieR</b> and <b>SIMBAD</b>. Sky tessellation uses <b>HEALPix</b>
+    <p>Sky images from <a href="https://cds.unistra.fr/" target="_blank" rel="noopener"><b>CDS, Strasbourg</b></a> (hips2fits / DSS2). Cross-identifications
+       via <a href="https://vizier.cds.unistra.fr/" target="_blank" rel="noopener"><b>VizieR</b></a> and <a href="https://simbad.cds.unistra.fr/simbad/" target="_blank" rel="noopener"><b>SIMBAD</b></a>. Sky tessellation uses <a href="https://healpix.sourceforge.io/" target="_blank" rel="noopener"><b>HEALPix</b></a>
        (Górski et&nbsp;al. 2005).</p>
-    <p>Maps &copy; <b>OpenStreetMap</b> contributors; topographic and aerial imagery
-       &copy; <b>Esri</b>, Maxar, Earthstar Geographics. Mapping by <b>Leaflet</b>.</p>
-    <p>Palette: <b>Kākāpō</b> (<i>Strigops habroptilus</i>) from the
-       <b>Manu</b> palette by G.&nbsp;Thomson.</p>
+    <p>Maps &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener"><b>OpenStreetMap</b></a> contributors; topographic and aerial imagery
+       &copy; <a href="https://www.esri.com/" target="_blank" rel="noopener"><b>Esri</b></a>, Maxar, Earthstar Geographics. Mapping by <a href="https://leafletjs.com/" target="_blank" rel="noopener"><b>Leaflet</b></a>.</p>
+    <p>Palette: <a href="https://nzbirdsonline.org.nz/species/kakapo" target="_blank" rel="noopener"><b>Kākāpō</b></a> (<i>Strigops habroptilus</i>) from the
+       <a href="https://g-thomson.github.io/Manu/" target="_blank" rel="noopener"><b>Manu</b> palette by G.&nbsp;Thomson</a>.</p>
     <p class="cr-thanks">Nothing is hidden or placed at any of these locations.
        Go carefully, follow access rules, and look up.</p>
   </div>
@@ -484,6 +484,17 @@ dl{margin:.7rem 0 0}
   // 1 arcsec is 30.92 m of ground at every latitude, so ground distance IS sky
   // separation — but "616630.19 arcseconds" is a true statement nobody can read.
   // Past a degree, say degrees.
+  // The verdict names are protocol vocabulary (visit-geometry-v1) and stay in
+  // the record. What a person reads is a sentence about where they are.
+  var VERDICT_TEXT = {
+    'well-supported': 'close enough \u2014 this counts',
+    'compatible': 'might count \u2014 get closer to be sure',
+    'not-supported': 'too far from where you are',
+    'fix-too-coarse': 'your fix is too rough to tell',
+    'accuracy-unknown': 'no accuracy reported'
+  };
+  function verdictText(v) { return VERDICT_TEXT[v] || v; }
+
   function skySep(m) {
     var arcsec = m / S.M_PER_ARCSEC;
     if (arcsec < 60) return arcsec.toFixed(2) + '\u2033';
@@ -589,14 +600,16 @@ dl{margin:.7rem 0 0}
       detailRow(dl, 'distance', sp.distLy == null ? 'unknown parallax'
         : Number(sp.distLy).toLocaleString() + ' light years');
       detailRow(dl, 'direction', walk(nearestStar.distanceM, bs));
-      detailRow(dl, 'visit', vr.verdict + '  (' + skySep(vr.distanceM) + ')',
+      detailRow(dl, 'visit', verdictText(vr.verdict),
         vr.verdict === 'well-supported' ? 'ok' : vr.verdict === 'not-supported' ? 'bad' : null);
       b.appendChild(dl);
       var vd = visitedOn(sourceIdOf(sp.name));
       if (vd) b.appendChild(visitedLine(vd));
       var supported = vr.verdict === 'well-supported' || vr.verdict === 'compatible';
-      var sb = el('button', null, supported ? 'Bag this starpin'
-        : 'Log a closest approach \u00B7 ' + Math.round(vr.distanceM) + ' m');
+      var sb = el('button', null, supported
+        ? 'Bag this starpin'
+        : 'Save this as my closest approach so far \u00B7 ' +
+          Math.round(vr.distanceM) + ' m away');
       sb.type = 'button';
       sb.addEventListener('click', function () { bagStar(sp, vr, supported); });
       b.appendChild(sb);
@@ -616,7 +629,7 @@ dl{margin:.7rem 0 0}
           : (F.spacingM(lastCs.intrinsicOrder) / 1000).toFixed(1) + ' km') + ')');
       detailRow(dl2, 'direction', walk(vc2.distanceM, bc));
       var pips = detailRow(dl2, 'corners of this cell', '\u2014', 'pips');
-      detailRow(dl2, 'visit', vc2.verdict + '  (' + skySep(vc2.distanceM) + ')',
+      detailRow(dl2, 'visit', verdictText(vc2.verdict),
         vc2.verdict === 'well-supported' ? 'ok' : vc2.verdict === 'not-supported' ? 'bad' : null);
       b.appendChild(dl2);
       try {
@@ -883,7 +896,7 @@ dl{margin:.7rem 0 0}
         var dm = S.haversineM(fix.lat, fix.lon, st.lat, st.lon);
         var bb = bearing(fix.lat, fix.lon, st.lat, st.lon);
         row('from you', walk(dm, bb) + '  (' + skySep(dm) + ')');
-        row('visit', S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict);
+        row('visit', verdictText(S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict));
       }
       var vrec = visitedOn(sourceIdOf(st.name));
       if (vrec) sm.appendChild(visitedLine(vrec));
@@ -894,7 +907,9 @@ dl{margin:.7rem 0 0}
       if (fix) {
         var vr2 = S.assessVisit(fix, { lat: st.lat, lon: st.lon });
         var supported = vr2.verdict === 'well-supported' || vr2.verdict === 'compatible';
-        var lb = el('button', null, supported ? 'Bag this starpin' : 'Log a closest approach');
+        var lb = el('button', null, supported ? 'Bag this starpin'
+          : 'Save this as my closest approach so far \u00B7 ' +
+            Math.round(vr2.distanceM) + ' m away');
         lb.type = 'button'; lb.style.marginTop = '.6rem';
         lb.addEventListener('click', function () {
           // /^\D+/ stopped at the "3" of "Gaia DR3", leaving "3 5382…" — not
@@ -922,7 +937,7 @@ dl{margin:.7rem 0 0}
           F.celebrate({ kind: 'starpin', name: st.name || 'starpin', mag: st.mag,
                         digits: String(id || ''),
                         kicker: supported ? 'starpin bagged'
-                                          : 'closest approach logged \u00B7 ' +
+                                          : 'closest approach saved \u00B7 ' +
                                             Math.round(vr2.distanceM) + ' m' });
           // The card lands once the banner has had its moment, with the lead
           // still playing underneath.
@@ -996,90 +1011,153 @@ dl{margin:.7rem 0 0}
   });
   $('recentre').addEventListener('click', function () { map.recentre(); });
 
-  // ── the coordinate box ───────────────────────────────────────────────────
-  // Shows wherever the pin is (or the map centre), and accepts a pasted pair
-  // to fly there. Deliberately forgiving about what a "pair" looks like:
-  // people paste from Google Maps, from a card, from a text message.
-  var pinEditing = false;
-  $('pin-ll').addEventListener('focus', function () { pinEditing = true; });
-  $('pin-ll').addEventListener('blur', function () { pinEditing = false; });
-  function showPinLL(lat, lon) {
-    if (pinEditing) return;
-    $('pin-ll').value = lat.toFixed(6) + ', ' + lon.toFixed(6);
+  // ── the address box: notation first, lat/lon merely one option ──────────
+  //
+  // The point of the Geosonify vocabularies is that a position can be SAID.
+  // So the box on the map speaks whichever notation is chosen in "where you
+  // are", and accepts the same thing back — a friend reads you four words
+  // over the phone, you type them in, and the map goes there. Degrees are one
+  // choice among many rather than the privileged one.
+  var addrEditing = false, addrPoint = null;
+  $('pin-ll').addEventListener('focus', function () { addrEditing = true; });
+  $('pin-ll').addEventListener('blur', function () { addrEditing = false; });
+
+  function fmtLabel() {
+    var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
+    return f ? f.label : 'Latitude / Longitude';
   }
+  function paintMapAddr(lat, lon, label) {
+    addrPoint = (lat == null) ? null : { lat: lat, lon: lon };
+    $('addr-fmt').textContent = fmtLabel();
+    $('addr-src').textContent = label || '';
+    var key = readout.format();
+    var canRead = GeosonifyStarpinReadout.canParse(key);
+    $('pin-ll').readOnly = !canRead;
+    $('pin-ll').placeholder = canRead
+      ? 'paste or type to go there' : 'this notation cannot be read back yet';
+    $('addr-hint').textContent = canRead
+      ? 'Someone can read this to you and you can type it in.'
+      : 'Choose another notation in the Go tab if you want to paste one in.';
+    if (addrEditing || lat == null) return;
+    var v = '';
+    try {
+      var f = GeosonifyStarpinReadout.FORMATS[key];
+      v = f ? f.fn(lat, lon, 14) : lat.toFixed(6) + ', ' + lon.toFixed(6);
+    } catch (e) { v = lat.toFixed(6) + ', ' + lon.toFixed(6); }
+    $('pin-ll').value = v;
+  }
+  function showPinLL(lat, lon) { /* superseded by paintMapAddr */ }
+
   function flyToTyped() {
-    var m = String($('pin-ll').value).match(
-      /(-?\d+(?:\.\d+)?)\s*[, ]\s*(-?\d+(?:\.\d+)?)/);
-    if (!m) { alert('Give me two numbers, like  -43.552932, 172.652115'); return; }
-    var la = parseFloat(m[1]), lo = parseFloat(m[2]);
-    if (!(la >= -90 && la <= 90) || !(lo >= -180 && lo <= 360)) {
-      alert('That is not a place on Earth: latitude runs \u00B190, longitude \u00B1180.');
+    var key = readout.format(), txt = $('pin-ll').value;
+    var p = null;
+    try { p = GeosonifyStarpinReadout.parse(key, txt); } catch (e) {}
+    if (!p) {
+      alert('I could not read that as ' + fmtLabel() + '.\n\n' +
+            'Check the notation picker in the Go tab matches what you were given.');
       return;
     }
+    var la = p[0], lo = p[1];
+    if (!(la >= -90 && la <= 90)) { alert('That latitude is not on Earth.'); return; }
     if (lo > 180) lo -= 360;
     goTab('map');
     map.leaflet.setView([la, lo], Math.max(map.leaflet.getZoom(), 17));
     map.dropPin(la, lo);
-    readAt(la, lo, 'typed position');
+    readAt(la, lo, 'typed in');
     $('pin-ll').blur();
   }
-  // Where "here" means for a hand-off: the pin if you dropped one, else your
-  // fix. Getting this backwards would send someone to the wrong place, so it
-  // is one function and everything uses it.
-  function handOffPoint() {
+  $('pin-go').addEventListener('click', flyToTyped);
+  $('pin-ll').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); flyToTyped(); }
+  });
+
+  // ── hand-off to a navigation app ────────────────────────────────────────
+  // On the map it sends you to the pin; on Go it sends you to the target you
+  // are actually chasing. Same buttons, different "there".
+  function handOffPoint(which) {
+    if (which === 'go') {
+      if (activeTab === 'star' && nearestStar)
+        return { lat: nearestStar.star.lat, lon: nearestStar.star.lon,
+                 what: nearestStar.star.name || 'starpin' };
+      if (lastCs) return { lat: lastCs.lat, lon: lastCs.lon, what: lastCs.name };
+    }
     var p = map.pin();
     if (p) return { lat: p.lat, lon: p.lon, what: 'dropped pin' };
     if (fix) return { lat: fix.lat, lon: fix.lon, what: 'your fix' };
     return null;
   }
-  function openWith(builder) {
-    var p = handOffPoint();
-    if (!p) { alert('Use my location first, or drop a pin on the map.'); return; }
-    window.open(builder(p.lat, p.lon), '_blank', 'noopener');
-  }
-  $('open-google').addEventListener('click', function () {
-    openWith(function (la, lo) {
-      return 'https://www.google.com/maps/search/?api=1&query=' + la + ',' + lo; });
-  });
-  $('open-apple').addEventListener('click', function () {
-    openWith(function (la, lo) { return 'https://maps.apple.com/?ll=' + la + ',' + lo + '&q=Starpin'; });
-  });
-  $('open-organic').addEventListener('click', function () {
-    // Organic Maps registers the geo: scheme; on a device without it the OS
-    // simply does nothing, which is better than a broken web page.
-    openWith(function (la, lo) {
-      return 'geo:' + la + ',' + lo + '?q=' + la + ',' + lo + '(Starpin)'; });
-  });
-  $('open-osm').addEventListener('click', function () {
-    openWith(function (la, lo) {
-      return 'https://www.openstreetmap.org/?mlat=' + la + '&mlon=' + lo + '#map=18/' + la + '/' + lo; });
-  });
-  $('copy-ll').addEventListener('click', function () {
-    var p = handOffPoint(); if (!p) return;
-    try { navigator.clipboard.writeText(p.lat.toFixed(7) + ', ' + p.lon.toFixed(7)); } catch (e) {}
-    this.textContent = 'copied'; var b = this;
-    setTimeout(function () { b.textContent = 'Copy coordinates'; }, 1200);
-  });
-  $('dl-gpx').addEventListener('click', function () {
-    var p = handOffPoint(); if (!p) return;
-    var name = 'starpin-' + p.lat.toFixed(5) + '_' + p.lon.toFixed(5);
-    var gpx = '<?xml version="1.0" encoding="UTF-8"?>\n' +
-      '<gpx version="1.1" creator="Starpin" xmlns="http://www.topografix.com/GPX/1/1">\n' +
-      '  <wpt lat="' + p.lat.toFixed(7) + '" lon="' + p.lon.toFixed(7) + '">\n' +
-      '    <name>' + name + '</name>\n' +
-      '    <desc>' + p.what + ' \u00B7 Starpin</desc>\n' +
-      '  </wpt>\n</gpx>\n';
-    var a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
-    a.download = name + '.gpx'; a.click();
-    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
-  });
-  $('open-more').addEventListener('click', function () {
-    var m2 = $('more-apps'); m2.hidden = !m2.hidden;
-    this.textContent = m2.hidden ? '+' : '\u2212';
-  });
 
-  $('pin-go').addEventListener('click', flyToTyped);
+  function buildApps(host, which) {
+    var row = el('div', 'btnrow');
+    function b(label, fn, flexNone) {
+      var x = el('button', null, label); x.type = 'button';
+      if (flexNone) { x.style.flex = '0 0 auto'; x.style.width = 'auto'; }
+      x.addEventListener('click', fn); row.appendChild(x); return x;
+    }
+    function open(builder) {
+      var p = handOffPoint(which);
+      if (!p) { alert('Nothing to navigate to yet.'); return; }
+      window.open(builder(p.lat, p.lon, p.what), '_blank', 'noopener');
+    }
+    b('Google Maps', function () {
+      open(function (la, lo) {
+        return 'https://www.google.com/maps/search/?api=1&query=' + la + ',' + lo; });
+    });
+    b('Apple Maps', function () {
+      open(function (la, lo, w) {
+        return 'https://maps.apple.com/?ll=' + la + ',' + lo +
+               '&q=' + encodeURIComponent(w); });
+    });
+    var more = el('div'); more.hidden = true;
+    var plus = b('+', function () {
+      more.hidden = !more.hidden; plus.textContent = more.hidden ? '+' : '\u2212';
+    }, true);
+
+    var r2 = el('div', 'btnrow'), r3 = el('div', 'btnrow');
+    function b2(host2, label, fn) {
+      var x = el('button', null, label); x.type = 'button';
+      x.addEventListener('click', fn); host2.appendChild(x); return x;
+    }
+    b2(r2, 'Organic Maps', function () {
+      // the geo: scheme; a device without a handler simply does nothing,
+      // which beats opening a broken web page
+      open(function (la, lo, w) {
+        return 'geo:' + la + ',' + lo + '?q=' + la + ',' + lo +
+               '(' + encodeURIComponent(w) + ')'; });
+    });
+    b2(r2, 'OpenStreetMap', function () {
+      open(function (la, lo) {
+        return 'https://www.openstreetmap.org/?mlat=' + la + '&mlon=' + lo +
+               '#map=18/' + la + '/' + lo; });
+    });
+    b2(r3, 'Download GPX', function () {
+      var p = handOffPoint(which); if (!p) return;
+      var nm = String(p.what).replace(/[^\w.-]+/g, '-');
+      var gpx = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<gpx version="1.1" creator="Starpin" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+        '  <wpt lat="' + p.lat.toFixed(7) + '" lon="' + p.lon.toFixed(7) + '">\n' +
+        '    <name>' + nm + '</name>\n    <desc>Starpin</desc>\n  </wpt>\n</gpx>\n';
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+      a.download = nm + '.gpx'; a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+    });
+    var cp = b2(r3, 'Copy address', function () {
+      var p = handOffPoint(which); if (!p) return;
+      var txt = p.lat.toFixed(7) + ', ' + p.lon.toFixed(7);
+      try {
+        var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
+        if (f) txt = f.fn(p.lat, p.lon, 14);
+      } catch (e) {}
+      try { navigator.clipboard.writeText(txt); } catch (e) {}
+      cp.textContent = 'copied'; setTimeout(function () { cp.textContent = 'Copy address'; }, 1200);
+    });
+    more.appendChild(r2); more.appendChild(r3);
+    host.appendChild(row); host.appendChild(more);
+  }
+  [].forEach.call(document.querySelectorAll('.apps'), function (h) {
+    buildApps(h, h.getAttribute('data-apps'));
+  });
   $('pin-ll').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); flyToTyped(); }
   });
@@ -1121,23 +1199,9 @@ dl{margin:.7rem 0 0}
   if (typeof encodeCardCoordinate !== 'undefined')
     RO.register('encodeCardCoordinate', encodeCardCoordinate);
   var readout = RO.mount($('readout'), { order: 14 });
-
-  // The chosen notation follows the point around: pick it once in "where you
-  // are", and the map tab speaks the same language instead of raw degrees.
-  function paintMapAddr(lat, lon, label) {
-    var box = $('map-addr');
-    if (lat == null) { box.textContent = '\u2014'; return; }
-    box.textContent = '';
-    var v = '\u2014';
-    try {
-      var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
-      v = f ? f.fn(lat, lon, 14) : lat.toFixed(6) + ', ' + lon.toFixed(6);
-    } catch (e) { v = lat.toFixed(6) + ', ' + lon.toFixed(6); }
-    box.appendChild(document.createTextNode(v));
-    var s2 = document.createElement('small');
-    s2.textContent = label || '';
-    box.appendChild(s2);
-  }
+  readout.el.addEventListener('change', function () {
+    if (addrPoint) paintMapAddr(addrPoint.lat, addrPoint.lon, $('addr-src').textContent);
+  });
 
   function readAt(lat, lon, label) {
     readout.set(lat, lon);
@@ -1231,7 +1295,7 @@ dl{margin:.7rem 0 0}
     drawLog(); redraw();
     F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
                   kicker: supported ? 'starpin bagged'
-                        : 'closest approach logged \u00B7 ' + Math.round(vr.distanceM) + ' m' });
+                        : 'closest approach saved \u00B7 ' + Math.round(vr.distanceM) + ' m' });
     var just = log.current().filter(function (x) {
       return x.target.starpin === target.starpin; })[0];
     if (just) setTimeout(function () {
@@ -1356,7 +1420,7 @@ dl{margin:.7rem 0 0}
       chip(new Date(r.event.time_ms).toLocaleDateString(undefined,
         { day: 'numeric', month: 'short', year: 'numeric' }));
       if (a && a.visit && a.visit.distanceM != null) chip(a.visit.distanceM.toFixed(1) + ' m');
-      chip(verdict, verdict === 'well-supported' ? 'good'
+      chip(verdictText(verdict), verdict === 'well-supported' ? 'good'
                   : verdict === 'not-supported' ? 'warn' : null);
       if (rk.best && rk.count > 1) chip('your closest', 'best');
       if (rk.best === false && isFinite(rk.bestDistanceM))
