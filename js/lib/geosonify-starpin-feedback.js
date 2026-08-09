@@ -540,21 +540,21 @@ var GeosonifyStarpinFeedback = (function () {
 
       var frac = Math.max(0.08, Math.min(1, (4 * R - d) / (4 * R)));
       you.style.width = you.style.height = (10 + frac * 76) + '%';
-      wrap.style.setProperty('--spf-accent', main.colour || 'var(--kereru-teal,#325756)');
+      wrap.style.setProperty('--spf-accent', main.colour || 'var(--kakapo-bark,#775B24)');
 
       if (arrived) {
         wrap.classList.add('spf-here');
-        wrap.style.color = 'var(--kereru-green,#51806a)';
+        wrap.style.color = 'var(--kakapo-moss,#7D9D33)';
         word.textContent = 'You\u2019re standing on it';
         sub.textContent = accepted ? 'well-supported' : r.verdict;
       } else if (withinError) {
         wrap.classList.remove('spf-here');
-        wrap.style.color = main.colour || 'var(--kereru-teal,#325756)';
+        wrap.style.color = main.colour || 'var(--kakapo-bark,#775B24)';
         word.textContent = 'Within device error';
         sub.textContent = d.toFixed(0) + ' m away, fix \u00B1' + acc.toFixed(0) + ' m';
       } else {
         wrap.classList.remove('spf-here');
-        wrap.style.color = main.colour || 'var(--kereru-lavender,#A092B7)';
+        wrap.style.color = main.colour || 'var(--kakapo-lichen,#CED38C)';
         word.textContent = (d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(2) + ' km') +
                            (main.compassText ? ' ' + main.compassText : '');
         sub.textContent = accepted ? 'already close enough to count'
@@ -591,7 +591,7 @@ var GeosonifyStarpinFeedback = (function () {
     if (!g) { if (cv.parentNode) cv.parentNode.removeChild(cv); return; }
     g.scale(dpr, dpr);
 
-    var COLS = ['#325756', '#7d9fc2', '#C582B2', '#51806a', '#4d5f8e', '#A092B7'];
+    var COLS = ['#7D9D33', '#CED38C', '#DCC949', '#BCA888', '#CD8862', '#775B24'];
     var cx = w.innerWidth / 2, cy = w.innerHeight * 0.3, ps = [];
     for (var i = 0; i < count; i++) {
       var ang = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 9;

@@ -62,7 +62,8 @@ function mkMap() {
                lng: state.lon + (p[0] - state.w / 2) * mpp / (M_PER_DEG * Math.cos(state.lat * D2R)) };
     },
     containerPointToLayerPoint: function () { return { x: 0, y: 0 }; },
-    _fire: function (e) { if (handlers[e]) handlers[e](); }
+    _fire: function (e) { if (handlers[e]) handlers[e](); },
+    _click: function (e) { if (handlers.click) handlers.click(e); }
   };
 }
 var theMap = mkMap();
@@ -143,7 +144,38 @@ try {
 ok('fix, bagged, highlight and stars all draw', !lastErr && arcs > 0,
    lastErr ? lastErr.message : arcs + ' arcs');
 
-head('5: knobs');
+head('5: tapping — regression: markers stopped being selectable');
+(function () {
+  var picked = null;
+  var m2 = M.mount(document.getElementById('m'), {
+    onSelect: function (sel) { picked = sel; }
+  });
+  m2.setFix(-43.552932, 172.652115, 6);
+  m2.setBagged(['V:f9.111202110020']);
+  m2.setStars([{ lat: -43.5547019, lon: 172.6538020, mag: 12.3, name: 'Gaia DR3 5382127323687128576' }]);
+  m2.redraw();
+
+  function clickAt(lat, lon) {
+    picked = null;
+    var p = theMap.latLngToContainerPoint({ lat: lat, lng: lon });
+    theMap._click({ containerPoint: p, latlng: { lat: lat, lng: lon } });
+    return picked;
+  }
+  var star = clickAt(-43.5547019, 172.6538020);
+  ok('tapping a star selects it', star && star.kind === 'star',
+     star ? star.kind : 'nothing was selected');
+  var cs = null;
+  try { cs = clickAt(GeosonifyStarpin.cornerstonePoint('V:f9.111202110020').lat,
+                     GeosonifyStarpin.cornerstonePoint('V:f9.111202110020').lon); } catch (e) {}
+  ok('tapping a bagged cornerstone selects it', cs && cs.kind === 'cornerstone',
+     cs ? cs.kind : 'nothing was selected');
+  var empty = clickAt(-43.60, 172.70);
+  ok('tapping empty ground drops a read-only pin', empty && empty.kind === 'pin',
+     empty ? empty.kind : 'nothing');
+  ok('the pin carries coordinates', empty && empty.data && empty.data.lat != null);
+})();
+
+head('6: knobs');
 ok('weight clamps', M.setWeight(99) === 8 && M.setWeight(0) === 0.3);
 ok('falloff clamps', M.setFalloff(2) === 0.98 && M.setFalloff(0) === 0.5,
    'a deliberate 0 must clamp to the floor, not fall back to the default \u2014 ' +

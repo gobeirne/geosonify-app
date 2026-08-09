@@ -30,8 +30,8 @@ var GeosonifyStarpinClock = (function () {
 
   var CSS = [
     '.spc{--spc-ink:var(--ios-text,#000);--spc-dim:var(--ios-secondary,#3C3C43);',
-    '  --spc-line:var(--ios-separator,#C6C6C8);--spc-teal:var(--kereru-teal,#325756);',
-    '  --spc-lav:var(--kereru-lavender,#A092B7);--spc-pink:var(--kereru-pink,#C582B2);',
+    '  --spc-line:var(--ios-separator,#C6C6C8);--spc-teal:var(--kakapo-moss,#7D9D33);',
+    '  --spc-lav:var(--kakapo-lichen,#CED38C);--spc-pink:var(--kakapo-rust,#CD8862);',
     '  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,sans-serif;',
     '  color:var(--spc-ink);display:flex;flex-direction:column;align-items:center;gap:.5rem}',
     '.spc-dial{position:relative;width:min(72vw,260px);aspect-ratio:1}',

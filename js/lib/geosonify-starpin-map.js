@@ -54,14 +54,16 @@ var GeosonifyStarpinMap = (function () {
   // imagery it just brightens and takes a dark outline so it holds against
   // foliage.
   var PALETTE = {
-    light:   { grid: '#8e44ad', highlight: '#C582B2', bagged: '#1f7a4d',
-               baggedRing: '#ffffff', you: '#4d5f8e', halo: '125,159,194',
-               star: '#f4b400', starRing: '#5a3d00',
-               under: 'rgba(255,255,255,.75)' },
-    imagery: { grid: '#ffd400', highlight: '#00e5ff', bagged: '#3ddc84',
-               baggedRing: '#0b1f14', you: '#00e5ff', halo: '0,229,255',
+    // Kākāpō (Manu). Bark reads on a street map where moss would be lost in
+    // parkland; yellow carries on aerial where bark would sink into soil.
+    light:   { grid: '#775B24', highlight: '#CD8862', bagged: '#7D9D33',
+               baggedRing: '#ffffff', you: '#CD8862', halo: '205,136,98',
+               star: '#DCC949', starRing: '#4a3d08',
+               under: 'rgba(255,255,255,.78)' },
+    imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
+               baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
-               under: 'rgba(0,0,0,.55)' }
+               under: 'rgba(0,0,0,.6)' }
   };
 
   var CSS = [

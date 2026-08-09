@@ -47,14 +47,14 @@ var GeosonifyStarpinCard = (function () {
 
   var CSS = [
     '@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");',
-    '.spc-card{--ink:#0A0E1C;--paper:#E9E4D6;--brass:#C6A15B;--verdigris:#6E9C8F;',
+    '.spc-card{--ink:#0A0E1C;--paper:#E9E4D6;--brass:#DCC949;--verdigris:#7D9D33;',
     '  --silver:#B7C0CC;--violet:#C9C3EC;--pewter:#7C8494;--text:#E9E4D6;--muted:#8891A8;',
-    '  --green:#4ade80;',
+    '  --green:#7D9D33;',
     '  position:relative;width:min(92vw,340px);padding:20px 22px 18px;border-radius:14px;',
     '  background:linear-gradient(168deg,#141A2E 0%,#0C1120 60%,#0A0E1C 100%);',
     '  color:var(--text);font-family:"IBM Plex Sans",system-ui,sans-serif;',
     '  box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;',
-    '  border:1px solid rgba(198,161,91,.28);overflow:hidden}',
+    '  border:1px solid rgba(220,201,73,.30);overflow:hidden}',
     '.spc-card .bg{position:absolute;inset:0;opacity:.5;pointer-events:none}',
     '.spc-card .inner{position:relative}',
     '.spc-kicker{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.18em;',
@@ -103,7 +103,7 @@ var GeosonifyStarpinCard = (function () {
     '.spc-stage .wrap{transform:scale(.94) translateY(10px);transition:transform .45s cubic-bezier(.2,.9,.25,1)}',
     '.spc-stage.on .wrap{transform:none}',
     '.spc-close{margin-top:14px;display:block;width:100%;font:inherit;font-size:13px;',
-    '  padding:.6rem 1rem;border-radius:10px;border:1px solid rgba(198,161,91,.5);',
+    '  padding:.6rem 1rem;border-radius:10px;border:1px solid rgba(220,201,73,.55);',
     '  background:transparent;color:#C6A15B;cursor:pointer}',
     '@media (prefers-reduced-motion:reduce){.spc-stage,.spc-stage .wrap{transition:none}}'
   ].join('\n');
@@ -174,12 +174,12 @@ var GeosonifyStarpinCard = (function () {
       ring.appendChild(n); return n;
     }
     add('circle', { cx: 56, cy: 56, r: 53, fill: 'none',
-                    stroke: '#C6A15B', 'stroke-opacity': '.5' });
+                    stroke: '#DCC949', 'stroke-opacity': '.5' });
     if (d.bearingDeg != null) {
       var t = (d.bearingDeg - 90) * D2R;
       add('line', { x1: (56 + Math.cos(t) * 47).toFixed(1), y1: (56 + Math.sin(t) * 47).toFixed(1),
                     x2: (56 + Math.cos(t) * 55).toFixed(1), y2: (56 + Math.sin(t) * 55).toFixed(1),
-                    stroke: '#C6A15B', 'stroke-width': '3', 'stroke-linecap': 'round' });
+                    stroke: '#DCC949', 'stroke-width': '3', 'stroke-linecap': 'round' });
     }
     box.appendChild(ring);
     return box;
@@ -223,13 +223,13 @@ var GeosonifyStarpinCard = (function () {
         });
         d.push('M' + p.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('L') + 'Z');
       });
-      out.push('<path d="' + d.join(' ') + '" fill="none" stroke="#6E9C8F" stroke-opacity="' +
+      out.push('<path d="' + d.join(' ') + '" fill="none" stroke="#7D9D33" stroke-opacity="' +
                (idx ? 0.55 : 0.2) + '" stroke-width="' + (idx ? 1.6 : 0.7) + '"/>');
     });
     // the vertex itself
     out.push('<circle cx="' + (w / 2) + '" cy="' + (h / 2) +
-             '" r="7" fill="none" stroke="#4ade80" stroke-width="2"/>');
-    out.push('<circle cx="' + (w / 2) + '" cy="' + (h / 2) + '" r="2.6" fill="#4ade80"/>');
+             '" r="7" fill="none" stroke="#8FBF3F" stroke-width="2"/>');
+    out.push('<circle cx="' + (w / 2) + '" cy="' + (h / 2) + '" r="2.6" fill="#8FBF3F"/>');
     out.push('</svg>');
     return out.join('');
   }
@@ -314,8 +314,6 @@ var GeosonifyStarpinCard = (function () {
         '</div>' +
         // No score. Separate facts, separately stated — a scalar would rank a
         // white dwarf above a supergiant by fiat, and invite optimising for it.
-        '<div class="spc-note">Nothing was hidden or placed here. This point exists ' +
-        'because of the star\u2019s coordinates.</div>' +
         '<div class="spc-stub"><div class="spc-perf"></div>' +
           row('Visited', v.whenMs ? fmtDate(v.whenMs) : '\u2014') +
           row('Accuracy', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014') +
@@ -391,7 +389,7 @@ var GeosonifyStarpinCard = (function () {
     grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
     grad.addColorStop(1, '#0A0E1C');
     g.fillStyle = grad; g.fillRect(0, 0, W, H);
-    g.strokeStyle = 'rgba(198,161,91,.28)'; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(220,201,73,.30)'; g.lineWidth = 2;
     g.strokeRect(1, 1, W - 2, H - 2);
 
     function text(t, x, y, font, colour, align) {
@@ -402,9 +400,9 @@ var GeosonifyStarpinCard = (function () {
     var SANS = 'system-ui,-apple-system,"Segoe UI",sans-serif';
 
     text(isStar ? 'GEOSONIFY \u00B7 STARPIN RECORD' : 'CORNERSTONE',
-         W / 2, 62, '600 19px ' + MONO, '#C6A15B', 'center');
+         W / 2, 62, '600 19px ' + MONO, '#DCC949', 'center');
     var rg = g.createLinearGradient(pad, 0, W - pad, 0);
-    rg.addColorStop(0, 'rgba(198,161,91,0)'); rg.addColorStop(0.5, '#C6A15B');
+    rg.addColorStop(0, 'rgba(198,161,91,0)'); rg.addColorStop(0.5, '#DCC949');
     rg.addColorStop(1, 'rgba(198,161,91,0)');
     g.fillStyle = rg; g.fillRect(pad, 78, W - pad * 2, 2);
 
@@ -447,17 +445,11 @@ var GeosonifyStarpinCard = (function () {
         var y = top + i * 52;
         text(r[0], pad, y, '16px ' + MONO, '#8891A8');
         text(r[1], W - pad, y, '22px ' + SANS,
-             r[1] === 'well-supported' ? '#4ade80' : '#E9E4D6', 'right');
+             r[1] === 'well-supported' ? '#8FBF3F' : '#E9E4D6', 'right');
         g.fillStyle = 'rgba(184,192,212,.12)';
         g.fillRect(pad, y + 16, W - pad * 2, 1);
       });
-      var fy = top + rows.length * 52 + 34;
-      g.font = '17px ' + SANS; g.fillStyle = '#8891A8'; g.textAlign = 'center';
-      g.fillText(isStar ? 'Nothing was hidden or placed here.' : 'A vertex of the HEALPix lattice.',
-                 W / 2, fy);
-      g.fillText(isStar ? 'This point exists because of the star\u2019s coordinates.'
-                        : 'It is a corner at every finer order too.', W / 2, fy + 26);
-      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, 'rgba(198,161,91,.75)', 'center');
+      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, 'rgba(220,201,73,.75)', 'center');
     }
 
     return new Promise(function (resolve) {
@@ -477,17 +469,17 @@ var GeosonifyStarpinCard = (function () {
           g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 6.2832); g.clip();
           g.drawImage(img, cx - R, cy - R, R * 2, R * 2); g.restore();
         }
-        g.strokeStyle = 'rgba(198,161,91,.5)'; g.lineWidth = 2;
+        g.strokeStyle = 'rgba(220,201,73,.55)'; g.lineWidth = 2;
         g.beginPath(); g.arc(cx, cy, R + 6, 0, 6.2832); g.stroke();
         if (v.bearingDeg != null) {
           var t = (v.bearingDeg - 90) * D2R;
-          g.strokeStyle = '#C6A15B'; g.lineWidth = 5; g.lineCap = 'round';
+          g.strokeStyle = '#DCC949'; g.lineWidth = 5; g.lineCap = 'round';
           g.beginPath();
           g.moveTo(cx + Math.cos(t) * (R + 1), cy + Math.sin(t) * (R + 1));
           g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
           g.stroke();
         }
-        g.strokeStyle = '#39ff88'; g.lineWidth = 3;
+        g.strokeStyle = '#8FBF3F'; g.lineWidth = 3;
         g.strokeRect(cx - 9, cy - 9, 18, 18);
         finish();
       }
