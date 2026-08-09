@@ -107,14 +107,14 @@ var GeosonifyStarpinMap = (function () {
   // geometric falloff survives — it just measures from the right place now, and
   // self-normalises at every zoom.
   var BASE_W = 3.0, BASE_A = 0.85;
-  var WEIGHT = 2.0, FALLOFF = 0.75, PERSIST = 0.30;
+  var WEIGHT = 1.1, FALLOFF = 0.50, PERSIST = 0.50;
 
   function num(v, dflt) { v = Number(v); return isFinite(v) ? v : dflt; }
-  function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, num(w, 2))); return WEIGHT; }
+  function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, num(w, 1.1))); return WEIGHT; }
   function weight() { return WEIGHT; }
-  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, num(f, 0.75))); return FALLOFF; }
+  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, num(f, 0.5))); return FALLOFF; }
   function falloff() { return FALLOFF; }
-  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, num(p, 0.3))); return PERSIST; }
+  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, num(p, 0.5))); return PERSIST; }
   function persist() { return PERSIST; }
 
   var MAX_W = 9, MIN_W = 0.45, MAX_ACROSS = 44;
@@ -462,6 +462,9 @@ var GeosonifyStarpinMap = (function () {
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
       setStars: function (list) { stars = (list || []).slice(); redraw(); },
       clearPin: function () { pin = null; selected = null; redraw(); },
+      dropPin: function (lat, lon) {
+        pin = { lat: lat, lon: lon }; selected = { kind: 'pin', id: 'pin' }; redraw();
+      },
       pin: function () { return pin; },
       stars: function () { return stars.slice(); },
       setWeight: function (w) { setWeight(w); redraw(); return weight(); },
