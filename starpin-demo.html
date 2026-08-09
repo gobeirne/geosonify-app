@@ -59,6 +59,13 @@ dl{margin:.75rem 0 0}
 .pips{letter-spacing:.35em;color:var(--kereru-pink);font-size:1rem}
 .hint{font-size:.7rem;color:var(--ios-secondary);line-height:1.45;margin:.6rem 0 0}
 .bad{color:var(--kereru-pink)}
+.tabs{display:flex;gap:.5rem;margin:.75rem 0 .5rem}
+.tab{flex:1;border-width:2px}
+.tab-star{border-color:#f4b400;color:#b07f00}
+.tab-corner{border-color:var(--kereru-green);color:var(--kereru-green)}
+.tab-star[aria-pressed="true"]{background:#f4b400;color:#20180a;border-color:#f4b400}
+.tab-corner[aria-pressed="true"]{background:var(--kereru-green);color:#fff}
+@media (prefers-color-scheme:dark){.tab-star{color:#f4b400}}
 .btnrow{display:flex;gap:.5rem;margin-top:.6rem}
 .btnrow button{flex:1}
 button[aria-pressed="true"]{background:var(--kereru-teal);color:#fff;
@@ -67,13 +74,20 @@ button[aria-pressed="true"]{background:var(--kereru-teal);color:#fff;
   color:var(--ios-secondary);margin-top:.6rem}
 .tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ios-text);min-width:2.2rem}
 .tune input[type=range]{flex:1;margin:0;accent-color:var(--kereru-teal)}
+select{font:inherit;font-size:.8rem;padding:.5rem;border-radius:10px;
+  border:1px solid var(--ios-separator);background:transparent;color:inherit}
 #info{margin-top:.6rem;padding:.75rem .85rem;border-radius:10px;
   border:1px solid var(--ios-separator);background:transparent}
 #info h3{margin:0 0 .35rem;font-size:.9rem;font-family:'SF Mono',ui-monospace,monospace;
   word-break:break-all}
 #info .meta{font-size:.75rem;color:var(--ios-secondary);line-height:1.5}
-#info img{width:100%;max-width:190px;border-radius:8px;margin:.5rem 0;display:block;
-  background:#111}
+#info img{width:100%;max-width:190px;border-radius:8px;display:block;background:#111}
+.thumb{position:relative;width:100%;max-width:190px;margin:.5rem 0}
+.thumb .mark{position:absolute;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;
+  border:2px solid #39ff88;border-radius:2px;box-shadow:0 0 0 1px rgba(0,0,0,.55) inset,
+  0 0 6px rgba(57,255,136,.5);pointer-events:none}
+.thumb .cap{font-size:.62rem;color:var(--ios-secondary);margin-top:.25rem;text-align:center}
+.visited{color:var(--kereru-green);font-weight:600}
 #info a{color:var(--kereru-teal)}
 #info .close{font-size:.7rem;margin-top:.5rem;padding:.35rem .7rem;width:auto}
 ul{list-style:none;padding:0;margin:.5rem 0 .75rem;max-height:11rem;overflow:auto}
@@ -139,9 +153,17 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 </section>
 
 <section>
-  <h2>nearest cornerstone</h2>
+  <h2>nearest targets</h2>
   <div id="cs-prox"></div>
-  <button id="pulse" type="button" aria-pressed="false">Guide me by sound</button>
+  <div class="tabs">
+    <button id="tab-star" type="button" class="tab tab-star" aria-pressed="false">starpin</button>
+    <button id="tab-corner" type="button" class="tab tab-corner" aria-pressed="true">cornerstone</button>
+  </div>
+  <div id="tab-body"></div>
+  <div class="btnrow">
+    <button id="pulse" type="button" aria-pressed="false">Guide me by sound</button>
+    <button id="compass" type="button" aria-pressed="false">Compass</button>
+  </div>
   <p class="hint" id="haptic-note" style="margin-bottom:.5rem"></p>
   <input id="order" inputmode="numeric" value="12" aria-label="HEALPix order">
   <dl>
@@ -183,7 +205,15 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     <div class="r"><dt>storage</dt><dd id="lg-store">—</dd></div>
   </dl>
   <ul id="lg-list"></ul>
-  <button id="lg-show" type="button" style="margin-bottom:.5rem">Look back through my records</button>
+  <div id="lg-panel" hidden></div>
+  <div class="btnrow" style="margin-bottom:.5rem">
+    <button id="lg-show" type="button">Look back through my records</button>
+    <select id="lg-sort" aria-label="sort records">
+      <option value="new">newest first</option>
+      <option value="old">oldest first</option>
+      <option value="rare">rarest first</option>
+    </select>
+  </div>
   <button id="lg-export" type="button">Download my records</button>
   <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
   <input id="lg-file" type="file" accept="application/json" hidden>
@@ -211,8 +241,9 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260809e"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260810"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20260809"></script>
 <script>
 (function () {
   'use strict';
@@ -233,6 +264,15 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     return (m < 1000 ? m.toFixed(0) + ' m' : (m / 1000).toFixed(2) + ' km') +
            ' ' + compass(b) + ' (' + b.toFixed(0) + '\u00B0)';
   }
+  // 1 arcsec is 30.92 m of ground at every latitude, so ground distance IS sky
+  // separation — but "616630.19 arcseconds" is a true statement nobody can read.
+  // Past a degree, say degrees.
+  function skySep(m) {
+    var arcsec = m / S.M_PER_ARCSEC;
+    if (arcsec < 60) return arcsec.toFixed(2) + '\u2033';
+    if (arcsec < 3600) return (arcsec / 60).toFixed(2) + '\u2032';
+    return (arcsec / 3600).toFixed(1) + '\u00B0 of sky';
+  }
 
   $('locate').addEventListener('click', function () {
     F.unlock();
@@ -249,6 +289,126 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     }, function (e) { $('fix').textContent = 'no fix: ' + e.message; },
        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
+
+  var activeTab = 'corner', heading = null, nearestStar = null;
+
+  function nearestStarpin() {
+    if (!fix) return null;
+    var best = null;
+    map.stars().forEach(function (st) {
+      var d = S.haversineM(fix.lat, fix.lon, st.lat, st.lon);
+      if (!best || d < best.distanceM) best = { star: st, distanceM: d };
+    });
+    return best;
+  }
+
+  function visitedOn(key) {
+    var hits = log.current().filter(function (r) {
+      return (r.target.cornerstone === key) ||
+             (r.target.starpin && r.target.starpin.indexOf(key) >= 0); });
+    hits.sort(function (a, b) { return a.event.time_ms - b.event.time_ms; });
+    return hits[0] || null;
+  }
+
+  function paintTargets() {
+    if (!fix) { prox.update([], heading); return; }
+    var targets = [];
+
+    nearestStar = nearestStarpin();
+    if (nearestStar) {
+      var sp = nearestStar.star;
+      targets.push({ key: 'star', colour: '#f4b400', primary: activeTab === 'star',
+        result: S.assessVisit(fix, { lat: sp.lat, lon: sp.lon }),
+        bearingDeg: bearing(fix.lat, fix.lon, sp.lat, sp.lon),
+        compassText: compass(bearing(fix.lat, fix.lon, sp.lat, sp.lon)) });
+    }
+    if (lastCs) {
+      targets.push({ key: 'corner', colour: '#51806a', primary: activeTab === 'corner',
+        result: S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon }),
+        bearingDeg: bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon),
+        compassText: compass(bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon)) });
+    }
+    if (!targets.some(function (t) { return t.primary; }) && targets.length) targets[0].primary = true;
+    prox.update(targets, heading);
+    paintTabBody();
+  }
+
+  function paintTabBody() {
+    var b = $('tab-body'); b.textContent = '';
+    if (activeTab === 'star') {
+      if (!nearestStar) { b.appendChild(el('p', 'hint',
+        'No starpins in view. Move the map, or zoom in below 8 km.')); return; }
+      var sp = nearestStar.star;
+      var vd = visitedOn(String(sp.name || '').replace(/\D/g, ''));
+      b.appendChild(el('div', 'meta', (sp.name || 'unnamed') + '  \u00B7  ' +
+        (sp.mag == null ? 'mag unknown' : 'G \u2248 ' + sp.mag.toFixed(1)) + '  \u00B7  ' +
+        walk(nearestStar.distanceM, bearing(fix.lat, fix.lon, sp.lat, sp.lon))));
+      if (vd) b.appendChild(visitedLine(vd));
+    } else {
+      if (!lastCs) return;
+      var t = F.tierOf(lastCs.tierOrder, lastCs.degree);
+      b.appendChild(el('div', 'meta', lastCs.name + '  \u00B7  orders ' + lastCs.crossOrder +
+        '\u00D7' + lastCs.intrinsicOrder + '  \u00B7  tier ' + lastCs.tierOrder.toFixed(1) +
+        ', ' + t.key));
+      var vc = visitedOn(lastCs.name);
+      if (vc) b.appendChild(visitedLine(vc));
+    }
+  }
+
+  function visitedLine(r) {
+    var d = el('div', 'meta');
+    var span = el('span', 'visited', 'Visited on ' +
+      new Date(r.event.time_ms).toLocaleDateString(undefined,
+        { year: 'numeric', month: 'long', day: 'numeric' }));
+    d.appendChild(span);
+    var b = el('button', 'close', 'see the record');
+    b.type = 'button'; b.style.marginLeft = '.5rem';
+    b.addEventListener('click', function () { showCardFor(r, null); });
+    d.appendChild(b);
+    return d;
+  }
+
+  $('tab-star').addEventListener('click', function () {
+    activeTab = 'star';
+    this.setAttribute('aria-pressed', 'true');
+    $('tab-corner').setAttribute('aria-pressed', 'false');
+    paintTargets();
+  });
+  $('tab-corner').addEventListener('click', function () {
+    activeTab = 'corner';
+    this.setAttribute('aria-pressed', 'true');
+    $('tab-star').setAttribute('aria-pressed', 'false');
+    paintTargets();
+  });
+
+  // Compass mode. Without a heading the dial is a north-up MAP; with one it is
+  // a compass and the whole rose counter-rotates. iOS needs an explicit
+  // permission grant from inside a user gesture.
+  $('compass').addEventListener('click', function () {
+    var btn = this;
+    if (heading != null) {
+      heading = null; btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
+      paintTargets(); return;
+    }
+    function listen() {
+      btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'North up';
+      window.addEventListener('deviceorientationabsolute', onOrient, true);
+      window.addEventListener('deviceorientation', onOrient, true);
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then(function (r) {
+        if (r === 'granted') listen();
+        else alert('Compass permission denied \u2014 the dial stays north-up.');
+      }).catch(function () { alert('This device would not share its compass.'); });
+    } else listen();
+  });
+  function onOrient(e) {
+    var h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading
+          : (e.alpha != null && e.absolute !== false) ? (360 - e.alpha) : null;
+    if (h == null) return;
+    heading = h; paintTargets();
+  }
 
   function cornerstone() {
     if (!fix) return;
@@ -269,7 +429,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     prox.update(vr, compass(b), b);
     map.setHighlight(v.name);
     var cv = $('cs-verdict');
-    cv.textContent = vr.verdict + '  (' + vr.separationArcsec.toFixed(2) + '\u2033)';
+    cv.textContent = vr.verdict + '  (' + skySep(vr.distanceM) + ')';
     cv.className = vr.verdict === 'well-supported' ? 'ok'
                  : vr.verdict === 'not-supported' ? 'bad' : '';
     try {
@@ -302,7 +462,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     $('sp-dist').textContent = walk(m, b);
     var r = S.assessVisit(fix, { lat: a.lat, lon: a.lon });
     var vd = $('sp-verdict');
-    vd.textContent = r.verdict + '  (' + r.separationArcsec.toFixed(2) + '\u2033)';
+    vd.textContent = r.verdict + '  (' + skySep(r.distanceM) + ')';
     vd.className = r.verdict === 'well-supported' ? 'ok'
                  : r.verdict === 'not-supported' ? 'bad' : '';
   }
@@ -399,6 +559,7 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
           'visited ' + new Date(r.event.time_ms).toLocaleString() + ' \u2014 ' + v));
       });
       if (!visits.length) m.appendChild(el('div', null, 'not yet logged'));
+      else m.appendChild(visitedLine(visits[0]));
       box.appendChild(m);
       box.appendChild(el('div', 'meta',
         'A public log for this point will live here. Nothing is published today.'));
@@ -407,11 +568,18 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       var st = sel.data;
       box.appendChild(el('h3', null, st.name || 'unnamed source'));
       if (SN && SN.thumbnailUrl) {
+        // The thumbnail usually shows several sources. The marker says which
+        // one you are walking to — the cutout is centred on the target, so a
+        // fixed centre mark is exactly right and needs no projection maths.
+        var th = el('div', 'thumb');
         var img = document.createElement('img');
         img.alt = 'sky around ' + (st.name || 'this source');
         img.loading = 'lazy';
         try { img.src = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: 40 }); } catch (e) {}
-        box.appendChild(img);
+        th.appendChild(img);
+        th.appendChild(el('div', 'mark'));
+        th.appendChild(el('div', 'cap', '40\u2033 across \u00B7 marked source is your target'));
+        box.appendChild(th);
       }
       var sm = el('div', 'meta');
       function row(k, v) { if (v == null || v === '') return;
@@ -424,9 +592,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
       if (fix) {
         var dm = S.haversineM(fix.lat, fix.lon, st.lat, st.lon);
         var bb = bearing(fix.lat, fix.lon, st.lat, st.lon);
-        row('from you', walk(dm, bb) + '  (' + (dm / S.M_PER_ARCSEC).toFixed(2) + '\u2033)');
+        row('from you', walk(dm, bb) + '  (' + skySep(dm) + ')');
         row('visit', S.assessVisit(fix, { lat: st.lat, lon: st.lon }).verdict);
       }
+      var vrec = visitedOn(String(st.name || '').replace(/\D/g, ''));
+      if (vrec) sm.appendChild(visitedLine(vrec));
       box.appendChild(sm);
       // You can always log. The verdict is DERIVED, so a record made from
       // 252 m away is a perfectly good closest-approach record and can be
@@ -437,7 +607,10 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         var lb = el('button', null, supported ? 'Bag this starpin' : 'Log a closest approach');
         lb.type = 'button'; lb.style.marginTop = '.6rem';
         lb.addEventListener('click', function () {
-          var id = (st.name || '').replace(/^\D+/, '').trim();
+          // /^\D+/ stopped at the "3" of "Gaia DR3", leaving "3 5382…" — not
+          // all digits, so the record fell back to a starpin:name: identity.
+          // Take the trailing digit run instead.
+          var id = ((String(st.name || '').match(/(\d{5,})\s*$/) || [])[1] || '').trim();
           var addr = S.starpinAddress(String(st.ra), String(st.dec));
           var target = /^\d+$/.test(id) ? { starpin: 'starpin:gdr3:' + id }
                                         : { starpin: 'starpin:name:' + (st.name || 'unknown') };
@@ -461,6 +634,14 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
                         kicker: supported ? 'starpin bagged'
                                           : 'closest approach logged \u00B7 ' +
                                             Math.round(vr2.distanceM) + ' m' });
+          // The card lands once the banner has had its moment, with the lead
+          // still playing underneath.
+          var justLogged = log.current().filter(function (x) {
+            return x.target.starpin === target.starpin; })
+            .sort(function (a2, b2) { return b2.event.time_ms - a2.event.time_ms; })[0];
+          if (justLogged) setTimeout(function () {
+            GeosonifyStarpinCard.show(cardOptsFor(justLogged, null));
+          }, 1600);
         });
         box.appendChild(lb);
       }
@@ -642,13 +823,42 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
   });
 
   $('lg-show').addEventListener('click', function () {
-    var box = $('info'); box.textContent = ''; box.hidden = false;
+    // Renders in the records section. The map's info box is a different
+    // surface, and opening this there scrolled the page to the top.
+    var box = $('lg-panel'); box.textContent = ''; box.hidden = false;
     box.appendChild(el('h3', null, 'your records'));
     var recs = log.current();
     if (!recs.length) {
       box.appendChild(el('div', 'meta', 'Nothing yet. Go and stand somewhere.'));
     }
     var rank = S.rankByTarget(recs);
+    // Rarity ordering: a cornerstone's tier order (lower = rarer) and a star's
+    // magnitude are different scales, so they are normalised to a single
+    // "scarcity" number rather than pretended to be comparable in the raw.
+    function scarcity(r) {
+      if (r.target.cornerstone) {
+        var m = /\.([0-3]+)$/.exec(r.target.cornerstone);
+        var p = null;
+        try { p = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
+        if (p) { try { return S.nearestCornerstone(p.lat, p.lon, m[1].length).tierOrder; }
+                 catch (e) {} }
+        return m ? m[1].length : 14;
+      }
+      var sid = (r.target.starpin || '').replace(/\D/g, '');
+      var cached = map.stars().filter(function (x) {
+        return String(x.name || '').indexOf(sid) >= 0; })[0];
+      // Map magnitude onto the same axis: brighter is rarer, like a lower order.
+      return cached && cached.mag != null ? Math.max(1, cached.mag - 2) : 13;
+    }
+    var mode = $('lg-sort').value;
+    recs = recs.slice().sort(function (a, b) {
+      if (mode === 'old') return a.event.time_ms - b.event.time_ms;
+      if (mode === 'rare') {
+        var d = scarcity(a) - scarcity(b);
+        return d !== 0 ? d : b.event.time_ms - a.event.time_ms;
+      }
+      return b.event.time_ms - a.event.time_ms;
+    });
     recs.forEach(function (r) {
       var rk = rank[r.record_id] || {};
       var d = el('div', 'meta');
@@ -679,6 +889,11 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
         d.appendChild(document.createTextNode(
           'beaten by your own ' + rk.bestDistanceM.toFixed(1) + ' m approach'));
       }
+      var card = el('button', 'close', 'card');
+      card.type = 'button';
+      card.addEventListener('click', function () { showCardFor(r, rk); });
+      d.appendChild(el('br')); d.appendChild(card);
+
       var del = el('button', 'close', 'delete');
       del.type = 'button'; del.style.marginLeft = '.4rem';
       del.addEventListener('click', function () {
@@ -710,6 +925,72 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     box.appendChild(c);
   });
 
+  // ── cards ────────────────────────────────────────────────────────────────
+  // A starpin card goes full screen; a cornerstone card is inline and quieter,
+  // because nobody travelled to a lattice vertex because of a star.
+  function cardOptsFor(r, rk) {
+    var a = (rk && rk.assessment) || null;
+    if (!a) { try { a = S.assessRecord(r); } catch (e) {} }
+    var visit = {
+      distanceM: a && a.visit ? a.visit.distanceM : null,
+      bearingDeg: null,
+      accuracyM: r.fix ? r.fix.accuracy_m : null,
+      verdict: a && a.visit ? a.visit.verdict : null,
+      whenMs: r.event.time_ms
+    };
+    if (r.fix && a && a.target) {
+      visit.bearingDeg = bearing(r.fix.lat_1e7 / 1e7, r.fix.lon_1e7 / 1e7,
+                                 a.target.lat, a.target.lon);
+    }
+    if (r.target.cornerstone) {
+      var pt2 = null;
+      try { pt2 = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
+      var m2 = /\.([0-3]+)$/.exec(r.target.cornerstone);
+      var ord = m2 ? m2[1].length : 12;
+      var probe = null;
+      if (pt2) { try { probe = S.nearestCornerstone(pt2.lat, pt2.lon, ord); } catch (e) {} }
+      return { kind: 'cornerstone', mini: true, visit: visit, cornerstone: {
+        name: r.target.cornerstone, lat: pt2 && pt2.lat, lon: pt2 && pt2.lon,
+        order: ord,
+        intrinsicOrder: probe ? probe.intrinsicOrder : ord,
+        crossOrder: probe ? probe.crossOrder : ord,
+        tierOrder: probe ? probe.tierOrder : ord,
+        degree: probe ? probe.degree : 4 } };
+    }
+    var sid = (r.target.starpin || '').replace('starpin:gdr3:', '');
+    var cached = map.stars().filter(function (x) {
+      return String(x.name || '').indexOf(sid) >= 0; })[0] || {};
+    var addr = null;
+    try { addr = S.decodeSourceId(sid).quaternary; } catch (e) {}
+    var n = 0, seen = {};
+    log.current().slice().sort(function (x, y) { return x.event.time_ms - y.event.time_ms; })
+      .forEach(function (x) {
+        var k = x.target.starpin; if (!k || seen[k]) return; seen[k] = ++n;
+      });
+    return { kind: 'starpin', visit: visit,
+      findNumber: seen[r.target.starpin] || null,
+      star: { id: sid, name: 'Gaia DR3 ' + sid, catalogue: 'Gaia DR3',
+              ra: cached.ra, dec: cached.dec, mag: cached.mag, distLy: cached.distLy,
+              address: addr,
+              lat: r.target.lat_1e7 != null ? r.target.lat_1e7 / 1e7 : null,
+              lon: r.target.lon_1e7 != null ? r.target.lon_1e7 / 1e7 : null } };
+  }
+
+  function showCardFor(r, rk) {
+    var o = cardOptsFor(r, rk);
+    if (o.kind === 'starpin') { GeosonifyStarpinCard.show(o); return; }
+    var box = $('lg-panel');
+    var holder = document.getElementById('cardslot');
+    if (!holder) { holder = el('div'); holder.id = 'cardslot';
+                   holder.style.margin = '.75rem 0'; box.insertBefore(holder, box.firstChild); }
+    holder.textContent = '';
+    holder.appendChild(GeosonifyStarpinCard.render(o));
+  }
+
+  $('lg-sort').addEventListener('change', function () {
+    if (!$('lg-panel').hidden) $('lg-show').click();
+  });
+
   $('lg-export').addEventListener('click', function () {
     var blob = new Blob([log.export()], { type: 'application/json' });
     var a = document.createElement('a');
@@ -729,10 +1010,43 @@ li span{color:var(--ios-secondary);flex:0 0 auto}
     }).catch(function (err) { alert('Could not read that file: ' + err.message); });
   });
 
+  // One-off repair for records written before the identity bug was fixed.
+  // Immutable records are not edited: a corrected record SUPERSEDES the old
+  // one, so the original stays in the log and history is added to.
+  function repairIdentities() {
+    var broken = log.current().filter(function (r) {
+      return r.target.starpin && /^starpin:name:.*\d{10,}/.test(r.target.starpin);
+    });
+    if (!broken.length) return 0;
+    broken.forEach(function (r) {
+      var id = (r.target.starpin.match(/(\d{5,})\s*$/) || [])[1];
+      if (!id) return;
+      var t = { starpin: 'starpin:gdr3:' + id, catalogue: 'gaia-dr3' };
+      if (r.target.lat_1e7 != null) { t.lat_1e7 = r.target.lat_1e7; t.lon_1e7 = r.target.lon_1e7; }
+      log.add(L.build(r.kind, {
+        target: t, supersedes: r.record_id,
+        eventMs: r.event.time_ms, createdMs: Date.now(),
+        fix: r.fix ? { lat: r.fix.lat_1e7 / 1e7, lon: r.fix.lon_1e7 / 1e7,
+                       accuracy_m: r.fix.accuracy_m, time_ms: r.fix.time_ms,
+                       source: r.fix.source } : null,
+        provenance: { app: 'starpin-demo', app_version: '0.1',
+                      note: 'identity repaired from ' + r.target.starpin }
+      }));
+    });
+    return broken.length;
+  }
+
   function redraw() { cornerstone(); starpin(); }
   ['order', 'sid', 'ra', 'dec'].forEach(function (id) {
     $(id).addEventListener('input', redraw);
   });
+  var repaired = repairIdentities();
+  if (repaired) {
+    drawLog();
+    $('readout-src').textContent = repaired + ' record' + (repaired > 1 ? 's' : '') +
+      ' had a malformed starpin identity and now has a corrected superseding ' +
+      'record. The originals are kept.';
+  }
   drawLog();
   showRamp();
   redraw();
