@@ -86,55 +86,63 @@ var GeosonifyStarpinMap = (function () {
 
   function cellWidthM(order) { return Math.sqrt(510.1e12 / (12 * Math.pow(4, order))); }
 
-  // TWO KNOBS, exposed on screen so the right values can be found in the field
-  // and then hard-coded here.
+  // THREE KNOBS, exposed on screen so the values can be found in the field and
+  // then hard-coded here.
   //
   //   WEIGHT   overall multiplier
   //   FALLOFF  the ratio between one order and the next finer one
+  //   PERSIST  how much extra a line gets for being coarser than the view
   //
-  // The old ramp was base + t^2, and its floor swamped everything: orders 14
-  // through 17 all came out between 0.50 and 0.64 px, which is why 12 and 13
-  // were indistinguishable from the hairlines below them. A GEOMETRIC ramp
-  // gives every adjacent pair the same visible ratio, so the hierarchy reads
-  // at any depth. Alpha falls with it, because thin AND faint separates far
-  // better than thin alone.
-  var REF_ORDER = 8, BASE_W = 3.0, BASE_A = 0.85;
-  var WEIGHT = 2.0, FALLOFF = 0.75;
-
-  // PERSIST: how strongly a coarse line keeps its authority when you zoom in.
+  // The ramp is anchored to the VIEW, not to a fixed order. It used to hang off
+  // REF_ORDER = 8, which meant orders 3 to 8 all computed 10-25 px, clipped to
+  // the same cap, and drew as six identical fat lattices on top of each other —
+  // fine at city scale where only one of them is in frame, an unreadable mess at
+  // country scale where they all are.
   //
-  // A cell far larger than the view is a RARE boundary, and at close zoom its
-  // edge is the most valuable line on the screen — yet it renders identically
-  // to the hairlines around it, so it vanishes. This boosts a line in
-  // proportion to how much bigger its cell is than the view, which is exactly
-  // the thing that makes it worth noticing.
-  var PERSIST = 0.30;
-  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, Number(p))); return PERSIST; }
-  function persist() { return PERSIST; }
-
-  // rel = cellWidth / viewWidth. 1 means the cell fills the view.
-  function zoomBoost(rel) {
-    if (!(rel > 1)) return 1;
-    return 1 + PERSIST * (Math.log(Math.min(rel, 512)) / Math.LN2);
-  }
+  // The quantity that actually matters is CELLS ACROSS THE VIEW. One cell across
+  // means a rare boundary worth shouting about; forty means clutter. Because each
+  // order doubles that number, log2 of it steps by exactly one per order, so the
+  // geometric falloff survives — it just measures from the right place now, and
+  // self-normalises at every zoom.
+  var BASE_W = 3.0, BASE_A = 0.85;
+  var WEIGHT = 2.0, FALLOFF = 0.75, PERSIST = 0.30;
 
   function setWeight(w) { WEIGHT = Math.max(0.3, Math.min(8, Number(w) || 1)); return WEIGHT; }
   function weight() { return WEIGHT; }
-  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, Number(f) || 0.78)); return FALLOFF; }
+  function setFalloff(f) { FALLOFF = Math.max(0.5, Math.min(0.98, Number(f) || 0.75)); return FALLOFF; }
   function falloff() { return FALLOFF; }
+  function setPersist(p) { PERSIST = Math.max(0, Math.min(1.5, Number(p))); return PERSIST; }
+  function persist() { return PERSIST; }
 
-  function strokeFor(order) {
-    var k = Math.pow(FALLOFF, order - REF_ORDER);
+  var MAX_W = 9, MIN_W = 0.45, MAX_ACROSS = 44;
+  // Six orders coarser than the view is the practical floor. Beyond that a cell
+  // is 64x the frame and its edge is almost never in it — and when it is, the
+  // finer boundaries lying on top of it are drawn anyway, because a coarse
+  // HEALPix edge IS also an edge at every finer order. Coincident passes stack,
+  // so a genuinely rare boundary comes out heaviest without being special-cased.
+  var MIN_ACROSS = 1 / 64;
+
+  // spanM: the width of the view in metres.
+  function strokeFor(order, spanM) {
+    var across = (spanM || 1600) / cellWidthM(order);
+    var lod = Math.log(Math.max(1, across)) / Math.LN2;      // 0 when it fills the view
+    var w = BASE_W * WEIGHT * Math.pow(FALLOFF, lod);
+    var a = BASE_A * Math.pow(FALLOFF, lod * 0.6);
+    if (across < 1) {
+      // Coarser than the view: at most a line or two, and the rarest on screen.
+      var over = Math.min(3, Math.log(1 / across) / Math.LN2);
+      var boost = 1 + PERSIST * over;
+      w *= boost; a *= boost;
+    }
     return {
-      width: Math.max(0.25, BASE_W * k * WEIGHT),
-      alpha: Math.max(0.05, Math.min(0.95, BASE_A * Math.pow(FALLOFF, (order - REF_ORDER) * 0.6))),
-      rawWidth: BASE_W * Math.pow(FALLOFF, order - REF_ORDER) * WEIGHT,
-      // Below this the line is a smudge and only adds clutter, so the draw
-      // loop stops. FALLOFF therefore controls DEPTH as well as contrast:
-      // one knob, two jobs, and they are the same judgement.
-      visible: BASE_W * k * WEIGHT >= 0.45
+      width: Math.min(MAX_W, w),
+      alpha: Math.max(0.05, Math.min(0.95, a)),
+      across: across,
+      // Stop at a smudge, and stop before an order can only add clutter.
+      visible: w >= MIN_W && across <= MAX_ACROSS && across >= MIN_ACROSS
     };
   }
+
   function dotRadius(order) {
     var t = Math.max(0, Math.min(1, (15 - order) / 9));
     return 3 + t * t * 11;
@@ -483,7 +491,7 @@ var GeosonifyStarpinMap = (function () {
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName, setWeight: setWeight, weight: weight,
            setFalloff: setFalloff, falloff: falloff,
-           setPersist: setPersist, persist: persist, zoomBoost: zoomBoost };
+           setPersist: setPersist, persist: persist };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinMap;

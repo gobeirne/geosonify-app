@@ -173,6 +173,138 @@ var GeosonifyStarpinFeedback = (function () {
     });
   }
 
+  // ── the starpin lead: four bars of Dorian ────────────────────────────────
+  //
+  // A cornerstone gets a four-note arpeggio. A starpin gets a TUNE, because a
+  // star gave you an address and you went there.
+  //
+  //   * four bars of 4/4 at 112 bpm, melody line only
+  //   * Dorian, and every degree of it sounds at least once
+  //   * detuned saws through a resonant filter, into a dotted-eighth delay
+  //     with feedback — the 1983 lead patch, and the cross-rhythm between
+  //     dotted eighths and straight eighths is the whole character of it
+  //
+  // Deterministic: the same source_id always plays the same tune, so a star's
+  // melody is as much its own as its coordinates.
+
+  var DORIAN = [0, 2, 3, 5, 7, 9, 10];        // i ii bIII IV V vi bVII
+  var BPM = 112;
+
+  function seededRng(str) {
+    var h = 2166136261 >>> 0, t = String(str || 'starpin');
+    for (var i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+    return function () {
+      h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0;
+      return h / 4294967296;
+    };
+  }
+
+  // 32 eighth-note slots. Returns [{slot, semis, dur}] with every Dorian
+  // degree guaranteed present.
+  function composeDorian(seed) {
+    var rng = seededRng(seed);
+    var SLOTS = 32, chosen = [], used = {};
+
+    // Slot 0 always sounds: a tune that starts on a rest sounds like a bug.
+    var picks = [0];
+    while (picks.length < 19) {
+      var s = Math.floor(rng() * SLOTS);
+      // favour on-beat and the and-of-two; skip the last slot so it can ring
+      if (s === SLOTS - 1) continue;
+      if (picks.indexOf(s) === -1) picks.push(s);
+    }
+    picks.sort(function (a, b) { return a - b; });
+
+    // Guarantee the whole mode: seven of the picked slots are dealt one
+    // degree each, shuffled, before anything else is chosen.
+    var order = DORIAN.slice();
+    for (var i = order.length - 1; i > 0; i--) {
+      var j = Math.floor(rng() * (i + 1)), tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+    }
+    var seats = picks.slice();
+    for (var k = seats.length - 1; k > 0; k--) {
+      var m = Math.floor(rng() * (k + 1)), t2 = seats[k]; seats[k] = seats[m]; seats[m] = t2;
+    }
+    var assigned = {};
+    order.forEach(function (deg, idx) { assigned[seats[idx]] = deg; used[deg] = 1; });
+
+    var last = order[0];
+    picks.forEach(function (slot) {
+      var semis;
+      if (assigned[slot] != null) { semis = assigned[slot]; }
+      else {
+        // stepwise motion most of the time, with the occasional leap
+        var li = DORIAN.indexOf(last);
+        var step = rng() < 0.72 ? (rng() < 0.5 ? -1 : 1) : (rng() < 0.5 ? -2 : 3);
+        var ni = Math.max(0, Math.min(DORIAN.length - 1, li + step));
+        semis = DORIAN[ni];
+      }
+      last = semis;
+      // lift the top of the phrase an octave now and then
+      var oct = (rng() < 0.16 && slot > 8) ? 12 : 0;
+      chosen.push({ slot: slot, semis: semis + oct });
+    });
+
+    // Each note rings until the next one, capped, so the delay does the rest.
+    for (var n = 0; n < chosen.length; n++) {
+      var next = (n + 1 < chosen.length) ? chosen[n + 1].slot : SLOTS;
+      chosen[n].dur = Math.min(3, next - chosen[n].slot);
+    }
+    return chosen;
+  }
+
+  function playDorianLead(seed, rootHz) {
+    if (!ctx || ctx.state !== 'running') return 0;
+    var eighth = 60 / BPM / 2;
+    var dotted = eighth * 1.5;
+    var notes = composeDorian(seed);
+    var t0 = ctx.currentTime + 0.06;
+    var root = rootHz || 261.626;
+
+    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+
+    // dotted-eighth delay with feedback — the signature
+    var delay = ctx.createDelay(2.0); delay.delayTime.value = dotted;
+    var fb = ctx.createGain(); fb.gain.value = 0.38;
+    var wet = ctx.createGain(); wet.gain.value = 0.34;
+    var damp = ctx.createBiquadFilter(); damp.type = 'lowpass'; damp.frequency.value = 2600;
+    delay.connect(damp); damp.connect(fb); fb.connect(delay); damp.connect(wet); wet.connect(out);
+
+    var bus = ctx.createGain(); bus.gain.value = 0.26;
+    bus.connect(out); bus.connect(delay);
+
+    notes.forEach(function (n) {
+      var when = t0 + n.slot * eighth;
+      var len = Math.max(0.16, n.dur * eighth * 0.92);
+      var hz = root * Math.pow(2, n.semis / 12);
+
+      var amp = ctx.createGain();
+      var flt = ctx.createBiquadFilter();
+      flt.type = 'lowpass'; flt.Q.value = 6;
+      flt.frequency.setValueAtTime(Math.min(9000, hz * 9), when);
+      flt.frequency.exponentialRampToValueAtTime(Math.max(320, hz * 2.4), when + len * 0.7);
+
+      amp.gain.setValueAtTime(0.0001, when);
+      amp.gain.exponentialRampToValueAtTime(0.55, when + 0.012);
+      amp.gain.exponentialRampToValueAtTime(0.22, when + len * 0.45);
+      amp.gain.exponentialRampToValueAtTime(0.0001, when + len);
+
+      [[0, 'sawtooth', 1], [7, 'sawtooth', 0.85], [-1200, 'square', 0.28]]
+        .forEach(function (v) {
+          var o = ctx.createOscillator(), g = ctx.createGain();
+          o.type = v[1];
+          o.frequency.value = hz;
+          o.detune.value = v[0];
+          g.gain.value = v[2];
+          o.connect(g); g.connect(flt);
+          o.start(when); o.stop(when + len + 0.12);
+        });
+      flt.connect(amp); amp.connect(bus);
+    });
+
+    return 32 * eighth;                          // seconds of music
+  }
+
   function blip(good) {                                   // arrival, not logging
     if (!ctx || ctx.state !== 'running') return;
     var t = ctx.currentTime + 0.01;
@@ -265,9 +397,12 @@ var GeosonifyStarpinFeedback = (function () {
     '.spf-halo{width:100%;height:100%;background:currentColor;opacity:.10}',
     '.spf-you{width:14%;height:14%;background:currentColor;opacity:.9}',
     '.spf-word{font-size:.95rem;font-weight:600;text-align:center;line-height:1.25}',
-    '.spf-arrow{position:absolute;width:100%;height:100%;pointer-events:none;',
-    '  transition:transform .35s cubic-bezier(.2,.8,.2,1),opacity .3s}',
-    '.spf-here .spf-arrow{opacity:0}',
+    '.spf-dial{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}',
+    '.spf-dial g{transition:transform .35s cubic-bezier(.2,.8,.2,1)}',
+    '.spf-card,.spf-card-n{font-family:"SF Mono",ui-monospace,monospace;font-size:8px;',
+    '  font-weight:600;fill:currentColor;opacity:.5}',
+    '.spf-card-n{opacity:.95;font-size:9.5px}',
+    '.spf-here .spf-dial{opacity:.35}',
     '.spf-sub{font-size:.75rem;opacity:.7;font-family:"SF Mono",ui-monospace,monospace}',
     '.spf-here .spf-word{font-size:1.15rem}',
     '@keyframes spf-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}',
@@ -304,111 +439,128 @@ var GeosonifyStarpinFeedback = (function () {
 
   // ── the proximity ring ────────────────────────────────────────────────────
 
-  function proximity(container) {
+  // Multiple targets on one dial, with cardinal marks so an arrow is never
+  // mistaken for "up is where I am facing".
+  //
+  //   heading == null  -> the dial is a MAP: north is up, arrows are true
+  //                       bearings, and N/E/S/W sit where they always sit.
+  //   heading given    -> the dial is a COMPASS: everything counter-rotates by
+  //                       the device heading, so an arrow points at the thing.
+  //
+  // Without the letters the first mode is a lie by omission, because a bearing
+  // arrow on a screen looks exactly like a compass needle.
+  function proximity(container, opts) {
+    opts = opts || {};
     var doc = container.ownerDocument || document;
     injectCss(doc);
+    var NS = 'http://www.w3.org/2000/svg';
+
     var wrap = doc.createElement('div'); wrap.className = 'spf-prox';
     var ring = doc.createElement('div'); ring.className = 'spf-ring';
     var halo = doc.createElement('i');   halo.className = 'spf-halo';
     var you  = doc.createElement('i');   you.className  = 'spf-you';
     ring.appendChild(halo); ring.appendChild(you);
-    var arrow = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    arrow.setAttribute('viewBox', '0 0 100 100');
-    arrow.setAttribute('class', 'spf-arrow');
-    var tri = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-    tri.setAttribute('d', 'M50 12 L69 62 L50 51 L31 62 Z');
-    tri.setAttribute('fill', 'currentColor');
-    arrow.appendChild(tri);
-    ring.appendChild(arrow);
+
+    var dial = doc.createElementNS(NS, 'svg');
+    dial.setAttribute('viewBox', '0 0 100 100');
+    dial.setAttribute('class', 'spf-dial');
+    var rose = doc.createElementNS(NS, 'g');            // rotates in compass mode
+    dial.appendChild(rose);
+    [['N', 0], ['E', 90], ['S', 180], ['W', 270]].forEach(function (c) {
+      var a = (c[1] - 90) * Math.PI / 180;
+      var t = doc.createElementNS(NS, 'text');
+      t.setAttribute('x', (50 + Math.cos(a) * 44).toFixed(2));
+      t.setAttribute('y', (50 + Math.sin(a) * 44 + 2.6).toFixed(2));
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('class', c[0] === 'N' ? 'spf-card-n' : 'spf-card');
+      t.textContent = c[0];
+      rose.appendChild(t);
+    });
+    var arrows = doc.createElementNS(NS, 'g');
+    rose.appendChild(arrows);
+    ring.appendChild(dial);
+
     var word = doc.createElement('div'); word.className = 'spf-word';
     var sub  = doc.createElement('div'); sub.className  = 'spf-sub';
     wrap.appendChild(ring); wrap.appendChild(word); wrap.appendChild(sub);
     container.appendChild(wrap);
 
     var wasHere = false;
-
-    // TWO SEPARATE THINGS, and conflating them is what made arrival feel fake:
-    //
-    //   ARRIVAL  — you are physically on the point. Tight: within the fix's own
-    //              uncertainty, or 10 m, whichever is larger. This is the moment.
-    //   ACCEPTED — the record is well-supported under visit-geometry-v1. R is
-    //              deliberately generous (~93 m) so a starpin behind a fence can
-    //              be logged from the footpath. That is a rule, not a feeling.
-    //
-    // Saying "you're standing on it" at 60 m would be a lie, and would also
-    // devalue the moment when it is true.
-    // A laptop reporting +/-89 m must not be told it is standing on the point
-    // when it is 90 m away. Accuracy buys some slack, but only a little:
-    //
-    //   ON IT            within 15 m, and the fix is good enough to mean it
-    //   WITHIN ERROR     closer than your own uncertainty, which is a real and
-    //                    honest state, but is not the same as being there
-    //
     var ARRIVE_FLOOR_M = 15;      // how close counts as "on it"
     var ARRIVE_MAX_ACC = 30;      // a fix worse than this cannot claim arrival
 
-    // r: a visit-geometry-v1 result from assessVisit().
-    // compassText: e.g. "NE". bearingDeg: true bearing, drives the arrow.
-    function update(r, compassText, bearingDeg) {
-      if (!r || r.distanceM == null) {
-        word.textContent = 'no fix yet'; sub.textContent = ''; return false;
+    function drawArrows(targets, heading) {
+      while (arrows.firstChild) arrows.removeChild(arrows.firstChild);
+      rose.setAttribute('transform',
+        heading == null ? '' : 'rotate(' + (-heading).toFixed(1) + ' 50 50)');
+      targets.forEach(function (t, i) {
+        if (t.bearingDeg == null) return;
+        var g = doc.createElementNS(NS, 'g');
+        g.setAttribute('transform', 'rotate(' + t.bearingDeg.toFixed(1) + ' 50 50)');
+        var p = doc.createElementNS(NS, 'path');
+        var scale = t.primary ? 1 : 0.72;
+        var tip = 50 - 26 * scale, base = 50 - 4 * scale, half = 8.5 * scale;
+        p.setAttribute('d', 'M50 ' + tip + ' L' + (50 + half) + ' ' + base +
+                            ' L50 ' + (base - 5 * scale) + ' L' + (50 - half) + ' ' + base + ' Z');
+        p.setAttribute('fill', t.colour || 'currentColor');
+        p.setAttribute('opacity', t.primary ? '1' : '.55');
+        g.appendChild(p);
+        arrows.appendChild(g);
+      });
+    }
+
+    // targets: [{ key, label, colour, result, bearingDeg, primary }]
+    // heading: device heading in degrees, or null for a north-up map dial.
+    function update(targets, heading) {
+      targets = [].concat(targets || []).filter(Boolean);
+      if (!targets.length) {
+        word.textContent = 'no fix yet'; sub.textContent = '';
+        drawArrows([], heading); return false;
       }
-      var d = r.distanceM, a = r.accuracyM, R = r.radiusM;
+      if (!targets.some(function (t) { return t.primary; })) targets[0].primary = true;
+      var main = targets.filter(function (t) { return t.primary; })[0];
+      var r = main.result || {};
+      drawArrows(targets, heading);
+      if (r.distanceM == null) { word.textContent = 'no fix yet'; sub.textContent = ''; return false; }
+
+      var d = r.distanceM, a = r.accuracyM, R = r.radiusM || 92.77;
       var acc = (a == null) ? Infinity : a;
       var arrived = d <= ARRIVE_FLOOR_M && acc <= ARRIVE_MAX_ACC;
       var withinError = !arrived && d <= acc;
       var accepted = r.verdict === 'well-supported';
 
-      // Scale: the halo is R. Beyond 4R everything looks the same, and should.
       var frac = Math.max(0.08, Math.min(1, (4 * R - d) / (4 * R)));
       you.style.width = you.style.height = (10 + frac * 76) + '%';
+      wrap.style.setProperty('--spf-accent', main.colour || 'var(--kereru-teal,#325756)');
 
       if (arrived) {
         wrap.classList.add('spf-here');
         wrap.style.color = 'var(--kereru-green,#51806a)';
         word.textContent = 'You\u2019re standing on it';
-        // RULE 1: no metres here. There is nothing left to chase, and shuffling
-        // about for the last metre earns exactly nothing.
         sub.textContent = accepted ? 'well-supported' : r.verdict;
       } else if (withinError) {
         wrap.classList.remove('spf-here');
-        wrap.style.color = 'var(--kereru-teal,#325756)';
+        wrap.style.color = main.colour || 'var(--kereru-teal,#325756)';
         word.textContent = 'Within device error';
         sub.textContent = d.toFixed(0) + ' m away, fix \u00B1' + acc.toFixed(0) + ' m';
-      } else if (accepted) {
-        wrap.classList.remove('spf-here');
-        wrap.style.color = 'var(--kereru-teal,#325756)';
-        word.textContent = d.toFixed(0) + ' m' + (compassText ? ' ' + compassText : '');
-        sub.textContent = 'already close enough to count';
-      } else if (r.verdict === 'fix-too-coarse') {
-        wrap.classList.remove('spf-here');
-        wrap.style.color = 'var(--kereru-lavender,#A092B7)';
-        word.textContent = 'Fix too coarse to tell';
-        sub.textContent = '\u00B1' + a.toFixed(0) + ' m, wider than the radius';
       } else {
         wrap.classList.remove('spf-here');
-        wrap.style.color = 'var(--kereru-lavender,#A092B7)';
+        wrap.style.color = main.colour || 'var(--kereru-lavender,#A092B7)';
         word.textContent = (d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(2) + ' km') +
-                           (compassText ? ' ' + compassText : '');
-        sub.textContent = r.verdict === 'compatible' ? 'your fix cannot be sure' : 'keep going';
-      }
-
-      if (bearingDeg == null || arrived) arrow.style.opacity = arrived ? '0' : '.35';
-      else {
-        arrow.style.opacity = '1';
-        arrow.style.transform = 'rotate(' + bearingDeg.toFixed(1) + 'deg)';
+                           (main.compassText ? ' ' + main.compassText : '');
+        sub.textContent = accepted ? 'already close enough to count'
+                        : r.verdict === 'fix-too-coarse' ? 'fix too coarse to tell'
+                        : r.verdict === 'compatible' ? 'your fix cannot be sure' : 'keep going';
       }
 
       pulse.lastD = d; pulse.R = R; pulse.arrived = arrived;
-
-      var here = arrived;
-      if (here && !wasHere) {
+      if (arrived && !wasHere) {
         blip(true);
         try { if (doc.defaultView.navigator.vibrate) doc.defaultView.navigator.vibrate(30); }
         catch (e) {}
       }
-      wasHere = here;
-      return here;
+      wasHere = arrived;
+      return arrived;
     }
 
     return { update: update, el: wrap,
@@ -487,12 +639,16 @@ var GeosonifyStarpinFeedback = (function () {
     doc.defaultView.requestAnimationFrame(function () { b.classList.add('on'); });
 
     if (!quiet) confetti(doc, tier.particles);
-    // A star's arpeggio comes from its own source_id digits, and its root pitch
-    // from brightness rather than from a lattice order it does not have.
-    var pitchOrder = isStar
-      ? 14 - Math.max(0, Math.min(6, (20 - (opts.mag == null ? 16 : opts.mag)) / 2.4))
-      : (opts.order == null ? 14 : opts.order);
-    ring(opts.digits || (opts.name || '').replace(/\D/g, ''), pitchOrder, tier.rarity);
+    if (isStar) {
+      // Root pitch from brightness: a bright star sounds lower and grander.
+      var mg = (opts.mag == null) ? 13 : opts.mag;
+      var semis = Math.max(-12, Math.min(7, Math.round((mg - 11) * 1.5)));
+      playDorianLead(opts.digits || opts.name || 'starpin',
+                     261.626 * Math.pow(2, semis / 12));
+    } else {
+      ring(opts.digits || (opts.name || '').replace(/\D/g, ''),
+           opts.order == null ? 14 : opts.order, tier.rarity);
+    }
     try {
       if (doc.defaultView.navigator.vibrate)
         doc.defaultView.navigator.vibrate(tier.rarity > 0.5 ? [40, 60, 90] : [35]);
@@ -503,7 +659,7 @@ var GeosonifyStarpinFeedback = (function () {
       doc.defaultView.setTimeout(function () {
         if (b.parentNode) b.parentNode.removeChild(b);
       }, 400);
-    }, 3600 + tier.rarity * 1800);
+    }, isStar ? 9200 : 3600 + tier.rarity * 1800);
 
     return tier;
   }
@@ -513,6 +669,7 @@ var GeosonifyStarpinFeedback = (function () {
     unlock: unlock, proximity: proximity, celebrate: celebrate,
     setPulse: setPulse, pulseEnabled: pulseEnabled, hapticsAvailable: hapticsAvailable,
     tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
+    composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
 })();
