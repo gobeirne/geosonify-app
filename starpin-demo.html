@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Starpin — field demo</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@500;600&display=swap">
 <!--
   starpin-demo.html — open it directly, no build, no server needed.
 
@@ -69,6 +71,26 @@ body[data-active="sky"] section[data-tab="sky"],
 body[data-active="log"] section[data-tab="log"]{display:block;
   animation:rise .34s cubic-bezier(.2,.9,.25,1) both}
 @keyframes rise{from{opacity:0;transform:translateY(10px) scale(.99)}}
+
+/* Splash, matching Geosonify's, in kākāpō rather than grey. */
+.splash{position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:.4rem;opacity:1;
+  background:linear-gradient(160deg,var(--sun-lit) 0%,var(--moss) 55%,var(--moss-deep) 100%);
+  transition:opacity .5s ease}
+.splash.gone{opacity:0;pointer-events:none}
+.splash-title{font-family:'Source Code Pro','SF Mono',ui-monospace,monospace;
+  font-size:40px;font-weight:600;color:#fff;letter-spacing:-.02em;
+  text-shadow:0 2px 0 rgba(0,0,0,.16);animation:bob .9s cubic-bezier(.2,1.5,.4,1) both}
+.splash-author{font-family:'Source Code Pro','SF Mono',ui-monospace,monospace;
+  font-size:15px;color:rgba(255,255,255,.9)}
+@keyframes bob{from{transform:translateY(14px) scale(.94);opacity:0}}
+
+.wordmark{font-family:'Source Code Pro','SF Mono',ui-monospace,monospace;
+  font-size:1.1rem;font-weight:600;color:var(--moss-deep);letter-spacing:-.01em;
+  margin:.1rem 0 -.35rem}
+.wordmark span{color:var(--sun-deep)}
+@media (prefers-color-scheme:dark){
+  .wordmark{color:var(--moss)} .wordmark span{color:var(--sun)}}
 
 header{text-align:center;max-width:30rem;margin-bottom:-.2rem}
 h1{font-size:1.32rem;font-weight:800;letter-spacing:-.015em;margin:0;line-height:1.2}
@@ -236,12 +258,37 @@ dl{margin:.7rem 0 0}
 .tune b{font-family:'SF Mono',ui-monospace,monospace;color:var(--ink);min-width:2.4rem}
 .tune input[type=range]{flex:1}
 
+.mapaddr{margin-top:.7rem;padding:.6rem .75rem;border-radius:14px;
+  background:color-mix(in srgb,var(--moss) 12%,var(--card-2));
+  border:2px solid color-mix(in srgb,var(--moss) 30%,transparent);
+  font-family:'SF Mono',ui-monospace,monospace;font-size:.9rem;font-weight:600;
+  word-break:break-all;text-align:center;line-height:1.35}
+.mapaddr small{display:block;font-size:.62rem;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-2);font-family:inherit;font-weight:700;margin-top:.25rem}
+.credits{margin-top:1.2rem;padding-top:1rem;border-top:2px dotted var(--line);
+  font-size:.7rem;line-height:1.6;color:var(--ink-2)}
+.credits p{margin:.5rem 0}
+.credits b{color:var(--ink)}
+.cr-mark{font-family:'Source Code Pro','SF Mono',ui-monospace,monospace;
+  font-size:1.15rem;font-weight:600;color:var(--moss-deep);margin-bottom:.3rem}
+.cr-mark span{color:var(--sun-deep)}
+@media (prefers-color-scheme:dark){
+  .cr-mark{color:var(--moss)} .cr-mark span{color:var(--sun)}}
+.cr-thanks{margin-top:.8rem!important;padding:.6rem .7rem;border-radius:12px;
+  background:color-mix(in srgb,var(--moss) 12%,transparent);color:var(--ink)}
 .goto{display:flex;gap:.5rem;margin-top:.7rem}
 .goto input{font-family:'SF Mono',ui-monospace,monospace;font-size:.8rem}
 .goto button{flex:0 0 auto;width:auto}
 </style>
 </head>
 <body>
+
+<div class="splash" id="splash">
+  <div class="splash-title">starpin!</div>
+  <div class="splash-author">Greg O&rsquo;Beirne, 2026</div>
+</div>
+
+<div class="wordmark">starpin<span>!</span></div>
 
 <header>
   <h1>Every star already has a place on Earth</h1>
@@ -261,6 +308,22 @@ dl{margin:.7rem 0 0}
     <div class="r"><dt>fix</dt><dd id="fix">not yet</dd></div>
     <div class="r"><dt>accuracy</dt><dd id="acc">—</dd></div>
   </dl>
+  <div id="readout" style="margin-top:.8rem"></div>
+  <div class="btnrow">
+    <button id="open-google" type="button">Google Maps</button>
+    <button id="open-apple" type="button">Apple Maps</button>
+    <button id="open-more" type="button" style="flex:0 0 auto;width:auto">+</button>
+  </div>
+  <div id="more-apps" hidden>
+    <div class="btnrow">
+      <button id="open-organic" type="button">Organic Maps</button>
+      <button id="open-osm" type="button">OpenStreetMap</button>
+    </div>
+    <div class="btnrow">
+      <button id="dl-gpx" type="button">Download GPX</button>
+      <button id="copy-ll" type="button">Copy coordinates</button>
+    </div>
+  </div>
   <p class="hint">Nothing has been hidden or placed at any of these locations.
      They exist because of the stars' coordinates. The arrow shows direction,
      not a safe or legal route — follow normal paths and access rules.</p>
@@ -269,8 +332,9 @@ dl{margin:.7rem 0 0}
 <section data-tab="map">
   <h2>the <button type="button" id="tune-key">lattice</button></h2>
   <div id="map"></div>
+  <div id="map-addr" class="mapaddr">—</div>
   <div class="goto">
-    <input id="pin-ll" inputmode="decimal" placeholder="lat, lon \u2014 paste to fly there"
+    <input id="pin-ll" inputmode="decimal" placeholder="lat, lon &mdash; paste to fly there"
            aria-label="pin coordinates">
     <button id="pin-go" type="button">Go</button>
   </div>
@@ -318,26 +382,23 @@ dl{margin:.7rem 0 0}
      lowest of them, so only one of a cell's four corners carries the cell's own
      name. Intrinsic order is the coarsest order at which the point is still a
      vertex — the shorter the address, the rarer the cornerstone.</p>
-  <div id="readout" style="margin-top:.9rem"></div>
   <p class="hint" id="readout-src"></p>
 </section>
 
 <section data-tab="log">
   <h2>your records</h2>
   <dl>
-    <div class="r"><dt>held</dt><dd id="lg-count">0</dd></div>
     <div class="r"><dt>storage</dt><dd id="lg-store">—</dd></div>
   </dl>
-  <ul id="lg-list"></ul>
-  <div id="lg-panel" hidden></div>
-  <div class="btnrow" style="margin-bottom:.5rem">
-    <button id="lg-show" type="button">Look back through my records</button>
+  <div id="lg-panel"></div>
+  <div class="btnrow" style="margin-bottom:.8rem">
     <select id="lg-sort" aria-label="sort records">
       <option value="new">newest first</option>
       <option value="old">oldest first</option>
       <option value="rare">rarest first</option>
     </select>
   </div>
+  <button id="lg-show" type="button" hidden></button>
   <button id="lg-export" type="button">Download my records</button>
   <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
   <input id="lg-file" type="file" accept="application/json" hidden>
@@ -348,7 +409,27 @@ dl{margin:.7rem 0 0}
      phone, or a file someone sends you so their finds appear alongside yours.
      Nothing is ever overwritten: records you already hold are recognised and
      skipped, and anything you have deleted stays deleted.<br><br>
-     Swipe a record left to delete it.</p>
+     Swipe a record left, slowly, to delete it.</p>
+
+  <div class="credits">
+    <div class="cr-mark">starpin<span>!</span></div>
+    <p>A spin-off of <b>Geosonify</b>. Every star already has a place on Earth:
+       declination reads as latitude, right ascension as longitude.</p>
+    <p>&copy; 2026 <b>Greg O&rsquo;Beirne</b>. Built on the Geosonify engine.</p>
+    <p>Star positions and photometry from the <b>ESA Gaia</b> mission, processed by
+       the Gaia Data Processing and Analysis Consortium (DPAC). Funding for DPAC
+       has been provided by national institutions, in particular those
+       participating in the Gaia Multilateral Agreement.</p>
+    <p>Sky images from <b>CDS, Strasbourg</b> (hips2fits / DSS2). Cross-identifications
+       via <b>VizieR</b> and <b>SIMBAD</b>. Sky tessellation uses <b>HEALPix</b>
+       (Górski et&nbsp;al. 2005).</p>
+    <p>Maps &copy; <b>OpenStreetMap</b> contributors; topographic and aerial imagery
+       &copy; <b>Esri</b>, Maxar, Earthstar Geographics. Mapping by <b>Leaflet</b>.</p>
+    <p>Palette: <b>Kākāpō</b> (<i>Strigops habroptilus</i>) from the
+       <b>Manu</b> palette by G.&nbsp;Thomson.</p>
+    <p class="cr-thanks">Nothing is hidden or placed at any of these locations.
+       Go carefully, follow access rules, and look up.</p>
+  </div>
 </section>
 
 <nav id="tabbar" role="tablist" aria-label="sections">
@@ -638,6 +719,7 @@ dl{margin:.7rem 0 0}
       loadStars(lat, lon, spanM);
       var p = map.pin();
       showPinLL(p ? p.lat : lat, p ? p.lon : lon);
+      paintMapAddr(p ? p.lat : lat, p ? p.lon : lon, p ? 'dropped pin' : 'map centre');
     }
   });
 
@@ -941,6 +1023,62 @@ dl{margin:.7rem 0 0}
     readAt(la, lo, 'typed position');
     $('pin-ll').blur();
   }
+  // Where "here" means for a hand-off: the pin if you dropped one, else your
+  // fix. Getting this backwards would send someone to the wrong place, so it
+  // is one function and everything uses it.
+  function handOffPoint() {
+    var p = map.pin();
+    if (p) return { lat: p.lat, lon: p.lon, what: 'dropped pin' };
+    if (fix) return { lat: fix.lat, lon: fix.lon, what: 'your fix' };
+    return null;
+  }
+  function openWith(builder) {
+    var p = handOffPoint();
+    if (!p) { alert('Use my location first, or drop a pin on the map.'); return; }
+    window.open(builder(p.lat, p.lon), '_blank', 'noopener');
+  }
+  $('open-google').addEventListener('click', function () {
+    openWith(function (la, lo) {
+      return 'https://www.google.com/maps/search/?api=1&query=' + la + ',' + lo; });
+  });
+  $('open-apple').addEventListener('click', function () {
+    openWith(function (la, lo) { return 'https://maps.apple.com/?ll=' + la + ',' + lo + '&q=Starpin'; });
+  });
+  $('open-organic').addEventListener('click', function () {
+    // Organic Maps registers the geo: scheme; on a device without it the OS
+    // simply does nothing, which is better than a broken web page.
+    openWith(function (la, lo) {
+      return 'geo:' + la + ',' + lo + '?q=' + la + ',' + lo + '(Starpin)'; });
+  });
+  $('open-osm').addEventListener('click', function () {
+    openWith(function (la, lo) {
+      return 'https://www.openstreetmap.org/?mlat=' + la + '&mlon=' + lo + '#map=18/' + la + '/' + lo; });
+  });
+  $('copy-ll').addEventListener('click', function () {
+    var p = handOffPoint(); if (!p) return;
+    try { navigator.clipboard.writeText(p.lat.toFixed(7) + ', ' + p.lon.toFixed(7)); } catch (e) {}
+    this.textContent = 'copied'; var b = this;
+    setTimeout(function () { b.textContent = 'Copy coordinates'; }, 1200);
+  });
+  $('dl-gpx').addEventListener('click', function () {
+    var p = handOffPoint(); if (!p) return;
+    var name = 'starpin-' + p.lat.toFixed(5) + '_' + p.lon.toFixed(5);
+    var gpx = '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<gpx version="1.1" creator="Starpin" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+      '  <wpt lat="' + p.lat.toFixed(7) + '" lon="' + p.lon.toFixed(7) + '">\n' +
+      '    <name>' + name + '</name>\n' +
+      '    <desc>' + p.what + ' \u00B7 Starpin</desc>\n' +
+      '  </wpt>\n</gpx>\n';
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
+    a.download = name + '.gpx'; a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
+  });
+  $('open-more').addEventListener('click', function () {
+    var m2 = $('more-apps'); m2.hidden = !m2.hidden;
+    this.textContent = m2.hidden ? '+' : '\u2212';
+  });
+
   $('pin-go').addEventListener('click', flyToTyped);
   $('pin-ll').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); flyToTyped(); }
@@ -955,12 +1093,22 @@ dl{margin:.7rem 0 0}
     // Leaflet caches container size, so a map revealed by a tab switch has to
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
+    if (name === 'log') $('lg-show').click();
     window.scrollTo(0, 0);
   }
   [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
     b.addEventListener('click', function () { goTab(b.getAttribute('data-go')); });
   });
   document.body.setAttribute('data-active', 'go');
+
+  (function () {
+    var sp = $('splash');
+    if (!sp) return;
+    function dismiss() { sp.classList.add('gone'); setTimeout(function () { sp.remove(); }, 500); }
+    sp.addEventListener('click', dismiss);
+    sp.addEventListener('touchstart', dismiss, { passive: true });
+    setTimeout(dismiss, 1500);
+  })();
 
   // ── the readout: one format at a time ────────────────────────────────────
   // Geosonify declares its modules with top-level `const`, which never becomes
@@ -974,8 +1122,26 @@ dl{margin:.7rem 0 0}
     RO.register('encodeCardCoordinate', encodeCardCoordinate);
   var readout = RO.mount($('readout'), { order: 14 });
 
+  // The chosen notation follows the point around: pick it once in "where you
+  // are", and the map tab speaks the same language instead of raw degrees.
+  function paintMapAddr(lat, lon, label) {
+    var box = $('map-addr');
+    if (lat == null) { box.textContent = '\u2014'; return; }
+    box.textContent = '';
+    var v = '\u2014';
+    try {
+      var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
+      v = f ? f.fn(lat, lon, 14) : lat.toFixed(6) + ', ' + lon.toFixed(6);
+    } catch (e) { v = lat.toFixed(6) + ', ' + lon.toFixed(6); }
+    box.appendChild(document.createTextNode(v));
+    var s2 = document.createElement('small');
+    s2.textContent = label || '';
+    box.appendChild(s2);
+  }
+
   function readAt(lat, lon, label) {
     readout.set(lat, lon);
+    paintMapAddr(lat, lon, label);
     var v = null;
     try { v = S.nearestCornerstone(lat, lon, 14); } catch (e) {}
     var txt = label;
@@ -1019,20 +1185,7 @@ dl{margin:.7rem 0 0}
     return t.cornerstone || (t.starpin || '').replace('starpin:gdr3:', 'DR3 ');
   }
   function drawLog() {
-    $('lg-count').textContent = log.count();
     $('lg-store').textContent = log.persisted() ? 'on this device' : 'memory only';
-    var ul = $('lg-list'); ul.textContent = '';
-    log.current().slice(0, 40).forEach(function (r) {
-      var li = document.createElement('li');
-      var verdict = '';
-      // Re-derived on every render. Nothing about the outcome is stored.
-      try { verdict = S.assessRecord(r).visit.verdict; } catch (e) { verdict = '?'; }
-      var right = document.createElement('span');
-      right.textContent = verdict + '  ' + new Date(r.event.time_ms).toLocaleDateString();
-      li.appendChild(document.createTextNode(shortId(r.target)));
-      li.appendChild(right);
-      ul.appendChild(li);
-    });
     // Collected cornerstones are derived from the records, never tracked
     // separately — otherwise the pips and the log can disagree.
     collected = {};
@@ -1040,6 +1193,7 @@ dl{margin:.7rem 0 0}
       if (r.target && r.target.cornerstone) collected[r.target.cornerstone] = 1;
     });
     map.setBagged(Object.keys(collected));
+    if (document.body.getAttribute('data-active') === 'log') $('lg-show').click();
   }
 
   function logIt(target) {
@@ -1265,12 +1419,10 @@ dl{margin:.7rem 0 0}
       });
       box.appendChild(slot);
     });
-    box.appendChild(el('div', 'meta',
-      'Verdicts and "your closest" are re-derived every time this list is drawn, ' +
-      'never stored. Dimmed entries are ones you later beat.'));
-    var c = el('button', 'close', 'close'); c.type = 'button';
-    c.addEventListener('click', function () { box.hidden = true; });
-    box.appendChild(c);
+    box.appendChild(el('p', 'hint',
+      'Verdicts and "your closest" are worked out fresh every time this is drawn, ' +
+      'never stored. Dimmed cards are ones you later beat. Swipe a card left, ' +
+      'slowly, to delete it.'));
   });
 
   // ── cards ────────────────────────────────────────────────────────────────
