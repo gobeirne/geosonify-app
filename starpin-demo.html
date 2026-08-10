@@ -518,17 +518,24 @@ dl{margin:.7rem 0 0}
       $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
       map.setFix(fix.lat, fix.lon, fix.accuracy_m);
       clock.setPosition(fix.lat, fix.lon < 0 ? fix.lon + 360 : fix.lon);
+      // The readout was never told where you are, so its box stayed at "—".
+      readAt(fix.lat, fix.lon, 'your fix');
+      lastStarFix = { lat: fix.lat, lon: fix.lon };
+      loadStars(fix.lat, fix.lon, 1200);
       redraw();
     }, function (e) { $('fix').textContent = 'no fix: ' + e.message; },
        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
   });
 
-  var activeTab = 'corner', heading = null, nearestStar = null;
+  var activeTab = 'corner', heading = null, nearestStar = null, lastStarFix = null;
 
+  // Recomputed from scratch every paint. Nothing is remembered between calls,
+  // so the answer cannot lag behind your feet.
   function nearestStarpin() {
     if (!fix) return null;
     var best = null;
     map.stars().forEach(function (st) {
+      if (st.lat == null) return;
       var d = S.haversineM(fix.lat, fix.lon, st.lat, st.lon);
       if (!best || d < best.distanceM) best = { star: st, distanceM: d };
     });
@@ -541,6 +548,21 @@ dl{margin:.7rem 0 0}
   function sourceIdOf(v) {
     return (String(v == null ? '' : v).match(/(\d{5,})\s*$/) || [])[1] || '';
   }
+  // Your best recorded distance to a target, derived from the log.
+  function bestApproachTo(key) {
+    if (!key) return null;
+    var best = null;
+    log.current().forEach(function (r) {
+      var k = r.target.cornerstone ? r.target.cornerstone : sourceIdOf(r.target.starpin);
+      if (k !== key) return;
+      var a = null;
+      try { a = S.assessRecord(r); } catch (e) {}
+      var d = a && a.visit ? a.visit.distanceM : null;
+      if (d != null && (best == null || d < best)) best = d;
+    });
+    return best;
+  }
+
   function visitedOn(key) {
     if (!key) return null;
     var hits = log.current().filter(function (r) {
@@ -611,12 +633,18 @@ dl{margin:.7rem 0 0}
       var vd = visitedOn(sourceIdOf(sp.name));
       if (vd) b.appendChild(visitedLine(vd));
       var supported = vr.verdict === 'well-supported' || vr.verdict === 'compatible';
-      var sb = el('button', null, supported
-        ? 'Bag this starpin'
-        : 'Save this as my closest approach so far \u00B7 ' +
-          Math.round(vr.distanceM) + ' m away');
+      // "Closest approach so far" has to mean it. Offering to save 252 m when
+      // the log already holds 1.9 m for the same star is a lie in the label.
+      var bestSoFar = bestApproachTo(sourceIdOf(sp.name));
+      var wouldImprove = supported || bestSoFar == null || vr.distanceM < bestSoFar - 0.5;
+      var sb = el('button', null, supported ? 'Bag this starpin'
+        : wouldImprove
+          ? 'Save this as my closest approach so far \u00B7 ' +
+            Math.round(vr.distanceM) + ' m away'
+          : 'You have been closer \u00B7 ' + bestSoFar.toFixed(1) + ' m');
       sb.type = 'button';
-      sb.addEventListener('click', function () { bagStar(sp, vr, supported); });
+      if (!wouldImprove) { sb.disabled = true; sb.style.opacity = '.5'; }
+      else sb.addEventListener('click', function () { bagStar(sp, vr, supported); });
       b.appendChild(sb);
 
     } else {
@@ -1244,6 +1272,14 @@ dl{margin:.7rem 0 0}
       map.setFix(fix.lat, fix.lon, fix.accuracy_m);
       map.clearPin();
       readAt(fix.lat, fix.lon, 'you, live');
+      // Walk far enough and the star list must be refetched around WHERE YOU
+      // ARE NOW. Without this the "nearest" starpin was only ever the nearest
+      // to wherever the map last happened to sit.
+      if (!lastStarFix || S.haversineM(lastStarFix.lat, lastStarFix.lon,
+                                       fix.lat, fix.lon) > 120) {
+        lastStarFix = { lat: fix.lat, lon: fix.lon };
+        loadStars(fix.lat, fix.lon, 1200);
+      }
       redraw();
     }, function (e) {
       $('fix').textContent = 'tracking stopped: ' + e.message;
@@ -1448,12 +1484,22 @@ dl{margin:.7rem 0 0}
 
       // Class first: a log that only says WHEN gives you nothing to want.
       if (isStar) {
-        var mg = r.target.mag_g;
-        var stier = F.starTier(mg == null ? null : mg);
-        chip(stier.key, 'rar r' + Math.min(4, Math.round(stier.rarity * 4)));
-        if (mg != null) chip('G ' + Number(mg).toFixed(1));
-        if (r.target.dist_ly != null)
-          chip(Number(r.target.dist_ly).toLocaleString() + ' ly');
+        // Records written before magnitudes were stored fall back to whatever
+        // the catalogue is showing now; only if BOTH are silent is the class
+        // omitted, rather than labelling half the log "unmeasured".
+        var sid0 = sourceIdOf(r.target.starpin);
+        var live = map.stars().filter(function (x) {
+          return sourceIdOf(x.name) === sid0; })[0];
+        var mg = r.target.mag_g != null ? r.target.mag_g
+               : (live && live.mag != null ? live.mag : null);
+        var dly = r.target.dist_ly != null ? r.target.dist_ly
+               : (live && live.distLy != null ? live.distLy : null);
+        if (mg != null) {
+          var stier = F.starTier(mg);
+          chip(stier.key, 'rar r' + Math.min(4, Math.round(stier.rarity * 4)));
+          chip('G ' + Number(mg).toFixed(1));
+        }
+        if (dly != null) chip(Number(dly).toLocaleString() + ' ly');
       } else {
         var pp = null, ord = null, cr = null;
         try {
