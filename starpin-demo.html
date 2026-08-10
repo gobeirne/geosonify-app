@@ -396,6 +396,8 @@ dl{margin:.7rem 0 0}
     <div class="r"><dt>storage</dt><dd id="lg-store">—</dd></div>
   </dl>
   <div id="lg-panel"></div>
+  <button id="lg-fill" type="button" hidden style="margin-bottom:.6rem"></button>
+  <p class="hint" id="fill-note" hidden></p>
   <div class="btnrow" style="margin-bottom:.8rem">
     <select id="lg-sort" aria-label="sort records">
       <option value="new">newest first</option>
@@ -410,6 +412,11 @@ dl{margin:.7rem 0 0}
   <p class="hint"><b>Download</b> saves everything you have logged to a file.
      That file is the real backup: your phone can clear browser storage at any
      time, and there is no server holding a copy.<br><br>
+     Each file carries a checksum, so a damaged download or a record that
+     disagrees with one you already hold is reported rather than merged
+     silently. It proves a file is <i>undamaged</i>, not that it is
+     <i>true</i>: the records are yours to edit, and there is nothing to win
+     by doing so.<br><br>
      <b>Add records from a file</b> reads one back in — your own backup on a new
      phone, or a file someone sends you so their finds appear alongside yours.
      Nothing is ever overwritten: records you already hold are recognised and
@@ -1207,7 +1214,7 @@ dl{margin:.7rem 0 0}
     // Leaflet caches container size, so a map revealed by a tab switch has to
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
-    if (name === 'log') $('lg-show').click();
+    if (name === 'log') { $('lg-show').click(); refreshFillButton(); }
     window.scrollTo(0, 0);
   }
   [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
@@ -1302,6 +1309,7 @@ dl{margin:.7rem 0 0}
     });
     map.setBagged(Object.keys(collected));
     if (document.body.getAttribute('data-active') === 'log') $('lg-show').click();
+    refreshFillButton();
   }
 
   function logIt(target) {
@@ -1676,6 +1684,96 @@ dl{margin:.7rem 0 0}
     st.el.querySelector('.wrap').appendChild(sh);
   }
 
+  // ── backfilling star facts into old records ─────────────────────────────
+  //
+  // Records are immutable, so this does not edit anything: each filled-in
+  // record SUPERSEDES its original, which stays in the log. Nobody has to go
+  // and stand there again.
+  //
+  // RA and Dec need no lookup at all — the starpin address IS the coordinates,
+  // read the other way round. Only magnitude and distance need the catalogue.
+  function needsFilling(r) {
+    return !!r.target.starpin &&
+           (r.target.mag_g == null || r.target.ra_deg == null);
+  }
+  function fillableCount() { return log.current().filter(needsFilling).length; }
+
+  function refreshFillButton() {
+    var n = fillableCount();
+    $('lg-fill').hidden = n === 0;
+    $('fill-note').hidden = n === 0;
+    if (n) {
+      $('lg-fill').textContent = 'Fill in the missing details for ' + n +
+        ' star' + (n > 1 ? 's' : '');
+      $('fill-note').textContent = 'Looks up brightness and distance for records ' +
+        'logged before those were saved. Your originals are kept.';
+    }
+  }
+
+  function backfillOne(r) {
+    var lat = r.target.lat_1e7 / 1e7, lon = r.target.lon_1e7 / 1e7;
+    // dec = latitude, ra = east longitude. No query needed for these.
+    var dec = lat, ra = lon < 0 ? lon + 360 : lon;
+    var sid = sourceIdOf(r.target.starpin);
+
+    function write(extra) {
+      var t = {};
+      Object.keys(r.target).forEach(function (k) { t[k] = r.target[k]; });
+      t.ra_deg = ra; t.dec_deg = dec;
+      Object.keys(extra || {}).forEach(function (k) {
+        if (extra[k] != null) t[k] = extra[k];
+      });
+      log.add(L.build(r.kind, {
+        target: t, supersedes: r.record_id,
+        eventMs: r.event.time_ms, createdMs: Date.now(),
+        fix: r.fix ? { lat: r.fix.lat_1e7 / 1e7, lon: r.fix.lon_1e7 / 1e7,
+                       accuracy_m: r.fix.accuracy_m, time_ms: r.fix.time_ms,
+                       source: r.fix.source } : null,
+        approachReason: r.approach_reason,
+        observation: r.observation,
+        provenance: { app: 'starpin-demo', app_version: '0.1',
+                      note: 'star details filled in from the catalogue' }
+      }));
+    }
+
+    if (!SN || !SN.lookupRemote || !sid) { write(null); return Promise.resolve(false); }
+    return Promise.resolve(SN.lookupRemote(dec, ra, { radiusArcmin: 0.4, limit: 20 }))
+      .then(function (list) {
+        var hit = (list || []).map(function (n) { return n; }).filter(function (n) {
+          return sourceIdOf(n.star && n.star.name) === sid; })[0];
+        if (!hit) { write(null); return false; }
+        write({ mag_g: hit.star.mag == null ? null : Number(hit.star.mag),
+                dist_ly: hit.distLy == null ? null : Number(hit.distLy),
+                bp_rp: hit.star.bpRp == null ? null : Number(hit.star.bpRp) });
+        return true;
+      })
+      .catch(function () { write(null); return false; });
+  }
+
+  $('lg-fill').addEventListener('click', function () {
+    var btn = this, todo = log.current().filter(needsFilling), done = 0, found = 0;
+    if (!todo.length) return;
+    btn.disabled = true;
+    (function next() {
+      if (!todo.length) {
+        btn.disabled = false;
+        drawLog(); refreshFillButton(); $('lg-show').click();
+        $('fill-note').hidden = false;
+        $('fill-note').textContent = 'Filled in ' + found + ' of ' + done +
+          '. Coordinates were derived from the address itself; brightness and ' +
+          'distance came from the catalogue where it had them.';
+        return;
+      }
+      var r = todo.shift();
+      btn.textContent = 'Looking up \u2026 ' + (done + 1) + '/' + (done + todo.length + 1);
+      backfillOne(r).then(function (ok) {
+        done++; if (ok) found++;
+        // one at a time, gently: CDS is a research facility, not our backend
+        setTimeout(next, 350);
+      });
+    })();
+  });
+
   $('lg-sort').addEventListener('change', function () {
     if (!$('lg-panel').hidden) $('lg-show').click();
   });
@@ -1692,9 +1790,16 @@ dl{margin:.7rem 0 0}
     var f = e.target.files && e.target.files[0]; if (!f) return;
     f.text().then(function (t) {
       var r = log.merge(t);
-      alert(r.added + ' new, ' + r.alreadyHeld + ' already held' +
-            (r.retracted ? ', ' + r.retracted + ' refused (you deleted them)' : '') +
-            '. ' + r.total + ' in total.');
+      var msg = r.added + ' new, ' + r.alreadyHeld + ' already held' +
+                (r.retracted ? ', ' + r.retracted + ' refused (you deleted them)' : '') +
+                '. ' + r.total + ' in total.';
+      if (r.damaged) msg += '\n\nThat file did not match its own checksum. It has ' +
+        'been read anyway, but it was edited or damaged since it was saved.';
+      if (r.conflicts && r.conflicts.length) msg += '\n\n' + r.conflicts.length +
+        ' record' + (r.conflicts.length > 1 ? 's' : '') + ' in that file claim' +
+        (r.conflicts.length > 1 ? '' : 's') + ' an ID you already hold but ' +
+        'differ' + (r.conflicts.length > 1 ? '' : 's') + ' in content. Yours were kept.';
+      alert(msg);
       drawLog(); redraw();
     }).catch(function (err) { alert('Could not read that file: ' + err.message); });
   });
