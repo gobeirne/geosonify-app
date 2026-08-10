@@ -234,6 +234,11 @@ dl{margin:.7rem 0 0}
 .chip.good{background:color-mix(in srgb,var(--moss) 24%,transparent);color:var(--moss-deep)}
 .chip.warn{background:color-mix(in srgb,var(--rust) 22%,transparent);color:var(--rust-deep)}
 .chip.best{background:var(--sun);color:#2A2405}
+/* Rarity has its own ladder of colour so a log can be read at a glance. */
+.chip.rar{color:#fff;text-transform:capitalize}
+.chip.r0{background:#9AA382} .chip.r1{background:var(--moss)}
+.chip.r2{background:var(--bark-lit);color:#241d05}
+.chip.r3{background:var(--rust)} .chip.r4{background:var(--sun);color:#2A2405}
 @media (prefers-color-scheme:dark){
   .chip.good{color:var(--moss-lit)} .chip.warn{color:var(--rust-lit)}}
 .rec .acts{display:flex;gap:.4rem;margin-top:.55rem}
@@ -919,10 +924,11 @@ dl{margin:.7rem 0 0}
           var addr = S.starpinAddress(String(st.ra), String(st.dec));
           var target = /^\d+$/.test(id) ? { starpin: 'starpin:gdr3:' + id }
                                         : { starpin: 'starpin:name:' + (st.name || 'unknown') };
-          // The catalogue address travels with the record: a fact about the
-          // target at log time, so the visit stays assessable offline.
           target.lat_1e7 = addr.lat_1e7; target.lon_1e7 = addr.lon_1e7;
           target.catalogue = 'gaia-dr3';
+          if (st.ra != null) { target.ra_deg = Number(st.ra); target.dec_deg = Number(st.dec); }
+          if (st.mag != null) target.mag_g = Number(st.mag);
+          if (st.distLy != null) target.dist_ly = Number(st.distLy);
           F.unlock();
           log.add(L.build(supported ? 'visit' : 'closest-approach', {
             target: target,
@@ -949,7 +955,9 @@ dl{margin:.7rem 0 0}
             var stage = GeosonifyStarpinCard.show(o2);
             var sh2 = el('button', 'spc-close', 'Save or share');
             sh2.type = 'button'; sh2.style.marginTop = '.5rem';
-            sh2.addEventListener('click', function () { shareCard(o2); });
+            sh2.addEventListener('click', function () {
+              shareCard(o2, stage.el.querySelector('.spc-card'));
+            });
             stage.el.querySelector('.wrap').appendChild(sh2);
           }, 1600);
         });
@@ -1279,6 +1287,13 @@ dl{margin:.7rem 0 0}
                     : { starpin: 'starpin:name:' + (sp.name || 'unknown') };
     target.lat_1e7 = addr.lat_1e7; target.lon_1e7 = addr.lon_1e7;
     target.catalogue = 'gaia-dr3';
+    // Facts about the target AT LOG TIME — not assessments, so they belong in
+    // the record. Without them a card opened months later shows "unknown"
+    // for everything, because the map only holds whatever is in view now.
+    if (sp.ra != null) { target.ra_deg = Number(sp.ra); target.dec_deg = Number(sp.dec); }
+    if (sp.mag != null) target.mag_g = Number(sp.mag);
+    if (sp.distLy != null) target.dist_ly = Number(sp.distLy);
+    if (sp.bpRp != null) target.bp_rp = Number(sp.bpRp);
     if (log.current().some(function (r) { return r.target.starpin === target.starpin; })) {
       F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag,
                     digits: id, kicker: 'already yours' });
@@ -1303,7 +1318,9 @@ dl{margin:.7rem 0 0}
       var stage = GeosonifyStarpinCard.show(o2);
       var sh2 = el('button', 'spc-close', 'Save or share');
       sh2.type = 'button'; sh2.style.marginTop = '.5rem';
-      sh2.addEventListener('click', function () { shareCard(o2); });
+      sh2.addEventListener('click', function () {
+        shareCard(o2, stage.el.querySelector('.spc-card'));
+      });
       stage.el.querySelector('.wrap').appendChild(sh2);
     }, 1600);
   }
@@ -1351,9 +1368,20 @@ dl{margin:.7rem 0 0}
       if (rk && rk.best && rk.supported) best++;
     });
     var tally = el('div', 'tally');
+    var rare = 0;
+    recs.forEach(function (r) {
+      if (r.target.cornerstone) {
+        var mm = /\.([0-3]+)$/.exec(r.target.cornerstone);
+        try {
+          var pp = S.cornerstonePoint(r.target.cornerstone);
+          var pr = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
+          if (pr.tierOrder <= 11) rare++;
+        } catch (e) {}
+      } else if (r.target.mag_g != null && r.target.mag_g < 10) rare++;
+    });
     [['t-star', Object.keys(stars).length, 'starpins'],
      ['t-corner', Object.keys(corners).length, 'cornerstones'],
-     ['t-best', best, 'stood on']].forEach(function (t) {
+     ['t-best', rare, 'rare finds']].forEach(function (t) {
       var d = el('div', t[0]);
       d.appendChild(el('b', null, String(t[1])));
       d.appendChild(el('span', null, t[2]));
@@ -1417,6 +1445,30 @@ dl{margin:.7rem 0 0}
 
       var chips = el('div', 'chips');
       function chip(txt, cls) { chips.appendChild(el('span', 'chip' + (cls ? ' ' + cls : ''), txt)); }
+
+      // Class first: a log that only says WHEN gives you nothing to want.
+      if (isStar) {
+        var mg = r.target.mag_g;
+        var stier = F.starTier(mg == null ? null : mg);
+        chip(stier.key, 'rar r' + Math.min(4, Math.round(stier.rarity * 4)));
+        if (mg != null) chip('G ' + Number(mg).toFixed(1));
+        if (r.target.dist_ly != null)
+          chip(Number(r.target.dist_ly).toLocaleString() + ' ly');
+      } else {
+        var pp = null, ord = null, cr = null;
+        try {
+          pp = S.cornerstonePoint(r.target.cornerstone);
+          var mm = /\.([0-3]+)$/.exec(r.target.cornerstone);
+          var probe = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
+          ord = probe.intrinsicOrder; cr = probe.crossOrder;
+        } catch (e) {}
+        if (ord != null) {
+          var ct = F.tierOf((ord + cr) / 2, 4);
+          chip(ct.key, 'rar r' + Math.min(4, Math.round(ct.rarity * 4)));
+          chip('order ' + cr + '\u00D7' + ord);
+          chip('1 in ' + F.crossCount(cr, ord, 50).toLocaleString() + ' near you');
+        }
+      }
       chip(new Date(r.event.time_ms).toLocaleDateString(undefined,
         { day: 'numeric', month: 'short', year: 'numeric' }));
       if (a && a.visit && a.visit.distanceM != null) chip(a.visit.distanceM.toFixed(1) + ' m');
@@ -1426,6 +1478,7 @@ dl{margin:.7rem 0 0}
       if (rk.best === false && isFinite(rk.bestDistanceM))
         chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
       if (r.kind === 'closest-approach') chip('approach');
+
       body.appendChild(chips);
 
       var acts = el('div', 'acts');
@@ -1533,19 +1586,28 @@ dl{margin:.7rem 0 0}
       });
     return { kind: 'starpin', visit: visit,
       findNumber: seen[r.target.starpin] || null,
+      // The RECORD wins. What the map happens to be showing today is only a
+      // fallback for records written before these fields were stored.
       star: { id: sid, name: 'Gaia DR3 ' + sid, catalogue: 'Gaia DR3',
-              ra: cached.ra != null ? cached.ra
+              ra: r.target.ra_deg != null ? r.target.ra_deg
+                 : cached.ra != null ? cached.ra
                  : (r.target.lon_1e7 != null ? (r.target.lon_1e7 < 0
                       ? r.target.lon_1e7 / 1e7 + 360 : r.target.lon_1e7 / 1e7) : null),
-              dec: cached.dec != null ? cached.dec
+              dec: r.target.dec_deg != null ? r.target.dec_deg
+                 : cached.dec != null ? cached.dec
                  : (r.target.lat_1e7 != null ? r.target.lat_1e7 / 1e7 : null),
-              mag: cached.mag, distLy: cached.distLy,
+              mag: r.target.mag_g != null ? r.target.mag_g : cached.mag,
+              distLy: r.target.dist_ly != null ? r.target.dist_ly : cached.distLy,
+              bpRp: r.target.bp_rp != null ? r.target.bp_rp : cached.bpRp,
               address: addr,
               lat: r.target.lat_1e7 != null ? r.target.lat_1e7 / 1e7 : null,
               lon: r.target.lon_1e7 != null ? r.target.lon_1e7 / 1e7 : null } };
   }
 
-  function shareCard(o) {
+  function shareCard(o, el2) {
+    // Export whichever face is showing: tapping the card to the light version
+    // and then sharing a dark PNG would be a small betrayal.
+    if (el2) o = Object.assign({}, o, { light: el2.classList.contains('light') });
     GeosonifyStarpinCard.share(o).catch(function (e) {
       if (e && e.name === 'AbortError') return;      // the person closed the sheet
       alert('Could not make an image: ' + (e && e.message ? e.message : e));
@@ -1562,7 +1624,9 @@ dl{margin:.7rem 0 0}
     var sh = el('button', 'spc-close', 'Save or share');
     sh.type = 'button';
     sh.style.marginTop = '.5rem';
-    sh.addEventListener('click', function () { shareCard(o); });
+    sh.addEventListener('click', function () {
+      shareCard(o, st.el.querySelector('.spc-card'));
+    });
     st.el.querySelector('.wrap').appendChild(sh);
   }
 
