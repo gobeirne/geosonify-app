@@ -427,11 +427,66 @@ var GeosonifyStarpinCard = (function () {
     var isStar = opts.kind !== 'cornerstone';
     var d = opts.star || {}, c = opts.cornerstone || {}, v = opts.visit || {};
 
-    var grad = g.createLinearGradient(0, 0, W * 0.4, H);
-    grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
-    grad.addColorStop(1, '#0A0E1C');
-    g.fillStyle = grad; g.fillRect(0, 0, W, H);
-    g.strokeStyle = 'rgba(220,201,73,.30)'; g.lineWidth = 2;
+    var light = !!opts.light;
+    if (light) { g.fillStyle = '#FCFDF4'; g.fillRect(0, 0, W, H); }
+    else {
+      var grad = g.createLinearGradient(0, 0, W * 0.4, H);
+      grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
+      grad.addColorStop(1, '#0A0E1C');
+      g.fillStyle = grad; g.fillRect(0, 0, W, H);
+    }
+    var INK   = light ? '#22270F' : '#E9E4D6';
+    var MUTED = light ? '#6A7355' : '#8891A8';
+    var BRASS = light ? '#8A7513' : '#DCC949';
+    var GOOD  = light ? '#3F6318' : '#8FBF3F';
+    var MOSS  = light ? '#4F6620' : '#7D9D33';
+
+    // The cornerstone card's whole point is the lattice it sits on; exporting
+    // it without the grid threw away the only thing that made it a picture.
+    var Hh = HP();
+    if (!isStar && c.lat != null && Hh) {
+      var ord0 = Math.round(c.order || 12);
+      var spanM = Math.sqrt(510.1e12 / (12 * Math.pow(4, ord0))) * 2.9;
+      var mPerDeg = 111319.9, cosLat = Math.cos(c.lat * D2R), ppm = W / spanM;
+      var projX = function (lo) { return W / 2 + (lo - c.lon) * mPerDeg * cosLat * ppm; };
+      var projY = function (la) { return H * 0.33 - (la - c.lat) * mPerDeg * ppm; };
+      [[ord0 + 1, 1.2, light ? 0.22 : 0.16], [ord0, 2.6, light ? 0.55 : 0.4]]
+      .forEach(function (spec) {
+        var k = spec[0], seen = {}, cells = [];
+        var stepDeg = (spanM / 6) / mPerDeg;
+        for (var a = -3; a <= 3; a++) for (var b = -3; b <= 3; b++) {
+          try {
+            var ip = Hh.nestIndex(c.lat + a * stepDeg, c.lon + b * stepDeg / cosLat, k).toString();
+            if (!seen[ip]) { seen[ip] = 1; cells.push(ip); }
+          } catch (e) {}
+        }
+        g.strokeStyle = MOSS; g.lineWidth = spec[1]; g.globalAlpha = spec[2];
+        g.beginPath();
+        var nside = Math.pow(2, k);
+        cells.forEach(function (cc) {
+          var ipx = BigInt(cc);
+          var pts = [[0,0],[1,0],[1,1],[0,1]].map(function (uv) {
+            var vv = Hh._core.pixcoord2vec_nest(nside, ipx, uv[0], uv[1]);
+            var x = vv.x != null ? vv.x : vv[0], y = vv.y != null ? vv.y : vv[1],
+                z = vv.z != null ? vv.z : vv[2];
+            return [projX(Math.atan2(y, x) / D2R),
+                    projY(Math.asin(z / Math.hypot(x, y, z)) / D2R)];
+          });
+          g.moveTo(pts[0][0], pts[0][1]);
+          for (var q = 1; q < 4; q++) g.lineTo(pts[q][0], pts[q][1]);
+          g.closePath();
+        });
+        g.stroke(); g.globalAlpha = 1;
+      });
+      var vx = projX(c.lon), vy = projY(c.lat);
+      g.strokeStyle = GOOD; g.lineWidth = 4;
+      g.beginPath(); g.arc(vx, vy, 15, 0, 6.2832); g.stroke();
+      g.fillStyle = GOOD;
+      g.beginPath(); g.arc(vx, vy, 5.5, 0, 6.2832); g.fill();
+    }
+
+    g.strokeStyle = light ? 'rgba(138,117,19,.45)' : 'rgba(220,201,73,.30)';
+    g.lineWidth = 2;
     g.strokeRect(1, 1, W - 2, H - 2);
 
     function text(t, x, y, font, colour, align) {
@@ -441,18 +496,24 @@ var GeosonifyStarpinCard = (function () {
     var MONO = '"SF Mono",ui-monospace,Menlo,monospace';
     var SANS = 'system-ui,-apple-system,"Segoe UI",sans-serif';
 
-    text(isStar ? 'GEOSONIFY \u00B7 STARPIN RECORD' : 'CORNERSTONE',
-         W / 2, 62, '600 19px ' + MONO, '#DCC949', 'center');
+    // the wordmark leads, as it does on screen
+    g.font = '600 32px "Source Code Pro",' + MONO; g.textAlign = 'center';
+    var ww = g.measureText('starpin').width, bw = g.measureText('!').width;
+    g.fillStyle = BRASS; g.fillText('starpin', W / 2 - bw / 2, 58);
+    g.fillStyle = MOSS;  g.fillText('!', W / 2 + ww / 2, 58);
+    text(isStar ? 'STARPIN RECORD' : 'CORNERSTONE',
+         W / 2, 84, '600 16px ' + MONO, BRASS, 'center');
+
     var rg = g.createLinearGradient(pad, 0, W - pad, 0);
-    rg.addColorStop(0, 'rgba(198,161,91,0)'); rg.addColorStop(0.5, '#DCC949');
-    rg.addColorStop(1, 'rgba(198,161,91,0)');
-    g.fillStyle = rg; g.fillRect(pad, 78, W - pad * 2, 2);
+    rg.addColorStop(0, 'rgba(0,0,0,0)'); rg.addColorStop(0.5, BRASS);
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = rg; g.fillRect(pad, 100, W - pad * 2, 2);
 
     text(isStar ? (d.catalogue || 'Gaia DR3') : 'HEALPIX VERTEX',
-         W / 2, 118, '17px ' + MONO, '#8891A8', 'center');
+         W / 2, 138, '17px ' + MONO, MUTED, 'center');
     var title = isStar ? String(d.id || d.name || '') : String(c.name || '');
     var size = title.length > 20 ? 30 : 36;
-    text(title, W / 2, 160, '600 ' + size + 'px Georgia,serif', '#E9E4D6', 'center');
+    text(title, W / 2, 180, '600 ' + size + 'px Georgia,serif', INK, 'center');
 
     var rows = [];
     if (isStar) {
@@ -488,10 +549,10 @@ var GeosonifyStarpinCard = (function () {
     function paintRows(top) {
       rows.forEach(function (r, i) {
         var y = top + i * 52;
-        text(r[0], pad, y, '16px ' + MONO, '#8891A8');
+        text(r[0], pad, y, '16px ' + MONO, MUTED);
         text(r[1], W - pad, y, '22px ' + SANS,
-             r[1] === 'well-supported' ? '#8FBF3F' : '#E9E4D6', 'right');
-        g.fillStyle = 'rgba(184,192,212,.12)';
+             r[1] === 'well-supported' ? GOOD : INK, 'right');
+        g.fillStyle = light ? 'rgba(34,39,15,.14)' : 'rgba(184,192,212,.12)';
         g.fillRect(pad, y + 16, W - pad * 2, 1);
       });
       text('geosonify.org', W / 2, H - 34, '15px ' + MONO, MUTED, 'center');
@@ -514,17 +575,17 @@ var GeosonifyStarpinCard = (function () {
           g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 6.2832); g.clip();
           g.drawImage(img, cx - R, cy - R, R * 2, R * 2); g.restore();
         }
-        g.strokeStyle = 'rgba(220,201,73,.55)'; g.lineWidth = 2;
-        g.beginPath(); g.arc(cx, cy, R + 6, 0, 6.2832); g.stroke();
+        g.strokeStyle = BRASS; g.globalAlpha = .7; g.lineWidth = 2;
+        g.beginPath(); g.arc(cx, cy, R + 6, 0, 6.2832); g.stroke(); g.globalAlpha = 1;
         if (v.bearingDeg != null) {
           var t = (v.bearingDeg - 90) * D2R;
-          g.strokeStyle = '#DCC949'; g.lineWidth = 5; g.lineCap = 'round';
+          g.strokeStyle = BRASS; g.lineWidth = 5; g.lineCap = 'round';
           g.beginPath();
           g.moveTo(cx + Math.cos(t) * (R + 1), cy + Math.sin(t) * (R + 1));
           g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
           g.stroke();
         }
-        g.strokeStyle = '#8FBF3F'; g.lineWidth = 3;
+        g.strokeStyle = GOOD; g.lineWidth = 3;
         g.strokeRect(cx - 9, cy - 9, 18, 18);
         finish();
       }
