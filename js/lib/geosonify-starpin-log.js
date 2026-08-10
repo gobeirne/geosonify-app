@@ -121,6 +121,41 @@ var GeosonifyStarpinLog = (function () {
     }).join(',') + '}';
   }
 
+  // ── content hashing ───────────────────────────────────────────────────────
+  //
+  // WHAT THIS IS FOR, precisely, because it is easy to overclaim:
+  //
+  //   IT DETECTS   damage (a truncated download, a mangled encoding) and
+  //                DISAGREEMENT (two files carrying the same record_id with
+  //                different contents, which merge would otherwise resolve
+  //                silently in favour of whichever it saw first).
+  //
+  //   IT DOES NOT  prove honesty. The algorithm is right here; anyone editing
+  //                a record can recompute its hash. A self-hash makes a record
+  //                verifiably UNDAMAGED, never verifiably TRUE. Making it
+  //                self-authenticating would need a key the owner does not
+  //                hold, and the owner holds every key on their own device.
+  //
+  // That is the same wall as GNSS spoofing, and the same answer applies: the
+  // records are a hobby log, first-find confers nothing, and there is nothing
+  // to forge. The hash is here for corruption and conflicts, not for cheats.
+  //
+  // FNV-1a over the canonical form, 64-bit, computed with 32-bit halves so it
+  // is exact in JavaScript and identical in every implementation. Synchronous,
+  // because merge cannot wait for a promise.
+  function contentHash(rec) {
+    var s = canonical(rec);
+    var h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (var i = 0; i < s.length; i++) {
+      var c = s.charCodeAt(i);
+      h1 = (h1 ^ c) >>> 0; h1 = Math.imul(h1, 0x01000193) >>> 0;
+      h2 = (h2 + c) >>> 0; h2 = Math.imul(h2, 0x85ebca6b) >>> 0;
+      h2 = (h2 ^ (h2 >>> 13)) >>> 0;
+    }
+    return ('00000000' + h1.toString(16)).slice(-8) +
+           ('00000000' + h2.toString(16)).slice(-8);
+  }
+
   // SHA-256 of the canonical form. Async because that is what the platform
   // offers; the digest lives OUTSIDE the record it describes, so there is no
   // rule about omitting a field while hashing it.
@@ -181,10 +216,20 @@ var GeosonifyStarpinLog = (function () {
     }
 
     function exportString() {
+      var recs = all();
+      // A per-record hash plus one over all of them. The file hash catches a
+      // truncated or mangled download; the per-record hashes let a merge tell
+      // "I already have this" apart from "this claims to be that record and
+      // is not".
+      var hashes = {};
+      recs.forEach(function (r) { hashes[r.record_id] = contentHash(r); });
+      var ids = Object.keys(hashes).sort();
+      var fileHash = contentHash(ids.map(function (i) { return i + ':' + hashes[i]; }));
       return JSON.stringify({
         schema: 'starpin.export/1',
         exported_ms: Date.now(),
-        records: all(),
+        integrity: { alg: 'fnv1a64-jcs-ish/1', records: hashes, file: fileHash },
+        records: recs,
         // Tombstones travel with the export. Records are immutable, but the
         // person still owns their collection and may retract something logged
         // by mistake; without this, one merge with a friend hands it straight
@@ -223,23 +268,50 @@ var GeosonifyStarpinLog = (function () {
         var data = (typeof json === 'string') ? JSON.parse(json) : json;
         var recs = (data && data.records) || [];
         var added = 0, seen = 0;
-        var refused = 0;
+        var refused = 0, conflicts = [], damaged = false;
+
+        // Was the file itself damaged in transit?
+        var integ = data && data.integrity;
+        if (integ && integ.records && integ.file) {
+          var ids2 = Object.keys(integ.records).sort();
+          var expect = contentHash(ids2.map(function (i) { return i + ':' + integ.records[i]; }));
+          if (expect !== integ.file) damaged = true;
+        }
+
         Object.keys((data && data.deleted) || {}).forEach(function (id) {
           if (!gone[id]) gone[id] = data.deleted[id];
         });
         recs.forEach(function (r) {
           if (!r || r.schema !== SCHEMA || !r.record_id) return;
           if (gone[r.record_id]) { refused++; return; }      // retracted, stays out
-          if (mem[r.record_id]) { seen++; return; }
+          if (mem[r.record_id]) {
+            // Same id, different content: not a duplicate, a DISAGREEMENT.
+            // Keeping the one we happened to see first, silently, would be the
+            // one place this design loses information.
+            if (contentHash(mem[r.record_id]) !== contentHash(r))
+              conflicts.push(r.record_id);
+            seen++; return;
+          }
+          if (integ && integ.records && integ.records[r.record_id] &&
+              integ.records[r.record_id] !== contentHash(r)) { damaged = true; }
           mem[r.record_id] = r; added++;
         });
         Object.keys(gone).forEach(function (id) { delete mem[id]; });
         save();
         return { added: added, alreadyHeld: seen, retracted: refused,
+                 conflicts: conflicts, damaged: damaged,
                  total: Object.keys(mem).length };
       },
 
       export: exportString,
+      contentHash: contentHash,
+      // Every record's hash, for anything that wants to reference one — a
+      // photo, a plate-solve, or a future server signing what it received.
+      hashes: function () {
+        var out = {};
+        all().forEach(function (r) { out[r.record_id] = contentHash(r); });
+        return out;
+      },
       persisted: function () { return !!storage; },
       clear: function () { mem = {}; gone = {}; save(); }
     };
@@ -248,7 +320,8 @@ var GeosonifyStarpinLog = (function () {
   return {
     VERSION: '0.1', SCHEMA: SCHEMA,
     build: build, visit: visit, approach: approach, observation: observation,
-    canonical: canonical, digest: digest, open: open, _uuid: uuid
+    canonical: canonical, digest: digest, contentHash: contentHash,
+    open: open, _uuid: uuid
   };
 })();
 

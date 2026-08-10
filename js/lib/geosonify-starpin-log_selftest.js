@@ -157,5 +157,73 @@ ok('undelete is possible', (function () {
   return Y.merge(JSON.stringify({ records: [r1] })).added === 1;
 })());
 
+head('12: content hashes — what they catch, and what they do NOT');
+var A2 = L.visit({ target: TARGET, fix: FIX, eventMs: 500 });
+ok('same record, same hash', L.contentHash(A2) === L.contentHash(A2));
+ok('key order does not matter', (function () {
+  var a = { x: 1, y: { p: 1, q: 2 } }, b = { y: { q: 2, p: 1 }, x: 1 };
+  return L.canonical(a) === L.canonical(b);
+})());
+ok('a changed field changes the hash', (function () {
+  var c = JSON.parse(JSON.stringify(A2)); c.fix.accuracy_m = 99;
+  return L.contentHash(c) !== L.contentHash(A2);
+})());
+ok('hash is 16 hex characters', /^[0-9a-f]{16}$/.test(L.contentHash(A2)));
+
+var H1 = L.open({ storage: mem(), storeKey: 'H1' });
+H1.add(A2); H1.add(L.visit({ target: TARGET, fix: FIX, eventMs: 600 }));
+var file = H1.export();
+ok('the export carries per-record and file hashes', (function () {
+  var d = JSON.parse(file);
+  return d.integrity && d.integrity.file &&
+         Object.keys(d.integrity.records).length === 2;
+})());
+
+ok('a clean file merges without complaint', (function () {
+  var X = L.open({ storage: mem(), storeKey: 'H2' });
+  var r = X.merge(file);
+  return r.added === 2 && !r.damaged && r.conflicts.length === 0;
+})());
+
+ok('a MANGLED file is reported as damaged', (function () {
+  var d = JSON.parse(file);
+  d.records[0].fix.accuracy_m = 12345;          // edited, hash not recomputed
+  var X = L.open({ storage: mem(), storeKey: 'H3' });
+  return X.merge(JSON.stringify(d)).damaged === true;
+})());
+
+ok('SAME id with DIFFERENT content is a conflict, not a duplicate', (function () {
+  var X = L.open({ storage: mem(), storeKey: 'H4' });
+  X.merge(file);
+  var d = JSON.parse(file);
+  d.records[0].fix.accuracy_m = 77;
+  delete d.integrity;                            // as if re-exported by an editor
+  var r = X.merge(JSON.stringify(d));
+  return r.conflicts.length === 1 && r.conflicts[0] === d.records[0].record_id;
+})());
+
+ok('a conflict does NOT overwrite what you hold', (function () {
+  var X = L.open({ storage: mem(), storeKey: 'H5' });
+  X.merge(file);
+  var before = L.contentHash(X.get(A2.record_id));
+  var d = JSON.parse(file);
+  d.records.forEach(function (r) { if (r.record_id === A2.record_id) r.fix.accuracy_m = 77; });
+  X.merge(JSON.stringify(d));
+  return L.contentHash(X.get(A2.record_id)) === before;
+})());
+
+// The honest limit, asserted so nobody later mistakes this for anti-cheat.
+ok('an edit WITH a recomputed hash is undetectable \u2014 by design', (function () {
+  var d = JSON.parse(file);
+  d.records[0].fix.accuracy_m = 4242;
+  d.integrity.records[d.records[0].record_id] = L.contentHash(d.records[0]);
+  var ids = Object.keys(d.integrity.records).sort();
+  d.integrity.file = L.contentHash(ids.map(function (i) {
+    return i + ':' + d.integrity.records[i]; }));
+  var X = L.open({ storage: mem(), storeKey: 'H6' });
+  var r = X.merge(JSON.stringify(d));
+  return r.damaged === false;
+}), 'a self-hash proves a record undamaged, never true');
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
