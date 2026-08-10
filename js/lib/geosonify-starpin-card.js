@@ -59,6 +59,10 @@ var GeosonifyStarpinCard = (function () {
     '.spc-card .inner{position:relative}',
     '.spc-kicker{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.18em;',
     '  text-transform:uppercase;color:var(--brass);text-align:center}',
+    '.spc-brand{font-family:"Source Code Pro","SF Mono",ui-monospace,monospace;',
+    '  font-size:18px;font-weight:600;text-align:center;color:var(--brass);',
+    '  letter-spacing:-.01em;line-height:1}',
+    '.spc-brand i{font-style:normal;color:var(--verdigris)}',
     '.spc-rule{height:1px;background:linear-gradient(90deg,transparent,var(--brass),transparent);',
     '  margin:8px 0 14px}',
     '.spc-title{text-align:center;margin-bottom:12px}',
@@ -92,6 +96,17 @@ var GeosonifyStarpinCard = (function () {
     '.spc-stub .v{font-family:"IBM Plex Mono",monospace;font-size:10.5px}',
     '.spc-stub .yes{color:var(--green)}',
     '.spc-card.mini{width:100%;padding:14px 16px;border-radius:11px}',
+    // Print variant: the same card on paper. The dark one is for a screen at
+    // night; this one is for a printer that would otherwise flood a page.
+    '.spc-card.light{--text:#22270F;--muted:#6A7355;--brass:#8A7513;',
+    '  --verdigris:#4F6620;--green:#3F6318;',
+    '  background:#FCFDF4;border-color:rgba(138,117,19,.4);',
+    '  box-shadow:0 10px 30px -18px rgba(34,39,15,.5)}',
+    '.spc-card.light .bg{opacity:.85}',
+    '.spc-card{cursor:pointer}',
+    '.spc-flip{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;',
+    '  text-transform:uppercase;color:var(--muted);text-align:center;margin-top:10px;',
+    '  opacity:.75}',
     '.spc-card.mini .spc-title .id{font-size:14px}',
     '.spc-card.mini .spc-med{margin:0 0 6px}',
     // full-screen presentation
@@ -257,7 +272,9 @@ var GeosonifyStarpinCard = (function () {
       bg = c.lat != null ? '<div class="bg">' +
            gridSVG(c.lat, c.lon, Math.round(c.order || 12)) + '</div>' : '';
       body =
-        '<div class="spc-kicker">Cornerstone</div><div class="spc-rule"></div>' +
+        '<div class="spc-brand">starpin<i>!</i></div>' +
+        '<div class="spc-kicker" style="margin-top:5px">Cornerstone</div>' +
+        '<div class="spc-rule"></div>' +
         '<div class="spc-title"><div class="cat">HEALPix vertex</div>' +
         '<div class="id">' + esc(c.name) + '</div></div>' +
         (c.lat != null ? '<div class="spc-coords"><b>LAT</b> ' + c.lat.toFixed(6) +
@@ -266,17 +283,17 @@ var GeosonifyStarpinCard = (function () {
           row('Lines', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder) +
           row('Tier', (c.tierOrder != null ? c.tierOrder.toFixed(1) : '\u2014') +
               (tier ? ' \u00B7 ' + tier.key : '')) +
-          // ALWAYS the same measure. One card saying "12,399 within 50 km" and
-          // another saying "one of 201,326,594 on Earth" cannot be compared at
-          // a glance, which defeats the point of having a tier at all.
-          (F ? row('Frequency', F.nearbyCount(Math.round(c.intrinsicOrder != null
-                 ? c.intrinsicOrder : c.order), 50).toLocaleString() +
-                 ' within 50 km') : '') +
+          // The rarity of THIS CROSSING, not of its finer order. Quoting the
+          // plain order figure understated a mixed crossing by up to 64x.
+          (F ? row('Frequency', F.crossCount(c.crossOrder, c.intrinsicOrder, 50)
+                 .toLocaleString() + ' within 50 km') : '') +
           (F ? row('Spacing', (function (m) {
-                 return m < 1000 ? 'one every ' + Math.round(m) + ' m'
-                                 : 'one every ' + (m / 1000).toFixed(1) + ' km';
-               })(F.spacingM(Math.round(c.intrinsicOrder != null
-                 ? c.intrinsicOrder : c.order)))) : '') +
+                 return m < 1000 ? '~' + Math.round(m) + ' m apart on average'
+                                 : '~' + (m / 1000).toFixed(1) + ' km apart on average';
+               })(F.crossSpacingM(c.crossOrder, c.intrinsicOrder))) : '') +
+          (F ? row('Share', '1 in ' +
+                 Math.round(1 / F.crossShare(c.crossOrder, c.intrinsicOrder)) +
+                 ' of order ' + Math.round(c.intrinsicOrder) + ' vertices') : '') +
           (v.distanceM != null ? row('Approach',
             v.distanceM.toFixed(1) + ' m ' + (v.bearingDeg != null ? compass(v.bearingDeg) : ''),
             'mono') : '') +
@@ -292,7 +309,9 @@ var GeosonifyStarpinCard = (function () {
       var d = opts.star || {};
       var tierS = F ? F.starTier(d.mag) : null;
       body =
-        '<div class="spc-kicker">Geosonify \u00B7 Starpin Record</div><div class="spc-rule"></div>' +
+        '<div class="spc-brand">starpin<i>!</i></div>' +
+        '<div class="spc-kicker" style="margin-top:5px">Starpin Record</div>' +
+        '<div class="spc-rule"></div>' +
         '<div class="spc-title"><div class="cat">' + esc(d.catalogue || 'Gaia DR3') + '</div>' +
         '<div class="id">' + esc((d.name || d.id || '').replace(/^Gaia DR3\s*/, '')) + '</div></div>' +
         '<div class="spc-med" data-sky="1"></div>' +
@@ -322,7 +341,23 @@ var GeosonifyStarpinCard = (function () {
         '</div>';
     }
 
-    return '<div class="spc-card' + mini + '">' + bg + '<div class="inner">' + body + '</div></div>';
+    body += '<div class="spc-flip">tap the card for the printable version</div>';
+    return '<div class="spc-card' + mini + (opts.light ? ' light' : '') + '">' +
+           bg + '<div class="inner">' + body + '</div></div>';
+  }
+
+  // The grid background is drawn with explicit stroke colours, so the light
+  // variant has to restate them rather than inherit.
+  function recolourGrid(card) {
+    var light = card.classList.contains('light');
+    [].forEach.call(card.querySelectorAll('.bg svg path'), function (p, i) {
+      p.setAttribute('stroke', light ? '#4F6620' : '#7D9D33');
+      p.setAttribute('stroke-opacity', (light ? [0.28, 0.75] : [0.2, 0.55])[i] || 0.4);
+    });
+    [].forEach.call(card.querySelectorAll('.bg svg circle'), function (c) {
+      var f = c.getAttribute('fill');
+      c.setAttribute(f && f !== 'none' ? 'fill' : 'stroke', light ? '#3F6318' : '#8FBF3F');
+    });
   }
 
   function render(opts, doc) {
@@ -331,6 +366,13 @@ var GeosonifyStarpinCard = (function () {
     var wrap = doc.createElement('div');
     wrap.innerHTML = html(opts);
     var card = wrap.firstChild;
+    card.addEventListener('click', function (e) {
+      if (e.target.closest('a,button')) return;
+      card.classList.toggle('light');
+      var g = card.querySelector('.bg svg');
+      if (g) g.setAttribute('data-light', card.classList.contains('light') ? '1' : '0');
+      recolourGrid(card);
+    });
     var slot = card.querySelector('.spc-med[data-sky]');
     if (slot) slot.appendChild(skyWindow(doc, {
       ra: (opts.star || {}).ra, dec: (opts.star || {}).dec,
@@ -427,11 +469,14 @@ var GeosonifyStarpinCard = (function () {
       rows.push(['LINES', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder]);
       if (c.tierOrder != null) rows.push(['TIER', c.tierOrder.toFixed(1)]);
       if (F) {
-        var o = Math.round(c.intrinsicOrder != null ? c.intrinsicOrder : c.order);
-        rows.push(['FREQUENCY', F.nearbyCount(o, 50).toLocaleString() + ' within 50 km']);
-        rows.push(['SPACING', F.spacingM(o) < 1000
-          ? 'one every ' + Math.round(F.spacingM(o)) + ' m'
-          : 'one every ' + (F.spacingM(o) / 1000).toFixed(1) + ' km']);
+        rows.push(['FREQUENCY', F.crossCount(c.crossOrder, c.intrinsicOrder, 50)
+          .toLocaleString() + ' within 50 km']);
+        var sp = F.crossSpacingM(c.crossOrder, c.intrinsicOrder);
+        rows.push(['SPACING', sp < 1000 ? '~' + Math.round(sp) + ' m apart'
+                                        : '~' + (sp / 1000).toFixed(1) + ' km apart']);
+        rows.push(['SHARE', '1 in ' +
+          Math.round(1 / F.crossShare(c.crossOrder, c.intrinsicOrder)) +
+          ' of order ' + Math.round(c.intrinsicOrder)]);
       }
       if (v.distanceM != null) rows.push(['APPROACH', v.distanceM.toFixed(1) + ' m' +
         (v.bearingDeg != null ? ' ' + compass(v.bearingDeg) : '')]);
@@ -449,12 +494,12 @@ var GeosonifyStarpinCard = (function () {
         g.fillStyle = 'rgba(184,192,212,.12)';
         g.fillRect(pad, y + 16, W - pad * 2, 1);
       });
-      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, 'rgba(220,201,73,.75)', 'center');
+      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, MUTED, 'center');
     }
 
     return new Promise(function (resolve) {
       function finish() {
-        paintRows(isStar ? 470 : 420);
+        paintRows(isStar ? 490 : 470);
         cv.toBlob(function (b) { resolve(b); }, 'image/png');
       }
       if (!isStar || d.ra == null) { finish(); return; }
@@ -464,7 +509,7 @@ var GeosonifyStarpinCard = (function () {
       var done = false;
       function drawSky(ok) {
         if (done) return; done = true;
-        var R = 116, cx = W / 2, cy = 320;
+        var R = 116, cx = W / 2, cy = 340;
         if (ok) {
           g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 6.2832); g.clip();
           g.drawImage(img, cx - R, cy - R, R * 2, R * 2); g.restore();

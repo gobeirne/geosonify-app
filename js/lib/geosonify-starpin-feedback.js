@@ -48,6 +48,37 @@ var GeosonifyStarpinFeedback = (function () {
   }
   function spacingM(order) { return Math.sqrt(EARTH_KM2 / (12 * Math.pow(4, order))) * 1000; }
 
+  // ── how rare is THIS crossing, not just this order ────────────────────────
+  //
+  // A vertex at order i sits on a lattice point (x, y). The line x = const
+  // survives to the coarsest order i − v2(x), where v2 is the 2-adic
+  // valuation, and likewise for y. So
+  //
+  //     intrinsic = i − min(v2(x), v2(y))      cross = i − max(v2(x), v2(y))
+  //
+  // and the CLASS "an order-c line crossing an order-i line" is exactly a pair
+  // of valuations, whose density is therefore exact rather than estimated:
+  //
+  //     c = i   ->  both v2 = 0            ->  1 in 4
+  //     c < i   ->  one 0, other i−c, either way round  ->  1 in 2^(i−c+1)
+  //
+  // This matters: quoting the plain order-13 figure for a vertex that also
+  // lies on an order-10 line understated its rarity SIXTEENFOLD.
+  function crossShare(cross, intrinsic) {
+    var k = Math.round(intrinsic) - Math.round(cross);
+    if (!(k >= 0)) return 1;
+    return k === 0 ? 0.25 : Math.pow(2, -(k + 1));
+  }
+  function crossCount(cross, intrinsic, radiusKm) {
+    return Math.round(nearbyCount(Math.round(intrinsic), radiusKm) *
+                      crossShare(cross, intrinsic));
+  }
+  // Mean pitch. HEALPix cells are equal-AREA but not equal-shape, so real
+  // neighbour distances vary around this; it is an average, not a guarantee.
+  function crossSpacingM(cross, intrinsic) {
+    return spacingM(Math.round(intrinsic)) / Math.sqrt(crossShare(cross, intrinsic));
+  }
+
   // Finest order treated as a collectible. At order 14 there are ~50,000
   // within 50 km and 17% of all ground lies within the acceptance radius of
   // one — too common to mean anything. Order 12 puts that at 1.07%, which is
@@ -686,6 +717,7 @@ var GeosonifyStarpinFeedback = (function () {
     unlock: unlock, proximity: proximity, celebrate: celebrate,
     setPulse: setPulse, pulseEnabled: pulseEnabled, hapticsAvailable: hapticsAvailable,
     tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
+    crossShare: crossShare, crossCount: crossCount, crossSpacingM: crossSpacingM,
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
