@@ -885,7 +885,7 @@ dl{margin:.7rem 0 0}
         pm.appendChild(document.createTextNode(t0.label));
         pm.appendChild(el('br'));
         pm.appendChild(document.createTextNode(
-          collected['V:' + v0.incident[0].slice(1)] || collected[v0.name]
+          collected[v0.name]
             ? 'you have this one' : 'not yet bagged'));
       }
       box.appendChild(pm);
@@ -971,8 +971,7 @@ dl{margin:.7rem 0 0}
                    source: 'web-geolocation' },
             approachReason: supported ? null : 'logged from the map at ' +
                             Math.round(vr2.distanceM) + ' m',
-            provenance: { app: 'starpin-demo', app_version: '0.1',
-                          protocol: { visit: 'visit-geometry-v1' } }
+            provenance: provenanceFor(target)
           }));
           drawLog(); redraw();
           F.celebrate({ kind: 'starpin', name: st.name || 'starpin', mag: st.mag,
@@ -1303,13 +1302,30 @@ dl{margin:.7rem 0 0}
     $('lg-store').textContent = log.persisted() ? 'on this device' : 'memory only';
     // Collected cornerstones are derived from the records, never tracked
     // separately — otherwise the pips and the log can disagree.
+    // Keyed by the CANONICAL name, so the four cornerstones logged under v0.2
+    // names still light up their pips and still read as bagged. An ambiguous
+    // legacy name throws; keep it under its own key rather than dropping it.
     collected = {};
     log.current().forEach(function (r) {
-      if (r.target && r.target.cornerstone) collected[r.target.cornerstone] = 1;
+      if (!r.target || !r.target.cornerstone) return;
+      var n = r.target.cornerstone;
+      try { n = S.canonicaliseCornerstone(n); } catch (e) {}
+      collected[n] = 1;
     });
     map.setBagged(Object.keys(collected));
     if (document.body.getAttribute('data-active') === 'log') $('lg-show').click();
     refreshFillButton();
+  }
+
+  // What rules actually applied to this record. A cornerstone is a corner of
+  // the lattice; it has no star, so it has no culmination, and stamping
+  // culmination-v1 on it was meaningless. Every cornerstone in the 10 Aug
+  // export carries that stamp and no starpin does, which is exactly backwards.
+  // Three copies of the literal is how it drifted, so now there is one.
+  function provenanceFor(target) {
+    var p = { visit: 'visit-geometry-v1' };
+    if (target && target.starpin) p.culmination = 'culmination-v1';
+    return { app: 'starpin-demo', app_version: '0.1', protocol: p };
   }
 
   function logIt(target) {
@@ -1317,8 +1333,7 @@ dl{margin:.7rem 0 0}
     log.add(L.visit({
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
-      provenance: { app: 'starpin-demo', app_version: '0.1',
-                    protocol: { visit: 'visit-geometry-v1', culmination: 'culmination-v1' } }
+      provenance: provenanceFor(target)
     }));
     drawLog(); redraw();
   }
@@ -1348,8 +1363,7 @@ dl{margin:.7rem 0 0}
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
       approachReason: supported ? null
         : 'logged from ' + Math.round(vr.distanceM) + ' m away',
-      provenance: { app: 'starpin-demo', app_version: '0.1',
-                    protocol: { visit: 'visit-geometry-v1' } }
+      provenance: provenanceFor(target)
     }));
     drawLog(); redraw();
     F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
@@ -1415,7 +1429,7 @@ dl{margin:.7rem 0 0}
     var rare = 0;
     recs.forEach(function (r) {
       if (r.target.cornerstone) {
-        var mm = /\.([0-3]+)$/.exec(r.target.cornerstone);
+        var mm = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
         try {
           var pp = S.cornerstonePoint(r.target.cornerstone);
           var pr = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
@@ -1435,13 +1449,20 @@ dl{margin:.7rem 0 0}
 
     function scarcity(r) {
       if (r.target.cornerstone) {
-        var m = /\.([0-3]+)$/.exec(r.target.cornerstone);
+        var m = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
         var p = null;
         try { p = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
         if (p) { try { return S.nearestCornerstone(p.lat, p.lon, m[1].length).tierOrder; }
                  catch (e) {} }
         return m ? m[1].length : 14;
       }
+      // The RECORD first. map.stars() is whatever VizieR last returned around
+      // the current map view, so a record for a star you are not looking at
+      // scored the 13 fallback -- and 13 is mid-table, so "rarest first" put
+      // G 19.5 above G 12.3 and sorted seven records by date instead. The
+      // magnitude is right there in the target; the card already prints it.
+      if (r.target.mag_g != null && isFinite(r.target.mag_g))
+        return Math.max(1, r.target.mag_g - 2);
       var sid = sourceIdOf(r.target.starpin);
       var cached = map.stars().filter(function (x) { return sourceIdOf(x.name) === sid; })[0];
       return cached && cached.mag != null ? Math.max(1, cached.mag - 2) : 13;
@@ -1512,7 +1533,7 @@ dl{margin:.7rem 0 0}
         var pp = null, ord = null, cr = null;
         try {
           pp = S.cornerstonePoint(r.target.cornerstone);
-          var mm = /\.([0-3]+)$/.exec(r.target.cornerstone);
+          var mm = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
           var probe = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
           ord = probe.intrinsicOrder; cr = probe.crossOrder;
         } catch (e) {}
@@ -1616,7 +1637,7 @@ dl{margin:.7rem 0 0}
     if (r.target.cornerstone) {
       var pt2 = null;
       try { pt2 = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
-      var m2 = /\.([0-3]+)$/.exec(r.target.cornerstone);
+      var m2 = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
       var ord = m2 ? m2[1].length : 12;
       var probe = null;
       if (pt2) { try { probe = S.nearestCornerstone(pt2.lat, pt2.lon, ord); } catch (e) {} }
