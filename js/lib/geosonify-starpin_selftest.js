@@ -129,7 +129,8 @@ try { S.nearestCornerstone(-43.552937, 172.652138, 14); } catch (e) { haveHp = f
 if (haveHp) {
   var v = S.nearestCornerstone(-43.552937, 172.652138, 14);
   ok('finds the vertex within a metre', v.distanceM < 2, v.distanceM + ' m');
-  ok('canonical name is the lowest incident cell', v.name === 'V:f9.11120211002122', v.name);
+  ok('canonical name is the lowest incident cell PLUS the corner',
+     v.name === 'V:f9.11120211002122c3', v.name);
   ok('notation keeps f = FACE', /^V:f\d/.test(v.name));
   ok('intrinsic order measured, not guessed', v.intrinsicOrder === 14);
   ok('degree 4 (not one of the exceptional eight)', v.degree === 4);
@@ -137,14 +138,114 @@ if (haveHp) {
 
   var corners = S.cellCornerstones('f9.11120211002300').map(function (x) { return x.name; });
   ok('a cell has four distinct corner names', new Set(corners).size === 4);
-  ok('only ONE corner carries the cell\'s own name',
-     corners.filter(function (n) { return n === 'V:f9.11120211002300'; }).length === 1);
+  ok('at most one corner carries the cell\'s own name',
+     corners.filter(function (n) { return n.indexOf('V:f9.11120211002300c') === 0; }).length <= 1);
   ok('the naive guess is wrong, and provably so',
      corners.indexOf('V:f9.11120211002301') === -1, corners.join(' '));
   ok('bonus: incomplete is reported with what is missing',
-     S.cellComplete('f9.11120211002300', ['V:f9.11120211002300']).missing.length === 3);
+     S.cellComplete('f9.11120211002300', [corners[0]]).missing.length === 3);
   ok('bonus: complete when all four held',
      S.cellComplete('f9.11120211002300', corners).complete === true);
+
+  // ── the naming is a FUNCTION: one name, one point, everywhere ──────────────
+  //
+  // v0.2 named a vertex by its lowest incident cell alone, on the argument that
+  // the corner was then implied. Inside a face it is; across a seam it is not,
+  // and at order 2 that put 54 of 136 names on more than one point. Every
+  // fixture in this section was a face-9 interior cell, so the suite passed
+  // while V:f0.00 meant two different vertices. Sweep the whole sphere at a
+  // small order instead of trusting one neighbourhood.
+  (function () {
+    var order = 2, byName = {}, collisions = 0, D2R = Math.PI / 180;
+    for (var f = 0; f < 12; f++) {
+      for (var i = 0; i < Math.pow(4, order); i++) {
+        var digits = i.toString(4);
+        while (digits.length < order) digits = '0' + digits;
+        S.cellCornerstones('f' + f + '.' + digits).forEach(function (c) {
+          var la = c.lat * D2R, lo = c.lon * D2R;
+          var v = [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+          (byName[c.name] = byName[c.name] || []).push(v);
+        });
+      }
+    }
+    Object.keys(byName).forEach(function (n) {
+      var a = byName[n];
+      for (var j = 1; j < a.length; j++) {
+        var d = Math.sqrt(Math.pow(a[j][0] - a[0][0], 2) + Math.pow(a[j][1] - a[0][1], 2) +
+                          Math.pow(a[j][2] - a[0][2], 2)) * 6371008.8;
+        if (d > 0.001) { collisions++; break; }               // 1 mm
+      }
+    });
+    var names = Object.keys(byName).length;
+    ok('order 2: one name per vertex, sphere-wide',
+       names === 12 * Math.pow(4, order) + 2, names + ' names for ' +
+       (12 * Math.pow(4, order) + 2) + ' vertices');
+    ok('order 2: no name lands on two different points', collisions === 0,
+       collisions + ' colliding names');
+    var rt = 0;
+    Object.keys(byName).forEach(function (n) {
+      try { S.cornerstonePoint(n); } catch (e) { rt++; }
+    });
+    ok('order 2: every name resolves back to a point', rt === 0, rt + ' failed');
+  })();
+
+  // ── the exceptional eight (concept doc 7.1) ───────────────────────────────
+  //
+  // Three cells, not four, at arcsin(2/3) on the four cardinal meridians, at
+  // every order forever. They were unreachable in v0.2 for two separate
+  // reasons, both of which have a test here now:
+  //   - the frozen nestIndex returns the polar pixel for ANY latitude on
+  //     longitude 0/90/180/270 in the NORTHERN cap, so the query snapped to a
+  //     corner thousands of km away;
+  //   - the four diagonal probes lie along the lattice edges at a three-valent
+  //     vertex, so the third cell was never seen and degree came back 2.
+  // The rarest find on the planet was the one the code could not name.
+  (function () {
+    var LAT = Math.asin(2 / 3) * 180 / Math.PI, seen = {}, three = 0, near = 0;
+    [0, 90, 180, 270].forEach(function (lon) {
+      [LAT, -LAT].forEach(function (lat) {
+        var c = S.nearestCornerstone(lat, lon, 12);
+        if (c.degree === 3) three++;
+        if (c.distanceM < 1) near++;
+        seen[c.name] = 1;
+      });
+    });
+    ok('the eight are found where they are', near === 8, near + ' within a metre');
+    ok('the eight are three-valent', three === 8, three + ' of 8 reported degree 3');
+    ok('the eight have eight distinct names', Object.keys(seen).length === 8,
+       Object.keys(seen).length + ' distinct');
+    var n = S.nearestCornerstone(LAT, 0, 12);
+    ok('an exceptional vertex is a vertex at order 1', n.intrinsicOrder === 1,
+       'intrinsic ' + n.intrinsicOrder);
+  })();
+
+  // ── the probe scales, or fine orders all look exceptional ─────────────────
+  //
+  // A flat 5 m probe is wider than the cell past order 19, so it stepped clean
+  // over the neighbouring cells and every ordinary vertex reported degree 3 --
+  // which is this file's marker for the exceptional eight.
+  ok('an ordinary vertex is still four-valent at order 21', (function () {
+    var c = S.cellCornerstones('f9.111202110020111111111')[0];
+    return S.nearestCornerstone(c.lat, c.lon, 21).degree === 4;
+  })());
+
+  // ── legacy names: decode where they can, refuse where they cannot ─────────
+  //
+  // Four cornerstones were logged with v0.2 names before the corner suffix
+  // existed. They stay readable forever; they must never resolve to the wrong
+  // ground instead.
+  ['V:f9.1112021011', 'V:f9.1112021100222', 'V:f9.111202110020',
+   'V:f9.11120211002122'].forEach(function (old) {
+    var p = S.cornerstonePoint(old), q = S.cornerstonePoint(S.canonicaliseCornerstone(old));
+    ok('legacy ' + old + ' still resolves, and to the same ground',
+       Math.abs(p.lat - q.lat) < 1e-9 && Math.abs(p.lon - q.lon) < 1e-9);
+  });
+  ok('an ambiguous legacy name THROWS rather than guessing',
+     throws(function () { S.cornerstonePoint('V:f0.00'); }));
+  ok('canonicalising is idempotent',
+     S.canonicaliseCornerstone('V:f9.111202110020c3') === 'V:f9.111202110020c3');
+  ok('rejects a corner index out of range',
+     throws(function () { S.cornerstonePoint('V:f9.111202110020c4'); }));
 }
 
 // ── 9. the evaluator: assessments are derived, never stored ──────────────────

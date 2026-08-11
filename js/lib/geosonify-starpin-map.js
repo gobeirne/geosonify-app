@@ -151,7 +151,10 @@ var GeosonifyStarpinMap = (function () {
     return 3 + t * t * 11;
   }
   function orderOfName(name) {
-    var m = /\.([0-3]+)$/.exec(String(name || '')); return m ? m[1].length : 12;
+    // The trailing cN is the corner, not an order digit. Without this the
+    // regex missed entirely and every cornerstone silently drew as order 12.
+    var m = /\.([0-3]+)(?:c[0-3])?$/.exec(String(name || ''));
+    return m ? m[1].length : 12;
   }
 
   function mount(container, opts) {

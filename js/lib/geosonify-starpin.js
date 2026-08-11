@@ -289,10 +289,26 @@ var GeosonifyStarpin = (function () {
   //   V:f9.11120211002122       the vertex canonically named by that cell
   //
   // Canonical rule: a vertex is shared by up to four cells; it is named by the
-  // LOWEST nested index among them. The corner suffix is then redundant,
-  // because the lowest-indexed cell always meets the vertex at the same corner.
-  // Consequence, and it is unavoidable for any such rule: only ONE of a cell's
-  // four corners carries that cell's own name.
+  // LOWEST nested index among them, PLUS which corner of that cell it is:
+  //
+  //     f9.11120211002122       the cell
+  //   V:f9.11120211002122c0     the vertex at that cell's (u=0, v=0) corner
+  //
+  // corner index = 2v + u, where (u, v) are the cell's own unit-square corner
+  // coordinates. Naming cell picks the name; corner index makes it a function.
+  //
+  // The corner suffix is NOT redundant, though v0.2 assumed it was. That
+  // assumption needed "the lowest-indexed cell always meets the vertex at the
+  // same corner", which is true inside a face and false across a seam, because
+  // nested index runs face-major and face numbering is not a geometric order.
+  // Measured at order 2 before the fix: 56 of 192 cells named none of their
+  // corners, 51 named two or three, and 54 of 136 names resolved to more than
+  // one point. V:f0.00 meant two different vertices. Face interiors were fine,
+  // which is why every fixture in the suite passed; the seams were not, and the
+  // exceptional eight of section 7.1 live exactly on the seams.
+  //
+  // Legacy: suffix-less names still decode (see cornerstonePoint) wherever they
+  // are unambiguous, and throw rather than guess where they are not.
 
   function hp() {
     var H = (typeof HealpixGrids !== 'undefined') ? HealpixGrids
@@ -314,30 +330,91 @@ var GeosonifyStarpin = (function () {
     var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1], z = v.z != null ? v.z : v[2];
     return [Math.asin(z / Math.hypot(x, y, z)) * R2D, Math.atan2(y, x) * R2D];
   }
+  // Which corner of `cell` the point (lat, lon) is, as 2v + u, or -1 if it is
+  // not a corner of that cell. Compared on the sphere, so no face maths here.
+  function cornerIndexIn(H, ipix, order, lat, lon) {
+    var nside = Math.pow(2, order), best = -1, bestD = Infinity;
+    [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(function (uv) {
+      var ll = vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
+      var dm = haversineM(lat, lon, ll[0], ll[1]);
+      if (dm < bestD) { bestD = dm; best = 2 * uv[1] + uv[0]; }
+    });
+    return bestD <= probeM(order) ? best : -1;
+  }
+
+  // The canonical name of the vertex at (lat, lon), given its incident cells.
+  function vertexName(H, inc, order, lat, lon) {
+    var c = cornerIndexIn(H, inc[0], order, lat, lon);
+    if (c < 0) throw new Error('vertexName: point is not a corner of ' +
+                               pathStr(H, inc[0], order));
+    return 'V:' + pathStr(H, inc[0], order) + 'c' + c;
+  }
+
   function pathStr(H, ipix, order) {
     var p = H.nestPath(ipix, order);
     return 'f' + (p.f != null ? p.f : p.face) + '.' + p.digits.join('');
   }
 
   // The four (or three) cells meeting at a vertex, at a given order.
+  // The probe steps off the vertex into each quadrant. It must be small
+  // relative to the cell at THIS order (or it wanders into cells that do not
+  // touch the vertex) and small in absolute terms (or an interior point looks
+  // like it sits on a coarse boundary, which is how crossOrder is detected).
+  // So: 5 m, shrinking with the cell once the cell is smaller than 40 m.
+  // At 5 m flat, every ordinary vertex at order >= 20 reported degree 3 --
+  // the marker this file uses for the exceptional eight.
+  function probeM(order) {
+    var sideM = Math.sqrt(Math.PI / 3) / Math.pow(2, order) * 6371008.8;
+    return Math.min(5, sideM / 8);
+  }
+  // Eight directions at bearings 22.5, 67.5, 112.5 ... Neither the diagonals
+  // nor the axes, and both exclusions are load bearing:
+  //
+  //   - the four DIAGONALS are exactly the directions the lattice edges run in
+  //     at a THREE-valent vertex, so a diagonal-only probe sat on a boundary in
+  //     every direction and never saw the third cell. The exceptional eight
+  //     reported degree 2 and were tiered as ordinary crossings.
+  //   - the AXES hold longitude fixed, so probing due north from a vertex on
+  //     longitude 0, 90, 180 or 270 re-enters the frozen nestIndex knife edge
+  //     (see nearestCornerstone) and returns a cell that is nowhere near.
+  //
+  // Eight bearings 45 degrees apart put at least one probe inside every sector
+  // of a three- or four-valent vertex, and none of them lands on an edge.
   function incidentCells(H, lat, lon, order) {
-    var d = 5 / 6371008.8 * R2D, cosLat = Math.cos(lat * D2R), seen = {};
-    [[1, 1], [1, -1], [-1, 1], [-1, -1]].forEach(function (s) {
-      seen[H.nestIndex(lat + s[0] * d, lon + s[1] * d / cosLat, order).toString()] = 1;
-    });
+    var d = probeM(order) / 6371008.8 * R2D, cosLat = Math.cos(lat * D2R), seen = {};
+    for (var b = 0; b < 8; b++) {
+      var th = (22.5 + 45 * b) * D2R;
+      var la = lat + d * Math.cos(th);
+      if (la > 90) la = 180 - la; else if (la < -90) la = -180 - la;
+      seen[H.nestIndex(la, lon + d * Math.sin(th) / cosLat, order).toString()] = 1;
+    }
     return Object.keys(seen).map(BigInt).sort(function (a, b) { return a < b ? -1 : a > b ? 1 : 0; });
   }
 
   // Nearest vertex to a point at a given order, canonically named, with the
   // intrinsic (coarsest) order at which the point is still a vertex.
+  // Candidate cells come from the four-quadrant probe, NOT from a single
+  // nestIndex(lat, lon). On a longitude of exactly 0, 90, 180 or 270 in the
+  // NORTHERN cap, nestIndex returns the polar pixel f0.333... whatever the
+  // latitude -- so a query on one of those meridians used to snap to a corner
+  // thousands of kilometres away and name it confidently. The southern cap is
+  // unaffected. geosonify-healpix.js is frozen and its addresses are load
+  // bearing elsewhere, so this is worked around here rather than fixed there.
+  // The probe offsets are never exactly on the meridian, so they miss the
+  // knife edge; away from it the probe lands in the same single cell nestIndex
+  // would have returned, and the result is unchanged.
+  //
+  // This is why the exceptional eight of the concept doc's section 7.1 could
+  // not be logged: all eight sit on exactly those meridians.
   function nearestCornerstone(lat, lon, order) {
     var H = hp(), nside = Math.pow(2, order);
-    var ipix = H.nestIndex(lat, lon, order);
     var best = null;
-    [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(function (uv) {
-      var ll = vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
-      var dm = haversineM(lat, lon, ll[0], ll[1]);
-      if (!best || dm < best.distanceM) best = { lat: ll[0], lon: ll[1], distanceM: dm };
+    incidentCells(H, lat, lon, order).forEach(function (ipix) {
+      [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(function (uv) {
+        var ll = vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
+        var dm = haversineM(lat, lon, ll[0], ll[1]);
+        if (!best || dm < best.distanceM) best = { lat: ll[0], lon: ll[1], distanceM: dm };
+      });
     });
     // TWO orders meet at every vertex, and they need not be equal.
     //
@@ -369,7 +446,7 @@ var GeosonifyStarpin = (function () {
       crossOrder: cross,
       tierOrder: (intrinsic + cross) / 2,
       degree: inc.length,                                   // 3 => one of the exceptional eight
-      name: 'V:' + pathStr(H, inc[0], intrinsic),
+      name: vertexName(H, inc, intrinsic, best.lat, best.lon),
       incident: inc.map(function (i) { return pathStr(H, i, intrinsic); })
     };
   }
@@ -386,7 +463,7 @@ var GeosonifyStarpin = (function () {
     return [[0, 0], [1, 0], [1, 1], [0, 1]].map(function (uv) {
       var ll = vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
       var inc = incidentCells(H, ll[0], ll[1], order);
-      return { name: 'V:' + pathStr(H, inc[0], order), lat: ll[0], lon: ll[1] };
+      return { name: vertexName(H, inc, order, ll[0], ll[1]), lat: ll[0], lon: ll[1] };
     });
   }
 
@@ -406,16 +483,43 @@ var GeosonifyStarpin = (function () {
   // better evaluator re-reads history rather than rewriting it, so every
   // result carries the rule versions that produced it.
 
-  // 'V:f9.1112...' -> the point. Resolved by naming all four corners of the
+  // 'V:f9.1112...c0' -> the point. Resolved by naming all four corners of the
   // cell and taking the one whose canonical name matches, so this does not
   // depend on which corner index the HEALPix implementation calls first.
+  //
+  // LEGACY, kept forever: a v0.2 name carries no corner. Where exactly one
+  // corner of the cell canonically names that cell it is unambiguous and
+  // decodes; where more than one does it was always ambiguous, and this throws
+  // instead of silently returning whichever came first. Old records decode or
+  // complain; they never quietly resolve to the wrong ground.
   function cornerstonePoint(name) {
-    var m = /^V:(f\d{1,2}\.[0-3]+)$/.exec(String(name).trim());
-    if (!m) throw new Error('cornerstonePoint: expected V:f<face>.<base-4 digits>');
-    var hit = cellCornerstones(m[1]).filter(function (c) { return c.name === name; })[0];
-    if (!hit) throw new Error('cornerstonePoint: "' + name + '" is not the canonical ' +
-                              'name of any corner of ' + m[1]);
-    return { lat: hit.lat, lon: hit.lon };
+    var s = String(name).trim();
+    var m = /^V:(f\d{1,2}\.[0-3]+)(?:c([0-3]))?$/.exec(s);
+    if (!m) throw new Error('cornerstonePoint: expected V:f<face>.<base-4 digits>[c<corner>]');
+    var corners = cellCornerstones(m[1]);
+    if (m[2] != null) {
+      var hit = corners.filter(function (c) { return c.name === s; })[0];
+      if (!hit) throw new Error('cornerstonePoint: "' + s + '" is not the canonical ' +
+                                'name of any corner of ' + m[1]);
+      return { lat: hit.lat, lon: hit.lon };
+    }
+    var own = corners.filter(function (c) { return c.name.indexOf('V:' + m[1] + 'c') === 0; });
+    if (own.length === 1) return { lat: own[0].lat, lon: own[0].lon, legacy: own[0].name };
+    if (own.length === 0)
+      throw new Error('cornerstonePoint: legacy name "' + s + '" names no corner of ' +
+                      m[1] + ' \u2014 it was never resolvable');
+    throw new Error('cornerstonePoint: legacy name "' + s + '" is ambiguous \u2014 ' +
+                    own.length + ' corners of ' + m[1] + ' carried it. Re-record as ' +
+                    own.map(function (c) { return c.name; }).join(' or '));
+  }
+
+  // Legacy name -> canonical name, for offering a superseding record. Throws on
+  // the ambiguous ones rather than choosing for the person.
+  function canonicaliseCornerstone(name) {
+    var s = String(name).trim();
+    if (/c[0-3]$/.test(s)) return s;
+    var p = cornerstonePoint(s);
+    return p.legacy;
   }
 
   // opts.point supplies the target for a starpin, whose coordinates come from
@@ -501,6 +605,7 @@ var GeosonifyStarpin = (function () {
     assessVisit: assessVisit, haversineM: haversineM,
     nearestCornerstone: nearestCornerstone, cellCornerstones: cellCornerstones,
     cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
+    canonicaliseCornerstone: canonicaliseCornerstone,
     assessRecord: assessRecord, rankByTarget: rankByTarget
   };
 })();

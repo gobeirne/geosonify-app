@@ -207,12 +207,44 @@ var GeosonifyStarpinLog = (function () {
         .sort(function (a, b) { return b.event.time_ms - a.event.time_ms; });
     }
 
+    // A supersession chain: root -> ... -> head. Built once, used by current()
+    // and by remove(), which have to agree about what "this record" means.
+    function chains() {
+      var recs = all(), byId = {}, kids = {};
+      recs.forEach(function (r) { byId[r.record_id] = r; });
+      recs.forEach(function (r) {
+        if (r.supersedes && byId[r.supersedes])
+          (kids[r.supersedes] = kids[r.supersedes] || []).push(r);
+      });
+      return { recs: recs, byId: byId, kids: kids };
+    }
+
+    // Two devices can supersede the same record independently — a backfill run
+    // on the phone and again on the laptop — and immutability guarantees they
+    // get different record_ids, so merge sees no conflict and BOTH children
+    // survive. Without a rule, current() returned two heads for one starpin and
+    // the collection counted it twice. Pick deterministically, so every device
+    // that holds the same records shows the same collection: latest created_ms,
+    // then record_id ascending. The branch not taken is not deleted; it stays
+    // in the store like every other superseded record.
+    function preferred(a, b) {
+      var ca = a.created_ms || 0, cb = b.created_ms || 0;
+      if (ca !== cb) return cb - ca;
+      return a.record_id < b.record_id ? -1 : a.record_id > b.record_id ? 1 : 0;
+    }
+
     // Superseded records stay in the store — history is added to, never
     // rewritten — but they are not the current view.
     function current() {
-      var dead = {};
-      all().forEach(function (r) { if (r.supersedes) dead[r.supersedes] = 1; });
-      return all().filter(function (r) { return !dead[r.record_id]; });
+      var c = chains(), out = [];
+      c.recs.forEach(function (r) {
+        if (r.supersedes && c.byId[r.supersedes]) return;      // not a chain root
+        var node = r, guard = 0;
+        while (c.kids[node.record_id] && guard++ < 4096)
+          node = c.kids[node.record_id].slice().sort(preferred)[0];
+        out.push(node);
+      });
+      return out.sort(function (a, b) { return b.event.time_ms - a.event.time_ms; });
     }
 
     function exportString() {
@@ -245,12 +277,28 @@ var GeosonifyStarpinLog = (function () {
       },
       get: function (id) { return mem[id] || null; },
 
-      // A local retraction. The record leaves the collection and stays out,
-      // even across merges.
+      // A retraction. The record leaves the collection and stays out, even
+      // across merges.
+      //
+      // It takes the WHOLE supersession chain, not the one id. A record and its
+      // corrections describe one event at one place at one time; deleting only
+      // the head left the original sitting in the store with the same target,
+      // the same fix and the same timestamp, and it still went out in the next
+      // export. For a retraction made on privacy grounds — where you were and
+      // when — that is not a deletion at all. So: walk to the root, tombstone
+      // every record below it, and let merge keep doing the same for branches
+      // that arrive later.
       remove: function (id) {
         if (!mem[id]) return false;
-        delete mem[id];
-        gone[id] = Date.now();
+        var c = chains(), node = c.byId[id], now = Date.now();
+        while (node.supersedes && c.byId[node.supersedes]) node = c.byId[node.supersedes];
+        var stack = [node];
+        while (stack.length) {
+          var n = stack.pop();
+          delete mem[n.record_id];
+          gone[n.record_id] = now;
+          (c.kids[n.record_id] || []).forEach(function (k) { stack.push(k); });
+        }
         save(); return true;
       },
       deleted: function () { return Object.keys(gone); },
@@ -297,6 +345,22 @@ var GeosonifyStarpinLog = (function () {
           mem[r.record_id] = r; added++;
         });
         Object.keys(gone).forEach(function (id) { delete mem[id]; });
+
+        // A retraction covers the chain, including branches that arrive after
+        // it. Without this, merging with a friend who still holds a correction
+        // superseding a record you deleted hands the deleted event straight
+        // back under a new id. Run to a fixed point: a record whose parent is
+        // tombstoned is tombstoned too.
+        var moved = true;
+        while (moved) {
+          moved = false;
+          Object.keys(mem).forEach(function (rid) {
+            var sup = mem[rid].supersedes;
+            if (sup && gone[sup] && !gone[rid]) {
+              gone[rid] = gone[sup]; delete mem[rid]; refused++; moved = true;
+            }
+          });
+        }
         save();
         return { added: added, alreadyHeld: seen, retracted: refused,
                  conflicts: conflicts, damaged: damaged,

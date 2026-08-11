@@ -213,6 +213,68 @@ ok('a conflict does NOT overwrite what you hold', (function () {
 })());
 
 // The honest limit, asserted so nobody later mistakes this for anti-cheat.
+// ── forks and retraction ─────────────────────────────────────────────────────
+head('forks and retraction');
+
+// Two devices supersede the same record independently. Immutability guarantees
+// different record_ids, so merge sees no conflict and both children survive.
+// Before deterministic head selection, current() returned BOTH and one starpin
+// counted twice.
+(function () {
+  function box() { var s = {}; return { storage: {
+    getItem: function (k) { return s[k] || null; },
+    setItem: function (k, v) { s[k] = v; },
+    removeItem: function (k) { delete s[k]; } } }; }
+  var T = { starpin: 'starpin:gdr3:5382128384539944064',
+            lat_1e7: -435234540, lon_1e7: 1725828105 };
+  var FX = { lat: -43.5234222, lon: 172.5829198, accuracy_m: 6.4,
+             time_ms: 1786330211219, source: 'web-geolocation' };
+  function put(db, note, sup, created) {
+    return db.add(L.visit({ target: JSON.parse(JSON.stringify(T)), fix: FX,
+      supersedes: sup || null, eventMs: 1786330211219, createdMs: created,
+      provenance: { app: 'selftest', app_version: '0', note: note } }));
+  }
+  var A = L.open(box()), B = L.open(box());
+  var base = put(A, 'original', null, 1000);
+  B.merge(A.export());
+  var pa = put(A, 'backfill on the phone',  base.record_id, 2000);
+  var pb = put(B, 'backfill on the laptop', base.record_id, 3000);
+  A.merge(B.export()); B.merge(A.export());
+  ok('a fork keeps every record', A.count() === 3, String(A.count()));
+  ok('but current() shows ONE head', A.current().length === 1,
+     String(A.current().length));
+  ok('both devices choose the same head',
+     A.current()[0].record_id === B.current()[0].record_id);
+  ok('the head is the later revision, not the first seen',
+     A.current()[0].record_id === pb.record_id);
+
+  // Retraction takes the chain. Deleting only the head left the original in
+  // the store with the same target, the same fix and the same timestamp, and
+  // it still went out in the next export -- no use at all for a deletion made
+  // because of where you were and when.
+  var C = L.open(box());
+  var c1 = put(C, 'original', null, 1000);
+  var c2 = put(C, 'enriched', c1.record_id, 2000);
+  C.remove(c2.record_id);
+  ok('deleting a record deletes its ancestors too', C.count() === 0,
+     String(C.count()));
+  ok('and the export carries nothing back',
+     JSON.parse(C.export()).records.length === 0);
+  ok('both ids are tombstoned',
+     Object.keys(JSON.parse(C.export()).deleted).length === 2);
+
+  // A friend who still holds a correction must not hand the event back.
+  var D = L.open(box());
+  var d1 = put(D, 'original', null, 1000);
+  var E = L.open(box());
+  E.merge(D.export());
+  var d2 = put(E, 'a correction made elsewhere', d1.record_id, 2000);
+  D.remove(d1.record_id);
+  D.merge(E.export());
+  ok('a later branch cannot resurrect a retracted chain', D.count() === 0,
+     String(D.count()));
+})();
+
 ok('an edit WITH a recomputed hash is undetectable \u2014 by design', (function () {
   var d = JSON.parse(file);
   d.records[0].fix.accuracy_m = 4242;
