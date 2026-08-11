@@ -240,6 +240,28 @@ if (haveHp) {
     ok('legacy ' + old + ' still resolves, and to the same ground',
        Math.abs(p.lat - q.lat) < 1e-9 && Math.abs(p.lon - q.lon) < 1e-9);
   });
+  // A legacy record and a canonical one are the same corner. Anything that
+  // asks "have I got this?" has to agree, or the map reports a vertex sitting
+  // in the log as not yet logged -- which it did, on the phone, in the field.
+  (function () {
+    var legacy = 'V:f9.1112021011', canon = S.canonicaliseCornerstone(legacy);
+    ok('legacy and canonical share one target key',
+       S.targetKey({ cornerstone: legacy }) === S.targetKey({ cornerstone: canon }));
+    var recs = [
+      { schema: 'starpin.record/1', record_id: 'a', kind: 'visit',
+        target: { cornerstone: legacy }, event: { time_ms: 1786395301296 },
+        fix: { lat_1e7: -435560053, lon_1e7: 1726290709, accuracy_m: 4.2,
+               time_ms: 1786395301296, source: 'web-geolocation' } },
+      { schema: 'starpin.record/1', record_id: 'b', kind: 'visit',
+        target: { cornerstone: canon }, event: { time_ms: 1786395401296 },
+        fix: { lat_1e7: -435560389, lon_1e7: 1726289181, accuracy_m: 4.2,
+               time_ms: 1786395401296, source: 'web-geolocation' } }];
+    var rk = S.rankByTarget(recs);
+    ok('one vertex, one group, whichever spelling was used',
+       rk.a.count === 2 && rk.b.count === 2, JSON.stringify([rk.a.count, rk.b.count]));
+    ok('the closer record wins the group', rk.b.best === true && rk.a.best === false);
+  })();
+
   ok('an ambiguous legacy name THROWS rather than guessing',
      throws(function () { S.cornerstonePoint('V:f0.00'); }));
   ok('canonicalising is idempotent',

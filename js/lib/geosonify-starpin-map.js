@@ -200,7 +200,7 @@ var GeosonifyStarpinMap = (function () {
     var orderTag = doc.createElement('div'); orderTag.className = 'spm-orders';
     root.appendChild(orderTag);
 
-    var fix = null, bagged = [], highlight = null, cache = {};
+    var fix = null, bagged = [], finds = [], highlight = null, cache = {};
     var stars = [], hits = [];          // hits: screen-space targets for tapping
     var pin = null;                     // a read-only probe, never a claim
     var selected = null;                // {kind, id} -> gets the throb
@@ -308,9 +308,28 @@ var GeosonifyStarpinMap = (function () {
 
       hits = [];
 
+      // Starpins you have bagged, drawn from the LOG and therefore at every
+      // zoom, everywhere. The VizieR star layer is a lookup around the current
+      // view and stops entirely above an 8 km span, so before this a find in
+      // Christchurch was invisible from a map of India, and a find you were
+      // looking straight at was drawn identically to one you had never seen.
+      // A collection you cannot see is not a collection.
+      // Keyed on the source id, not the display name, because the lookup layer
+      // and the log spell the same star differently ("Gaia DR3 5382..." vs
+      // "starpin:gdr3:5382..."). S.sourceIdOf is the ONE helper for the
+      // trailing digit run; do not open-code it, the naive \D strip turns
+      // "Gaia DR3 5382" into "35382" and this bug has shipped three times.
+      var found = {};
+      finds.forEach(function (f) {
+        var k = f.id || (S.sourceIdOf ? S.sourceIdOf(f.name) : null);
+        if (k) found[k] = 1;
+      });
+
       // Stars first, so a bagged cornerstone on the same spot sits on top.
       stars.forEach(function (st) {
         if (st.lat == null || st.lon == null) return;
+        var stKey = st.id || (S.sourceIdOf ? S.sourceIdOf(st.name) : null);
+        if (stKey && found[stKey]) return;              // drawn as a find below
         var xy = pt(st.lat, st.lon);
         if (xy[0] < -30 || xy[0] > size.x + 30 || xy[1] < -30 || xy[1] > size.y + 30) return;
         // Brighter stars draw bigger. Magnitude runs backwards, hence the flip.
@@ -330,6 +349,37 @@ var GeosonifyStarpinMap = (function () {
           g.stroke(); g.globalAlpha = 1;
         }
         hits.push({ x: xy[0], y: xy[1], r: r + 10, kind: 'star', data: st });
+      });
+
+      finds.forEach(function (f) {
+        if (f.lat == null || f.lon == null) return;
+        var xy = pt(f.lat, f.lon);
+        if (xy[0] < -40 || xy[0] > size.x + 40 || xy[1] < -40 || xy[1] > size.y + 40) return;
+        // Deliberately NOT scaled by magnitude. This dot answers "have I been
+        // here", not "how bright is it", and at world zoom a faint find has to
+        // stay as findable as a bright one.
+        var r = 6;
+        g.beginPath(); g.arc(xy[0], xy[1], r + 3, 0, 6.2832);
+        g.fillStyle = 'rgba(' + pal.halo + ',.30)'; g.fill();
+        g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
+        g.fillStyle = pal.bagged; g.fill();
+        g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
+        // The tick. A bagged starpin must not read as just another star.
+        g.beginPath();
+        g.moveTo(xy[0] - r * 0.45, xy[1]);
+        g.lineTo(xy[0] - r * 0.1, xy[1] + r * 0.4);
+        g.lineTo(xy[0] + r * 0.5, xy[1] - r * 0.45);
+        g.lineWidth = 2; g.strokeStyle = pal.baggedRing;
+        g.lineCap = 'round'; g.lineJoin = 'round'; g.stroke();
+        if (selected && selected.kind === 'star' && selected.id === f.id) {
+          var fr = r + 6 + Math.sin(phase * 6.2832) * 5;
+          g.beginPath(); g.arc(xy[0], xy[1], fr, 0, 6.2832);
+          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
+          g.globalAlpha = 0.35 + 0.5 * (1 - Math.abs(Math.sin(phase * 3.1416)));
+          g.stroke(); g.globalAlpha = 1;
+        }
+        hits.push({ x: xy[0], y: xy[1], r: r + 12, kind: 'star',
+                    data: f.star || { name: f.name, lat: f.lat, lon: f.lon } });
       });
 
       bagged.forEach(function (name) {
@@ -463,6 +513,25 @@ var GeosonifyStarpinMap = (function () {
       },
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
+      // [{ id, name, lat, lon, star? }] — bagged starpins, from the log.
+      setFinds: function (list) { finds = (list || []).slice(); redraw(); },
+      finds: function () { return finds.slice(); },
+      // Fit everything you have bagged, starpins and cornerstones together.
+      // Returns how many points it found, so the caller can say something
+      // useful when there are none.
+      fitFinds: function (padPx) {
+        var pts = [];
+        finds.forEach(function (f) {
+          if (f.lat != null && f.lon != null) pts.push([f.lat, f.lon]);
+        });
+        bagged.forEach(function (n) {
+          var p = resolve(n); if (p) pts.push([p.lat, p.lon]);
+        });
+        if (!pts.length) return 0;
+        if (pts.length === 1) { map.setView(pts[0], Math.min(17, map.getZoom())); return 1; }
+        map.fitBounds(pts, { padding: [padPx || 28, padPx || 28] });
+        return pts.length;
+      },
       setStars: function (list) { stars = (list || []).slice(); redraw(); },
       clearPin: function () { pin = null; selected = null; redraw(); },
       dropPin: function (lat, lon) {

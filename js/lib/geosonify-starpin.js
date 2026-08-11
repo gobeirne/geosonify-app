@@ -75,6 +75,15 @@ var GeosonifyStarpin = (function () {
   // ── identity ──────────────────────────────────────────────────────────────
 
   // source_id -> {cell, low, face, digits, quaternary}
+  // The trailing digit run of anything that names a Gaia source: a display
+  // name, a starpin URI, a bare id. NEVER replace(/\D/g,'') -- that turns
+  // "Gaia DR3 5382128178381506048" into "35382128178381506048" (the 3 from
+  // DR3) and matches nothing. That bug shipped three times in three files,
+  // which is why this lives here and is exported rather than re-typed.
+  function sourceIdOf(v) {
+    return (String(v == null ? '' : v).match(/(\d{5,})\s*$/) || [])[1] || '';
+  }
+
   function decodeSourceId(sourceId) {
     var id = toBig(sourceId, 'source_id');
     if (id < 0n) throw new Error('source_id: must be non-negative');
@@ -562,11 +571,24 @@ var GeosonifyStarpin = (function () {
   // log a closer approach and the earlier ones simply stop being your best.
   // Ranked by distance, with a supported visit always beating an unsupported
   // one at the same distance.
+  // One target, one key. A cornerstone logged under a v0.2 name and the same
+  // cornerstone logged under its canonical name are the same corner of the
+  // same cell, and they have to land in the same group or the collection shows
+  // the vertex twice and ranks each half separately.
+  function targetKey(target) {
+    if (!target) return 'unknown';
+    if (target.cornerstone) {
+      try { return canonicaliseCornerstone(target.cornerstone); }
+      catch (e) { return target.cornerstone; }
+    }
+    return target.starpin || 'unknown';
+  }
+
   function rankByTarget(records, opts) {
     var groups = {}, out = {};
     (records || []).forEach(function (r) {
       if (!r || !r.target) return;
-      var k = r.target.cornerstone || r.target.starpin || 'unknown';
+      var k = targetKey(r.target);
       (groups[k] = groups[k] || []).push(r);
     });
     Object.keys(groups).forEach(function (k) {
@@ -605,7 +627,8 @@ var GeosonifyStarpin = (function () {
     assessVisit: assessVisit, haversineM: haversineM,
     nearestCornerstone: nearestCornerstone, cellCornerstones: cellCornerstones,
     cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
-    canonicaliseCornerstone: canonicaliseCornerstone,
+    canonicaliseCornerstone: canonicaliseCornerstone, targetKey: targetKey,
+    sourceIdOf: sourceIdOf,
     assessRecord: assessRecord, rankByTarget: rankByTarget
   };
 })();

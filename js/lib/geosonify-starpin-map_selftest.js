@@ -32,6 +32,7 @@ function mkMap() {
     getCenter: function () { return { lat: state.lat, lng: state.lon }; },
     getZoom: function () { return 16; },
     setView: function () { return this; },
+    fitBounds: function () { return this; },
     on: function (evs, fn) { String(evs).split(' ').forEach(function (e) { handlers[e] = fn; }); },
     off: function () {},
     remove: function () {},
@@ -173,6 +174,54 @@ head('5: tapping — regression: markers stopped being selectable');
   ok('tapping empty ground drops a read-only pin', empty && empty.kind === 'pin',
      empty ? empty.kind : 'nothing');
   ok('the pin carries coordinates', empty && empty.data && empty.data.lat != null);
+})();
+
+head('5b: bagged starpins are visible at every zoom');
+// The field report: a starpin you had bagged looked exactly like one you had
+// never seen, and above an 8 km span the star layer is empty entirely, so a
+// collection was invisible from a city-wide view -- let alone from a map of
+// another country.
+(function () {
+  var picked = null;
+  var m3 = M.mount(document.getElementById('m'), {
+    onSelect: function (sel) { picked = sel; }
+  });
+  var FIND = { id: '5382127323687128576', name: 'Gaia DR3 5382127323687128576',
+               lat: -43.5547019, lon: 172.6538020 };
+  m3.setFinds([FIND]);
+
+  var drewAt = [];
+  [400, 5000, 50000, 2000000].forEach(function (span) {
+    state.spanM = span; arcs = 0; lastErr = null;
+    try { m3.redraw(); } catch (e) { lastErr = e; }
+    if (!lastErr && arcs > 0) drewAt.push(span);
+  });
+  ok('a find draws at every zoom, including well past the star cutoff',
+     drewAt.length === 4, drewAt.join(' '));
+
+  // One star, one dot. The lookup layer spells it "Gaia DR3 5382..." and the
+  // log spells it "starpin:gdr3:5382..."; keying the dedupe on the display
+  // name would draw it twice, one on top of the other, and push two hits.
+  state.spanM = 1600;
+  m3.setStars([{ lat: FIND.lat, lon: FIND.lon, mag: 12.3,
+                 name: 'Gaia DR3 5382127323687128576' }]);
+  m3.redraw();
+  var p = theMap.latLngToContainerPoint({ lat: FIND.lat, lng: FIND.lon });
+  picked = null;
+  theMap._click({ containerPoint: p, latlng: { lat: FIND.lat, lng: FIND.lon } });
+  ok('a bagged star that is also in the lookup is one target, not two',
+     picked && picked.kind === 'star', picked ? picked.kind : 'nothing');
+
+  // fitFinds has to cover cornerstones too, or "show all my finds" hides half
+  // the collection.
+  ok('fitFinds counts starpins and cornerstones together', (function () {
+    m3.setBagged(['V:f9.111202110020c3']);
+    return m3.fitFinds() === 2;
+  })());
+  ok('fitFinds reports nothing rather than jumping somewhere odd', (function () {
+    var m4 = M.mount(document.getElementById('m'));
+    return m4.fitFinds() === 0;
+  })());
 })();
 
 head('6: knobs');
