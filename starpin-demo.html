@@ -1260,7 +1260,11 @@ dl{margin:.7rem 0 0}
   if (typeof CARD_GRIDS !== 'undefined') RO.register('CARD_GRIDS', CARD_GRIDS);
   if (typeof encodeCardCoordinate !== 'undefined')
     RO.register('encodeCardCoordinate', encodeCardCoordinate);
-  var readout = RO.mount($('readout'), { order: 14 });
+  // No order: each HEALPix scheme uses the depth it declares (22 for all three),
+  // which is what Geosonify shows. Forcing 14 here truncated every hex code by
+  // four characters. Cornerstone order 14 is a separate thing and stays where
+  // it is used, in nearestCornerstone below.
+  var readout = RO.mount($('readout'), {});
   readout.el.addEventListener('change', function () {
     if (addrPoint) paintMapAddr(addrPoint.lat, addrPoint.lon, $('addr-src').textContent);
   });
