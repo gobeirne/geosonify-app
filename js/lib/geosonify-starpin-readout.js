@@ -59,6 +59,21 @@ var GeosonifyStarpinReadout = (function () {
            (ss < 10 ? '0' : '') + ss.toFixed(2) + 's';
   }
 
+  // Each HEALPix scheme states its own human-scale depth in SCHEMES.
+  // defaultIterations: hphex 22, hpquad 22, hp64 22 -- these are Geosonify's
+  // figures and the app should not second-guess them. Starpin was passing a
+  // flat order 14 to all of them, which is why the hex readout showed
+  // 956250B0 where Geosonify shows 956250B00897: the same point, eight orders
+  // shallower, a cell about 250 times wider. A bare `order` here is now only a
+  // fallback for schemes that do not declare one.
+  function schemeOrder(key, fallback) {
+    try {
+      var s = mod('HealpixGrids').SCHEMES[key];
+      if (s && s.defaultIterations) return s.defaultIterations;
+    } catch (e) {}
+    return fallback;
+  }
+
   // key -> { label, fn(lat, lon, order) -> string, note }
   var FORMATS = {
     latlon: { label: 'Latitude / Longitude', group: 'geographic',
@@ -74,16 +89,19 @@ var GeosonifyStarpinReadout = (function () {
       } },
 
     hpquad: { label: 'HEALPix \u00B7 quaternary', group: 'healpix', needs: 'HealpixGrids',
-      fn: function (lat, lon, order) {
-        return mod('HealpixGrids').encode('hpquad', lat, lon, order);
+      fn: function (lat, lon, order, explicit) {
+        return mod('HealpixGrids').encode('hpquad', lat, lon,
+                   explicit ? order : schemeOrder('hpquad', order));
       } },
     hphex: { label: 'HEALPix \u00B7 hex', group: 'healpix', needs: 'HealpixGrids',
-      fn: function (lat, lon, order) {
-        return mod('HealpixGrids').encode('hphex', lat, lon, order);
+      fn: function (lat, lon, order, explicit) {
+        return mod('HealpixGrids').encode('hphex', lat, lon,
+                   explicit ? order : schemeOrder('hphex', order));
       } },
     hp64: { label: 'HEALPix \u00B7 base64', group: 'healpix', needs: 'HealpixGrids',
-      fn: function (lat, lon, order) {
-        return mod('HealpixGrids').encode('hp64', lat, lon, order);
+      fn: function (lat, lon, order, explicit) {
+        return mod('HealpixGrids').encode('hp64', lat, lon,
+                   explicit ? order : schemeOrder('hp64', order));
       } },
 
     localgrid: { label: 'Local Grid', group: 'geographic', needs: 'GISGrids',
@@ -229,7 +247,10 @@ var GeosonifyStarpinReadout = (function () {
     }
 
     ensureCardFormats();
-    var order = opts.order || 14, lat = null, lon = null;
+    // An order passed in is an OVERRIDE, not a default: without it each format
+    // uses the depth its own scheme declares.
+    var order = opts.order || 14, explicitOrder = opts.order != null;
+    var lat = null, lon = null;
     var root = doc.createElement('div'); root.className = 'spr';
     var top = doc.createElement('div'); top.className = 'spr-top';
     var sel = doc.createElement('select');
@@ -242,7 +263,20 @@ var GeosonifyStarpinReadout = (function () {
       o.disabled = !available(k);
       sel.appendChild(o);
     });
-    sel.value = available(opts.format) ? opts.format : 'latlon';
+    // The chosen format persists. Picking HEALPix hex and finding lat/lon back
+    // on the next visit is not a preference, it is the app forgetting. An
+    // explicit opts.format still wins, and a remembered format whose module is
+    // no longer loaded falls back rather than showing an empty box.
+    var STORE_KEY = opts.storeKey || 'starpin.readout.format';
+    var store = null;
+    try { store = (opts.storage !== undefined) ? opts.storage
+                : (doc.defaultView && doc.defaultView.localStorage) || null; } catch (e) {}
+    var remembered = null;
+    try { remembered = store && store.getItem(STORE_KEY); } catch (e) {}
+
+    sel.value = available(opts.format) ? opts.format
+              : available(remembered) ? remembered
+              : 'latlon';
 
     var copy = doc.createElement('button');
     copy.type = 'button'; copy.className = 'spr-copy'; copy.textContent = 'copy';
@@ -257,21 +291,25 @@ var GeosonifyStarpinReadout = (function () {
       if (lat == null) { val.textContent = '\u2014'; sub.textContent = ''; return; }
       var f = FORMATS[sel.value];
       try {
-        val.textContent = f.fn(lat, lon, order) || '\u2014';
+        val.textContent = f.fn(lat, lon, order, explicitOrder) || '\u2014';
       } catch (e) {
         val.textContent = '\u2014';
         sub.textContent = f.needs + ' is not loaded, so this format is unavailable. ' +
                           'It is a frozen format and will not be approximated.';
         return;
       }
-      sub.textContent = f.group === 'healpix' ? 'order ' + order
+      sub.textContent = f.group === 'healpix'
+                        ? 'order ' + (explicitOrder ? order : schemeOrder(sel.value, order))
                       : f.group === 'geosonify'
                         ? 'Geosonify vocabulary' + (f.defaultIterations
                             ? ' \u00B7 ' + f.defaultIterations + ' steps, human scale' : '')
                       : f.group;
     }
 
-    sel.addEventListener('change', paint);
+    sel.addEventListener('change', function () {
+      try { if (store) store.setItem(STORE_KEY, sel.value); } catch (e) {}
+      paint();
+    });
     copy.addEventListener('click', function () {
       try { doc.defaultView.navigator.clipboard.writeText(val.textContent); } catch (e) {}
       copy.textContent = 'copied'; setTimeout(function () { copy.textContent = 'copy'; }, 1200);
@@ -280,14 +318,19 @@ var GeosonifyStarpinReadout = (function () {
     return {
       el: root,
       set: function (la, lo) { lat = la; lon = lo; paint(); },
-      setOrder: function (o) { order = o; paint(); },
+      setOrder: function (o) { order = o; explicitOrder = (o != null); paint(); },
       format: function () { return sel.value; },
-      setFormat: function (k) { if (available(k)) { sel.value = k; paint(); } },
+      setFormat: function (k) {
+        if (!available(k)) return;
+        sel.value = k;
+        try { if (store) store.setItem(STORE_KEY, k); } catch (e) {}
+        paint();
+      },
       destroy: function () { if (root.parentNode) root.parentNode.removeChild(root); }
     };
   }
 
-  return { VERSION: '0.3', mount: mount, FORMATS: FORMATS, available: available,
+  return { VERSION: '0.4', mount: mount, FORMATS: FORMATS, available: available,
            ensureCardFormats: ensureCardFormats, RETIRED: RETIRED,
            mod: mod, register: register, parse: parse, canParse: canParse };
 })();
