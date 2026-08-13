@@ -296,6 +296,27 @@ dl{margin:.7rem 0 0}
 </head>
 <body>
 
+<!-- The countdown bar. Locked to the top of the viewport, OUTSIDE the tab
+     sections, because the whole failure mode is being on the wrong screen when
+     the moment arrives. It must not be dismissible by switching tabs. -->
+<div id="culmbar" hidden>
+  <div id="culmbar-time"></div>
+  <div id="culmbar-near"></div>
+</div>
+
+<!-- The moment. Last ten seconds, full screen, on every tab. -->
+<div id="moment" hidden>
+  <div class="moment-inner">
+    <div id="moment-count"></div>
+    <p class="moment-line" data-l="1">Look up at the sky.</p>
+    <p class="moment-line" data-l="2">Look down at your feet on the earth.</p>
+    <p class="moment-line" data-l="3">You are here, <span id="moment-now">now</span>.</p>
+    <div id="moment-where"></div>
+    <button id="moment-mark" type="button" hidden>Mark this occasion</button>
+    <button id="moment-close" type="button">let it pass</button>
+  </div>
+</div>
+
 <div class="splash" id="splash">
   <div class="splash-title">starpin!</div>
   <div class="splash-author">Greg O&rsquo;Beirne, 2026</div>
@@ -392,6 +413,64 @@ dl{margin:.7rem 0 0}
      name. Intrinsic order is the coarsest order at which the point is still a
      vertex — the shorter the address, the rarer the cornerstone.</p>
   <p class="hint" id="readout-src"></p>
+  <style>
+    /* The moment. Unhurried on purpose: nothing flashes, nothing bounces,
+       nothing shouts that you have won. The countdown fades as the words
+       arrive, and at zero only the sentence is left. */
+    #moment{position:fixed;inset:0;z-index:10000;display:flex;
+      align-items:center;justify-content:center;text-align:center;
+      background:radial-gradient(120% 90% at 50% 40%,#131b2e 0%,#070A14 70%);
+      color:#E9E4D6;padding:2rem 1.6rem;
+      animation:momentIn 1.2s ease both}
+    #moment[hidden]{display:none}
+    @keyframes momentIn{from{opacity:0}to{opacity:1}}
+    .moment-inner{max-width:24rem;display:flex;flex-direction:column;gap:1.15rem}
+    #moment-count{font:300 3.6rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-variant-numeric:tabular-nums;color:#DCC949;
+      transition:opacity 1.4s ease,transform 1.4s ease}
+    #moment.zero #moment-count{opacity:0;transform:scale(.92)}
+    .moment-line{font:400 1.32rem/1.55 Georgia,serif;margin:0;
+      opacity:0;transform:translateY(.5rem);
+      transition:opacity 1.6s ease,transform 1.6s ease}
+    #moment.l1 .moment-line[data-l="1"],
+    #moment.l2 .moment-line[data-l="1"],#moment.l2 .moment-line[data-l="2"],
+    #moment.l3 .moment-line{opacity:1;transform:none}
+    /* "now" is the only word that waits for the instant itself. */
+    #moment-now{opacity:0;color:#DCC949;font-style:italic;
+      transition:opacity 2.2s ease}
+    #moment.zero #moment-now{opacity:1}
+    #moment-where{font:500 .82rem/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;
+      color:#8A93AD;min-height:1.5em}
+    #moment-mark{margin-top:.4rem;padding:.85rem 1rem;border-radius:12px;
+      border:1px solid #DCC949;background:#DCC949;color:#241f05;
+      font:600 1rem/1 inherit;cursor:pointer}
+    #moment-close{background:none;border:0;color:#5C6480;
+      font:400 .84rem/1 inherit;cursor:pointer;padding:.6rem}
+    @media (prefers-reduced-motion:reduce){
+      #moment,#moment-count,.moment-line,#moment-now{animation:none;transition:none}
+      .moment-line{opacity:1;transform:none}
+    }
+
+    #culmbar{position:fixed;top:0;left:0;right:0;z-index:9999;
+      display:flex;gap:.6rem;align-items:baseline;justify-content:space-between;
+      padding:.42rem .7rem;font:600 .82rem/1.25 ui-monospace,SFMono-Regular,Menlo,monospace;
+      background:#241f05;color:#DCC949;border-bottom:2px solid #DCC949;
+      box-shadow:0 2px 14px rgba(0,0,0,.35)}
+    #culmbar[hidden]{display:none}
+    #culmbar.close{background:#DCC949;color:#241f05}
+    #culmbar-time{white-space:nowrap;font-variant-numeric:tabular-nums}
+    #culmbar-near{text-align:right;font-weight:500;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    body.culmbar-on{padding-top:2.2rem}
+
+    /* The culmination designator. --sun / #DCC949, heavier stroke: it should be
+       the most conspicuous thing in the log, because it is the hardest thing to
+       get -- the right place, the right instant, and the instant slides 3m56s
+       earlier every day. */
+    .rec.culm{border:2px solid #DCC949;box-shadow:0 0 0 1px rgba(220,201,73,.25),
+              0 2px 14px rgba(220,201,73,.18)}
+    .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
+  </style>
 </section>
 
 <section data-tab="log">
@@ -1284,6 +1363,161 @@ dl{margin:.7rem 0 0}
     $('readout-src').textContent = txt;
   }
 
+  // ── the culmination bar ──────────────────────────────────────────────────
+  //
+  // From T-15 minutes a single line sits locked to the top of the viewport on
+  // EVERY tab. The clock lives on Sky and bagging lives on Go, so the moment
+  // used to pass while you were looking at the wrong screen -- that is the
+  // whole reason this is outside the tab sections and cannot be dismissed.
+  //
+  // The time is RECOMPUTED every tick, never counted down from a cached value:
+  // the sidereal day is 23h56m04s and a naive countdown drifts nearly four
+  // minutes a day, which is the difference between standing there and missing
+  // it entirely.
+  var LEAD_MS = 15 * 60 * 1000;
+  var RUN_LEAD_S = 12;                       // the arpeggio starts this early
+  var culmArmed = null;                      // culminationMs whose run is scheduled
+  var culmOffered = null;                    // culminationMs already offered
+
+  function culmNearest() {
+    // Prefer a starpin already in the log: at culmination you are almost
+    // always standing at one you know, and the lookup layer may hold nothing
+    // at all if the map is zoomed out or offline.
+    var best = nearestStarpin();
+    if (!fix) return null;
+    log.current().forEach(function (r) {
+      if (!r.target.starpin || r.target.lat_1e7 == null) return;
+      var la = r.target.lat_1e7 / 1e7, lo = r.target.lon_1e7 / 1e7;
+      var d = S.haversineM(fix.lat, fix.lon, la, lo);
+      if (!best || d < best.distanceM)
+        best = { star: { name: 'Gaia DR3 ' + sourceIdOf(r.target.starpin),
+                         lat: la, lon: lo, ra: r.target.ra_deg, dec: r.target.dec_deg,
+                         mag: r.target.mag_g, distLy: r.target.dist_ly },
+                 distanceM: d };
+    });
+    return best;
+  }
+
+  function culmTick() {
+    var now = Date.now();
+    var a = S.attendance(now);
+    // attendance() snaps to the NEAREST culmination, so one second after the
+    // instant it is still the right one -- keep it for the whole 60 s window
+    // the record can still be logged in. Switching to the next culmination at
+    // +1 s tore the bar away at exactly the moment it mattered most.
+    var next = a.offsetMs <= 60000 ? a.culminationMs
+             : S.attendance(now + Math.round(86164090.5 / 2)).culminationMs;
+    var ms = next - now;
+    var bar = $('culmbar');
+
+    // Keep the bar up for a minute afterwards, so the window you can still log
+    // in is visible rather than vanishing at the stroke.
+    if (ms > LEAD_MS || ms < -60000) {
+      bar.hidden = true; document.body.classList.remove('culmbar-on');
+      culmArmed = null; return;
+    }
+    bar.hidden = false; document.body.classList.add('culmbar-on');
+
+    var s = Math.round(Math.abs(ms) / 1000);
+    var mm = Math.floor(s / 60), ss = s % 60;
+    $('culmbar-time').textContent = (ms < 0 ? '+' : '\u2212') +
+      mm + ':' + (ss < 10 ? '0' : '') + ss + '  culmination';
+    bar.classList.toggle('close', Math.abs(ms) <= 60000);
+
+    var near = culmNearest();
+    if (!near) {
+      $('culmbar-near').textContent = fix ? 'no starpin known nearby'
+                                          : 'use my location to see the nearest';
+    } else {
+      var d = Math.round(near.distanceM);
+      var inR = near.distanceM <= 3 * 30.9222;
+      $('culmbar-near').textContent = (near.star.name || 'nearest') + ' \u00B7 ' + d + ' m \u00B7 ' +
+        (inR ? 'close enough' : 'too far \u2014 ' + Math.round(near.distanceM - 92.8) + ' m to go');
+    }
+
+    // The sound. Scheduled once, against the recomputed instant, and only when
+    // the audio context is already running -- browsers will not start one
+    // without a gesture, and a silent failure here is better than a throw.
+    if (culmArmed !== next && ms > 0 && ms <= RUN_LEAD_S * 1000 + 500 && fix) {
+      culmArmed = next;
+      var q = '';
+      try { q = HealpixGrids.encode('hpquad', fix.lat, fix.lon, 22).split('.')[1] || ''; } catch (e) {}
+      try { F.playCulminationRun(q, 'dorian', ms); } catch (e) {}
+    }
+
+    momentTick(ms, next, near);
+  }
+
+  // ── the moment ───────────────────────────────────────────────────────────
+  //
+  // The last ten seconds, full screen, on every tab. It does NOT auto-record.
+  // A culmination is worth a deliberate act, and a button press is also the
+  // only part of this the person actually contributes -- the geometry and the
+  // instant are just arithmetic. The window stays open for the full 60 s
+  // either side that attendance-v1 allows, so a slow tap still counts.
+  //
+  // The offer only appears if you are within R. Arrival is not acceptance, and
+  // the moment belongs to everyone standing anywhere; only the RECORD needs
+  // you to be there.
+  var momentFor = null, momentNear = null;
+
+  function momentTick(ms, culmMs, near) {
+    var m = $('moment');
+    var show = ms <= 10000 && ms > -60000;
+    if (!show) {
+      if (!m.hidden) { m.hidden = true; m.className = ''; }
+      momentFor = null; return;
+    }
+    if (m.hidden) { m.hidden = false; m.className = ''; momentFor = culmMs; }
+    momentNear = near;
+
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    $('moment-count').textContent = ms > 0 ? String(s) : '';
+    // The three lines arrive one at a time, then "now" waits for zero.
+    m.classList.toggle('l1', ms <= 10000);
+    m.classList.toggle('l2', ms <= 7000);
+    m.classList.toggle('l3', ms <= 4000);
+    m.classList.toggle('zero', ms <= 0);
+
+    var inR = near && near.distanceM <= 3 * 30.9222;
+    var mark = $('moment-mark');
+    if (ms > 0) {
+      $('moment-where').textContent = near
+        ? near.star.name + ' \u00B7 ' + Math.round(near.distanceM) + ' m'
+        : (fix ? '' : 'no fix yet');
+      mark.hidden = true;
+    } else if (inR && culmOffered !== culmMs) {
+      $('moment-where').textContent = near.star.name + ' \u00B7 ' +
+        Math.round(near.distanceM) + ' m \u00B7 close enough';
+      mark.hidden = false;
+    } else if (culmOffered === culmMs) {
+      $('moment-where').textContent = 'marked';
+      mark.hidden = true;
+    } else {
+      $('moment-where').textContent = near
+        ? near.star.name + ' \u00B7 ' + Math.round(near.distanceM) +
+          ' m \u00B7 too far to mark this one'
+        : 'no starpin close enough to mark';
+      mark.hidden = true;
+    }
+    $('moment-close').textContent = ms > 0 ? 'let it pass' : 'close';
+  }
+
+  $('moment-mark').addEventListener('click', function () {
+    if (!momentNear || !fix) return;
+    culmOffered = momentFor;
+    // visit-geometry-v1 returns the verdict; the button never assumes it.
+    var vr = S.assessVisit(fix, { lat: momentNear.star.lat, lon: momentNear.star.lon });
+    bagStar(momentNear.star, vr, vr.verdict === 'well-supported');
+    $('moment').hidden = true; $('moment').className = '';
+  });
+  $('moment-close').addEventListener('click', function () {
+    $('moment').hidden = true; $('moment').className = '';
+    momentFor = null;
+  });
+  setInterval(culmTick, 1000);
+  culmTick();
+
   // ── tracking: watchPosition, so the readout follows you ──────────────────
   var watchId = null;
   $('track').addEventListener('click', function () {
@@ -1396,9 +1630,52 @@ dl{margin:.7rem 0 0}
     if (sp.mag != null) target.mag_g = Number(sp.mag);
     if (sp.distLy != null) target.dist_ly = Number(sp.distLy);
     if (sp.bpRp != null) target.bp_rp = Number(sp.bpRp);
-    if (log.current().some(function (r) { return r.target.starpin === target.starpin; })) {
-      F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag,
-                    digits: id, kicker: 'already yours' });
+    // ── the culmination moment ────────────────────────────────────────────
+    //
+    // Standing at a starpin AT culmination is the hardest thing in the game:
+    // the right place, the right instant, and the instant slides 3m56s earlier
+    // every day. It is also, almost always, a starpin you ALREADY HAVE, because
+    // you have to know where it is to be standing on it.
+    //
+    // The old code returned early on "already yours" and wrote nothing. On
+    // 13 Aug 2026 Greg stood at a starpin at culmination, tapped bag, and the
+    // app discarded the only event that mattered. The moment is not
+    // recoverable: attendance-v1 derives from the raw timestamp, so if no
+    // record is captured at the instant, there is nothing to derive from.
+    //
+    // A culmination attendance is a SEPARATE EVENT, so it gets its own record
+    // (kind 'culmination-attempt') targeting the same starpin. The visit record
+    // is never edited. The card then derives both dates from the record set.
+    var att = S.attendance(Date.now());
+    var already = log.current().filter(function (r) {
+      return r.target.starpin === target.starpin; });
+    var haveThisCulmination = log.current().some(function (r) {
+      return r.kind === 'culmination-attempt' &&
+             r.target.starpin === target.starpin &&
+             Math.abs(S.attendance(r.event.time_ms).culminationMs - att.culminationMs) < 1000;
+    });
+
+    if (att.attended && supported && !haveThisCulmination) {
+      log.add(L.build('culmination-attempt', {
+        target: target,
+        fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
+        provenance: provenanceFor(target)
+      }));
+      // A first-ever visit at culmination is two events, so it writes two
+      // records; falling through covers that.
+      if (already.length) {
+        drawLog(); redraw();
+        F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
+                      kicker: 'at culmination' });
+        return;
+      }
+    } else if (already.length) {
+      F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
+                    kicker: att.attended && !supported
+                      ? 'already yours \u2014 too far to count at culmination'
+                      : haveThisCulmination
+                        ? 'already yours \u00B7 culmination already recorded'
+                        : 'already yours' });
       return;
     }
     log.add(L.build(supported ? 'visit' : 'closest-approach', {
@@ -1410,8 +1687,10 @@ dl{margin:.7rem 0 0}
     }));
     drawLog(); redraw();
     F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
-                  kicker: supported ? 'starpin bagged'
-                        : 'closest approach saved \u00B7 ' + Math.round(vr.distanceM) + ' m' });
+                  kicker: !supported
+                        ? 'closest approach saved \u00B7 ' + Math.round(vr.distanceM) + ' m'
+                        : att.attended ? 'bagged at culmination'
+                        : 'starpin bagged' });
     var just = log.current().filter(function (x) {
       return x.target.starpin === target.starpin; })[0];
     if (just) setTimeout(function () {
@@ -1597,6 +1876,20 @@ dl{margin:.7rem 0 0}
         chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
       if (r.kind === 'closest-approach') chip('approach');
 
+      // The gold designator. A culmination is a property of the STARPIN,
+      // derived from its record set, not of any single record -- otherwise the
+      // visit row and the culmination row disagree about the same star. So
+      // every row for this target carries the mark, and the date comes from
+      // whichever record holds the attendance.
+      if (isStar) {
+        var attMs = culminationMsFor(r.target.starpin);
+        if (attMs) {
+          d.classList.add('culm');
+          chip('at culmination \u00B7 ' + new Date(attMs).toLocaleDateString(
+            undefined, { day: 'numeric', month: 'short', year: 'numeric' }), 'culm');
+        }
+      }
+
       body.appendChild(chips);
 
       var acts = el('div', 'acts');
@@ -1663,6 +1956,20 @@ dl{margin:.7rem 0 0}
   // ── cards ────────────────────────────────────────────────────────────────
   // A starpin card goes full screen; a cornerstone card is inline and quieter,
   // because nobody travelled to a lattice vertex because of a star.
+  // The culmination is a property of the STARPIN, derived from its record set
+  // -- not of the record you happen to have opened. One helper, so a log row
+  // and a card can never disagree about the same star. The earliest attendance
+  // wins: the first time is the one that is hard.
+  function culminationMsFor(starpin) {
+    if (!starpin) return null;
+    var hit = log.current().filter(function (x) {
+      return x.target.starpin === starpin &&
+             x.kind === 'culmination-attempt' &&
+             S.attendance(x.event.time_ms).attended;
+    }).sort(function (x, y) { return x.event.time_ms - y.event.time_ms; })[0];
+    return hit ? hit.event.time_ms : null;
+  }
+
   function cardOptsFor(r, rk) {
     var a = (rk && rk.assessment) || null;
     if (!a) { try { a = S.assessRecord(r); } catch (e) {} }
@@ -1703,6 +2010,7 @@ dl{margin:.7rem 0 0}
         var k = x.target.starpin; if (!k || seen[k]) return; seen[k] = ++n;
       });
     return { kind: 'starpin', visit: visit,
+      culminationMs: culminationMsFor(r.target.starpin),
       findNumber: seen[r.target.starpin] || null,
       // The RECORD wins. What the map happens to be showing today is only a
       // fallback for records written before these fields were stored.
