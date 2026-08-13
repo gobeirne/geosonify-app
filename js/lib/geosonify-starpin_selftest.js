@@ -122,6 +122,146 @@ ok('reports separation in arcseconds too',
 ok('verdict is a verdict, never a badge',
    S.assessVisit({ lat: -43.552940, lon: 172.652140, accuracy_m: 8 }, tgt).rule === 'visit-geometry-v1');
 
+// ── culmination attendance is capturable ──────────────────────────────────────
+head('7b: culmination attendance');
+(function () {
+  // 13 Aug 2026: Greg stood at a starpin at culmination, tapped bag, and the
+  // app wrote nothing, because "already yours" returned early. attendance-v1
+  // derives from the raw timestamp, so no record at the instant means the
+  // moment is gone -- there is nothing to derive from afterwards. The rule
+  // itself was never wrong; nothing was ever asked to save the timestamp.
+  var CULM = S.attendance(1786631733328).culminationMs;
+  ok('attendance is derived, never stored', S.attendance(CULM).attended === true);
+  ok('the window is 60 s late', S.attendance(CULM + 59000).attended === true);
+  ok('and closes at 61 s', S.attendance(CULM + 61000).attended === false);
+  ok('the window is 60 s early', S.attendance(CULM - 59000).attended === true);
+  ok('a visit five hours before culmination is not attendance',
+     S.attendance(CULM - 5 * 3600000).attended === false);
+
+  // Two events, two records, one target. The visit is never edited.
+  var T = { starpin: 'starpin:gdr3:5382128182680588160',
+            lat_1e7: -435261299, lon_1e7: 1725954480 };
+  var recs = [
+    { schema: 'starpin.record/1', record_id: 'v', kind: 'visit', target: T,
+      event: { time_ms: 1786309714204 },
+      fix: { lat_1e7: -435263270, lon_1e7: 1725954589, accuracy_m: 5.2,
+             time_ms: 1786309714204, source: 'web-geolocation' } },
+    { schema: 'starpin.record/1', record_id: 'c', kind: 'culmination-attempt', target: T,
+      event: { time_ms: CULM + 4000 },
+      fix: { lat_1e7: -435261299, lon_1e7: 1725954480, accuracy_m: 4.7,
+             time_ms: CULM + 4000, source: 'web-geolocation' } }];
+  var rk = S.rankByTarget(recs);
+  ok('a visit and a culmination are one target, not two',
+     rk.v.count === 2 && rk.c.count === 2);
+  ok('the attendance is derivable from the record set',
+     recs.some(function (r) {
+       return r.kind === 'culmination-attempt' && S.attendance(r.event.time_ms).attended;
+     }));
+  ok('and the visit record is still a plain visit',
+     recs[0].kind === 'visit' && S.attendance(recs[0].event.time_ms).attended === false);
+})();
+
+// ── the countdown bar's arithmetic ────────────────────────────────────────────
+head('7c: the culmination bar');
+(function () {
+  var C = S.attendance(Date.now()).culminationMs;
+  var HALF = Math.round(86164090.5 / 2);
+  // The bar's own selection rule, copied from starpin-demo.html. attendance()
+  // snaps to the NEAREST culmination, so one second after the instant it is
+  // still the right one; an earlier version switched to the next culmination
+  // at +1 s and tore the bar away at the moment it mattered most.
+  function barShows(now) {
+    var a = S.attendance(now);
+    var next = a.offsetMs <= 60000 ? a.culminationMs
+             : S.attendance(now + HALF).culminationMs;
+    var ms = next - now;
+    return !(ms > 15 * 60000 || ms < -60000);
+  }
+  ok('hidden at T-16 min', barShows(C - 16 * 60000) === false);
+  ok('showing at T-15 min', barShows(C - 15 * 60000 + 500) === true);
+  ok('showing at the instant', barShows(C) === true);
+  ok('STILL showing one second after', barShows(C + 1000) === true);
+  ok('still showing at +59 s, while a record can be logged',
+     barShows(C + 59000) === true);
+  ok('gone at +61 s, when it no longer counts', barShows(C + 61000) === false);
+
+  // The sidereal day is 23h56m04s. A countdown cached against a solar day
+  // drifts nearly four minutes each day, which is the difference between
+  // standing there and missing it.
+  // attendance() snaps to the NEAREST culmination, so asking it about exactly
+  // half a sidereal day later sits on a knife edge and can snap BACK to C.
+  // This test failed about one run in four for that reason -- the test was
+  // wrong, not the code. Step clear of the midpoint instead.
+  var next = S.attendance(C + 13 * 3600000).culminationMs;
+  ok('successive culminations are a sidereal day apart',
+     Math.abs((next - C) - 86164090.5) < 1500, String(next - C));
+  ok('and that is 236 s short of a solar day',
+     Math.abs(86400000 - (next - C) - 235900) < 1500);
+})();
+
+// ── the arpeggio is this place's ──────────────────────────────────────────────
+head('7d: the culmination arpeggio');
+(function () {
+  var F = null;
+  try { F = require('./geosonify-starpin-feedback.js'); } catch (e) {}
+  if (!F || !F.composeCulminationRun) { ok('feedback module present', false); return; }
+  var here = F.composeCulminationRun('1112021011333333333303', 'dorian');
+  var there = F.composeCulminationRun('2033112003211230', 'dorian');
+  ok('the run ascends', here.notes.every(function (n, i) {
+    return i === 0 || n.cents >= here.notes[i - 1].cents; }));
+  ok('and lands exactly on the instant',
+     Math.abs(here.notes[here.notes.length - 1].t) < 1e-9);
+  ok('it starts before the instant, never after', here.notes[0].t < 0);
+  ok('a different place is a different run',
+     JSON.stringify(here.notes) !== JSON.stringify(there.notes));
+  ok('the same place is the same run every time',
+     JSON.stringify(F.composeCulminationRun('1112021011333333333303', 'dorian')) ===
+     JSON.stringify(here));
+  // An earlier version stepped 1..4 degrees over sixteen digits and topped out
+  // near 22 kHz: inaudible, so the climax was silence.
+  var hz = function (c) { return 440 * Math.pow(2, (c - 6900) / 1200); };
+  var top = hz(here.notes[here.notes.length - 1].cents);
+  var bot = hz(here.notes[0].cents);
+  ok('every note is audible on a phone', bot > 50 && top < 5000,
+     bot.toFixed(0) + '-' + top.toFixed(0) + ' Hz');
+  ok('the chord is a chord', here.chord.length >= 4);
+})();
+
+// ── the moment ────────────────────────────────────────────────────────────────
+head('7e: the moment');
+(function () {
+  // The state machine from starpin-demo.html, restated so the timing is pinned
+  // somewhere runnable. The modal is up for the last ten seconds and stays up
+  // for the whole 60 s afterwards in which a record still counts -- a slow tap
+  // at +59 s must still be able to mark the occasion.
+  var R = 3 * 30.9222;
+  function state(ms, distanceM, marked) {
+    if (!(ms <= 10000 && ms > -60000)) return { shown: false };
+    return { shown: true,
+             lines: [ms <= 10000, ms <= 7000, ms <= 4000].filter(Boolean).length,
+             now: ms <= 0,
+             mark: ms <= 0 && distanceM != null && distanceM <= R && !marked };
+  }
+  ok('nothing at T-15 s', state(15000, 40, false).shown === false);
+  ok('up at T-10 s, one line', state(10000, 40, false).lines === 1);
+  ok('two lines at T-7 s', state(7000, 40, false).lines === 2);
+  ok('three lines at T-4 s', state(4000, 40, false).lines === 3);
+  ok('"now" waits for the instant itself', state(1000, 40, false).now === false &&
+     state(0, 40, false).now === true);
+  ok('the mark is offered at zero', state(0, 40, false).mark === true);
+  ok('a slow tap at +59 s still counts', state(-59000, 40, false).mark === true);
+  ok('and the modal is gone at +61 s', state(-61000, 40, false).shown === false);
+
+  // Arrival is not acceptance: the moment belongs to anyone standing anywhere,
+  // but the RECORD needs you inside R.
+  ok('inside R the mark is offered', state(-2000, 92, false).mark === true);
+  ok('outside R it is not', state(-2000, 93, false).mark === false);
+  ok('the moment still shows when you are too far',
+     state(-2000, 5000, false).shown === true);
+  ok('and it is never offered twice for one culmination',
+     state(-2000, 40, true).mark === false);
+})();
+
 // ── 8. cornerstones ───────────────────────────────────────────────────────────
 head('8: cornerstones');
 var haveHp = true;

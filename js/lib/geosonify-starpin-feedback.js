@@ -336,6 +336,102 @@ var GeosonifyStarpinFeedback = (function () {
     return 32 * eighth;                          // seconds of music
   }
 
+  // ── the culmination run ───────────────────────────────────────────────────
+  //
+  // An ascending arpeggio derived from WHERE YOU ARE, climaxing in a chord at
+  // the instant of culmination. The run-up must be *this place's*, not a
+  // generic one, so the intervals come from the HEALPix quaternary digits of
+  // the spot -- the same digits `ring()` already sonifies, and the same idea
+  // as every other Geosonify sonification.
+  //
+  // Each digit 0..3 is a step of 1..4 scale degrees, so the line always rises
+  // and its shape is the address. Two people a kilometre apart hear different
+  // run-ups; the same person at the same starpin hears the same one every time.
+  //
+  // Returns [{ t, cents }] with t in SECONDS RELATIVE TO CULMINATION, negative
+  // before it. Separated from the audio so it can be tested without a
+  // browser -- the timing is the part that has to be right.
+  function composeCulminationRun(quaternary, scaleId, runSeconds) {
+    var digits = String(quaternary || '0123').replace(/[^0-3]/g, '');
+    if (!digits) digits = '0123';
+    // Twelve digits, stepping 1..3 scale degrees each, so the run rises about
+    // three octaves and lands in a range a phone speaker can actually produce.
+    // An earlier version stepped 1..4 over sixteen digits and topped out near
+    // 22 kHz -- inaudible, and the climax was silence.
+    digits = digits.slice(-12);
+    var run = runSeconds || 12;
+
+    var sc = null;
+    try { sc = global.GeoScales && global.GeoScales.get(scaleId || 'dorian'); } catch (e) {}
+    var cents = (sc && sc.cents) || [0, 200, 300, 500, 700, 900, 1000];   // Dorian
+    var tonicPc = (sc && sc.tonicPc) || 0;
+
+    var notes = [], idx = 0, n = cents.length;
+    for (var i = 0; i < digits.length; i++) {
+      idx += Math.max(1, Number(digits.charAt(i)));
+      var deg = ((idx % n) + n) % n, oct = 3 + Math.floor(idx / n);
+      // Accelerate into the instant: the gaps shrink geometrically, so the
+      // last notes tumble over each other and the chord lands on zero.
+      var frac = (i + 1) / digits.length;
+      notes.push({ t: -run * Math.pow(1 - frac, 1.7),
+                   cents: tonicPc * 100 + cents[deg] + 1200 * oct });
+    }
+    // The grand chord: tonic, fifth, octave and the tenth above the run.
+    var top = notes[notes.length - 1].cents;
+    var base = tonicPc * 100 + 1200 * 3;
+    var chord = [base, base + 700, base + 1200, base + 1900, top + 1200];
+    return { notes: notes, chord: chord, runSeconds: run };
+  }
+
+  // Schedules the run so the chord sounds AT culmination. msUntil is measured
+  // fresh by the caller against the recomputed culmination time -- the sidereal
+  // day is 23h56m04s and a cached countdown drifts four minutes a day.
+  function playCulminationRun(quaternary, scaleId, msUntil) {
+    if (!ctx || ctx.state !== 'running') return 0;
+    var plan = composeCulminationRun(quaternary, scaleId);
+    var zero = ctx.currentTime + Math.max(0.05, msUntil / 1000);
+
+    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+    var eighth = 60 / BPM / 2;
+    var delay = ctx.createDelay(2.0); delay.delayTime.value = eighth * 1.5;
+    var fb = ctx.createGain(); fb.gain.value = 0.38;
+    var wet = ctx.createGain(); wet.gain.value = 0.34;
+    var damp = ctx.createBiquadFilter(); damp.type = 'lowpass'; damp.frequency.value = 2600;
+    delay.connect(damp); damp.connect(fb); fb.connect(delay); damp.connect(wet); wet.connect(out);
+    var bus = ctx.createGain(); bus.gain.value = 0.26;
+    bus.connect(out); bus.connect(delay);
+
+    function voice(hz, when, len, gain) {
+      var amp = ctx.createGain(), flt = ctx.createBiquadFilter();
+      flt.type = 'lowpass'; flt.Q.value = 6;
+      flt.frequency.setValueAtTime(Math.min(9000, hz * 9), when);
+      flt.frequency.exponentialRampToValueAtTime(Math.max(320, hz * 2.4), when + len * 0.7);
+      amp.gain.setValueAtTime(0.0001, when);
+      amp.gain.exponentialRampToValueAtTime(gain, when + 0.012);
+      amp.gain.exponentialRampToValueAtTime(gain * 0.4, when + len * 0.45);
+      amp.gain.exponentialRampToValueAtTime(0.0001, when + len);
+      [[0, 'sawtooth', 1], [7, 'sawtooth', 0.85], [-1200, 'square', 0.28]].forEach(function (v) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = v[1]; o.frequency.value = hz; o.detune.value = v[0]; g.gain.value = v[2];
+        o.connect(g); g.connect(flt);
+        o.start(when); o.stop(when + len + 0.12);
+      });
+      flt.connect(amp); amp.connect(bus);
+    }
+
+    var hzOf = (global.GeoScales && global.GeoScales.centsToHz) ||
+               function (c) { return 440 * Math.pow(2, (c - 6900) / 1200); };
+
+    plan.notes.forEach(function (nt, i) {
+      var when = zero + nt.t;
+      if (when <= ctx.currentTime) return;                 // late arrival: skip, never rush
+      var next = plan.notes[i + 1] ? zero + plan.notes[i + 1].t : zero;
+      voice(hzOf(nt.cents), when, Math.max(0.12, (next - when) * 1.6), 0.5);
+    });
+    plan.chord.forEach(function (c) { voice(hzOf(c), zero, 4.5, 0.42); });
+    return zero;
+  }
+
   function blip(good) {                                   // arrival, not logging
     if (!ctx || ctx.state !== 'running') return;
     var t = ctx.currentTime + 0.01;
@@ -713,12 +809,13 @@ var GeosonifyStarpinFeedback = (function () {
   }
 
   return {
-    VERSION: '0.1',
+    VERSION: '0.2',
     unlock: unlock, proximity: proximity, celebrate: celebrate,
     setPulse: setPulse, pulseEnabled: pulseEnabled, hapticsAvailable: hapticsAvailable,
     tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
     crossShare: crossShare, crossCount: crossCount, crossSpacingM: crossSpacingM,
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
+    composeCulminationRun: composeCulminationRun, playCulminationRun: playCulminationRun,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
 })();

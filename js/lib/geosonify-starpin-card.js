@@ -96,6 +96,9 @@ var GeosonifyStarpinCard = (function () {
     '.spc-stub .v{font-family:"IBM Plex Mono",monospace;font-size:10.5px}',
     '.spc-stub .yes{color:var(--green)}',
     '.spc-card.mini{width:100%;padding:14px 16px;border-radius:11px}',
+    '.spc-card.culm{border:2px solid var(--brass);',
+    '  box-shadow:0 0 0 1px rgba(220,201,73,.28),0 10px 40px rgba(220,201,73,.20)}',
+    '.spc-card .k.culm,.spc-card .v.culm{color:var(--brass)}',
     // Print variant: the same card on paper. The dark one is for a screen at
     // night; this one is for a printer that would otherwise flood a page.
     '.spc-card.light{--text:#22270F;--muted:#6A7355;--brass:#8A7513;',
@@ -335,6 +338,11 @@ var GeosonifyStarpinCard = (function () {
         // white dwarf above a supergiant by fiat, and invite optimising for it.
         '<div class="spc-stub"><div class="spc-perf"></div>' +
           row('Visited', v.whenMs ? fmtDate(v.whenMs) : '\u2014') +
+          // Two events, two dates. The culmination is derived from the record
+          // SET for this starpin, not from the record the card was opened
+          // from, so a visit card and a culmination card agree about the star.
+          (opts.culminationMs
+            ? row('At culmination', fmtDate(opts.culminationMs), 'culm') : '') +
           row('Accuracy', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014') +
           row('Geometry', esc(v.verdict || '\u2014'),
               v.verdict === 'well-supported' ? 'yes' : '') +
@@ -342,7 +350,8 @@ var GeosonifyStarpinCard = (function () {
     }
 
     body += '<div class="spc-flip">tap the card for the printable version</div>';
-    return '<div class="spc-card' + mini + (opts.light ? ' light' : '') + '">' +
+    return '<div class="spc-card' + mini + (opts.light ? ' light' : '') +
+           (opts.culminationMs ? ' culm' : '') + '">' +
            bg + '<div class="inner">' + body + '</div></div>';
   }
 
@@ -485,9 +494,21 @@ var GeosonifyStarpinCard = (function () {
       g.beginPath(); g.arc(vx, vy, 5.5, 0, 6.2832); g.fill();
     }
 
-    g.strokeStyle = light ? 'rgba(138,117,19,.45)' : 'rgba(220,201,73,.30)';
-    g.lineWidth = 2;
-    g.strokeRect(1, 1, W - 2, H - 2);
+    // Cards are drawn natively, not screenshotted -- the sky cutout is
+    // cross-origin and would taint the canvas -- so the gold border has to be
+    // drawn here as well, or the downloadable PNG quietly loses the rarest
+    // thing on the card.
+    if (opts.culminationMs) {
+      g.strokeStyle = BRASS; g.lineWidth = 6;
+      g.strokeRect(3, 3, W - 6, H - 6);
+      g.strokeStyle = light ? 'rgba(138,117,19,.35)' : 'rgba(220,201,73,.35)';
+      g.lineWidth = 1.5;
+      g.strokeRect(13, 13, W - 26, H - 26);
+    } else {
+      g.strokeStyle = light ? 'rgba(138,117,19,.45)' : 'rgba(220,201,73,.30)';
+      g.lineWidth = 2;
+      g.strokeRect(1, 1, W - 2, H - 2);
+    }
 
     function text(t, x, y, font, colour, align) {
       g.font = font; g.fillStyle = colour; g.textAlign = align || 'left';
@@ -543,6 +564,7 @@ var GeosonifyStarpinCard = (function () {
         (v.bearingDeg != null ? ' ' + compass(v.bearingDeg) : '')]);
     }
     rows.push(['VISITED', v.whenMs ? fmtDate(v.whenMs) : '\u2014']);
+    if (opts.culminationMs) rows.push(['AT CULMINATION', fmtDate(opts.culminationMs)]);
     rows.push(['ACCURACY', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014']);
     rows.push(['GEOMETRY', v.verdict || '\u2014']);
 
