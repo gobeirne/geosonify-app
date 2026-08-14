@@ -262,6 +262,52 @@ head('7e: the moment');
      state(-2000, 40, true).mark === false);
 })();
 
+// ── the two dates of a culminated starpin ─────────────────────────────────────
+head('7f: visit date vs culmination date');
+(function () {
+  // 14 Aug 2026: a card opened from the culmination-attempt showed "Visited"
+  // as the culmination date and hid the original find. Both dates are
+  // properties of the starpin's RECORD SET, derived the same way, so opening
+  // the card from any record for that star must give the same two dates.
+  var SP = 'starpin:gdr3:5382128182680588160';
+  // CULM must be a real culmination instant or attendance() rejects it; derive
+  // one rather than hardcoding, and put the visit a few days earlier.
+  var CULM = S.attendance(Date.now()).culminationMs;
+  var VISIT = CULM - 4 * 86400000;
+  var set = [
+    { record_id: 'v', kind: 'visit', target: { starpin: SP },
+      event: { time_ms: VISIT } },
+    { record_id: 'a', kind: 'culmination-attempt', target: { starpin: SP },
+      event: { time_ms: CULM } }];
+  function firstVisit(recs, sp) {
+    var ms = null;
+    recs.forEach(function (x) {
+      if (x.target.starpin !== sp || x.kind === 'culmination-attempt') return;
+      if (ms == null || x.event.time_ms < ms) ms = x.event.time_ms; });
+    return ms;
+  }
+  function culm(recs, sp) {
+    var h = recs.filter(function (x) {
+      return x.target.starpin === sp && x.kind === 'culmination-attempt' &&
+             S.attendance(x.event.time_ms).attended; })
+      .sort(function (a, b) { return a.event.time_ms - b.event.time_ms; })[0];
+    return h ? h.event.time_ms : null;
+  }
+  ok('the find date is the FIRST visit, not the attempt',
+     firstVisit(set, SP) === VISIT);
+  ok('the culmination date is the attempt', culm(set, SP) === CULM);
+  ok('the two dates are different', firstVisit(set, SP) !== culm(set, SP));
+  ok('a culmination-attempt never becomes the find date',
+     firstVisit([set[1]], SP) === null);
+
+  // rankByTarget still groups them as one target, and the attempt is not the
+  // "closest approach" contender -- but the demo must not DIM it for that. The
+  // engine's ranking is agnostic; the kind check lives in the view. Assert the
+  // grouping here so a future change cannot split them.
+  var rk = S.rankByTarget(set);
+  ok('visit and attempt share one target group', rk.v.count === 2 && rk.a.count === 2);
+})();
+
 // ── 8. cornerstones ───────────────────────────────────────────────────────────
 head('8: cornerstones');
 var haveHp = true;

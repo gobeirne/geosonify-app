@@ -178,7 +178,7 @@ still exist in a data file outside the snapshot I had, delete those too.**
 
 ## 8. TO DO
 
-### 8.1 Culmination attendance — the next big feature
+### 8.1 Culmination attendance — BUILT 13 Aug 2026, see the note at the end
 
 **The gap:** you cannot currently be *at* a starpin *at* culmination and have the app
 know. The clock lives on the Sky tab, bagging lives on Go, and the moment passes while
@@ -223,6 +223,53 @@ right place, the right instant, and the instant slides 3m 56s earlier every day.
 23h56m04s); the bar must not fire the sound more than once; and the offer must not
 appear if the person already has an attendance record for that starpin at that
 culmination.
+
+**BUILT 13 Aug 2026.** The trigger was Greg standing at a starpin at culmination,
+tapping bag, and the app writing nothing: `bagStar` returned early on “already
+yours”, and since you have to know where a starpin is to be standing on it, the
+guard fired precisely when the event mattered. That moment is gone —
+attendance-v1 derives from the raw timestamp, so with no record there is nothing
+to derive from. What now exists: the T−15 bar on every tab, recomputed each
+tick; the place-derived ascending arpeggio into a chord on the instant; a
+separate `culmination-attempt` record; and the gold designator in the log.
+
+Extended the same day with **the moment**: for the last ten seconds a
+full-screen panel on every tab, the countdown fading as three lines arrive one
+at a time — *Look up at the sky. Look down at your feet on the earth. You are
+here, now.* — with “now” appearing only at t=0. It does not auto-record. The
+button (“Mark this occasion”) is the person’s deliberate act, and it stays
+available for the whole 60 s afterwards that attendance-v1 allows, so a slow tap
+still counts. The panel shows for anyone, anywhere; only the button needs you
+within R, because arrival is not acceptance. The card and the downloadable PNG
+now carry both dates and the gold border.
+
+**Field-tested 14 Aug 2026** — Greg marked a culmination, same spot as the day
+before, and the ritual landed. Five bugs the field found, all fixed the same
+day:
+1. the full stop now arrives with “now”, not before it;
+2. the arpeggio was silent — the audio context was suspended because nothing in
+   the culmination path is a gesture, and the arm window could be skipped by a
+   throttled background timer. Now the context is warmed on any earlier touch,
+   the run arms on any tick inside the lead, and the bar says so if it still
+   could not sound;
+3. the card showed the culmination date as the VISIT date, hiding the original
+   find. Both dates now derive from the record set (`firstVisitMsFor`,
+   `culminationMsFor`), so any card for the star shows both;
+4. the attendance row rendered ghosted with the delete backing showing through,
+   because rankByTarget ranked it below a closer earlier visit and the row was
+   dimmed for “losing” a contest it was never in. A culmination-attempt is now
+   never dimmed and never told it was beaten;
+5. the moment modal reopened every second after being closed — dismissal is now
+   sticky per culmination.
+
+The gold designator frames the whole swipe row (not the inner card, which let
+the backing peek), and the downloadable card carries both dates and the gold
+border.
+
+**Still watching:** `attendance()` snaps to the NEAREST culmination, so any
+arithmetic involving exactly half a sidereal day sits on a knife edge — a test
+of mine failed one run in four for that reason before it stepped clear of the
+midpoint.
 
 ### 8.2 Seeded constellation generator — figures from your own starpins
 
