@@ -310,7 +310,7 @@ dl{margin:.7rem 0 0}
     <div id="moment-count"></div>
     <p class="moment-line" data-l="1">Look up at the sky.</p>
     <p class="moment-line" data-l="2">Look down at your feet on the earth.</p>
-    <p class="moment-line" data-l="3">You are here, <span id="moment-now">now</span>.</p>
+    <p class="moment-line" data-l="3">You are here, <span id="moment-now">now.</span></p>
     <div id="moment-where"></div>
     <button id="moment-mark" type="button" hidden>Mark this occasion</button>
     <button id="moment-close" type="button">let it pass</button>
@@ -467,8 +467,13 @@ dl{margin:.7rem 0 0}
        the most conspicuous thing in the log, because it is the hardest thing to
        get -- the right place, the right instant, and the instant slides 3m56s
        earlier every day. */
-    .rec.culm{border:2px solid #DCC949;box-shadow:0 0 0 1px rgba(220,201,73,.25),
-              0 2px 14px rgba(220,201,73,.18)}
+    /* The culmination designator frames the whole row. Putting the border on
+       .rec (inside the sliding face) left the face a couple of pixels short of
+       the delete backing behind it, so the rust backing showed at the edges at
+       rest -- the "ghosted with a weird delete" look. On the swipe container it
+       clips cleanly and cannot reveal the backing. */
+    .swipe.culm{box-shadow:0 0 0 2px #DCC949,0 2px 16px rgba(220,201,73,.22)}
+    .swipe.culm .swipeface{border-radius:16px}
     .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
   </style>
 </section>
@@ -1379,6 +1384,18 @@ dl{margin:.7rem 0 0}
   var culmArmed = null;                      // culminationMs whose run is scheduled
   var culmOffered = null;                    // culminationMs already offered
 
+  // The arpeggio needs the audio context RUNNING, and a browser will only start
+  // one after a user gesture. Nothing in the culmination path is a gesture --
+  // you are watching a clock, not tapping -- so on 14 Aug the run was scheduled
+  // against a suspended context and silently returned. Warm it on ANY earlier
+  // touch, so by the time the bar appears the context is already alive. This is
+  // the same reason ctx exists at all; it just was not wired to the one moment
+  // that never involves a tap.
+  ['pointerdown', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, function () { try { F.unlock(); } catch (e) {} },
+      { passive: true });
+  });
+
   function culmNearest() {
     // Prefer a starpin already in the log: at culmination you are almost
     // always standing at one you know, and the lookup layer may hold nothing
@@ -1417,6 +1434,11 @@ dl{margin:.7rem 0 0}
       culmArmed = null; return;
     }
     bar.hidden = false; document.body.classList.add('culmbar-on');
+    if (bar.dataset.silent && ms > 0) {
+      // Tell the truth: the run could not sound. Tapping anything fixes it for
+      // next time by waking the context.
+      $('culmbar-time').setAttribute('title', 'tap once to enable the culmination sound');
+    }
 
     var s = Math.round(Math.abs(ms) / 1000);
     var mm = Math.floor(s / 60), ss = s % 60;
@@ -1435,14 +1457,22 @@ dl{margin:.7rem 0 0}
         (inR ? 'close enough' : 'too far \u2014 ' + Math.round(near.distanceM - 92.8) + ' m to go');
     }
 
-    // The sound. Scheduled once, against the recomputed instant, and only when
-    // the audio context is already running -- browsers will not start one
-    // without a gesture, and a silent failure here is better than a throw.
-    if (culmArmed !== next && ms > 0 && ms <= RUN_LEAD_S * 1000 + 500 && fix) {
+    // The sound. Armed once per culmination, on the first tick that lands
+    // inside the lead window. A backgrounded phone throttles this timer, so a
+    // tick can skip the window entirely -- arm on ANY tick with 0 < ms <= lead,
+    // and let playCulminationRun schedule from wherever we actually are (it
+    // skips notes already in the past, so a late arm just plays a shorter run
+    // rather than nothing). If the context could not be woken, say so once in
+    // the bar rather than failing mute.
+    if (culmArmed !== next && ms > 0 && ms <= RUN_LEAD_S * 1000 && fix) {
       culmArmed = next;
+      var woke = false;
+      try { woke = F.unlock(); } catch (e) {}
       var q = '';
       try { q = HealpixGrids.encode('hpquad', fix.lat, fix.lon, 22).split('.')[1] || ''; } catch (e) {}
-      try { F.playCulminationRun(q, 'dorian', ms); } catch (e) {}
+      var scheduled = 0;
+      try { scheduled = F.playCulminationRun(q, 'dorian', ms); } catch (e) {}
+      if (!scheduled) bar.dataset.silent = '1';
     }
 
     momentTick(ms, next, near);
@@ -1460,11 +1490,16 @@ dl{margin:.7rem 0 0}
   // the moment belongs to everyone standing anywhere; only the RECORD needs
   // you to be there.
   var momentFor = null, momentNear = null;
+  var momentDismissed = null;                // culminationMs the person closed
 
   function momentTick(ms, culmMs, near) {
     var m = $('moment');
     var show = ms <= 10000 && ms > -60000;
-    if (!show) {
+    // Dismissal is sticky for THIS culmination. The tick reopened the modal a
+    // second after close because show is purely time-based, so it kept coming
+    // back until the app was killed -- once closed, it stays closed until the
+    // next culmination.
+    if (!show || momentDismissed === culmMs) {
       if (!m.hidden) { m.hidden = true; m.className = ''; }
       momentFor = null; return;
     }
@@ -1503,18 +1538,19 @@ dl{margin:.7rem 0 0}
     $('moment-close').textContent = ms > 0 ? 'let it pass' : 'close';
   }
 
+  function dismissMoment() {
+    momentDismissed = momentFor;               // this culmination, closed for good
+    $('moment').hidden = true; $('moment').className = '';
+  }
   $('moment-mark').addEventListener('click', function () {
     if (!momentNear || !fix) return;
     culmOffered = momentFor;
     // visit-geometry-v1 returns the verdict; the button never assumes it.
     var vr = S.assessVisit(fix, { lat: momentNear.star.lat, lon: momentNear.star.lon });
     bagStar(momentNear.star, vr, vr.verdict === 'well-supported');
-    $('moment').hidden = true; $('moment').className = '';
+    dismissMoment();                           // marking closes it, and it stays closed
   });
-  $('moment-close').addEventListener('click', function () {
-    $('moment').hidden = true; $('moment').className = '';
-    momentFor = null;
-  });
+  $('moment-close').addEventListener('click', dismissMoment);
   setInterval(culmTick, 1000);
   culmTick();
 
@@ -1819,7 +1855,14 @@ dl{margin:.7rem 0 0}
       });
       backd.appendChild(del);
 
-      var d = el('div', 'rec' + (rk.best === false ? ' dim' : ''));
+      // A culmination-attempt is its own kind of event, not a contender for
+      // "closest approach", so it is never dimmed for losing that contest and
+      // never told it was beaten. On 14 Aug the attendance record ranked below
+      // an earlier, closer visit and rendered ghosted with the delete backing
+      // showing through -- exactly the record that should have been the proudest
+      // thing in the log.
+      var isCulm = r.kind === 'culmination-attempt';
+      var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : ''));
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
       d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
 
@@ -1871,9 +1914,13 @@ dl{margin:.7rem 0 0}
       if (a && a.visit && a.visit.distanceM != null) chip(a.visit.distanceM.toFixed(1) + ' m');
       chip(verdictText(verdict), verdict === 'well-supported' ? 'good'
                   : verdict === 'not-supported' ? 'warn' : null);
-      if (rk.best && rk.count > 1) chip('your closest', 'best');
-      if (rk.best === false && isFinite(rk.bestDistanceM))
-        chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
+      if (isCulm) {
+        chip('culmination', 'culm');
+      } else {
+        if (rk.best && rk.count > 1) chip('your closest', 'best');
+        if (rk.best === false && isFinite(rk.bestDistanceM))
+          chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
+      }
       if (r.kind === 'closest-approach') chip('approach');
 
       // The gold designator. A culmination is a property of the STARPIN,
@@ -1883,8 +1930,8 @@ dl{margin:.7rem 0 0}
       // whichever record holds the attendance.
       if (isStar) {
         var attMs = culminationMsFor(r.target.starpin);
-        if (attMs) {
-          d.classList.add('culm');
+        if (attMs || isCulm) {
+          slot.classList.add('culm');
           chip('at culmination \u00B7 ' + new Date(attMs).toLocaleDateString(
             undefined, { day: 'numeric', month: 'short', year: 'numeric' }), 'culm');
         }
@@ -1960,6 +2007,22 @@ dl{margin:.7rem 0 0}
   // -- not of the record you happen to have opened. One helper, so a log row
   // and a card can never disagree about the same star. The earliest attendance
   // wins: the first time is the one that is hard.
+  // The first time you stood here, from the record SET -- not the record the
+  // card was opened from. Opening the card from a culmination-attempt made
+  // "Visited" read the culmination date, hiding the original find entirely.
+  // Visits and closest-approaches count; a culmination-attempt is a separate
+  // event and does not reset the find date.
+  function firstVisitMsFor(starpin) {
+    if (!starpin) return null;
+    var ms = null;
+    log.current().forEach(function (x) {
+      if (x.target.starpin !== starpin) return;
+      if (x.kind === 'culmination-attempt') return;
+      if (ms == null || x.event.time_ms < ms) ms = x.event.time_ms;
+    });
+    return ms;
+  }
+
   function culminationMsFor(starpin) {
     if (!starpin) return null;
     var hit = log.current().filter(function (x) {
@@ -1978,7 +2041,10 @@ dl{margin:.7rem 0 0}
       bearingDeg: null,
       accuracyM: r.fix ? r.fix.accuracy_m : null,
       verdict: a && a.visit ? a.visit.verdict : null,
-      whenMs: r.event.time_ms
+      // The find date is the earliest visit for this target, not this record's
+      // date; a card opened from the culmination-attempt still shows the first
+      // time you were here.
+      whenMs: (r.target.starpin && firstVisitMsFor(r.target.starpin)) || r.event.time_ms
     };
     if (r.fix && a && a.target) {
       visit.bearingDeg = bearing(r.fix.lat_1e7 / 1e7, r.fix.lon_1e7 / 1e7,
