@@ -75,9 +75,19 @@ var GeosonifyStarpinCard = (function () {
     '.spc-sky img{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#070A14;',
     '  display:block}',
     '.spc-ring{position:absolute;inset:0;width:100%;height:100%;overflow:visible}',
-    '.spc-target{position:absolute;left:50%;top:50%;width:13px;height:13px;',
-    '  margin:-6.5px 0 0 -6.5px;border:2px solid #39ff88;border-radius:2px;',
-    '  box-shadow:0 0 0 1px rgba(0,0,0,.6) inset,0 0 6px rgba(57,255,136,.55)}',
+    // An OPEN crosshair, not a filled square: the target is often a faint dot
+    // and the square hid the very thing you travelled to see. Four ticks with a
+    // clear gap in the middle, so the object shows through the centre.
+    '.spc-target{position:absolute;left:50%;top:50%;width:26px;height:26px;',
+    '  margin:-13px 0 0 -13px;pointer-events:none;',
+    '  filter:drop-shadow(0 0 2px rgba(0,0,0,.85))}',
+    '.spc-target::before,.spc-target::after{content:"";position:absolute;',
+    '  background:#39ff88;box-shadow:0 0 4px rgba(57,255,136,.6)}',
+    // vertical pair (gap in the middle) + horizontal pair, via two gradients
+    '.spc-target::before{left:50%;top:0;width:2px;height:26px;margin-left:-1px;',
+    '  background:linear-gradient(#39ff88 0 9px,transparent 9px 17px,#39ff88 17px 26px)}',
+    '.spc-target::after{top:50%;left:0;height:2px;width:26px;margin-top:-1px;',
+    '  background:linear-gradient(90deg,#39ff88 0 9px,transparent 9px 17px,#39ff88 17px 26px)}',
     '.spc-coords{text-align:center;font-family:"IBM Plex Mono",monospace;font-size:10.5px;',
     '  color:var(--muted);margin-bottom:12px}',
     '.spc-coords b{color:var(--text);font-weight:500}',
@@ -607,8 +617,15 @@ var GeosonifyStarpinCard = (function () {
           g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
           g.stroke();
         }
-        g.strokeStyle = GOOD; g.lineWidth = 3;
-        g.strokeRect(cx - 9, cy - 9, 18, 18);
+        // Open crosshair, gap in the middle, so a faint target is not covered.
+        g.strokeStyle = GOOD; g.lineWidth = 3; g.lineCap = 'round';
+        var gap = 7, arm = 20;
+        g.beginPath();
+        g.moveTo(cx, cy - gap - arm); g.lineTo(cx, cy - gap);
+        g.moveTo(cx, cy + gap); g.lineTo(cx, cy + gap + arm);
+        g.moveTo(cx - gap - arm, cy); g.lineTo(cx - gap, cy);
+        g.moveTo(cx + gap, cy); g.lineTo(cx + gap + arm, cy);
+        g.stroke();
         finish();
       }
       img.onload = function () { drawSky(true); };
@@ -644,7 +661,7 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.2', render: render, show: show, html: html,
+  return { VERSION: '0.3', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
            skyWindow: skyWindow, gridSVG: gridSVG };
 })();

@@ -173,11 +173,21 @@ var GeosonifyStarpinMap = (function () {
                 .setView([opts.lat != null ? opts.lat : 0,
                           opts.lon != null ? opts.lon : 0], opts.zoom || 16);
 
-    var key = (opts.basemap && BASEMAPS[opts.basemap]) ? opts.basemap : 'osm';
+    // Default to aerial: Starpin is about standing in an exact spot on the
+    // ground, so the ground itself is the useful view. The choice then sticks.
+    var BM_KEY = opts.basemapStoreKey || 'starpin.map.basemap';
+    var bmStore = null;
+    try { bmStore = (opts.storage !== undefined) ? opts.storage
+                  : (doc.defaultView && doc.defaultView.localStorage) || null; } catch (e) {}
+    var remembered = null;
+    try { remembered = bmStore && bmStore.getItem(BM_KEY); } catch (e) {}
+    var key = (opts.basemap && BASEMAPS[opts.basemap]) ? opts.basemap
+            : (remembered && BASEMAPS[remembered]) ? remembered : 'aerial';
     var tiles = null, btns = {};
 
     function applyBasemap(k) {
-      key = BASEMAPS[k] ? k : 'osm';
+      key = BASEMAPS[k] ? k : 'aerial';
+      try { if (bmStore) bmStore.setItem(BM_KEY, key); } catch (e) {}
       if (tiles) map.removeLayer(tiles);
       tiles = L.tileLayer(BASEMAPS[key].url, {
         attribution: BASEMAPS[key].attrib, maxNativeZoom: 19, maxZoom: 22
