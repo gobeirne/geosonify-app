@@ -184,10 +184,14 @@ dl{margin:.7rem 0 0}
 #info img{width:100%;border-radius:14px;display:block;background:#0d1108}
 .thumb{width:100%;max-width:240px;margin:.6rem auto}
 .thumb .frame{position:relative;line-height:0}
-.thumb .mark{position:absolute;width:15px;height:15px;margin:-7.5px 0 0 -7.5px;
-  border:2.5px solid var(--moss-lit);border-radius:4px;
-  box-shadow:0 0 0 1.5px rgba(0,0,0,.6) inset,0 0 8px rgba(155,194,63,.6);
-  pointer-events:none;animation:pop .45s cubic-bezier(.2,1.8,.4,1) both}
+.thumb .mark{position:absolute;width:28px;height:28px;margin:-14px 0 0 -14px;
+  pointer-events:none;animation:pop .45s cubic-bezier(.2,1.8,.4,1) both;
+  filter:drop-shadow(0 0 2px rgba(0,0,0,.85))}
+.thumb .mark::before,.thumb .mark::after{content:"";position:absolute;background:var(--moss-lit)}
+.thumb .mark::before{left:50%;top:0;width:2px;height:28px;margin-left:-1px;
+  background:linear-gradient(var(--moss-lit) 0 10px,transparent 10px 18px,var(--moss-lit) 18px 28px)}
+.thumb .mark::after{top:50%;left:0;height:2px;width:28px;margin-top:-1px;
+  background:linear-gradient(90deg,var(--moss-lit) 0 10px,transparent 10px 18px,var(--moss-lit) 18px 28px)}
 .thumb .mark.other{width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;
   border-color:var(--lichen);box-shadow:0 0 0 1px rgba(0,0,0,.5) inset;animation:none}
 @keyframes pop{from{transform:scale(2.4);opacity:0}}
@@ -306,6 +310,8 @@ dl{margin:.7rem 0 0}
 
 <!-- The moment. Last ten seconds, full screen, on every tab. -->
 <div id="moment" hidden>
+  <div id="moment-sky"></div>
+  <div id="moment-reticle" hidden></div>
   <div class="moment-inner">
     <div id="moment-count"></div>
     <p class="moment-line" data-l="1">Look up at the sky.</p>
@@ -419,12 +425,29 @@ dl{margin:.7rem 0 0}
        arrive, and at zero only the sentence is left. */
     #moment{position:fixed;inset:0;z-index:10000;display:flex;
       align-items:center;justify-content:center;text-align:center;
-      background:radial-gradient(120% 90% at 50% 40%,#131b2e 0%,#070A14 70%);
-      color:#E9E4D6;padding:2rem 1.6rem;
+      background:#070A14;color:#E9E4D6;padding:2rem 1.6rem;overflow:hidden;
       animation:momentIn 1.2s ease both}
+    /* The DSS cutout centred on the star you are beneath, dimmed so the words
+       stay readable, with a vignette so the edges fall into the dark. */
+    #moment-sky{position:absolute;inset:0;background-size:cover;background-position:center;
+      opacity:0;transition:opacity 2.4s ease;filter:brightness(.55) saturate(1.1)}
+    #moment.hassky #moment-sky{opacity:1}
+    #moment::after{content:"";position:absolute;inset:0;pointer-events:none;
+      background:radial-gradient(120% 90% at 50% 42%,rgba(7,10,20,.15) 0%,rgba(7,10,20,.82) 72%)}
+    /* Our crosshair, centred on the star, and NO other markers -- this is the
+       one you are standing beneath. Open, so the star shows through. */
+    #moment-reticle{position:absolute;left:50%;top:42%;width:60px;height:60px;
+      margin:-30px 0 0 -30px;z-index:1;pointer-events:none;
+      filter:drop-shadow(0 0 3px rgba(0,0,0,.9))}
+    #moment-reticle::before,#moment-reticle::after{content:"";position:absolute;background:#39ff88}
+    #moment-reticle::before{left:50%;top:0;width:2px;height:60px;margin-left:-1px;
+      background:linear-gradient(#39ff88 0 22px,transparent 22px 38px,#39ff88 38px 60px)}
+    #moment-reticle::after{top:50%;left:0;height:2px;width:60px;margin-top:-1px;
+      background:linear-gradient(90deg,#39ff88 0 22px,transparent 22px 38px,#39ff88 38px 60px)}
     #moment[hidden]{display:none}
     @keyframes momentIn{from{opacity:0}to{opacity:1}}
-    .moment-inner{max-width:24rem;display:flex;flex-direction:column;gap:1.15rem}
+    .moment-inner{position:relative;z-index:2;max-width:24rem;
+      display:flex;flex-direction:column;gap:1.15rem}
     #moment-count{font:300 3.6rem/1 ui-monospace,SFMono-Regular,Menlo,monospace;
       font-variant-numeric:tabular-nums;color:#DCC949;
       transition:opacity 1.4s ease,transform 1.4s ease}
@@ -474,6 +497,13 @@ dl{margin:.7rem 0 0}
        clips cleanly and cannot reveal the backing. */
     .swipe.culm{box-shadow:0 0 0 2px #DCC949,0 2px 16px rgba(220,201,73,.22)}
     .swipe.culm .swipeface{border-radius:16px}
+    .visits{margin:.5rem 0 .2rem;display:flex;flex-direction:column;gap:.15rem}
+    .visitline{display:grid;grid-template-columns:5.5rem 1fr auto;gap:.4rem;
+      align-items:baseline;font-size:.82rem;color:var(--ink-2)}
+    .visitline .vl-label{font-variant:small-caps;letter-spacing:.03em;color:var(--ink-3,#8891a8)}
+    .visitline .vl-dist{font-variant-numeric:tabular-nums}
+    .visitline.culm .vl-label{color:#9a7b12;font-weight:700}
+    .visitline.culm{color:#7a6410}
     .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
   </style>
 </section>
@@ -587,7 +617,7 @@ dl{margin:.7rem 0 0}
   // The verdict names are protocol vocabulary (visit-geometry-v1) and stay in
   // the record. What a person reads is a sentence about where they are.
   var VERDICT_TEXT = {
-    'well-supported': 'close enough \u2014 this counts',
+    'well-supported': 'accepted',
     'compatible': 'might count \u2014 get closer to be sure',
     'not-supported': 'too far from where you are',
     'fix-too-coarse': 'your fix is too rough to tell',
@@ -602,8 +632,7 @@ dl{margin:.7rem 0 0}
     return (arcsec / 3600).toFixed(1) + '\u00B0 of sky';
   }
 
-  $('locate').addEventListener('click', function () {
-    F.unlock();
+  function acquireFix(onOk) {
     if (!navigator.geolocation) { $('fix').textContent = 'no geolocation here'; return; }
     $('fix').textContent = 'locating\u2026';
     navigator.geolocation.getCurrentPosition(function (p) {
@@ -618,8 +647,15 @@ dl{margin:.7rem 0 0}
       lastStarFix = { lat: fix.lat, lon: fix.lon };
       loadStars(fix.lat, fix.lon, 1200);
       redraw();
+      if (onOk) onOk();
     }, function (e) { $('fix').textContent = 'no fix: ' + e.message; },
        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  }
+
+  $('locate').addEventListener('click', function () {
+    F.unlock();
+    try { localStorage.setItem('starpin.perm.location', '1'); } catch (e) {}
+    acquireFix();
   });
 
   var activeTab = 'corner', heading = null, nearestStar = null, lastStarFix = null;
@@ -837,11 +873,42 @@ dl{margin:.7rem 0 0}
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().then(function (r) {
-        if (r === 'granted') listen();
+        if (r === 'granted') { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} listen(); }
         else alert('Compass permission denied \u2014 the dial stays north-up.');
       }).catch(function () { alert('This device would not share its compass.'); });
-    } else listen();
+    } else { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} listen(); }
   });
+
+  // Resume the permissions the person granted before. Location can be re-run
+  // silently where the OS grant persists; compass listeners can be re-attached
+  // WITHOUT a prompt only if the Permissions API confirms an existing grant --
+  // iOS requires a gesture to ASK, but not to resume one already given. Where
+  // the platform will not allow silent resume, the button is still there.
+  (function resumePermissions() {
+    var want = function (k) { try { return localStorage.getItem(k) === '1'; } catch (e) { return false; } };
+    if (want('starpin.perm.location') || want('starpin.perm.track')) {
+      acquireFix(want('starpin.perm.track') ? startTracking : null);
+    }
+    if (want('starpin.perm.compass')) {
+      var reattach = function () {
+        compassOn = true;
+        $('compass').setAttribute('aria-pressed', 'true'); $('compass').textContent = 'North up';
+        window.addEventListener('deviceorientationabsolute', onOrient, true);
+        window.addEventListener('deviceorientation', onOrient, true);
+      };
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS: only resume without a prompt if already granted.
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: 'accelerometer' })
+            .then(function (s) { if (s.state === 'granted') reattach(); })
+            .catch(function () {});
+        }
+      } else {
+        reattach();                        // platforms without the gated API
+      }
+    }
+  })();
   function onOrient(e) {
     if (!compassOn) return;
     var h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading
@@ -952,7 +1019,7 @@ dl{margin:.7rem 0 0}
     });
     th.appendChild(el('div', 'cap', fovArcsec + '\u2033 across \u00B7 ' +
       Math.round(fovArcsec * S.M_PER_ARCSEC) + ' m on the ground \u00B7 ' +
-      'green square is your target, circles are its neighbours'));
+      'crosshair is your target, circles are its neighbours'));
     return th;
   }
 
@@ -1503,7 +1570,26 @@ dl{margin:.7rem 0 0}
       if (!m.hidden) { m.hidden = true; m.className = ''; }
       momentFor = null; return;
     }
-    if (m.hidden) { m.hidden = false; m.className = ''; momentFor = culmMs; }
+    if (m.hidden) {
+      m.hidden = false; m.className = ''; momentFor = culmMs;
+      // The sky you are beneath, behind the words, with our crosshair on the
+      // star and no other markers. Loaded once as the modal opens; if it or
+      // SN is missing, the plain dark background is the graceful fallback.
+      var sky = $('moment-sky'), ret = $('moment-reticle');
+      sky.style.backgroundImage = ''; ret.hidden = true;
+      if (near && near.star && near.star.dec != null && SN && SN.thumbnailUrl) {
+        try {
+          var url = SN.thumbnailUrl(near.star.dec, near.star.ra,
+            { fovArcsec: 900, px: 900 });
+          var pre = new Image();
+          pre.onload = function () {
+            sky.style.backgroundImage = 'url(' + url + ')';
+            m.classList.add('hassky'); ret.hidden = false;
+          };
+          pre.src = url;
+        } catch (e) {}
+      }
+    }
     momentNear = near;
 
     var s = Math.max(0, Math.ceil(ms / 1000));
@@ -1556,15 +1642,9 @@ dl{margin:.7rem 0 0}
 
   // ── tracking: watchPosition, so the readout follows you ──────────────────
   var watchId = null;
-  $('track').addEventListener('click', function () {
-    if (watchId != null) {
-      navigator.geolocation.clearWatch(watchId); watchId = null;
-      this.setAttribute('aria-pressed', 'false'); this.textContent = 'Track me';
-      return;
-    }
-    if (!navigator.geolocation) return;
-    F.unlock();
-    this.setAttribute('aria-pressed', 'true'); this.textContent = 'Tracking\u2026';
+  function startTracking() {
+    if (watchId != null || !navigator.geolocation) return;
+    $('track').setAttribute('aria-pressed', 'true'); $('track').textContent = 'Tracking\u2026';
     watchId = navigator.geolocation.watchPosition(function (p) {
       fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy };
       $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
@@ -1586,12 +1666,82 @@ dl{margin:.7rem 0 0}
       navigator.geolocation.clearWatch(watchId); watchId = null;
       $('track').setAttribute('aria-pressed', 'false'); $('track').textContent = 'Track me';
     }, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 });
+  }
+  function stopTracking() {
+    if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    $('track').setAttribute('aria-pressed', 'false'); $('track').textContent = 'Track me';
+  }
+  $('track').addEventListener('click', function () {
+    F.unlock();
+    if (watchId != null) {
+      try { localStorage.removeItem('starpin.perm.track'); } catch (e) {}
+      stopTracking(); return;
+    }
+    try { localStorage.setItem('starpin.perm.track', '1'); } catch (e) {}
+    startTracking();
   });
   var lastCs = null, lastSp = null;
 
   function shortId(t) {
     return t.cornerstone || (t.starpin || '').replace('starpin:gdr3:', 'DR3 ');
   }
+  // One entry per object. A first visit, a closer return, and a culmination are
+  // three events for ONE starpin, and three separate cards made the log read
+  // like a receipt instead of a collection. Collapse a target's records to a
+  // single representative, and derive the lines shown inside its card:
+  //
+  //     first        [date]  [distance]
+  //     closest      [date]  [distance]   (only if different from first)
+  //     at culmination [date] [distance]
+  //
+  // With one visit that is at culmination, only "at culmination" shows; with a
+  // single ordinary visit, only "visited". The representative is the closest
+  // supported visit if there is one (so "card"/"on map" open the best record),
+  // falling back to the culmination-attempt, then anything.
+  function collapseByTarget(recs) {
+    var groups = {};
+    recs.forEach(function (r) {
+      var k = r.target.cornerstone ? csName(r.target.cornerstone) : r.target.starpin;
+      (groups[k] = groups[k] || []).push(r);
+    });
+    return Object.keys(groups).map(function (k) {
+      var g = groups[k];
+      var visits = g.filter(function (r) { return r.kind !== 'culmination-attempt'; });
+      var attempts = g.filter(function (r) { return r.kind === 'culmination-attempt'; });
+      function withDist(r) {
+        var a = null; try { a = S.assessRecord(r); } catch (e) {}
+        return { rec: r, ms: r.event.time_ms,
+                 distanceM: a && a.visit ? a.visit.distanceM : null,
+                 verdict: a && a.visit ? a.visit.verdict : null };
+      }
+      var vs = visits.map(withDist);
+      var first = vs.slice().sort(function (a, b) { return a.ms - b.ms; })[0] || null;
+      var closest = vs.filter(function (x) { return x.distanceM != null; })
+                      .sort(function (a, b) { return a.distanceM - b.distanceM; })[0] || null;
+      var culm = attempts.map(withDist)
+                   .filter(function (x) { return S.attendance(x.ms).attended; })
+                   .sort(function (a, b) { return a.ms - b.ms; })[0] || null;
+
+      var lines = [];
+      var onlyCulm = !first && culm;
+      var oneVisit = first && vs.length === 1 && !culm;
+      if (oneVisit) {
+        lines.push({ label: 'visited', ms: first.ms, distanceM: first.distanceM });
+      } else {
+        if (first) lines.push({ label: 'first', ms: first.ms, distanceM: first.distanceM });
+        if (closest && first && closest.rec.record_id !== first.rec.record_id)
+          lines.push({ label: 'closest', ms: closest.ms, distanceM: closest.distanceM });
+        if (culm) lines.push({ label: 'at culmination', ms: culm.ms,
+                               distanceM: culm.distanceM, culm: true });
+      }
+
+      // The representative record the card and buttons open.
+      var repObj = (closest || first || culm || withDist(g[0]));
+      return { key: k, rep: repObj.rec, records: g, lines: lines,
+               hasCulm: !!culm, visitCount: vs.length };
+    });
+  }
+
   function drawLog() {
     $('lg-store').textContent = log.persisted() ? 'on this device' : 'memory only';
     // Collected cornerstones are derived from the records, never tracked
@@ -1643,6 +1793,7 @@ dl{margin:.7rem 0 0}
 
   function logIt(target) {
     if (!fix) { alert('Use my location first — a record without a fix cannot be assessed.'); return; }
+    stopSoundGuide();
     log.add(L.visit({
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
@@ -1651,8 +1802,20 @@ dl{margin:.7rem 0 0}
     drawLog(); redraw();
   }
 
+  // The proximity guide has done its job the moment you have bagged; leaving it
+  // ticking under the celebration music muddies both. Silence it and correct
+  // the toggle so the button does not claim it is still guiding.
+  function stopSoundGuide() {
+    if (F.pulseEnabled && F.pulseEnabled()) {
+      F.setPulse(false);
+      var b = $('pulse');
+      if (b) { b.setAttribute('aria-pressed', 'false'); b.textContent = 'Guide me by sound'; }
+    }
+  }
+
   function bagStar(sp, vr, supported) {
     F.unlock();
+    stopSoundGuide();
     var id = sourceIdOf(sp.name);
     var addr = S.starpinAddress(String(sp.ra), String(sp.dec));
     var target = id ? { starpin: 'starpin:gdr3:' + id }
@@ -1826,16 +1989,28 @@ dl{margin:.7rem 0 0}
       return cached && cached.mag != null ? Math.max(1, cached.mag - 2) : 13;
     }
     var mode = $('lg-sort').value;
-    recs = recs.slice().sort(function (a, b) {
-      if (mode === 'old') return a.event.time_ms - b.event.time_ms;
+    // One card per object now, so sort the GROUPS. "newest" and "oldest" sort
+    // on a group's most recent event; "rarest" on the object's scarcity.
+    var groups = collapseByTarget(recs);
+    function groupMs(gp) {
+      return gp.records.reduce(function (m, r) {
+        return Math.max(m, r.event.time_ms); }, 0);
+    }
+    function groupOldestMs(gp) {
+      return gp.records.reduce(function (m, r) {
+        return Math.min(m, r.event.time_ms); }, Infinity);
+    }
+    groups = groups.sort(function (a, b) {
+      if (mode === 'old') return groupOldestMs(a) - groupOldestMs(b);
       if (mode === 'rare') {
-        var d = scarcity(a) - scarcity(b);
-        return d !== 0 ? d : b.event.time_ms - a.event.time_ms;
+        var d = scarcity(a.rep) - scarcity(b.rep);
+        return d !== 0 ? d : groupMs(b) - groupMs(a);
       }
-      return b.event.time_ms - a.event.time_ms;
+      return groupMs(b) - groupMs(a);
     });
 
-    recs.forEach(function (r, i) {
+    groups.forEach(function (gp, i) {
+      var r = gp.rep;
       var rk = rank[r.record_id] || {};
       var isStar = !r.target.cornerstone;
       var a = rk.assessment || null;
@@ -1849,9 +2024,13 @@ dl{margin:.7rem 0 0}
       del.type = 'button';
       del.addEventListener('click', function () {
         var what = r.target.cornerstone || sourceIdOf(r.target.starpin);
-        if (!confirm('Delete your record of ' + what + '?\n\n' +
-                     'This is your only copy unless you have downloaded a backup.')) return;
-        log.remove(r.record_id); drawLog(); redraw(); $('lg-show').click();
+        var n = gp.records.length;
+        if (!confirm('Delete your record of ' + what + '?' +
+                     (n > 1 ? '\n\nThis removes all ' + n + ' records for it '
+                            + '(first visit, closest approach, culmination).' : '') +
+                     '\n\nThis is your only copy unless you have downloaded a backup.')) return;
+        gp.records.forEach(function (x) { log.remove(x.record_id); });
+        drawLog(); redraw(); $('lg-show').click();
       });
       backd.appendChild(del);
 
@@ -1861,7 +2040,7 @@ dl{margin:.7rem 0 0}
       // an earlier, closer visit and rendered ghosted with the delete backing
       // showing through -- exactly the record that should have been the proudest
       // thing in the log.
-      var isCulm = r.kind === 'culmination-attempt';
+      var isCulm = gp.hasCulm;
       var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : ''));
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
       d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
@@ -1909,35 +2088,27 @@ dl{margin:.7rem 0 0}
           chip('1 in ' + F.crossCount(cr, ord, 50).toLocaleString() + ' near you');
         }
       }
-      chip(new Date(r.event.time_ms).toLocaleDateString(undefined,
-        { day: 'numeric', month: 'short', year: 'numeric' }));
-      if (a && a.visit && a.visit.distanceM != null) chip(a.visit.distanceM.toFixed(1) + ' m');
+      // The identity chips (rarity, magnitude, distance) stay; the date/verdict
+      // per record is replaced by the visit lines below, one per event.
       chip(verdictText(verdict), verdict === 'well-supported' ? 'good'
                   : verdict === 'not-supported' ? 'warn' : null);
-      if (isCulm) {
-        chip('culmination', 'culm');
-      } else {
-        if (rk.best && rk.count > 1) chip('your closest', 'best');
-        if (rk.best === false && isFinite(rk.bestDistanceM))
-          chip('beaten by ' + rk.bestDistanceM.toFixed(1) + ' m');
-      }
-      if (r.kind === 'closest-approach') chip('approach');
-
-      // The gold designator. A culmination is a property of the STARPIN,
-      // derived from its record set, not of any single record -- otherwise the
-      // visit row and the culmination row disagree about the same star. So
-      // every row for this target carries the mark, and the date comes from
-      // whichever record holds the attendance.
-      if (isStar) {
-        var attMs = culminationMsFor(r.target.starpin);
-        if (attMs || isCulm) {
-          slot.classList.add('culm');
-          chip('at culmination \u00B7 ' + new Date(attMs).toLocaleDateString(
-            undefined, { day: 'numeric', month: 'short', year: 'numeric' }), 'culm');
-        }
-      }
-
       body.appendChild(chips);
+
+      // The visit lines: first / closest / at culmination, or a single line.
+      var dateFmt = { day: 'numeric', month: 'short', year: 'numeric' };
+      var visitsEl = el('div', 'visits');
+      gp.lines.forEach(function (ln) {
+        var rowEl = el('div', 'visitline' + (ln.culm ? ' culm' : ''));
+        rowEl.appendChild(el('span', 'vl-label', ln.label));
+        rowEl.appendChild(el('span', 'vl-date',
+          new Date(ln.ms).toLocaleDateString(undefined, dateFmt)));
+        rowEl.appendChild(el('span', 'vl-dist',
+          ln.distanceM != null ? Math.round(ln.distanceM) + ' m' : ''));
+        visitsEl.appendChild(rowEl);
+      });
+      body.appendChild(visitsEl);
+
+      if (gp.hasCulm) slot.classList.add('culm');
 
       var acts = el('div', 'acts');
       var cardBtn = el('button', null, 'card');
@@ -2212,7 +2383,13 @@ dl{margin:.7rem 0 0}
     })();
   });
 
+  // The sort is sticky. Set it to rarest and it stays rarest across sessions.
+  try {
+    var savedSort = localStorage.getItem('starpin.log.sort');
+    if (savedSort) $('lg-sort').value = savedSort;
+  } catch (e) {}
   $('lg-sort').addEventListener('change', function () {
+    try { localStorage.setItem('starpin.log.sort', $('lg-sort').value); } catch (e) {}
     if (!$('lg-panel').hidden) $('lg-show').click();
   });
 
