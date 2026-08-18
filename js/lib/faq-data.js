@@ -627,7 +627,7 @@
 <p>Here's what happens step by step:</p>
 <ol>
   <li><strong>The final character is the seed.</strong> The last character - <code>g</code> - is not obfuscated. It stays in place. This is intentional and important: <code>g</code> has a fixed flat index in the grid. That index becomes the seed for everything that follows.</li>
-  <li><strong>A deterministic SHA3-512-derived shuffle is generated from that seed.</strong> The hash output is expanded deterministically as needed to generate enough material to permute all N cells of the grid. This uses the same SHA3-512 shuffle the passphrase mode uses, but with <em>no passphrase</em> — the permutation is seeded only from the final character, so anyone with the app can reproduce it.</li>
+  <li><strong>A deterministic hash-derived shuffle is generated from that seed.</strong> The hash output is expanded deterministically (by repeatedly re-hashing the whole accumulated string) until there is enough material to permute all N cells of the grid, which are then sorted into a new order. <strong>Note:</strong> this layer does <em>not</em> use SHA3-512, despite the function in the codec engine being named as though it does. It uses a bespoke Keccak-shaped hash that deviates from FIPS 202 in two ways (nonstandard round constants, and a sponge that only fills the low half of each lane). This is a historical quirk, now frozen: the derivation cannot be corrected without silently relocating every obfuscated code ever made. It is harmless here precisely because obfuscation provides no security at all — nothing rests on the hash being sound. Grid-passphrase mode and AES mode are separate code paths and use genuine, standard primitives. A re-implementer must port the bespoke hash exactly; reaching for a stock SHA3-512 library produces wrong locations with no error.</li>
   <li><strong>Each non-final character is shifted by its distance from the end.</strong> The first 8 characters (<code>thp9dahr</code>) are looked up in the shuffled grid to get their indices. Then each one is shifted modulo N by its distance from the final character: the second-to-last shifts by 1, the third-to-last by 2, and so on. The character in position 0 (furthest from the end) shifts the most. This position-dependent shifting means the same character in two different positions produces two different output characters, which destroys the hierarchical prefix structure.</li>
   <li><strong>Shifted indices are mapped back through the shuffled grid to output symbols.</strong> The final character is appended unchanged.</li>
 </ol>
@@ -695,6 +695,65 @@
           },
 
           {
+            id: 'passphrase-brute-force',
+            q: 'How hard is a grid passphrase to guess? (Read this before choosing one)',
+            a: `<p><strong>Short version: your passphrase is the only thing protecting the location, and it needs to be far longer than a website password.</strong> Use six or more random words. The passphrase box will generate one for you.</p>
+<p>Grid-passphrase mode has <strong>no key-stretching</strong> — no PBKDF2, no Argon2, no work factor. This is deliberate and permanent: the derivation is frozen so that codes stay decodable for decades, which means a work factor can never be raised later. The consequence is that guessing is cheap. Testing one candidate passphrase costs an attacker only a few hundred hashes, so a weak passphrase falls in seconds. Compare that with the AES URL layer, where every single guess costs 600,000 PBKDF2 iterations.</p>
+<p>Crucially, <strong>an attacker who has a rough idea where the code points has a much easier job than you would expect</strong>, for a reason specific to hierarchical coordinates. Read the next section before choosing a passphrase.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full details — how a guessing attack actually works — are here</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+
+<h4>The good news: there is no oracle if the attacker knows nothing</h4>
+<p>A wrong passphrase does not produce an error. It produces a different, perfectly valid-looking location somewhere else on Earth. There is no checksum, no authentication tag, no "warmer/colder" signal. An attacker who has a code but no idea what it refers to cannot tell a correct guess from a wrong one, because every guess yields a plausible answer. Against a stranger with no context, this is genuinely strong.</p>
+<p>You also cannot attack the passphrase one character at a time. The entire passphrase goes into every hash, so guessing a prefix produces a permutation with no relationship to the real one. There is no partial credit and no gradient to climb. The search space stays exponential in passphrase length.</p>
+
+<h4>The bad news: knowing the region restores the oracle</h4>
+<p>If the attacker knows roughly where the code points — the country, the city, sometimes just the region — then the real world becomes the oracle, and the hierarchical structure lets them discard wrong guesses extremely cheaply.</p>
+<p>A hierarchical code is read outside-in. The first character selects a huge cell, the second narrows it, and so on. So an attacker who suspects a code refers to somewhere in New Zealand does this: guess a candidate passphrase, decode <em>only the first character</em>, and see which cell it lands in. If it is not the cell containing the South Island, discard that guess immediately and move on. They never decode the rest of the code. If it does land correctly, decode the second character and check whether it narrows toward Christchurch. If not, discard.</p>
+<p>With a 36-cell grid, this rejects about 35 of every 36 wrong guesses after the very first character. Two or three characters is enough to identify the correct passphrase with near-certainty. Two things follow:</p>
+<ul>
+  <li>The attacker pays only a fraction of the cost of a full decode per guess, so the search runs several times faster than you might assume.</li>
+  <li><strong>Extra precision does not help.</strong> A code that pins a location to the square millimetre does contain thousands of possible codes within the same block — but the attacker stops checking long before reaching those digits. They only need enough characters to confirm the region. The trailing precision makes the confirmed answer fuzzy; it does not make the passphrase harder to find.</li>
+</ul>
+<p>The same applies to chaining. Chaining prevents symbols from being <em>decoded</em> independently — you cannot read character five without having read characters one to four. It does not prevent a whole candidate passphrase from being <em>rejected</em> early.</p>
+
+<h4>There is no salt, so the work is reusable</h4>
+<p>The permutation is derived from a fixed public prefix plus your passphrase — there is no per-user or per-code random salt. Two consequences: two people using the same passphrase produce identical permutations, and an attacker can precompute a table of first-level permutations for a large dictionary of common passphrases <em>once</em> and reuse it against every Geosonify code ever made on that grid. The cost of attacking the second target is far lower than the first. This is another reason a passphrase that appears in any wordlist, breach dump or dictionary is unsuitable.</p>
+
+<h4>What this means in numbers</h4>
+<p>Assuming a well-resourced attacker running roughly a billion candidate passphrases per second against the 36-cell grid — pessimistic, but that is the right posture — and assuming they know the rough region:</p>
+<table>
+  <tr><th>Passphrase</th><th>Entropy</th><th>Time to find</th></tr>
+  <tr><td>A common password ("sunshine1", "letmein")</td><td>&lt;10 bits</td><td>Instantly</td></tr>
+  <tr><td>One dictionary word plus digits</td><td>~20 bits</td><td>Instantly</td></tr>
+  <tr><td>3 random words</td><td>33 bits</td><td>About 4 seconds</td></tr>
+  <tr><td>4 random words</td><td>44 bits</td><td>About 2 hours</td></tr>
+  <tr><td>5 random words</td><td>55 bits</td><td>About 6 months</td></tr>
+  <tr><td><strong>6 random words</strong></td><td><strong>66 bits</strong></td><td><strong>About 1,000 years</strong></td></tr>
+  <tr><td>7 random words</td><td>77 bits</td><td>About 2 million years</td></tr>
+</table>
+<p>The word figures assume words chosen <em>at random by the app</em> from its 2025-word list (about 11 bits each). Words you pick yourself are worth dramatically less — human-chosen "random" words cluster heavily, and a phrase from a song, book or film is worth almost nothing. Let the generator choose.</p>
+<h4>"But the attacker knows which wordlist you used"</h4>
+<p>Yes — and that is already accounted for. The figures above assume the attacker knows the list exactly and is enumerating it directly. Strength here does not come from the list being secret; it comes from the number of words chosen at random from it. This is a long-standing principle in cryptography: assume the adversary knows the system, and put all the security in the key. A "secret" wordlist would add nothing, because a serious attacker would obtain it anyway — the app is open source and runs entirely in your browser.</p>
+<p>A larger list does help, but less than people expect, and you can buy the same benefit for free. The standard EFF diceware list has 7,776 words (about 12.9 bits each) against our 2,025 (about 11.0 bits). Six EFF words come to 77.5 bits; six of ours come to 65.9. But <strong>seven of ours come to 76.9 bits</strong> — within half a bit of six EFF words. Adding one word is worth more than changing the list, and it keeps the generator working entirely offline.</p>
+<p>The passphrase generator draws from your device's cryptographic random number generator (the same source your browser uses for TLS keys). It never contacts a server. This is deliberate: fetching randomness or words over the network would reveal when a passphrase was created, could expose it to anyone observing the connection, and would break the guarantee that Geosonify works fully offline with no requests — the property that lets you verify its behaviour yourself in the Network tab.</p>
+<p>For comparison, the same six-word phrase used with <strong>AES URL encryption</strong> would take roughly 20,000 times longer to attack, because each guess there costs 600,000 PBKDF2 iterations instead of a few hundred hashes. If the location genuinely matters, that is the mode to use.</p>
+
+<h4>Practical guidance</h4>
+<ul>
+  <li><strong>Six random words is the floor</strong> for anything you would mind being found. Seven if the location is sensitive and the region is guessable.</li>
+  <li><strong>Never reuse a passphrase</strong> you have used anywhere else, and never use one that appears in any wordlist or breach dump.</li>
+  <li><strong>Treat the region as known.</strong> Assume an attacker can guess the country or city from context — who sent the code, when, and why. Design your passphrase for that case, not the best case.</li>
+  <li><strong>If the consequence of disclosure is serious, use AES URL encryption instead.</strong> Grid mode is a private coordinate language for groups, not a cipher. It is the right tool for a geocaching club and the wrong tool for anything where being found causes harm.</li>
+</ul>
+<p>None of this is a defect being disclosed reluctantly — it is the documented, deliberate trade-off of a format that must remain byte-reproducible for a century. The scheme is bespoke and has not undergone formal cryptanalysis. Where real confidentiality is needed, use the AES layer, which relies on standard, widely reviewed primitives.</p>
+</div>
+</details>`
+          },
+
+          {
             id: 'obfuscation-vs-passphrase-vs-encryption',
             q: 'What is the difference between obfuscation, passphrases and encryption?',
             a: `<p>They serve different purposes and provide different guarantees.</p>
@@ -703,7 +762,7 @@
 <h4>Passphrase Mode</h4>
 <p>Creates a private coordinate language for a group. Coordinates are valid but only decode to the intended location for people who share the passphrase. Everyone else decodes to somewhere else entirely. Appropriate for geocaching groups, field teams, and similar shared-access use cases.</p>
 <h4>Encryption</h4>
-<p>Encrypts the entire coordinate payload using AES-256-GCM. Routes, shapes, metadata and coordinates are all protected. This hides not only the location values but the structure of what is being communicated - the number of waypoints, the path length, the grid type.</p>
+<p>Encrypts the entire coordinate payload using AES-256-GCM. Routes, shapes, metadata and coordinates are all protected. This hides not only the location values but the structure of what is being communicated — the grid type, the encoding, and the coordinate data itself. Payload length is padded to a 32-byte band, which removes fine-grained detail but does not fully conceal size: a long route still produces a visibly larger blob than a single point.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full security breakdown — all three layers — is here</summary>
@@ -722,7 +781,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
 <p>Adding a passphrase makes the mapping depend on it. The passphrase is Unicode-normalised (NFC) so it behaves identically across devices, then combined with a fixed domain-separation prefix and the chain of cell indices chosen so far; each cell gets an independent <strong>SHA3-512</strong> digest over that preimage plus the cell index, and cells are sorted by those digests to form a keyed permutation. The chaining stops symbols being decoded independently. It is deliberately simple — no stretching, salt, or authentication — because the format must stay byte-reproducible for decades.</p>
 <p><em>What it does not do:</em> it does not hide metadata (a code's existence, length and therefore approximate precision, and often its grid vocabulary remain visible, and identical locations produce identical codes); it is not authenticated; and it cannot protect a weak passphrase. A strong, high-entropy passphrase is the whole of its security. It protects the coordinate value from people outside the passphrase group — not the fact that a location is being communicated.</p>
 <p><strong>3. Hard URL encryption (AES-256-GCM)</strong></p>
-<p>The URL encryption layer hides everything — coordinates, grid type, number of points, path length, other structure. It uses:</p>
+<p>The URL encryption layer hides the coordinates, grid type, encoding and other structure. Length is blurred rather than hidden — see the padding note below. It uses:</p>
 <ul>
   <li><strong>PBKDF2</strong> with HMAC-SHA-256, <strong>600,000</strong> iterations, and a fresh random 16-byte salt per encryption, so each guess costs 600,000 iterations and an attacker must repeat that work for every blob.</li>
   <li><strong>AES-256-GCM</strong> authenticated encryption: a wrong passphrase yields a detectable authentication failure (the 128-bit tag won't verify), not plausible garbage — no "getting warmer" oracle.</li>
@@ -737,7 +796,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
   <li>Open DevTools → Sources and read every function. The key ones are <code>shuffleGridAndOrder</code> in <code>card-renderer.js</code> (grid passphrase) and <code>deriveEncryptionKey</code> / <code>encryptQueryString</code> in <code>index.html</code> (AES). They are unminified and commented.</li>
   <li>Watch the Network tab to confirm no requests during encode/decode.</li>
   <li>Save the page and run it offline — it works fully disconnected.</li>
-  <li>Cross-check the primitives: SHA3-512 is provided by the <code>js-sha3</code> library and the grid-passphrase shuffle uses it directly; AES-256-GCM and the AES-layer PBKDF2 use the browser's native <code>crypto.subtle</code> (WebCrypto), implemented in the browser engine rather than in JavaScript.</li>
+  <li>Cross-check the primitives: the grid-passphrase shuffle uses genuine SHA3-512 from the <code>js-sha3</code> library directly; AES-256-GCM and the AES-layer PBKDF2 use the browser's native <code>crypto.subtle</code> (WebCrypto), implemented in the browser engine rather than in JavaScript. The obfuscation layer is the one exception — it uses a bespoke non-FIPS-202 hash internal to the codec engine (see the obfuscation entry). Since obfuscation is not a security feature, no confidentiality claim depends on it.</li>
 </ul>
 <p>You are not trusting Geosonify's cryptographic design. You are trusting SHA3-512 (NIST FIPS 202), AES-256-GCM (FIPS 197 / SP 800-38D), PBKDF2 (SP 800-132), and your browser's WebCrypto.</p>
 <h4>Limitations</h4>
@@ -755,7 +814,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
   <tr><th>Mode</th><th>Hides coordinates</th><th>Hides structure</th><th>Cryptographic primitive</th></tr>
   <tr><td>No passphrase</td><td>✗</td><td>✗</td><td>None (public encoding)</td></tr>
   <tr><td>Grid passphrase</td><td>✓</td><td>✗</td><td>SHA3-512 keyed permutation (NFC + domain-separated)</td></tr>
-  <tr><td>AES URL encryption</td><td>✓</td><td>✓</td><td>PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM</td></tr>
+  <tr><td>AES URL encryption</td><td>✓</td><td>✓ (length blurred to a 32-byte band, not hidden)</td><td>PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM</td></tr>
 </table>
 <p>For most cases where you just don't want a casual observer to read the location, the grid passphrase is sufficient. For high-stakes use where even the existence of structured location data should be hidden, use AES URL encryption with a strong passphrase. For public, shareable codes, use no passphrase.</p>
 </div>
@@ -770,7 +829,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The cryptographic details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The URL encryption layer hides everything — coordinates, grid type, number of points, path length, other structure. It uses:</p>
+<p>The URL encryption layer hides the coordinates, grid type, encoding and other structure. Length is blurred rather than hidden — see the padding note below. It uses:</p>
 <ul>
   <li><strong>PBKDF2</strong> with HMAC-SHA-256, <strong>600,000</strong> iterations, and a fresh random 16-byte salt per encryption. Each guess costs 600,000 iterations, and the per-message salt forces an attacker to repeat that work for every blob.</li>
   <li><strong>AES-256-GCM</strong> authenticated encryption: a wrong passphrase produces a detectable authentication failure rather than plausible garbage, so there is no "getting warmer" oracle.</li>
