@@ -1279,3 +1279,186 @@ select {
   font-family:ui-monospace,Menlo,Consolas,monospace; font-size:11px; line-height:1.25;
   white-space:pre; overflow-x:auto;
 }
+
+/* ── Passphrase strength meter & generator ────────────────────────────────────
+   Append to geosonify-styles.css. All selectors are namespaced .pp-* so they
+   cannot collide with existing rules. */
+
+.pp-host { margin-top: 10px; }
+
+.pp-meter-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--ios-light-gray, #e5e5ea);
+  overflow: hidden;
+}
+
+.pp-meter-fill {
+  height: 100%;
+  width: 0;
+  background: #c0392b;
+  border-radius: 3px;
+  transition: width .18s ease, background-color .18s ease;
+}
+
+.pp-meter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+
+.pp-meter-label { font-weight: 600; }
+.pp-meter-detail { color: #666; flex: 1 1 100%; }
+
+.pp-warn-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #b3541e;
+  line-height: 1.45;
+}
+.pp-warn-list li { margin-bottom: 2px; }
+
+.pp-suggest {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--ios-light-gray, #f2f2f7);
+}
+
+.pp-suggest-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: #444;
+  margin-bottom: 6px;
+}
+
+.pp-suggest-row { margin-bottom: 8px; }
+
+.pp-suggest-text {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+  background: #fff;
+  border: 1px solid var(--ios-separator, #c6c6c8);
+  border-radius: 6px;
+  padding: 8px 10px;
+  user-select: all;
+}
+
+.pp-suggest-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.pp-btn {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: #1a7a4c;
+  color: #fff;
+  cursor: pointer;
+}
+.pp-btn:active { opacity: .82; }
+
+.pp-btn-ghost {
+  background: #fff;
+  color: #333;
+  border-color: var(--ios-separator, #c6c6c8);
+}
+
+.pp-suggest-why {
+  margin-top: 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #666;
+}
+
+.pp-save-note {
+  margin-top: 8px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: #fff4e5;
+  border: 1px solid #f0c48a;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #8a4b08;
+}
+
+@media (prefers-color-scheme: dark) {
+  .pp-suggest { background: #1c1c1e; }
+  .pp-suggest-text { background: #000; color: #eee; border-color: #3a3a3c; }
+  .pp-btn-ghost { background: #2c2c2e; color: #eee; border-color: #3a3a3c; }
+  .pp-meter-detail, .pp-suggest-why { color: #98989d; }
+  .pp-suggest-head { color: #d1d1d6; }
+  .pp-save-note { background: #3a2a10; border-color: #6b4d1a; color: #f0c48a; }
+}
+
+.pp-wordcount {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin: 8px 0; font-size: 12px; color: #666;
+}
+.pp-wordcount-label { font-weight: 600; }
+.pp-wc-btn {
+  font: inherit; font-size: 12px; min-width: 28px; padding: 3px 8px;
+  border-radius: 6px; border: 1px solid var(--ios-separator, #c6c6c8);
+  background: #fff; color: #333; cursor: pointer;
+}
+.pp-wc-active { background: #1a7a4c; color: #fff; border-color: #1a7a4c; }
+.pp-wordcount-bits { margin-left: auto; font-weight: 600; }
+
+@media (prefers-color-scheme: dark) {
+  .pp-wc-btn { background: #2c2c2e; color: #eee; border-color: #3a3a3c; }
+  .pp-wc-active { background: #1a7a4c; color: #fff; border-color: #1a7a4c; }
+  .pp-wordcount { color: #98989d; }
+}
+
+.pp-langrow { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; font-size:12px; color:#666; }
+.pp-lang-label { font-weight:600; }
+.pp-lang-select { font:inherit; font-size:12px; padding:3px 6px; border-radius:6px;
+  border:1px solid var(--ios-separator,#c6c6c8); background:#fff; color:#333; }
+.pp-lang-note { font-size:11px; opacity:.8; }
+.pp-suggest-row { display:flex; gap:8px; align-items:stretch; margin-bottom:8px; }
+.pp-suggest-row .pp-suggest-text { flex:1; }
+.pp-btn-inline { white-space:nowrap; align-self:stretch; }
+.pp-alt { margin-top:4px; }
+.pp-alt-head { font-size:11.5px; color:#666; margin-bottom:5px; }
+.pp-ime-note { margin-top:6px; padding:7px 9px; border-radius:6px; background:#fff4e5;
+  border:1px solid #f0c48a; font-size:11.5px; line-height:1.45; color:#8a4b08; }
+@media (prefers-color-scheme: dark) {
+  .pp-lang-select { background:#2c2c2e; color:#eee; border-color:#3a3a3c; }
+  .pp-langrow, .pp-alt-head { color:#98989d; }
+  .pp-ime-note { background:#3a2a10; border-color:#6b4d1a; color:#f0c48a; }
+}
+
+.pp-variant { margin-top:8px; padding:8px 10px; border-radius:6px; background:#fff4e5;
+  border:1px solid #f0c48a; font-size:11.5px; line-height:1.5; color:#8a4b08; }
+.pp-variant-list { margin:6px 0 8px; padding-left:18px; }
+.pp-variant-list code { background:rgba(0,0,0,.06); padding:1px 4px; border-radius:3px; }
+.pp-variant-list span { opacity:.8; }
+@media (prefers-color-scheme: dark) {
+  .pp-variant { background:#3a2a10; border-color:#6b4d1a; color:#f0c48a; }
+  .pp-variant-list code { background:rgba(255,255,255,.1); }
+}
+
+.pp-confirm { margin-top:10px; padding:9px 11px; border-radius:6px;
+  background:rgba(0,0,0,.03); border:1px solid var(--ios-separator,#c6c6c8); }
+.pp-confirm-head { font-size:11.5px; line-height:1.45; color:#666; margin-bottom:7px; }
+.pp-confirm-input { width:100%; box-sizing:border-box; font:inherit; font-size:14px;
+  padding:7px 9px; border-radius:6px; border:1px solid var(--ios-separator,#c6c6c8); background:#fff; }
+.pp-confirm-status { margin-top:6px; font-size:11.5px; line-height:1.5; }
+.pp-confirm-status .pp-btn { margin-top:6px; }
+.pp-cs-exact { color:#1a7a4c; font-weight:600; }
+.pp-cs-variant { color:#8a4b08; }
+.pp-cs-different { color:#888; }
+@media (prefers-color-scheme: dark) {
+  .pp-confirm { background:rgba(255,255,255,.04); border-color:#3a3a3c; }
+  .pp-confirm-head { color:#98989d; }
+  .pp-confirm-input { background:#000; color:#eee; border-color:#3a3a3c; }
+  .pp-cs-exact { color:#4cd39a; }
+  .pp-cs-variant { color:#f0c48a; }
+}
