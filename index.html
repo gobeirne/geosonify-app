@@ -22,7 +22,7 @@
 <link rel="shortcut icon" href="/favicon.ico" />
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
 <link rel="manifest" href="/site.webmanifest" />
-<link rel="stylesheet" href="css/geosonify-styles.css?v=202603174" />
+<link rel="stylesheet" href="css/geosonify-styles.css?v=20260819" />
   <style>
     /* Checksum button styles */
     .checksum-btn {
@@ -209,7 +209,7 @@
           <div class="modal-body">
             <div class="input-group">
               <label>Enter passphrase to shuffle grids</label>
-              <input type="text" id="passphraseInput" placeholder="Leave blank for original grid" autocomplete="off" />
+              <input type="text" id="passphraseInput" placeholder="Six or more random words — or use the generator below" autocomplete="off" />
             </div>
             <div class="grid-preview" id="gridPreview"></div>
           </div>
@@ -672,6 +672,8 @@
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
+<script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
+<script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260331"></script>
 <script src="js/lib/faq-data.js"></script>
@@ -970,6 +972,21 @@
               const match = flat.find(w => w.slice(0, prefixLen).toLowerCase() === testPrefix);
               if (match) return gridKey;
             }
+          }
+        }
+      }
+      
+      // ByteWords (PascalCase words, 4+ chars each) - deprecated but kept for decoding
+      if (/^([A-Z][a-z]{2,5})+$/.test(code) && code.length >= 16) {
+        const words = code.match(/[A-Z][a-z]+/g);
+        if (words && words.length >= 4) {
+          if (CARD_GRIDS.bytewords && CARD_GRIDS.bytewords.grid) {
+            const flat = CARD_GRIDS.bytewords.grid.flat();
+            if (flat.includes(words[0])) return 'bytewords';
+          }
+          if (CARD_GRIDS.bytewordsmin && CARD_GRIDS.bytewordsmin.grid) {
+            const flat = CARD_GRIDS.bytewordsmin.grid.flat();
+            if (flat.includes(words[0])) return 'bytewordsmin';
           }
         }
       }
@@ -2773,7 +2790,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Base param -> grid key mapping
       const baseParamMap = {
         'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-        'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
+        'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
+        'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
         'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
         'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
         'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
@@ -3120,6 +3138,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         : {}),
       'alphanumeric': 'a',
       'emoji': 'e',
+      'byteemoji': 'be',
       'hexbyte': 'h',
       'chromacoord': 'c',
       'music': 'm',
@@ -3134,6 +3153,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       'bip39korean': 'bipko',
       'bip39chinesesimplified': 'bipzhs',
       'bip39chinesetraditional': 'bipzht',
+      'bytewords': 'bw',
+      'bytewordsmin': 'bm',
       'base64': 'b64'
     };
     
@@ -3144,7 +3165,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // Rule: a GIS param name EQUALS its GISGrids.SCHEMES key. No new object.
     const BASE_PARAM_MAP = {
       'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
+      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
+      'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
       'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
       'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
       'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional',
@@ -7036,6 +7058,7 @@ function encodeRaw(sol) {
         const firstLooksLikeCode = !firstPart.includes(',') && (
           /^[a-z0-9]{6,12}$/.test(firstPart) ||    // alphanumeric
           /^[A-Fa-f0-9]{8,16}$/.test(firstPart) || // hexbyte
+          /^([A-Z][a-z]+){3,8}$/.test(firstPart) || // bytewords
           /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]+$/u.test(firstPart) // emoji
         );
         
@@ -9124,7 +9147,8 @@ function encodeRaw(sol) {
     // Grid short-code → grid key mapping (reuse the URL param map)
     const PIPELINE_GRID_MAP = {
       'a': 'alphanumeric', 'e': 'emoji', 'h': 'hexbyte', 'c': 'chromacoord',
-      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'b64': 'base64',
+      'm': 'music', 'n': 'nato', 'bip': 'bip39english', 'bw': 'bytewords',
+      'bm': 'bytewordsmin', 'be': 'byteemoji', 'b64': 'base64',
       'bipes': 'bip39spanish', 'bipfr': 'bip39french', 'bipit': 'bip39italian',
       'bippt': 'bip39portuguese', 'bipcs': 'bip39czech', 'bipja': 'bip39japanese',
       'bipko': 'bip39korean', 'bipzhs': 'bip39chinesesimplified', 'bipzht': 'bip39chinesetraditional'
