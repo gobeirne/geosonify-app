@@ -1462,3 +1462,15 @@ select {
   .pp-cs-exact { color:#4cd39a; }
   .pp-cs-variant { color:#f0c48a; }
 }
+
+.pp-collapsed { font-size:11.5px; line-height:1.5; color:#666; padding:2px 0; }
+.pp-link { font:inherit; font-size:11.5px; background:none; border:none; padding:0;
+  color:#1a7a4c; text-decoration:underline; cursor:pointer; }
+@media (prefers-color-scheme: dark) {
+  .pp-collapsed { color:#98989d; }
+  .pp-link { color:#4cd39a; }
+}
+
+.pp-suggest-body { display: block; }
+.pp-warnings:empty { display: none; }
+.pp-variant-msg { margin-bottom: 4px; }
