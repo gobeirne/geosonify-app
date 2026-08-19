@@ -681,7 +681,7 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details — how the keyed shuffle works — are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>When you add a passphrase, the symbol-to-cell mapping becomes dependent on it. The passphrase is first Unicode-normalised (NFC), so canonically equivalent Unicode representations of a passphrase — accented text, Māori macrons, CJK input — behave identically on any device or operating system. At each encoding iteration the grid is permuted from a fixed domain-separation prefix, the normalised passphrase, and the sequence of cell indices chosen so far (the "chain"): each cell is assigned an independent <strong>SHA3-512</strong> digest computed over that preimage plus the cell index, and cells are sorted by those digests to give a keyed permutation. The chaining couples each iteration to previous choices, so symbols can't be peeled off and decoded one at a time.</p>
+<p>When you add a passphrase, the symbol-to-cell mapping becomes dependent on it. The passphrase is first Unicode-normalised (NFC), so canonically equivalent Unicode representations of a passphrase — such as accented text or Māori macrons written as precomposed characters or as base-plus-combining-mark — behave identically on any device or operating system. At each encoding iteration the grid is permuted from a fixed domain-separation prefix, the normalised passphrase, and the sequence of cell indices chosen so far (the "chain"): each cell is assigned an independent <strong>SHA3-512</strong> digest computed over that preimage plus the cell index, and cells are sorted by those digests to give a keyed permutation. The chaining couples each iteration to previous choices, so symbols can't be peeled off and decoded one at a time.</p>
 <p>This is intentionally simple — a keyed <em>coordinate language</em>, not an encryption scheme:</p>
 <ul>
   <li>People with the passphrase decode consistently; everyone else decodes elsewhere. It protects the coordinate value from casual observers and from people outside the passphrase group.</li>
@@ -698,7 +698,7 @@
             id: 'passphrase-brute-force',
             q: 'How hard is a grid passphrase to guess?',
             a: `<p><strong>Your passphrase is the only thing protecting the location. Use six or more random words — the passphrase box will generate one.</strong></p>
-<p>Grid-passphrase mode has <strong>no key-stretching</strong>, deliberately and permanently: the derivation is frozen so codes stay decodable for decades, which means a work factor can never be raised later. Testing one candidate costs an attacker only a short hash computation and a sort. By comparison, every guess against the AES URL layer costs 600,000 PBKDF2-HMAC-SHA256 iterations by design — orders of magnitude more expensive per guess. The exact ratio depends on hardware and implementation, but the direction is not in doubt: grid mode makes guessing cheap, AES mode makes it deliberately costly.</p>
+<p>Grid-passphrase v1 has <strong>no key-stretching</strong>, deliberately and permanently: its derivation is frozen so existing v1 codes stay byte-for-byte reproducible. A future versioned format could introduce stretching, but the work factor of existing v1 codes cannot be raised retroactively. Testing one candidate is nevertheless cheap: for a 36-cell grid each iteration needs only a small batch of SHA3-512 hashes and a tiny sort, with no deliberately expensive password KDF. By comparison, every guess against the AES URL layer costs 600,000 PBKDF2-HMAC-SHA256 iterations by design — orders of magnitude more expensive per guess. The exact ratio depends on hardware and implementation, but the direction is not in doubt: grid mode makes guessing cheap, AES mode makes it deliberately costly.</p>
 <p>There is also no per-code salt, so work on likely passphrases — especially the first-character mappings — can be reused across codes that share a grid, making multi-target attacks cheaper. A passphrase that appears in any wordlist or breach dump is unsuitable.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
@@ -776,7 +776,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
   <li>A <strong>self-describing, versioned blob</strong>: a format-version byte and the iteration count travel inside the blob, and the whole header (version, iterations, salt, IV) is bound as GCM additional authenticated data — tamper-evident, and the iteration count can be raised later without breaking existing links.</li>
   <li>Payload padding up to a 32-byte multiple, which blurs plaintext length to a 32-byte band (it removes fine-grained length detail but a long route still yields a larger blob than a point).</li>
 </ul>
-<p>Blob layout: <code>BASE64URL( version[1] | iterations[3] | salt[16] | iv[12] | ciphertext+tag )</code>, emitted as <code>?enc=…</code>. Without the passphrase it is an opaque blob revealing no plaintext or structure. AES-256-GCM with a salted PBKDF2-derived key is a standard authenticated-encryption construction with no known practical attacks when correctly implemented. Note that "AES-256" does not give a weak passphrase 256 bits of security: the PBKDF2 layer raises the cost per guess, but it cannot manufacture entropy the passphrase never had. A weak passphrase is weak in AES mode too — just far more expensive to attack than in grid mode.</p>
+<p>Blob layout: <code>BASE64URL( version[1] | iterations[3] | salt[16] | iv[12] | ciphertext+tag )</code>, emitted as <code>?enc=…</code>. Without the passphrase, the payload reveals no plaintext or internal plaintext structure beyond the public encryption header (version, iteration count, salt, IV) and padded length. AES-256-GCM with a salted PBKDF2-derived key is a standard authenticated-encryption construction with no known practical attacks when correctly implemented. Note that "AES-256" does not give a weak passphrase 256 bits of security: the PBKDF2 layer raises the cost per guess, but it cannot manufacture entropy the passphrase never had. A weak passphrase is weak in AES mode too — just far more expensive to attack than in grid mode.</p>
 <h4>The trust question: "how do I verify this?"</h4>
 <p>Geosonify is a client-side web app — the code that runs is the code you can read. No server is involved in encoding or decoding; coordinates never leave your device unless you share a code. You can:</p>
 <ul>
@@ -789,13 +789,13 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
 <h4>Limitations</h4>
 <ul>
   <li><strong>Grid-passphrase mode is a coordinate language, not a cipher.</strong> It is a bespoke keyed encoding, not independently audited or formally cryptanalysed. The AES layer, by contrast, relies on widely trusted standard primitives.</li>
-  <li><strong>Intended threat model.</strong> Geosonify protects against casual observation, accidental disclosure, and offline interception of shared codes — not nation-state adversaries or compromised devices.</li>
+  <li><strong>Intended threat model.</strong> Geosonify protects against casual observation, accidental disclosure, and offline interception of shared codes — not a compromised device or browser, a stolen or weak passphrase, or the unaudited bespoke grid mode used for anything high-stakes.</li>
   <li><strong>Passphrase strength is everything in grid mode.</strong> There is no stretching to slow a guessing attack, so a weak passphrase is weak. "hello" is not a passphrase; a 6-word diceware phrase or a random 20-character string is.</li>
-  <li><strong>Determinism.</strong> The same passphrase and location always produce the same code, so identical locations are detectable as identical codes.</li>
+  <li><strong>Determinism.</strong> For a given grid, precision and passphrase, the same location always produces the same code, so repeated encodings of one location are linkable to each other.</li>
   <li>Grid mode does not hide that a code exists, its approximate length, or its likely grid vocabulary. To hide the location and the entire internal structure of the payload, use AES URL encryption.</li>
   <li>Obfuscation is explicitly <em>not</em> a security feature — cosmetic, reversible by anyone with the app.</li>
   <li>Key management is your responsibility; sharing a passphrase over an insecure channel is the weakest link.</li>
-  <li><strong>Long-term decodability</strong> is guaranteed by freezing the grid-passphrase derivation and the base grids permanently; see the frozen-format specification.</li>
+  <li><strong>Long-term format compatibility</strong> is preserved by permanently freezing the grid-passphrase derivation and the base grids, so a faithful implementation of the frozen specification will keep decoding today's codes; see the frozen-format specification.</li>
 </ul>
 <table>
   <tr><th>Mode</th><th>Hides coordinates</th><th>Hides structure</th><th>Cryptographic primitive</th></tr>
@@ -803,7 +803,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
   <tr><td>Grid passphrase</td><td>✓</td><td>✗</td><td>bespoke passphrase-dependent permutation derived with SHA3-512 (NFC + domain-separated)</td></tr>
   <tr><td>AES URL encryption</td><td>✓</td><td>✓ (length blurred to a 32-byte band, not hidden)</td><td>PBKDF2-HMAC-SHA256 (600k) + AES-256-GCM</td></tr>
 </table>
-<p>For most cases where you just don't want a casual observer to read the location, the grid passphrase is sufficient. For high-stakes use where even the existence of structured location data should be hidden, use AES URL encryption with a strong passphrase. For public, shareable codes, use no passphrase.</p>
+<p>For most cases where you just don't want a casual observer to read the location, the grid passphrase is sufficient. For high-stakes use where the location and the payload's internal structure should be confidential, use AES URL encryption with a strong passphrase. For public, shareable codes, use no passphrase.</p>
 </div>
 </details>`
           },
