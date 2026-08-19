@@ -285,8 +285,24 @@
   function tokenBits(tok, inList, bpw) {
     if (inList) return bpw;
     const low = tok.toLowerCase();
-    // A fragment of a list word is capped at the list rate (see _prefixSet).
-    if (_prefixSet().has(low)) return Math.min(bpw, low.length * WORDLIKE_BITS_PER_CHAR);
+    /*
+     * A fragment of a list word is priced at EXACTLY the list rate, never
+     * below it. Reasoning: a pure-wordlist enumeration never produces
+     * "oxyge", so the fragment is only reachable by an attacker who also
+     * applies mangling rules (truncate / append / capitalise). That costs
+     * them extra, so the fragment is genuinely a little HARDER than the whole
+     * word - but we decline to credit those extra bits, because we cannot
+     * know which rules a given attacker runs. Pricing it at the word rate is
+     * the conservative floor.
+     *
+     * Capping it BELOW the word rate (the earlier behaviour) was wrong twice
+     * over: it understated the passphrase, and it displayed a DECREASE when a
+     * user deviated from the list, teaching exactly the wrong lesson.
+     * Fragments under 3 characters are too short to imply a specific word.
+     */
+    if (_prefixSet().has(low)) {
+      return low.length >= 3 ? bpw : low.length * WORDLIKE_BITS_PER_CHAR;
+    }
     if (/^[a-z]+$/.test(tok)) {
       return Math.min(tok.length * WORDLIKE_BITS_PER_CHAR, tok.length * Math.log2(26), bpw * 2);
     }
@@ -421,6 +437,12 @@
     // error that actually hurts the user.
     const bits = Math.min(tokenBitsTotal, charBits);
     const model = (tokenBitsTotal <= charBits) ? 'per-token' : 'charset';
+    // EXACT only when every token is a wordlist member and the per-token model
+    // won. Then the entropy really is n * log2(listSize) and we can show it.
+    // Otherwise we are inferring from shape, and such estimates read high on
+    // human-chosen passphrases - so we show a band and a coarse timeframe and
+    // publish no number we cannot stand behind.
+    const exact = (unknownCount === 0) && (tokens.length >= 2) && (model === 'per-token');
 
     if (unknownCount && tokens.length > 2 && unknownCount <= 2) {
       warnings.push('Some words are not in the word list. If you meant to use a generated ' +
@@ -431,7 +453,7 @@
       warnings.push('Short single-token passphrases are the easiest case for an attacker.');
     }
 
-    return finish(bits, model, warnings);
+    return finish(bits, model, warnings, exact);
   }
 
   let _ws = null;
@@ -582,22 +604,26 @@
     return out;
   }
 
+  /**
+   * Deliberately coarse. The underlying estimate is uncertain enough that
+   * quoting "about 2 million years" implies a precision we do not have; the
+   * bands below carry the only distinction that changes what a user should
+   * do. Expected work is half the keyspace, at ATTACK_RATE.
+   */
   function crackTime(bits) {
-    // Expected work is half the keyspace.
-    const seconds = Math.pow(2, bits) / 2 / ATTACK_RATE;
-    if (seconds < 1) return 'instantly';
-    if (seconds < SECONDS.minute) return 'in seconds';
-    if (seconds < SECONDS.hour) return 'in about ' + Math.max(1, Math.round(seconds / SECONDS.minute)) + ' minutes';
-    if (seconds < SECONDS.day) return 'in about ' + Math.max(1, Math.round(seconds / SECONDS.hour)) + ' hours';
-    if (seconds < SECONDS.year) return 'in about ' + Math.max(1, Math.round(seconds / SECONDS.day)) + ' days';
-    const years = seconds / SECONDS.year;
-    if (years < 1000) return 'in about ' + Math.round(years) + ' years';
-    if (years < 1e6) return 'in about ' + Math.round(years / 1000) + ' thousand years';
-    if (years < 1e9) return 'in about ' + Math.round(years / 1e6) + ' million years';
-    return 'in longer than the age of the universe';
+    const s = Math.pow(2, bits) / 2 / ATTACK_RATE;
+    if (s < 1)                    return 'instantly';
+    if (s < SECONDS.minute)       return 'in seconds';
+    if (s < SECONDS.hour)         return 'in minutes';
+    if (s < SECONDS.day)          return 'in hours';
+    if (s < SECONDS.day * 30)     return 'in days';
+    if (s < SECONDS.year)         return 'in months';
+    if (s < SECONDS.year * 100)   return 'in years';
+    if (s < SECONDS.year * 1e5)   return 'in centuries';
+    return 'in far longer than anyone would keep trying';
   }
 
-  function finish(bits, model, warnings) {
+  function finish(bits, model, warnings, exact) {
     bits = Math.max(0, Math.round(bits * 10) / 10);
     const band = bandFor(bits);
     return {
@@ -608,6 +634,7 @@
       percent: Math.min(100, Math.round((bits / 80) * 100)),
       crackTime: crackTime(bits),
       model: model,
+      exact: !!exact,
       warnings: warnings,
       meetsRecommended: bits >= RECOMMENDED_BITS
     };

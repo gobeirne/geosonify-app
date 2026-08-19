@@ -696,76 +696,46 @@
 
           {
             id: 'passphrase-brute-force',
-            q: 'How hard is a grid passphrase to guess? (Read this before choosing one)',
-            a: `<p><strong>Short version: your passphrase is the only thing protecting the location, and it needs to be far longer than a website password.</strong> Use six or more random words. The passphrase box will generate one for you.</p>
-<p>Grid-passphrase mode has <strong>no key-stretching</strong> — no PBKDF2, no Argon2, no work factor. This is deliberate and permanent: the derivation is frozen so that codes stay decodable for decades, which means a work factor can never be raised later. The consequence is that guessing is cheap. Testing one candidate passphrase costs an attacker only a few hundred hashes, so a weak passphrase falls in seconds. Compare that with the AES URL layer, where every single guess costs 600,000 PBKDF2 iterations.</p>
-<p>Crucially, <strong>an attacker who has a rough idea where the code points has a much easier job than you would expect</strong>, for a reason specific to hierarchical coordinates. Read the next section before choosing a passphrase.</p>
+            q: 'How hard is a grid passphrase to guess?',
+            a: `<p><strong>Your passphrase is the only thing protecting the location. Use six or more random words — the passphrase box will generate one.</strong></p>
+<p>Grid-passphrase mode has <strong>no key-stretching</strong>, deliberately and permanently: the derivation is frozen so codes stay decodable for decades, which means a work factor can never be raised later. Testing one candidate costs an attacker only a few hundred hashes. By comparison, every guess against the AES URL layer costs 600,000 PBKDF2 iterations — roughly twenty thousand times more.</p>
+<p>There is also no salt, so an attacker can precompute a table once and reuse it against every code ever made. A passphrase that appears in any wordlist or breach dump is unsuitable.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The full details — how a guessing attack actually works — are here</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Why context makes guessing much easier</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 
-<h4>The good news: there is no oracle if the attacker knows nothing</h4>
-<p>A wrong passphrase does not produce an error. It produces a different, valid-looking location somewhere else on Earth. There is no checksum, no authentication tag, no "warmer/colder" signal, so nothing in the code itself tells an attacker whether a guess was right. Against a stranger with no context this is a real protection — but it is weaker than it first sounds, because not every point on Earth is equally believable as a place someone would deliberately encode. See "Not all wrong answers look equally wrong" below.</p>
-<p>You also cannot attack the passphrase one character at a time. The entire passphrase goes into every hash, so guessing a prefix produces a permutation with no relationship to the real one. There is no partial credit and no gradient to climb. The search space stays exponential in passphrase length.</p>
+<p>A wrong passphrase produces no error — just a different valid-looking location. Nothing in the code says whether a guess was right, and you cannot attack the passphrase one character at a time, because the whole passphrase enters every hash and a wrong prefix gives an unrelated result. Against someone with no context at all, that is a real protection.</p>
 
-<h4>The bad news: knowing the region restores the oracle</h4>
-<p>If the attacker knows roughly where the code points — the country, the city, sometimes just the region — then the real world becomes the oracle, and the hierarchical structure lets them discard wrong guesses extremely cheaply.</p>
-<p>A hierarchical code is read outside-in. The first character selects a huge cell, the second narrows it, and so on. So an attacker who suspects a code refers to somewhere in New Zealand does this: guess a candidate passphrase, decode <em>only the first character</em>, and see which cell it lands in. If it is not the cell containing the South Island, discard that guess immediately and move on. They never decode the rest of the code. If it does land correctly, decode the second character and check whether it narrows toward Christchurch. If not, discard.</p>
-<p>With a 36-cell grid, this rejects about 35 of every 36 wrong guesses after the very first character. Two or three characters is enough to identify the correct passphrase with near-certainty. Two things follow:</p>
+<p>It weakens sharply once an attacker knows anything about where the code points, because hierarchical codes are read outside-in. Suppose they suspect New Zealand. They guess a passphrase, decode <em>only the first character</em>, and check whether it lands on the cell containing the South Island. If not, discard and move on — the rest of the code is never touched. With a 36-cell grid that rejects about 35 of every 36 wrong guesses immediately, and two or three characters identify the right passphrase with near-certainty. Two consequences:</p>
 <ul>
-  <li>The attacker pays only a fraction of the cost of a full decode per guess, so the search runs several times faster than you might assume.</li>
-  <li><strong>Extra precision does not help.</strong> A code that pins a location to the square millimetre does contain thousands of possible codes within the same block — but the attacker stops checking long before reaching those digits. They only need enough characters to confirm the region. The trailing precision makes the confirmed answer fuzzy; it does not make the passphrase harder to find.</li>
+  <li><strong>Extra precision does not help.</strong> A code pinning a spot to the millimetre contains thousands of possibilities within one block, but the attacker stops long before those digits. The trailing precision makes the confirmed answer fuzzy; it does not make the passphrase harder to find.</li>
+  <li><strong>Chaining does not prevent this.</strong> It stops symbols being <em>decoded</em> independently. It does not stop a candidate being <em>rejected</em> early.</li>
 </ul>
-<p>The same applies to chaining. Chaining prevents symbols from being <em>decoded</em> independently — you cannot read character five without having read characters one to four. It does not prevent a whole candidate passphrase from being <em>rejected</em> early.</p>
 
-<h4>Not all wrong answers look equally wrong</h4>
-<p>Even an attacker with no idea where a code points is not reduced to pure guessing, because <strong>a decode landing in the middle of the Pacific is far less likely to be correct than one landing in a town.</strong> People do not encode random points on the globe. They encode places that mean something: a house, a trailhead, a meeting spot, a cache, a boundary marker, a landmark. Those sit on land, and they cluster heavily where people are.</p>
-<p>That gives a wrong guess a visible signature, and lets an attacker throw candidates away without ever knowing the true answer:</p>
-<ul>
-  <li><strong>Oceans cover about 71% of the Earth's surface.</strong> Discarding every guess that lands at sea removes roughly seven of every ten wrong passphrases outright — worth a little under 2 bits.</li>
-  <li><strong>Populated land is a much smaller target.</strong> Most human activity happens on a few per cent of the planet's surface. An attacker willing to assume the location is somewhere people actually go can filter to roughly that, which is worth around 5 bits.</li>
-  <li>Ice sheets, open desert, and dense forest interiors can be discarded on the same reasoning.</li>
-</ul>
-<p>This is a <em>probabilistic</em> filter, not a decisive one, and it is worth being precise about how much it actually buys:</p>
-<ul>
-  <li><strong>It does not break a strong passphrase.</strong> Roughly 5 bits off a 66-bit passphrase still leaves about 61 bits — the difference between a thousand years and a few decades of the same infeasible search. What it does is shrink the pile of survivors, so that where a passphrase is weak, the plausible candidates collapse to a shortlist a human can simply look at on a map.</li>
-  <li><strong>It produces false negatives.</strong> Plenty of legitimate codes point out to sea: dive sites, fishing marks, wrecks, moorings, buoys, survey points, offshore boundaries. An attacker applying this filter will sometimes discard the right answer. They may not care — they only need it to work often enough.</li>
-  <li><strong>It stacks with everything else.</strong> Plausibility filtering multiplies with regional knowledge rather than replacing it. An attacker who suspects a country and also discards implausible terrain is combining both, on top of the single-character early rejection described above.</li>
-</ul>
-<p>One mildly counter-intuitive consequence: <strong>if your code points somewhere remote or offshore, this particular filter works in your favour</strong>, because the attacker's own assumption steers them away from the truth. A code pointing at a city centre is more exposed to it. Do not plan around this, though — it is a few bits either way, and it is not the thing protecting you. The passphrase is.</p>
-<p>The wider lesson is that the "a wrong guess just gives another valid location" property is real but should not be leaned on too hard. It holds against someone with no context at all. It weakens as soon as the attacker can bring <em>any</em> outside knowledge to bear — the terrain, the region, who sent the code, or why.</p>
-
-<h4>There is no salt, so the work is reusable</h4>
-<p>The permutation is derived from a fixed public prefix plus your passphrase — there is no per-user or per-code random salt. Two consequences: two people using the same passphrase produce identical permutations, and an attacker can precompute a table of first-level permutations for a large dictionary of common passphrases <em>once</em> and reuse it against every Geosonify code ever made on that grid. The cost of attacking the second target is far lower than the first. This is another reason a passphrase that appears in any wordlist, breach dump or dictionary is unsuitable.</p>
+<p>Even with no context, guesses are not all equally believable. <strong>A decode landing mid-Pacific is far less likely to be right than one landing in a town.</strong> People encode places that mean something — homes, trailheads, meeting spots, caches — and those sit on land, clustered where people are. Discarding sea hits removes about seven in ten wrong guesses; narrowing to populated land is worth a few bits more. It is probabilistic rather than decisive, it wrongly discards genuine offshore targets like dive sites and moorings, and it will not break a strong passphrase — but it shrinks a weak one's survivors to a shortlist someone can eyeball on a map.</p>
 
 <h4>What this means in numbers</h4>
-<p>Assuming a well-resourced attacker running roughly a billion candidate passphrases per second against the 36-cell grid — pessimistic, but that is the right posture — and assuming they know the rough region:</p>
+<p>Against an attacker running roughly a billion candidates a second who knows the rough region:</p>
 <table>
-  <tr><th>Passphrase</th><th>Entropy</th><th>Time to find</th></tr>
-  <tr><td>A common password ("sunshine1", "letmein")</td><td>&lt;10 bits</td><td>Instantly</td></tr>
-  <tr><td>One dictionary word plus digits</td><td>~20 bits</td><td>Instantly</td></tr>
-  <tr><td>3 random words</td><td>33 bits</td><td>About 4 seconds</td></tr>
-  <tr><td>4 random words</td><td>44 bits</td><td>About 2 hours</td></tr>
-  <tr><td>5 random words</td><td>55 bits</td><td>About 6 months</td></tr>
-  <tr><td><strong>6 random words</strong></td><td><strong>66 bits</strong></td><td><strong>About 1,000 years</strong></td></tr>
-  <tr><td>7 random words</td><td>77 bits</td><td>About 2 million years</td></tr>
+  <tr><th>Passphrase</th><th>Time to find</th></tr>
+  <tr><td>A common password, or one word plus digits</td><td>Instantly</td></tr>
+  <tr><td>3 random words</td><td>Seconds</td></tr>
+  <tr><td>4 random words</td><td>Hours</td></tr>
+  <tr><td>5 random words</td><td>Months</td></tr>
+  <tr><td><strong>6 random words</strong></td><td><strong>Centuries</strong></td></tr>
+  <tr><td>7 random words</td><td>Far longer</td></tr>
 </table>
-<p>The word figures assume words chosen <em>at random by the app</em> from its 2025-word list (about 11 bits each). Words you pick yourself are worth dramatically less — human-chosen "random" words cluster heavily, and a phrase from a song, book or film is worth almost nothing. Let the generator choose.</p>
-<h4>"But the attacker knows which wordlist you used"</h4>
-<p>Yes — and that is already accounted for. The figures above assume the attacker knows the list exactly and is enumerating it directly. Strength here does not come from the list being secret; it comes from the number of words chosen at random from it. This is a long-standing principle in cryptography: assume the adversary knows the system, and put all the security in the key. A "secret" wordlist would add nothing, because a serious attacker would obtain it anyway — the app is open source and runs entirely in your browser.</p>
-<p>A larger list does help, but less than people expect, and you can buy the same benefit for free. The standard EFF diceware list has 7,776 words (about 12.9 bits each) against our 2,025 (about 11.0 bits). Six EFF words come to 77.5 bits; six of ours come to 65.9. But <strong>seven of ours come to 76.9 bits</strong> — within half a bit of six EFF words. Adding one word is worth more than changing the list, and it keeps the generator working entirely offline.</p>
-<p>The passphrase generator draws from your device's cryptographic random number generator (the same source your browser uses for TLS keys). It never contacts a server. This is deliberate: fetching randomness or words over the network would reveal when a passphrase was created, could expose it to anyone observing the connection, and would break the guarantee that Geosonify works fully offline with no requests — the property that lets you verify its behaviour yourself in the Network tab.</p>
-<p>For comparison, the same six-word phrase used with <strong>AES URL encryption</strong> would take roughly 20,000 times longer to attack, because each guess there costs 600,000 PBKDF2 iterations instead of a few hundred hashes. If the location genuinely matters, that is the mode to use.</p>
+<p>These assume words chosen <em>at random by the app</em>. Words you pick yourself are worth far less — human-chosen words cluster heavily, and a phrase from a song or film is worth almost nothing. The attacker knowing which wordlist was used is already accounted for: strength comes from the random selection, not from the list being secret, which is why the generator runs entirely offline and never contacts a server.</p>
+<p>A long passphrase of your own can be perfectly strong. Two cautions: the strength meter is exact only for phrases built from the word list, and reads high on human-chosen ones; and nothing in the app can detect <strong>reuse</strong>, which for grid mode — no rate limiting, no way to rotate after codes are shared — matters more than cleverness.</p>
 
 <h4>Practical guidance</h4>
 <ul>
-  <li><strong>Six random words is the floor</strong> for anything you would mind being found. Seven if the location is sensitive and the region is guessable.</li>
-  <li><strong>Never reuse a passphrase</strong> you have used anywhere else, and never use one that appears in any wordlist or breach dump.</li>
-  <li><strong>Treat the region as known.</strong> Assume an attacker can guess the country or city from context — who sent the code, when, and why. Design your passphrase for that case, not the best case.</li>
-  <li><strong>If the consequence of disclosure is serious, use AES URL encryption instead.</strong> Grid mode is a private coordinate language for groups, not a cipher. It is the right tool for a geocaching club and the wrong tool for anything where being found causes harm.</li>
+  <li><strong>Six random words is the floor</strong>; seven if the location is sensitive and the region guessable.</li>
+  <li><strong>Assume the region is known.</strong> Design for an attacker who can guess the country from who sent the code and why.</li>
+  <li><strong>If disclosure would cause real harm, use AES URL encryption instead.</strong> Grid mode is a private coordinate language for groups, not a cipher.</li>
 </ul>
-<p>None of this is a defect being disclosed reluctantly — it is the documented, deliberate trade-off of a format that must remain byte-reproducible for a century. The scheme is bespoke and has not undergone formal cryptanalysis. Where real confidentiality is needed, use the AES layer, which relies on standard, widely reviewed primitives.</p>
+<p>The scheme is bespoke and has not had formal cryptanalysis. This is the documented trade-off of a format that must stay byte-reproducible for a century, not a defect disclosed reluctantly.</p>
 </div>
 </details>`
           },
