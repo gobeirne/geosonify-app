@@ -130,7 +130,7 @@
   function registerWordlist(code, flatArray) {
     _lists[code] = flatArray;
     _discovered = true;
-    _ws = null;               // invalidate the union set
+    _ws = null; _prefixes = null;   // invalidate the derived sets
     return _lists[code];
   }
 
@@ -240,15 +240,57 @@
 
   const KEYBOARD_RUNS = ['qwertyuiop','asdfghjkl','zxcvbnm','1234567890','abcdefghijklmnopqrstuvwxyz'];
 
-  function charsetSize(s) {
+  /**
+   * Charset size for a token. Counts the DISTINCT symbol characters actually
+   * present rather than crediting the whole 33-character ASCII symbol block:
+   * a passphrase whose only non-alphanumeric is a hyphen has not earned the
+   * entropy of one using the full symbol range.
+   */
+  function charsetSize(str) {
     let size = 0;
-    if (/[a-z]/.test(s)) size += 26;
-    if (/[A-Z]/.test(s)) size += 26;
-    if (/[0-9]/.test(s)) size += 10;
-    if (/[^A-Za-z0-9]/.test(s)) size += 33;   // conservative symbol allowance
-    // Any non-ASCII at all: credit a modest extra alphabet, not a huge one.
-    if (/[^\x00-\x7F]/.test(s)) size += 100;
+    if (/[a-z]/.test(str)) size += 26;
+    if (/[A-Z]/.test(str)) size += 26;
+    if (/[0-9]/.test(str)) size += 10;
+    const syms = new Set((str.match(/[^A-Za-z0-9]/g) || []).filter(c => c.charCodeAt(0) < 128));
+    if (syms.size) size += Math.max(syms.size, 4);
+    const nonAscii = new Set((str.match(/[^\x00-\x7F]/g) || []));
+    if (nonAscii.size) size += Math.max(nonAscii.size, 16);
     return size || 1;
+  }
+
+  let _prefixes = null;
+  /**
+   * Set of every prefix (length >= 2) of every list word. A token that is a
+   * prefix of a list word must never be priced above the list rate: an
+   * attacker enumerating wordlist phrases with truncation reaches it just as
+   * cheaply as the whole word. Without this, "surpris" scored MORE than
+   * "surprise" and truncating a phrase raised its estimate.
+   */
+  function _prefixSet() {
+    if (_prefixes) return _prefixes;
+    _prefixes = new Set();
+    for (const w of _wordSet()) {
+      for (let i = 2; i < w.length; i++) _prefixes.add(w.slice(0, i));
+    }
+    return _prefixes;
+  }
+
+  // Lowercase-alphabetic tokens are overwhelmingly word-like, and English text
+  // carries far less entropy per character than log2(26). Crediting the full
+  // charset rate is how "correcthorsebattery" ends up scored like a random
+  // string. 2.6 bits/char is a deliberately generous ceiling on natural text.
+  const WORDLIKE_BITS_PER_CHAR = 2.6;
+
+  /** Entropy of a single token, given the wordlist membership test. */
+  function tokenBits(tok, inList, bpw) {
+    if (inList) return bpw;
+    const low = tok.toLowerCase();
+    // A fragment of a list word is capped at the list rate (see _prefixSet).
+    if (_prefixSet().has(low)) return Math.min(bpw, low.length * WORDLIKE_BITS_PER_CHAR);
+    if (/^[a-z]+$/.test(tok)) {
+      return Math.min(tok.length * WORDLIKE_BITS_PER_CHAR, tok.length * Math.log2(26), bpw * 2);
+    }
+    return tok.length * Math.log2(charsetSize(tok));
   }
 
   /** True if the string is a run of one repeated unit, e.g. "abababab". */
@@ -323,30 +365,40 @@
       }
     }
 
-    // Model A: wordlist model. If every token is in our list, entropy is exact.
+    // ── Model A: per-token model ─────────────────────────────────────────
+    // Every token is priced independently: wordlist members at the list rate,
+    // everything else by its own shape. This is additive, so a single
+    // unrecognised token (a typo, a truncation, an extra word) adjusts the
+    // total slightly instead of catapulting the estimate into the charset
+    // model. Getting this wrong produced a real regression: dropping the last
+    // character of a 7-word phrase turned 76.9 bits into 247.
     const list = getWordlist();
     const tokens = tokenise(s);
-    let wordBits = null;
-    if (list && tokens.length >= 2) {
-      const set = _wordSet();
-      const bpw = _matchedBitsPerWord();
-      const known = tokens.filter(t => set.has(t.toLowerCase()));
-      if (known.length === tokens.length) {
-        wordBits = tokens.length * bpw;
-        // Duplicated words reduce real entropy; charge for the repeat only once.
-        const uniq = new Set(tokens.map(t => t.toLowerCase())).size;
-        if (uniq < tokens.length) {
-          wordBits = uniq * bpw;
-          warnings.push('Repeated words add much less strength than new ones.');
-        }
-      }
+    const set = _wordSet();
+    const bpw = _matchedBitsPerWord();
+    let tokenBitsTotal = 0;
+    const seen = new Set();
+    let unknownCount = 0;
+    for (const t of tokens) {
+      const low = t.toLowerCase();
+      const inList = set.has(low);
+      if (!inList) unknownCount++;
+      if (seen.has(low)) continue;          // repeats add ~nothing
+      seen.add(low);
+      tokenBitsTotal += tokenBits(t, inList, bpw);
     }
+    if (seen.size < tokens.length) {
+      warnings.push('Repeated words add much less strength than new ones.');
+    }
+    // No bonus for the separator pattern: it is public, predictable, and
+    // crediting it would make headline figures disagree with generate().bits
+    // and with the FAQ table (6 words = 65.9 bits).
 
-    // Model B: charset model, with penalties.
+    // ── Model B: whole-string charset model, with penalties ───────────────
     let charBits = s.length * Math.log2(charsetSize(s));
     if (isRepeatedUnit(s)) {
       charBits = Math.min(charBits, 12);
-      warnings.push('This is a short pattern repeated — it is as weak as the pattern alone.');
+      warnings.push('This is a short pattern repeated \u2014 it is as weak as the pattern alone.');
     }
     if (hasKeyboardRun(s)) {
       charBits *= 0.55;
@@ -354,21 +406,26 @@
     }
     if (/^\d+$/.test(s)) {
       charBits = Math.min(charBits, s.length * Math.log2(10));
-      warnings.push('Digits only — a very small search space.');
+      warnings.push('Digits only \u2014 a very small search space.');
     }
     if (/^(19|20)\d{2}$/.test(s)) {
       charBits = Math.min(charBits, 7);
       warnings.push('A bare year is trivially guessed.');
     }
-    // A single dictionary word (any capitalisation/suffix) is not a passphrase.
-    if (tokens.length === 1 && list && _wordSet().has(lower.replace(/\d+$/, ''))) {
+    if (tokens.length === 1 && list && set.has(lower.replace(/\d+$/, ''))) {
       charBits = Math.min(charBits, 16);
       warnings.push('A single dictionary word, even with digits appended, is not a passphrase.');
     }
 
-    let bits, model;
-    if (wordBits !== null) { bits = Math.min(wordBits, charBits + 12); model = 'wordlist'; }
-    else                   { bits = charBits;                          model = 'charset'; }
+    // Always take the lower of the two. Overstating strength is the only
+    // error that actually hurts the user.
+    const bits = Math.min(tokenBitsTotal, charBits);
+    const model = (tokenBitsTotal <= charBits) ? 'per-token' : 'charset';
+
+    if (unknownCount && tokens.length > 2 && unknownCount <= 2) {
+      warnings.push('Some words are not in the word list. If you meant to use a generated ' +
+                    'passphrase, check for a typo or a missing character.');
+    }
 
     if (tokens.length === 1 && s.length < 12) {
       warnings.push('Short single-token passphrases are the easiest case for an attacker.');

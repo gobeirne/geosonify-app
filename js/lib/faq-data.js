@@ -706,7 +706,7 @@
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 
 <h4>The good news: there is no oracle if the attacker knows nothing</h4>
-<p>A wrong passphrase does not produce an error. It produces a different, perfectly valid-looking location somewhere else on Earth. There is no checksum, no authentication tag, no "warmer/colder" signal. An attacker who has a code but no idea what it refers to cannot tell a correct guess from a wrong one, because every guess yields a plausible answer. Against a stranger with no context, this is genuinely strong.</p>
+<p>A wrong passphrase does not produce an error. It produces a different, valid-looking location somewhere else on Earth. There is no checksum, no authentication tag, no "warmer/colder" signal, so nothing in the code itself tells an attacker whether a guess was right. Against a stranger with no context this is a real protection — but it is weaker than it first sounds, because not every point on Earth is equally believable as a place someone would deliberately encode. See "Not all wrong answers look equally wrong" below.</p>
 <p>You also cannot attack the passphrase one character at a time. The entire passphrase goes into every hash, so guessing a prefix produces a permutation with no relationship to the real one. There is no partial credit and no gradient to climb. The search space stays exponential in passphrase length.</p>
 
 <h4>The bad news: knowing the region restores the oracle</h4>
@@ -718,6 +718,23 @@
   <li><strong>Extra precision does not help.</strong> A code that pins a location to the square millimetre does contain thousands of possible codes within the same block — but the attacker stops checking long before reaching those digits. They only need enough characters to confirm the region. The trailing precision makes the confirmed answer fuzzy; it does not make the passphrase harder to find.</li>
 </ul>
 <p>The same applies to chaining. Chaining prevents symbols from being <em>decoded</em> independently — you cannot read character five without having read characters one to four. It does not prevent a whole candidate passphrase from being <em>rejected</em> early.</p>
+
+<h4>Not all wrong answers look equally wrong</h4>
+<p>Even an attacker with no idea where a code points is not reduced to pure guessing, because <strong>a decode landing in the middle of the Pacific is far less likely to be correct than one landing in a town.</strong> People do not encode random points on the globe. They encode places that mean something: a house, a trailhead, a meeting spot, a cache, a boundary marker, a landmark. Those sit on land, and they cluster heavily where people are.</p>
+<p>That gives a wrong guess a visible signature, and lets an attacker throw candidates away without ever knowing the true answer:</p>
+<ul>
+  <li><strong>Oceans cover about 71% of the Earth's surface.</strong> Discarding every guess that lands at sea removes roughly seven of every ten wrong passphrases outright — worth a little under 2 bits.</li>
+  <li><strong>Populated land is a much smaller target.</strong> Most human activity happens on a few per cent of the planet's surface. An attacker willing to assume the location is somewhere people actually go can filter to roughly that, which is worth around 5 bits.</li>
+  <li>Ice sheets, open desert, and dense forest interiors can be discarded on the same reasoning.</li>
+</ul>
+<p>This is a <em>probabilistic</em> filter, not a decisive one, and it is worth being precise about how much it actually buys:</p>
+<ul>
+  <li><strong>It does not break a strong passphrase.</strong> Roughly 5 bits off a 66-bit passphrase still leaves about 61 bits — the difference between a thousand years and a few decades of the same infeasible search. What it does is shrink the pile of survivors, so that where a passphrase is weak, the plausible candidates collapse to a shortlist a human can simply look at on a map.</li>
+  <li><strong>It produces false negatives.</strong> Plenty of legitimate codes point out to sea: dive sites, fishing marks, wrecks, moorings, buoys, survey points, offshore boundaries. An attacker applying this filter will sometimes discard the right answer. They may not care — they only need it to work often enough.</li>
+  <li><strong>It stacks with everything else.</strong> Plausibility filtering multiplies with regional knowledge rather than replacing it. An attacker who suspects a country and also discards implausible terrain is combining both, on top of the single-character early rejection described above.</li>
+</ul>
+<p>One mildly counter-intuitive consequence: <strong>if your code points somewhere remote or offshore, this particular filter works in your favour</strong>, because the attacker's own assumption steers them away from the truth. A code pointing at a city centre is more exposed to it. Do not plan around this, though — it is a few bits either way, and it is not the thing protecting you. The passphrase is.</p>
+<p>The wider lesson is that the "a wrong guess just gives another valid location" property is real but should not be leaned on too hard. It holds against someone with no context at all. It weakens as soon as the attacker can bring <em>any</em> outside knowledge to bear — the terrain, the region, who sent the code, or why.</p>
 
 <h4>There is no salt, so the work is reusable</h4>
 <p>The permutation is derived from a fixed public prefix plus your passphrase — there is no per-user or per-code random salt. Two consequences: two people using the same passphrase produce identical permutations, and an attacker can precompute a table of first-level permutations for a large dictionary of common passphrases <em>once</em> and reuse it against every Geosonify code ever made on that grid. The cost of attacking the second target is far lower than the first. This is another reason a passphrase that appears in any wordlist, breach dump or dictionary is unsuitable.</p>
