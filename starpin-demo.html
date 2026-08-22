@@ -223,6 +223,13 @@ dl{margin:.7rem 0 0}
 .rec{display:flex;gap:.75rem;align-items:flex-start;padding:.8rem;background:var(--card);
   border:2px solid var(--line);border-radius:18px}
 .rec.dim{opacity:.5}
+/* Commonplace cornerstones (tier > 12) are collectible but not sought after:
+   a slim single line, a small disc, muted, and no chips clutter. The eye
+   learns the hierarchy without being told. */
+.rec.common{padding:.5rem .8rem;align-items:center}
+.rec.common .disc{width:26px;height:26px;border-radius:9px;font-size:.7rem}
+.rec.common .title{font-size:.75rem;color:var(--ink-2)}
+.rec.common .chips{display:none}
 .rec .disc{flex:0 0 auto;width:44px;height:44px;border-radius:14px;display:grid;
   place-items:center;font-size:1.35rem;color:#fff;
   box-shadow:0 3px 0 rgba(0,0,0,.18)}
@@ -412,12 +419,13 @@ dl{margin:.7rem 0 0}
   </div>
   <p class="hint" id="haptic-note" style="margin-bottom:.5rem"></p>
   <div class="apps" data-apps="go"></div>
-  <label class="tune" for="order">cornerstone order <b id="order-val">12</b>
-    <input id="order" type="range" min="7" max="15" step="1" value="12"></label>
-  <p class="hint">A vertex is shared by up to four cells and is named by the
-     lowest of them, so only one of a cell's four corners carries the cell's own
-     name. Intrinsic order is the coarsest order at which the point is still a
-     vertex — the shorter the address, the rarer the cornerstone.</p>
+  <label class="tune" for="order">rarest worth showing &mdash; tier <b id="order-val">12.0</b>
+    <input id="order" type="range" min="10" max="14" step="0.5" value="12"></label>
+  <p class="hint">The compass points to the nearest vertex no more common than
+     this tier. Tier is the mean of the two crossing orders, so a rare line
+     crossing a common one (say order 10 &times; order 14) still counts as
+     tier 12 &mdash; a real find on a walk. Lower the tier to hunt rarer
+     crossings further afield; raise it and commonplace vertices appear too.</p>
   <p class="hint" id="readout-src"></p>
   <style>
     /* The moment. Unhurried on purpose: nothing flashes, nothing bounces,
@@ -919,9 +927,15 @@ dl{margin:.7rem 0 0}
 
   function cornerstone() {
     if (!fix) return;
-    var order = Math.max(1, Math.min(20, parseInt($('order').value, 10) || 12));
-    try { lastCs = S.nearestCornerstone(fix.lat, fix.lon, order); }
+    // The slider is a RARITY FLOOR now, read as max tier: the compass points to
+    // the nearest vertex no more common than this. It used to be intrinsic
+    // order, which made a tier-12 vertex whose intrinsic order was 14 (a rare
+    // line crossing a common one) unreachable — you could stand on it and the
+    // compass would send you to a coarser vertex hundreds of metres away.
+    var maxTier = Math.max(6, Math.min(14, parseFloat($('order').value) || 12));
+    try { lastCs = S.nearestBaggable(fix.lat, fix.lon, { maxTier: maxTier }); }
     catch (e) { lastCs = null; return; }
+    if (!lastCs) return;              // nothing that rare nearby; leave prior target
     map.setHighlight(lastCs.name);
     paintTargets();
   }
@@ -1055,8 +1069,50 @@ dl{margin:.7rem 0 0}
             ? 'you have this one' : 'not yet bagged'));
       }
       box.appendChild(pm);
-      box.appendChild(el('div', 'meta',
-        'Reading only. Dropping a pin claims nothing \u2014 walk there to log it.'));
+      // Bagging from the map is allowed ONLY when your live fix is on the vertex
+      // AND the vertex is worth bagging (tier <= 12). A commonplace vertex
+      // (tier > 12) reads out fully but is not offered — it is not sought after.
+      // Everything else is a reading, not a claim.
+      var baggableTier = v0 && v0.tierOrder <= 12;
+      var already0 = v0 && collected[csName(v0.name)];
+      var vv0 = (v0 && fix) ? S.assessVisit(fix, { lat: v0.lat, lon: v0.lon }) : null;
+      var onIt = vv0 && vv0.verdict === 'well-supported';
+      if (v0 && !baggableTier) {
+        box.appendChild(el('div', 'meta',
+          'Too common to be sought after \u2014 tier ' + v0.tierOrder.toFixed(1) +
+          '. Logged for completeness only; the compass will not send you here.'));
+      } else if (v0 && fix && onIt && !already0) {
+        var pinBag = el('button', null, 'Bag this cornerstone');
+        pinBag.type = 'button';
+        pinBag.addEventListener('click', function () {
+          if (log.current().some(function (r) {
+                return r.target && csName(r.target.cornerstone) === csName(v0.name); })) {
+            F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
+                          degree: v0.degree, kicker: 'already yours' });
+            return;
+          }
+          F.unlock();
+          logIt({ cornerstone: v0.name });
+          F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
+                        degree: v0.degree, digits: v0.name.replace(/\D/g, '') });
+          try {
+            var st0 = S.cellComplete(v0.incident[0], Object.keys(collected));
+            if (st0.complete) setTimeout(function () {
+              F.celebrate({ kind: 'cornerstone', name: v0.incident[0],
+                            order: v0.intrinsicOrder, kicker: 'all four corners' });
+            }, 1500);
+          } catch (e) {}
+          showInfo(sel);
+        });
+        box.appendChild(pinBag);
+      } else {
+        box.appendChild(el('div', 'meta',
+          already0 ? 'You have this one.'
+          : (v0 && fix && vv0)
+            ? 'Reading only \u2014 you are ' + Math.round(vv0.distanceM) +
+              ' m from this vertex. Stand on it to bag it.'
+            : 'Reading only. Dropping a pin claims nothing \u2014 walk there to log it.'));
+      }
 
     } else if (sel.kind === 'cornerstone') {
       var d = sel.data;
@@ -2041,7 +2097,18 @@ dl{margin:.7rem 0 0}
       // showing through -- exactly the record that should have been the proudest
       // thing in the log.
       var isCulm = gp.hasCulm;
-      var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : ''));
+      // Commonplace cornerstones (tier > 12) render as a slim line. Tier comes
+      // from the assessment's target point, classified once; if it cannot be
+      // derived the row stays full-size rather than guessing it common.
+      var isCommon = false;
+      if (!isStar) {
+        try {
+          var apt = (rk.assessment && rk.assessment.target) || S.cornerstonePoint(r.target.cornerstone);
+          if (apt) isCommon = S.nearestCornerstone(apt.lat, apt.lon, 14).tierOrder > 12;
+        } catch (e) {}
+      }
+      var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : '') +
+                             (isCommon ? ' common' : ''));
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
       d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
 
@@ -2447,7 +2514,7 @@ dl{margin:.7rem 0 0}
 
   function redraw() { cornerstone(); }
   $('order').addEventListener('input', function () {
-    $('order-val').textContent = this.value; redraw();
+    $('order-val').textContent = parseFloat(this.value).toFixed(1); redraw();
   });
   var repaired = repairIdentities();
   if (repaired) {
