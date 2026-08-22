@@ -667,6 +667,7 @@ dl{margin:.7rem 0 0}
   });
 
   var activeTab = 'corner', heading = null, nearestStar = null, lastStarFix = null;
+  var lastTargets = [], headingRaf = 0;
 
   // Recomputed from scratch every paint. Nothing is remembered between calls,
   // so the answer cannot lag behind your feet.
@@ -741,8 +742,15 @@ dl{margin:.7rem 0 0}
         bearingDeg: bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon),
         compassText: compass(bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon)) });
     }
-    if (!targets.some(function (t) { return t.primary; }) && targets.length) targets[0].primary = true;
-    prox.update(targets, heading);
+    // The active mode decides the needle. Do NOT silently fall back to the
+    // other mode's target when this one is missing — that made the toggle look
+    // dead on first load (only the cornerstone existed, so flipping to starpin
+    // kept pointing at the cornerstone). Show only the active mode's target;
+    // if it isn't ready, the dial goes quiet and the tab body explains why.
+    var active = targets.filter(function (t) { return t.key === activeTab; });
+    if (active.length) active[0].primary = true;
+    lastTargets = active;                   // reused by onOrient for heading-only repaints
+    prox.update(active, heading);
     paintTabBody();
   }
 
@@ -867,16 +875,16 @@ dl{margin:.7rem 0 0}
       // firing and set it straight back, so the dial could never return to
       // north-up. Detach them.
       compassOn = false; heading = null;
-      window.removeEventListener('deviceorientationabsolute', onOrient, true);
-      window.removeEventListener('deviceorientation', onOrient, true);
+      window.removeEventListener('deviceorientationabsolute', onOrient);
+      window.removeEventListener('deviceorientation', onOrient);
       btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
       paintTargets(); return;
     }
     function listen() {
       compassOn = true;
       btn.setAttribute('aria-pressed', 'true'); btn.textContent = 'North up';
-      window.addEventListener('deviceorientationabsolute', onOrient, true);
-      window.addEventListener('deviceorientation', onOrient, true);
+      window.addEventListener('deviceorientationabsolute', onOrient);
+      window.addEventListener('deviceorientation', onOrient);
     }
     if (typeof DeviceOrientationEvent !== 'undefined' &&
         typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -901,8 +909,8 @@ dl{margin:.7rem 0 0}
       var reattach = function () {
         compassOn = true;
         $('compass').setAttribute('aria-pressed', 'true'); $('compass').textContent = 'North up';
-        window.addEventListener('deviceorientationabsolute', onOrient, true);
-        window.addEventListener('deviceorientation', onOrient, true);
+        window.addEventListener('deviceorientationabsolute', onOrient);
+        window.addEventListener('deviceorientation', onOrient);
       };
       if (typeof DeviceOrientationEvent !== 'undefined' &&
           typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -922,7 +930,18 @@ dl{margin:.7rem 0 0}
     var h = (e.webkitCompassHeading != null) ? e.webkitCompassHeading
           : (e.alpha != null && e.absolute !== false) ? (360 - e.alpha) : null;
     if (h == null) return;
-    heading = h; paintTargets();
+    heading = h;
+    // Heading changes ONLY rotate the dial — it must not rebuild the tab body.
+    // It used to call paintTargets(), which does b.textContent='' and recreates
+    // every row and the bag button. At ~60 orientation events/sec that destroyed
+    // and rebuilt the buttons faster than a tap could land, so once the compass
+    // was on, no button (including the tab switches, mid-repaint) would fire.
+    // Rotate the rose at most once per animation frame, using the cached targets.
+    if (headingRaf) return;
+    headingRaf = requestAnimationFrame(function () {
+      headingRaf = 0;
+      prox.update(lastTargets, heading);
+    });
   }
 
   function cornerstone() {
