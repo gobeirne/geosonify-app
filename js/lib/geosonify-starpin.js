@@ -460,6 +460,55 @@ var GeosonifyStarpin = (function () {
     };
   }
 
+  // The nearest vertex whose TIER is at least as rare as maxTier — i.e. the
+  // nearest one the compass should point at.
+  //
+  // Why this exists: nearestCornerstone(lat, lon, order) finds the nearest
+  // vertex whose INTRINSIC order <= order. But tier is (cross + intrinsic)/2,
+  // and a rare line crossing a common one (say 10 x 14, tier 12) has intrinsic
+  // 14 — so it is invisible to a probe below order 14, and the compass would
+  // instead route you to a COARSER, more common vertex hundreds of metres away.
+  // That is the "I stood on a tier-12 and could not bag it" bug.
+  //
+  // The fix: probe deep enough to see fine-intrinsic vertices (probeOrder,
+  // default 14 — the depth the map already draws to), enumerate the distinct
+  // vertices in a neighbourhood, and return the nearest whose tierOrder <=
+  // maxTier. Lower tier = rarer, so maxTier is a rarity FLOOR: at 12 you get
+  // 10x14 (tier 12) and 12x12 (tier 12) but not 14x14 (tier 14).
+  //
+  // Additive: reuses nearestCornerstone for classification, touches no frozen
+  // path. The sampling walks a disc of points and dedupes the vertices they
+  // resolve to, so it is robust to the exact face grid without doing face maths.
+  function nearestBaggable(lat, lon, opts) {
+    opts = opts || {};
+    var maxTier = opts.maxTier != null ? opts.maxTier : 12;
+    var probe   = opts.probeOrder != null ? opts.probeOrder : 14;
+    var cellM   = Math.sqrt(Math.PI / 3) / Math.pow(2, probe) * 6371008.8;
+    var radiusM = opts.radiusM != null ? opts.radiusM : cellM * 8;
+    var step    = cellM / 4, seen = {}, best = null;
+    for (var r = 0; r <= radiusM; r += step) {
+      var n = Math.max(1, Math.ceil(2 * Math.PI * r / step));
+      for (var i = 0; i < n; i++) {
+        var th = 2 * Math.PI * i / n;
+        var dLat = (r * Math.cos(th)) / 111320;
+        var dLon = (r * Math.sin(th)) / (111320 * Math.cos(lat * D2R));
+        var v;
+        try { v = nearestCornerstone(lat + dLat, lon + dLon, probe); }
+        catch (e) { continue; }
+        if (seen[v.name]) continue;
+        seen[v.name] = 1;
+        if (v.tierOrder > maxTier) continue;           // too common — skip
+        v.distanceM = haversineM(lat, lon, v.lat, v.lon);   // from the QUERY point
+        if (!best || v.distanceM < best.distanceM) best = v;
+      }
+      // Stop early once we have a hit and have searched a full ring past it:
+      // the nearest passing vertex cannot be further out than the ring that
+      // first contained one, plus one cell of slack for off-centre sampling.
+      if (best && r > best.distanceM + cellM) break;
+    }
+    return best;
+  }
+
   // The four canonical vertex names of a cell — for the "all four corners" bonus.
   function cellCornerstones(quaternary) {
     var H = hp();
@@ -625,7 +674,8 @@ var GeosonifyStarpin = (function () {
     phaseDeg: phaseDeg, lstDeg: lstDeg, nextCulmination: nextCulmination, attendance: attendance,
     sunPosition: sunPosition, sunAltitude: sunAltitude, darkness: darkness,
     assessVisit: assessVisit, haversineM: haversineM,
-    nearestCornerstone: nearestCornerstone, cellCornerstones: cellCornerstones,
+    nearestCornerstone: nearestCornerstone, nearestBaggable: nearestBaggable,
+    cellCornerstones: cellCornerstones,
     cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
     canonicaliseCornerstone: canonicaliseCornerstone, targetKey: targetKey,
     sourceIdOf: sourceIdOf,
