@@ -617,9 +617,12 @@ var GeosonifyStarpinCard = (function () {
           g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
           g.stroke();
         }
-        // Open crosshair, gap in the middle, so a faint target is not covered.
-        g.strokeStyle = GOOD; g.lineWidth = 3; g.lineCap = 'round';
-        var gap = 7, arm = 20;
+        // Open crosshair with a wide central gap, so even a faint target is
+        // never covered by the arms. Gap and arm are ~26% of the sky radius
+        // (R=116): the arms frame the star from a distance rather than sitting
+        // on top of it. Thin arms (2.5) keep it legible without bulk.
+        g.strokeStyle = GOOD; g.lineWidth = 2.5; g.lineCap = 'round';
+        var gap = 30, arm = 30;
         g.beginPath();
         g.moveTo(cx, cy - gap - arm); g.lineTo(cx, cy - gap);
         g.moveTo(cx, cy + gap); g.lineTo(cx, cy + gap + arm);
