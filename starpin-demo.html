@@ -427,6 +427,27 @@ dl{margin:.7rem 0 0}
      tier 12 &mdash; a real find on a walk. Lower the tier to hunt rarer
      crossings further afield; raise it and commonplace vertices appear too.</p>
   <p class="hint" id="readout-src"></p>
+
+  <!-- ── best finds within N km ──────────────────────────────────────────
+       Arriving somewhere new: what rare lattice vertices are close, and what
+       might be worth a bus ride? Cornerstones are pure geometry, so this works
+       offline at any radius; stars are whatever the live lookup has loaded near
+       the map, plus anything already in your log. -->
+  <div id="nearby" class="nearby">
+    <h3 class="nearby-h">Best finds within
+      <input id="nearby-km" type="number" min="0.5" max="25" step="0.5" value="5"
+             inputmode="decimal" aria-label="radius in kilometres"> km of here</h3>
+    <div class="btnrow">
+      <button id="nearby-go" type="button">Show best finds</button>
+    </div>
+    <p class="hint" id="nearby-note" style="margin-top:.4rem">
+      Cornerstones are exact everywhere. As you widen the search the rarity bar
+      rises on its own — a tier-12 vertex is worth a short walk, but only rarer
+      crossings justify a longer trip. Stars shown are the live lookup around the
+      map plus your own logged finds, so a wide star search is not exhaustive.</p>
+    <div id="nearby-list"></div>
+  </div>
+
   <style>
     /* The moment. Unhurried on purpose: nothing flashes, nothing bounces,
        nothing shouts that you have won. The countdown fades as the words
@@ -513,6 +534,37 @@ dl{margin:.7rem 0 0}
     .visitline.culm .vl-label{color:#9a7b12;font-weight:700}
     .visitline.culm{color:#7a6410}
     .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
+
+    /* best finds nearby */
+    .nearby{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
+    .nearby-h{font-size:1rem;margin:0 0 .55rem;display:flex;align-items:center;
+      gap:.4rem;flex-wrap:wrap}
+    .nearby-h input{width:4.2rem;padding:.28rem .45rem;border-radius:9px;
+      border:1px solid var(--line);background:var(--card);color:var(--ink);
+      font:600 1rem/1 inherit;font-variant-numeric:tabular-nums;text-align:right}
+    #nearby-list{margin-top:.7rem;display:flex;flex-direction:column;gap:.4rem}
+    .nf-group{font:600 .68rem/1 inherit;letter-spacing:.12em;text-transform:uppercase;
+      color:var(--ink-2);margin:.5rem 0 .1rem}
+    .nf{display:grid;grid-template-columns:auto 1fr auto;gap:.55rem;align-items:center;
+      padding:.55rem .7rem;border-radius:13px;background:var(--card-2);
+      border:1px solid var(--line);cursor:pointer;text-align:left;width:100%;
+      font:inherit;color:inherit}
+    .nf:hover{border-color:var(--moss)}
+    .nf-dot{width:.85rem;height:.85rem;border-radius:50%;background:var(--moss);
+      box-shadow:0 0 0 1px rgba(0,0,0,.08) inset}
+    .nf.star .nf-dot{background:var(--sun)}
+    .nf-body{min-width:0}
+    .nf-name{font:600 .82rem/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .nf-sub{font-size:.72rem;color:var(--ink-2);margin-top:.1rem}
+    .nf-right{text-align:right;white-space:nowrap}
+    .nf-dist{font:600 .82rem/1.2 inherit;font-variant-numeric:tabular-nums}
+    .nf-tier{font-size:.68rem;color:var(--ink-2);margin-top:.1rem}
+    .nf.have{opacity:.62}
+    .nf.have .nf-name::after{content:" \2713";color:var(--moss)}
+    .nf.exceptional{border-color:var(--sun);
+      box-shadow:0 0 0 1px var(--sun) inset,0 2px 14px rgba(220,201,73,.18)}
+    .nearby-busy{font-size:.8rem;color:var(--ink-2);padding:.4rem 0}
   </style>
 </section>
 
@@ -959,6 +1011,200 @@ dl{margin:.7rem 0 0}
     paintTargets();
   }
 
+  // ── best finds within N km ────────────────────────────────────────────────
+  //
+  // Two very different sources, kept honest about their differences:
+  //
+  //   CORNERSTONES are pure geometry — enumerable at any radius, no network. We
+  //   reuse the disc-walk of S.nearestBaggable: sample a disc, resolve each
+  //   sample to its nearest vertex, dedupe by name, keep those no more common
+  //   than a rarity floor. The floor RISES as the search widens (a tier-12
+  //   vertex is worth a short walk; only rarer crossings justify a bus ride),
+  //   and the probe order tracks the floor, which is also what keeps a wide
+  //   search fast — coarse lattices have far fewer points to find.
+  //
+  //   STARS need the remote catalogue. We can only rank what is already loaded
+  //   around the map plus what is in your log, so a wide star search is honestly
+  //   labelled non-exhaustive rather than pretending to be complete.
+
+  // Rarity floor + probe as a function of radius. Overridable by the caller.
+  function nearbyPlan(radiusM) {
+    var km = radiusM / 1000, maxTier;
+    if (km <= 2)       maxTier = 12;
+    else if (km <= 5)  maxTier = 11;
+    else if (km <= 10) maxTier = 10;
+    else if (km <= 18) maxTier = 9;
+    else               maxTier = 8.5;
+    return { maxTier: maxTier, probe: Math.min(14, Math.ceil(maxTier) + 1) };
+  }
+
+  function cornerstonesWithin(lat, lon, radiusM, opts) {
+    opts = opts || {};
+    var plan = nearbyPlan(radiusM);
+    var maxTier = opts.maxTier != null ? opts.maxTier : plan.maxTier;
+    var probe   = opts.probeOrder != null ? opts.probeOrder : plan.probe;
+    var cellM = Math.sqrt(Math.PI / 3) / Math.pow(2, probe) * 6371008.8;
+    var step  = cellM / 2.5;                 // finer than a cell, so no vertex is skipped
+    var D2R = Math.PI / 180, seen = {}, out = [];
+    for (var r = 0; r <= radiusM; r += step) {
+      var n = Math.max(1, Math.ceil(2 * Math.PI * r / step));
+      for (var i = 0; i < n; i++) {
+        var th = 2 * Math.PI * i / n;
+        var dLat = (r * Math.cos(th)) / 111320;
+        var dLon = (r * Math.sin(th)) / (111320 * Math.cos(lat * D2R));
+        var v;
+        try { v = S.nearestCornerstone(lat + dLat, lon + dLon, probe); }
+        catch (e) { continue; }
+        if (seen[v.name]) continue;
+        seen[v.name] = 1;
+        if (v.tierOrder > maxTier) continue;
+        var d = S.haversineM(lat, lon, v.lat, v.lon);
+        if (d > radiusM) continue;           // a vertex resolved from an edge sample may sit outside
+        v.distanceM = d;
+        out.push(v);
+      }
+    }
+    // Rarer first (lower tierOrder), then nearer.
+    out.sort(function (a, b) {
+      return (a.tierOrder - b.tierOrder) || (a.distanceM - b.distanceM); });
+    return { plan: { maxTier: maxTier, probe: probe }, list: out };
+  }
+
+  // Stars within radius, from the loaded lookup AND the log, deduped by source.
+  function starpinsWithin(lat, lon, radiusM) {
+    var by = {}, out = [];
+    function add(st, bagged) {
+      if (st.lat == null || st.lon == null) return;
+      var d = S.haversineM(lat, lon, st.lat, st.lon);
+      if (d > radiusM) return;
+      var id = sourceIdOf(st.name);
+      var prev = by[id];
+      if (prev) { if (bagged) prev.bagged = true; return; }
+      var rec = { star: st, distanceM: d, bagged: !!bagged, id: id };
+      by[id] = rec; out.push(rec);
+    }
+    map.stars().forEach(function (st) { add(st, false); });
+    log.current().forEach(function (r) {
+      if (!r.target.starpin || r.target.lat_1e7 == null) return;
+      add({ name: 'Gaia DR3 ' + sourceIdOf(r.target.starpin),
+            lat: r.target.lat_1e7 / 1e7, lon: r.target.lon_1e7 / 1e7,
+            ra: r.target.ra_deg, dec: r.target.dec_deg,
+            mag: r.target.mag_g, distLy: r.target.dist_ly }, true);
+    });
+    // Brightest (most findable) first, then nearest; unknown mag sinks.
+    out.sort(function (a, b) {
+      var ma = a.star.mag == null ? 99 : a.star.mag, mb = b.star.mag == null ? 99 : b.star.mag;
+      return (ma - mb) || (a.distanceM - b.distanceM);
+    });
+    return out;
+  }
+
+  function fmtDist(m) {
+    return m < 950 ? Math.round(m) + ' m' : (m / 1000).toFixed(m < 9500 ? 1 : 0) + ' km';
+  }
+
+  function renderNearby() {
+    var box = $('nearby-list'); box.textContent = '';
+    if (!fix) {
+      box.appendChild(el('p', 'nearby-busy',
+        'No fix yet — press “Recentre on me” or allow location, then try again.'));
+      return;
+    }
+    var km = Math.max(0.5, Math.min(25, parseFloat($('nearby-km').value) || 5));
+    $('nearby-km').value = km;
+    var radiusM = km * 1000;
+    box.appendChild(el('p', 'nearby-busy', 'Searching the lattice…'));
+
+    // Let the "searching" line paint before the (short) synchronous scan.
+    setTimeout(function () {
+      box.textContent = '';
+      var cs = cornerstonesWithin(fix.lat, fix.lon, radiusM);
+      var stars = starpinsWithin(fix.lat, fix.lon, radiusM);
+
+      var CS_CAP = 12, ST_CAP = 8;
+      var csList = cs.list.slice(0, CS_CAP), stList = stars.slice(0, ST_CAP);
+
+      if (!csList.length && !stList.length) {
+        box.appendChild(el('p', 'nearby-busy',
+          'Nothing rare enough within ' + km + ' km. Widen the radius, or the ' +
+          'lattice here is simply quiet.'));
+        return;
+      }
+
+      // Cornerstones.
+      if (csList.length) {
+        box.appendChild(el('div', 'nf-group',
+          'Cornerstones · rarest first · floor tier ' + cs.plan.maxTier));
+        csList.forEach(function (v) {
+          var t = F.tierOf(v.tierOrder, v.degree);
+          var have = !!collected[csName(v.name)];
+          var exceptional = v.degree === 3 || v.tierOrder <= F.EXCEPTIONAL_ORDER;
+          var b = el('button', 'nf' + (have ? ' have' : '') +
+                                (exceptional ? ' exceptional' : ''));
+          b.type = 'button';
+          b.appendChild(el('span', 'nf-dot'));
+          var body = el('div', 'nf-body');
+          body.appendChild(el('div', 'nf-name', v.name));
+          body.appendChild(el('div', 'nf-sub',
+            t.key + ' · orders ' + v.crossOrder + '×' + v.intrinsicOrder +
+            (have ? ' · already yours' : '')));
+          b.appendChild(body);
+          var right = el('div', 'nf-right');
+          right.appendChild(el('div', 'nf-dist', fmtDist(v.distanceM)));
+          right.appendChild(el('div', 'nf-tier', 'tier ' + v.tierOrder.toFixed(1)));
+          b.appendChild(right);
+          b.addEventListener('click', function () { navigateToPoint(v.lat, v.lon, v.name); });
+          box.appendChild(b);
+        });
+        if (cs.list.length > csList.length)
+          box.appendChild(el('p', 'nearby-busy',
+            '+' + (cs.list.length - csList.length) + ' more cornerstones in range.'));
+      }
+
+      // Stars.
+      if (stList.length) {
+        box.appendChild(el('div', 'nf-group', 'Stars · brightest first · loaded + logged'));
+        stList.forEach(function (s) {
+          var st = s.star;
+          var b = el('button', 'nf star' + (s.bagged ? ' have' : ''));
+          b.type = 'button';
+          b.appendChild(el('span', 'nf-dot'));
+          var body = el('div', 'nf-body');
+          body.appendChild(el('div', 'nf-name', st.name || ('Gaia DR3 ' + s.id)));
+          var mag = st.mag == null ? 'brightness unknown'
+                  : 'G ≈ ' + Number(st.mag).toFixed(1) +
+                    (st.mag < 6.5 ? ' · unaided eye' : st.mag < 10 ? ' · binocular'
+                     : st.mag < 14 ? ' · small scope' : ' · deep');
+          body.appendChild(el('div', 'nf-sub', mag + (s.bagged ? ' · already yours' : '')));
+          b.appendChild(body);
+          var right = el('div', 'nf-right');
+          right.appendChild(el('div', 'nf-dist', fmtDist(s.distanceM)));
+          b.appendChild(right);
+          b.addEventListener('click', function () {
+            navigateToPoint(st.lat, st.lon, st.name || ('Gaia DR3 ' + s.id)); });
+          box.appendChild(b);
+        });
+      } else {
+        box.appendChild(el('p', 'nearby-busy',
+          'No stars loaded in range. Open the Map near here to load the catalogue, ' +
+          'then search again.'));
+      }
+    }, 20);
+  }
+
+  // Send the map and the address box to a chosen point, and drop a pin there.
+  function navigateToPoint(lat, lon, label) {
+    goTab('map');
+    try { map.leaflet.setView([lat, lon], Math.max(map.leaflet.getZoom(), 16)); } catch (e) {}
+    try { map.dropPin(lat, lon); } catch (e) {}
+    try { readAt(lat, lon, label || 'chosen find'); } catch (e) {}
+  }
+
+  $('nearby-go').addEventListener('click', renderNearby);
+  $('nearby-km').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); renderNearby(); }
+  });
+
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
   var F = GeosonifyStarpinFeedback;
@@ -1113,7 +1359,9 @@ dl{margin:.7rem 0 0}
           F.unlock();
           logIt({ cornerstone: v0.name });
           F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
-                        degree: v0.degree, digits: v0.name.replace(/\D/g, '') });
+                        degree: v0.degree, crossOrder: v0.crossOrder,
+                        intrinsicOrder: v0.intrinsicOrder,
+                        digits: v0.name.replace(/\D/g, '') });
           try {
             var st0 = S.cellComplete(v0.incident[0], Object.keys(collected));
             if (st0.complete) setTimeout(function () {
@@ -1994,7 +2242,9 @@ dl{margin:.7rem 0 0}
     // tierOrder, not intrinsicOrder: a rare line crossing a common one sits
     // between the two, and the celebration should reflect that.
     F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
-                  degree: lastCs.degree, digits: lastCs.name.replace(/\D/g, '') });
+                  degree: lastCs.degree, crossOrder: lastCs.crossOrder,
+                  intrinsicOrder: lastCs.intrinsicOrder,
+                  digits: lastCs.name.replace(/\D/g, '') });
     try {
       var st = S.cellComplete(lastCs.incident[0], Object.keys(collected));
       if (st.complete) setTimeout(function () {
