@@ -119,6 +119,67 @@ var GeosonifyStarpinFeedback = (function () {
     };
   }
 
+  // ── how loud should the party be ──────────────────────────────────────────
+  //
+  // tierOf() sorts a vertex into five NAMED buckets, and the card prints those
+  // names -- that is a semantic contract and is left exactly as it is. But the
+  // named buckets are the wrong quantity to drive CONFETTI and SOUND off: they
+  // flatten a continuous fact into five steps and, worse, saturate at the top,
+  // so an order-6 crossing and an order-3 crossing throw the identical party.
+  //
+  // intensity() is a SEPARATE, continuous 0..1 read for the fanfare only. It is
+  // additive: nothing outside celebrate() reads it, and tierOf/rarity/keys are
+  // untouched. Two inputs, because both are already computed at the call site:
+  //
+  //   tierOrder   fractional coarseness. A visit's headline uses tierOrder, so
+  //               a rare line crossing a common one is placed between the two.
+  //   crossShare  the EXACT density of this crossing class (see crossShare()).
+  //               Where it is known it sharpens the estimate; where it is not
+  //               the tierOrder alone still gives a sane answer.
+  //
+  // Coarseness maps through the collectible band [EXCEPTIONAL_ORDER..FLOOR]:
+  // order 12 (the commonplace edge) sits near the bottom, order 6 near the top,
+  // and anything at or below EXCEPTIONAL_ORDER pins to 1. The curve is gentle
+  // in the middle and steep at the rare end, because the whole point is to open
+  // up the ceiling the five buckets had closed.
+  var EXCEPTIONAL_ORDER = 7;   // tierOrder <= this earns the special treatment
+  function intensity(tierOrder, degree, crossShare) {
+    // The three-cell eight are off the scale by definition.
+    if (degree === 3) return 1;
+    var o = Number(tierOrder);
+    if (!isFinite(o)) o = 14;
+    // Below the exceptional line the party is already maxed; above the floor it
+    // is a formality. Map the band between onto 0..1, coarse = high.
+    var lo = EXCEPTIONAL_ORDER, hi = COLLECTIBLE_FLOOR;   // 7 .. 12
+    var t = (hi - o) / (hi - lo);                          // 12->0, 7->1
+    t = Math.max(0, Math.min(1, t));
+    // Ease so the rare end climbs hardest.
+    var base = Math.pow(t, 0.72);
+    // A crossing scarcer than its own order deserves a nudge: crossShare 0.25
+    // is the common 1-in-4 vertex, smaller is rarer. Fold in up to +0.15.
+    var cs = (crossShare != null && isFinite(crossShare)) ? crossShare : 0.25;
+    var sharp = Math.max(0, Math.min(1, (0.25 - cs) / 0.25)) * 0.15;
+    return Math.max(0, Math.min(1, base + sharp * (1 - base)));
+  }
+
+  // The fanfare knobs, all derived from one intensity so they move together.
+  // Kept out of celebrate() so a test can read them without a browser.
+  function fanfareFor(intens, exceptional) {
+    return {
+      // Particle count opens WELL past the old 300 ceiling for the rarest.
+      particles: Math.round(40 + intens * intens * 620) + (exceptional ? 160 : 0),
+      // Spread velocity, so the rarest fill the screen rather than just adding
+      // more confetti in the same patch.
+      spread: 1 + intens * 1.6 + (exceptional ? 0.6 : 0),
+      // Banner dwell, ms of body copy time. Rare finds linger.
+      dwellMs: Math.round(3200 + intens * 4200),
+      // Sound: extra shimmer octaves layered in, and a longer ring-out.
+      shimmer: intens,                       // 0..1, was a hard 0.5 switch
+      ringTail: 0.5 + intens * 1.3,
+      exceptional: !!exceptional
+    };
+  }
+
   // Stars are not vertices, and their rarity is NOT vertex arithmetic. Feeding
   // a starpin a made-up HEALPix order produced sentences like "one every 398 m,
   // try order 12 or coarser" about a Gaia source — true of the lattice,
@@ -175,8 +236,16 @@ var GeosonifyStarpinFeedback = (function () {
   // Major pentatonic, in semitones. Quaternary digits are 0..3, so four of them.
   var PENT = [0, 2, 4, 7, 9, 12, 14, 16];
 
-  function ring(quaternaryDigits, order, rarity) {
+  // fan: the fanfareFor() object. Older callers may still pass a bare rarity
+  // number; a shim below keeps that working.
+  function ring(quaternaryDigits, order, fan) {
     if (!ctx || ctx.state !== 'running') return;
+    if (typeof fan === 'number') fan = { shimmer: fan, ringTail: 0.5 + fan * 0.8,
+                                         exceptional: false };
+    fan = fan || { shimmer: 0.3, ringTail: 0.8, exceptional: false };
+    var shimmer = fan.shimmer == null ? 0.3 : fan.shimmer;
+    var tail = fan.ringTail == null ? 0.8 : fan.ringTail;
+
     var digits = String(quaternaryDigits || '0123').slice(-5).split('')
                    .map(function (d) { return parseInt(d, 10) || 0; });
     // Root drops an octave every six orders coarser. Rare sounds deeper.
@@ -185,21 +254,43 @@ var GeosonifyStarpinFeedback = (function () {
     var master = ctx.createGain();
     master.gain.value = 0.0001;
     master.connect(ctx.destination);
-    master.gain.setValueAtTime(0.28, t0);
+    master.gain.setValueAtTime(0.28 + shimmer * 0.06, t0);
+
+    // A sustained low drone ONLY for the exceptional — the sound-floor of the
+    // special treatment, so the rarest are audibly a different event.
+    if (fan.exceptional) {
+      var drone = ctx.createOscillator(), dg = ctx.createGain();
+      drone.type = 'sine'; drone.frequency.value = root / 2;
+      dg.gain.setValueAtTime(0.0001, t0);
+      dg.gain.exponentialRampToValueAtTime(0.12, t0 + 0.25);
+      dg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2 + tail);
+      drone.connect(dg); dg.connect(ctx.destination);
+      drone.start(t0); drone.stop(t0 + 2 + tail);
+    }
+
+    // Shimmer used to be a hard on/off at rarity 0.5. Now the number of layered
+    // octaves rises with intensity: the fundamental always sounds; the octave
+    // fades in from ~0.35; the double-octave only for the genuinely rare.
+    var layers = [{ mult: 1, type: 'sine',     peak: 0.22, gate: 0 },
+                  { mult: 2, type: 'triangle', peak: 0.10, gate: 0.35 },
+                  { mult: 4, type: 'triangle', peak: 0.05, gate: 0.7 }];
 
     digits.forEach(function (d, i) {
       var when = t0 + i * 0.075;
       var semis = PENT[(d + i) % PENT.length];
-      [1, 2].forEach(function (mult, k) {
-        if (k === 1 && rarity < 0.5) return;              // shimmer only when rare
+      layers.forEach(function (L) {
+        if (shimmer < L.gate) return;
+        // Fade the layer in over its gate..gate+0.25 window rather than popping.
+        var lvl = L.peak * Math.max(0, Math.min(1, (shimmer - L.gate) / 0.25 || 1));
+        if (L.gate === 0) lvl = L.peak;
         var o = ctx.createOscillator(), g = ctx.createGain();
-        o.type = k ? 'triangle' : 'sine';
-        o.frequency.value = root * mult * Math.pow(2, semis / 12);
+        o.type = L.type;
+        o.frequency.value = root * L.mult * Math.pow(2, semis / 12);
         g.gain.setValueAtTime(0.0001, when);
-        g.gain.exponentialRampToValueAtTime(k ? 0.10 : 0.22, when + 0.012);
-        g.gain.exponentialRampToValueAtTime(0.0001, when + 0.55 + rarity * 0.8);
+        g.gain.exponentialRampToValueAtTime(lvl, when + 0.012);
+        g.gain.exponentialRampToValueAtTime(0.0001, when + 0.55 + tail);
         o.connect(g); g.connect(master);
-        o.start(when); o.stop(when + 1.6);
+        o.start(when); o.stop(when + 1.2 + tail);
       });
     });
   }
@@ -547,8 +638,19 @@ var GeosonifyStarpinFeedback = (function () {
     '.spf-rare{margin-top:.5rem;font-size:.82rem;font-weight:600}',
     '.spf-blurb{margin-top:.4rem;font-size:.72rem;opacity:.7;line-height:1.45}',
     '.spf-canvas{position:fixed;inset:0;z-index:9998;pointer-events:none}',
+    // Exceptional find: a gold radial bloom that ordinary bags never get.
+    '.spf-flash{position:fixed;inset:0;z-index:9997;pointer-events:none;opacity:0;',
+    '  background:radial-gradient(circle at 50% 34%,',
+    '    rgba(220,201,73,.55),rgba(205,136,98,.22) 38%,transparent 68%);',
+    '  transition:opacity .5s ease-out}',
+    '.spf-flash.on{opacity:1}',
+    // The banner leans gold when the find is exceptional.
+    '.spf-banner.spf-exceptional{box-shadow:0 18px 60px rgba(180,140,20,.42),',
+    '  0 0 0 1px rgba(220,201,73,.5) inset}',
+    '.spf-banner.spf-exceptional .spf-kicker{opacity:.9;color:var(--kakapo-gold,#8a6d12)}',
     '@media (prefers-reduced-motion:reduce){',
     '  .spf-ring i{transition:none}.spf-here .spf-halo{animation:none}',
+    '  .spf-flash{transition:opacity .25s}',
     '  .spf-banner{transition:opacity .2s}}'
   ].join('');
 
@@ -713,7 +815,8 @@ var GeosonifyStarpinFeedback = (function () {
 
   // ── confetti ──────────────────────────────────────────────────────────────
 
-  function confetti(doc, count) {
+  function confetti(doc, count, spread) {
+    spread = spread || 1;
     var w = doc.defaultView;
     var cv = doc.createElement('canvas');
     cv.className = 'spf-canvas';
@@ -729,8 +832,8 @@ var GeosonifyStarpinFeedback = (function () {
     var COLS = ['#7D9D33', '#CED38C', '#DCC949', '#BCA888', '#CD8862', '#775B24'];
     var cx = w.innerWidth / 2, cy = w.innerHeight * 0.3, ps = [];
     for (var i = 0; i < count; i++) {
-      var ang = Math.random() * Math.PI * 2, sp = 3 + Math.random() * 9;
-      ps.push({ x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 4,
+      var ang = Math.random() * Math.PI * 2, sp = (3 + Math.random() * 9) * spread;
+      ps.push({ x: cx, y: cy, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 4 * spread,
                 r: 2 + Math.random() * 4, c: COLS[i % COLS.length],
                 rot: Math.random() * 6.3, vr: (Math.random() - .5) * .4, life: 1 });
     }
@@ -754,6 +857,20 @@ var GeosonifyStarpinFeedback = (function () {
     })(t0);
   }
 
+  // A one-off gold vignette/flash for the exceptional. Motion, so it is skipped
+  // entirely under prefers-reduced-motion (the caller gates it).
+  function flash(doc) {
+    var w = doc.defaultView;
+    var fl = doc.createElement('div');
+    fl.className = 'spf-flash';
+    doc.body.appendChild(fl);
+    w.requestAnimationFrame(function () { fl.classList.add('on'); });
+    w.setTimeout(function () {
+      fl.classList.remove('on');
+      w.setTimeout(function () { if (fl.parentNode) fl.parentNode.removeChild(fl); }, 900);
+    }, 1400);
+  }
+
   // ── the moment ────────────────────────────────────────────────────────────
   //
   // opts: { kind: 'cornerstone'|'starpin', name, digits, kicker, doc,
@@ -768,21 +885,41 @@ var GeosonifyStarpinFeedback = (function () {
                       : tierOf(opts.order == null ? 14 : opts.order, opts.degree);
     var quiet = reduced(doc);
 
+    // Continuous fanfare intensity, cornerstones only. Stars keep their own
+    // brightness-driven treatment untouched (they are not lattice-rare).
+    // crossShare sharpens it when the caller has the crossing orders; the demo's
+    // lastCs/probe both carry crossOrder + intrinsicOrder, so pass them through.
+    var cs = null;
+    if (!isStar && opts.crossOrder != null && opts.intrinsicOrder != null) {
+      cs = crossShare(opts.crossOrder, opts.intrinsicOrder);
+    }
+    var intens = isStar ? (tier.rarity == null ? 0.4 : tier.rarity)
+                        : intensity(opts.order == null ? 14 : opts.order, opts.degree, cs);
+    var exceptional = !isStar &&
+      (opts.degree === 3 ||
+       (opts.order != null && Number(opts.order) <= EXCEPTIONAL_ORDER));
+    var fan = fanfareFor(intens, exceptional);
+
     var b = doc.createElement('div');
-    b.className = 'spf-banner';
+    b.className = 'spf-banner' + (exceptional ? ' spf-exceptional' : '');
     b.setAttribute('role', 'status');
     function line(cls, text) {
       var d = doc.createElement('div'); d.className = cls; d.textContent = text;
       b.appendChild(d); return d;
     }
-    line('spf-kicker', opts.kicker || 'cornerstone bagged');
+    line('spf-kicker', opts.kicker ||
+         (exceptional ? 'an exceptional find' : 'cornerstone bagged'));
     line('spf-name', opts.name || '');
     line('spf-rare', tier.label);
     line('spf-blurb', tier.blurb);
     doc.body.appendChild(b);
     doc.defaultView.requestAnimationFrame(function () { b.classList.add('on'); });
 
-    if (!quiet) confetti(doc, tier.particles);
+    // The exceptional gold bloom, behind the banner, motion-gated.
+    if (!quiet && exceptional && !isStar) flash(doc);
+
+    if (!quiet) confetti(doc, isStar ? tier.particles : fan.particles,
+                         isStar ? 1 : fan.spread);
     if (isStar) {
       // Root pitch from brightness: a bright star sounds lower and grander.
       var mg = (opts.mag == null) ? 13 : opts.mag;
@@ -791,11 +928,12 @@ var GeosonifyStarpinFeedback = (function () {
                      261.626 * Math.pow(2, semis / 12));
     } else {
       ring(opts.digits || (opts.name || '').replace(/\D/g, ''),
-           opts.order == null ? 14 : opts.order, tier.rarity);
+           opts.order == null ? 14 : opts.order, fan);
     }
     try {
       if (doc.defaultView.navigator.vibrate)
-        doc.defaultView.navigator.vibrate(tier.rarity > 0.5 ? [40, 60, 90] : [35]);
+        doc.defaultView.navigator.vibrate(
+          exceptional ? [50, 40, 60, 40, 120] : intens > 0.5 ? [40, 60, 90] : [35]);
     } catch (e) {}
 
     doc.defaultView.setTimeout(function () {
@@ -803,7 +941,7 @@ var GeosonifyStarpinFeedback = (function () {
       doc.defaultView.setTimeout(function () {
         if (b.parentNode) b.parentNode.removeChild(b);
       }, 400);
-    }, isStar ? 9200 : 3600 + tier.rarity * 1800);
+    }, isStar ? 9200 : fan.dwellMs);
 
     return tier;
   }
@@ -813,6 +951,7 @@ var GeosonifyStarpinFeedback = (function () {
     unlock: unlock, proximity: proximity, celebrate: celebrate,
     setPulse: setPulse, pulseEnabled: pulseEnabled, hapticsAvailable: hapticsAvailable,
     tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
+    intensity: intensity, fanfareFor: fanfareFor, EXCEPTIONAL_ORDER: EXCEPTIONAL_ORDER,
     crossShare: crossShare, crossCount: crossCount, crossSpacingM: crossSpacingM,
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     composeCulminationRun: composeCulminationRun, playCulminationRun: playCulminationRun,
