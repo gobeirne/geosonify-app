@@ -440,11 +440,16 @@ dl{margin:.7rem 0 0}
     <div class="btnrow">
       <button id="nearby-go" type="button">Show best finds</button>
     </div>
+    <label class="nearby-toggle" for="nearby-hide">
+      <input id="nearby-hide" type="checkbox" checked>
+      <span>Hide finds I already have</span></label>
     <p class="hint" id="nearby-note" style="margin-top:.4rem">
       Cornerstones are exact everywhere. As you widen the search the rarity bar
       rises on its own — a tier-12 vertex is worth a short walk, but only rarer
-      crossings justify a longer trip. Stars shown are the live lookup around the
-      map plus your own logged finds, so a wide star search is not exhaustive.</p>
+      crossings justify a longer trip. Stars are ranked by tier (bright, rare
+      ones first — the same scale the log uses), not by tiny magnitude
+      differences. The star pool is the live lookup around the map plus your own
+      logged finds, so a wide star search is not exhaustive.</p>
     <div id="nearby-list"></div>
   </div>
 
@@ -565,6 +570,9 @@ dl{margin:.7rem 0 0}
     .nf.exceptional{border-color:var(--sun);
       box-shadow:0 0 0 1px var(--sun) inset,0 2px 14px rgba(220,201,73,.18)}
     .nearby-busy{font-size:.8rem;color:var(--ink-2);padding:.4rem 0}
+    .nearby-toggle{display:flex;align-items:center;gap:.5rem;margin-top:.6rem;
+      font-size:.82rem;color:var(--ink-2);cursor:pointer;user-select:none}
+    .nearby-toggle input{width:1.05rem;height:1.05rem;accent-color:var(--moss);cursor:pointer}
   </style>
 </section>
 
@@ -861,15 +869,21 @@ dl{margin:.7rem 0 0}
       if (!lastCs) { b.appendChild(el('p', 'hint', 'Looking for the nearest vertex\u2026')); return; }
       var bc = bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon);
       var vc2 = S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon });
-      var t = F.tierOf(lastCs.tierOrder, lastCs.degree);
+      var t = F.tierOf(lastCs.tierOrder, lastCs.degree,
+                       lastCs.crossOrder, lastCs.intrinsicOrder);
+      var rr = F.rarityOrder(lastCs.crossOrder, lastCs.intrinsicOrder);
       var dl2 = el('dl');
       detailRow(dl2, 'name', lastCs.name);
       detailRow(dl2, 'lines', 'order ' + lastCs.crossOrder + ' \u00D7 order ' + lastCs.intrinsicOrder);
-      detailRow(dl2, 'tier', lastCs.tierOrder.toFixed(1) + ' \u00B7 ' + t.key);
-      detailRow(dl2, 'others within 50 km', F.nearbyCount(lastCs.intrinsicOrder, 50).toLocaleString() +
-        '  (one every ' + (F.spacingM(lastCs.intrinsicOrder) < 1000
-          ? Math.round(F.spacingM(lastCs.intrinsicOrder)) + ' m'
-          : (F.spacingM(lastCs.intrinsicOrder) / 1000).toFixed(1) + ' km') + ')');
+      // Tier is population rarity now; the line orders above carry the geometry.
+      detailRow(dl2, 'tier', rr.toFixed(1) + ' \u00B7 ' + t.key);
+      // Cross-aware, matching the claim card and the celebration: a rare line
+      // crossing a common one is scarcer than its intrinsic order alone implies.
+      detailRow(dl2, 'others within 50 km',
+        F.crossCount(lastCs.crossOrder, lastCs.intrinsicOrder, 50).toLocaleString() +
+        '  (one every ' + (function (m) {
+          return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km';
+        })(F.crossSpacingM(lastCs.crossOrder, lastCs.intrinsicOrder)) + ')');
       detailRow(dl2, 'direction', walk(vc2.distanceM, bc));
       var pips = detailRow(dl2, 'corners of this cell', '\u2014', 'pips');
       detailRow(dl2, 'visit', verdictText(vc2.verdict),
@@ -1057,16 +1071,17 @@ dl{margin:.7rem 0 0}
         catch (e) { continue; }
         if (seen[v.name]) continue;
         seen[v.name] = 1;
-        if (v.tierOrder > maxTier) continue;
+        v.rarr = F.rarityOrder(v.crossOrder, v.intrinsicOrder);
+        if (v.rarr > maxTier) continue;      // population rarity floor, not (c+i)/2
         var d = S.haversineM(lat, lon, v.lat, v.lon);
         if (d > radiusM) continue;           // a vertex resolved from an edge sample may sit outside
         v.distanceM = d;
         out.push(v);
       }
     }
-    // Rarer first (lower tierOrder), then nearer.
+    // Rarer first (lower rarityOrder = fewer on Earth), then nearer.
     out.sort(function (a, b) {
-      return (a.tierOrder - b.tierOrder) || (a.distanceM - b.distanceM); });
+      return (a.rarr - b.rarr) || (a.distanceM - b.distanceM); });
     return { plan: { maxTier: maxTier, probe: probe }, list: out };
   }
 
@@ -1091,10 +1106,18 @@ dl{margin:.7rem 0 0}
             ra: r.target.ra_deg, dec: r.target.dec_deg,
             mag: r.target.mag_g, distLy: r.target.dist_ly }, true);
     });
-    // Brightest (most findable) first, then nearest; unknown mag sinks.
+    // Rank the SAME way the log ranks star rarity: by tier, not by hair-splitting
+    // magnitude. All the "deep" mag-16+ stars share one tier, so ordering them by
+    // 0.1-mag steps was noise; starTier collapses them and lifts the genuinely
+    // rare bright ones (unaided / binocular / small-scope) to the top where they
+    // belong. rarity DESC = rarer first; unknown magnitude sinks to the bottom.
+    out.forEach(function (rec) {
+      var t = F.starTier(rec.star.mag);
+      rec.tier = t;
+      rec.rarity = t.rarity == null ? 0 : t.rarity;
+    });
     out.sort(function (a, b) {
-      var ma = a.star.mag == null ? 99 : a.star.mag, mb = b.star.mag == null ? 99 : b.star.mag;
-      return (ma - mb) || (a.distanceM - b.distanceM);
+      return (b.rarity - a.rarity) || (a.distanceM - b.distanceM);
     });
     return out;
   }
@@ -1113,6 +1136,7 @@ dl{margin:.7rem 0 0}
     var km = Math.max(0.5, Math.min(25, parseFloat($('nearby-km').value) || 5));
     $('nearby-km').value = km;
     var radiusM = km * 1000;
+    var hideHave = $('nearby-hide').checked;
     box.appendChild(el('p', 'nearby-busy', 'Searching the lattice…'));
 
     // Let the "searching" line paint before the (short) synchronous scan.
@@ -1121,24 +1145,48 @@ dl{margin:.7rem 0 0}
       var cs = cornerstonesWithin(fix.lat, fix.lon, radiusM);
       var stars = starpinsWithin(fix.lat, fix.lon, radiusM);
 
+      // Split each source into new vs already-yours. The whole complaint was
+      // that a list full of "already yours" reads as "you've got them all", so
+      // NEW always comes first, and the toggle can drop the owned ones entirely.
+      var csHave = 0, stHave = 0;
+      var csNew = [], csOwned = [];
+      cs.list.forEach(function (v) {
+        (collected[csName(v.name)] ? csOwned : csNew).push(v);
+      });
+      csHave = csOwned.length;
+      var stNew = [], stOwned = [];
+      stars.forEach(function (s) { (s.bagged ? stOwned : stNew).push(s); });
+      stHave = stOwned.length;
+
+      // Ordered pool: new first (rarest within each, already sorted), then owned
+      // unless hidden. Caps applied AFTER ordering so new finds are never pushed
+      // off the list by owned ones.
       var CS_CAP = 12, ST_CAP = 8;
-      var csList = cs.list.slice(0, CS_CAP), stList = stars.slice(0, ST_CAP);
+      var csPool = hideHave ? csNew : csNew.concat(csOwned);
+      var stPool = hideHave ? stNew : stNew.concat(stOwned);
+      var csList = csPool.slice(0, CS_CAP), stList = stPool.slice(0, ST_CAP);
 
       if (!csList.length && !stList.length) {
-        box.appendChild(el('p', 'nearby-busy',
-          'Nothing rare enough within ' + km + ' km. Widen the radius, or the ' +
-          'lattice here is simply quiet.'));
+        var msg = hideHave && (csHave + stHave) > 0
+          ? 'Nothing new within ' + km + ' km — you already have everything the ' +
+            'search turned up here. Widen the radius, or untick “Hide finds I ' +
+            'already have” to see them.'
+          : 'Nothing rare enough within ' + km + ' km. Widen the radius, or the ' +
+            'lattice here is simply quiet.';
+        box.appendChild(el('p', 'nearby-busy', msg));
         return;
       }
 
       // Cornerstones.
       if (csList.length) {
         box.appendChild(el('div', 'nf-group',
-          'Cornerstones · rarest first · floor tier ' + cs.plan.maxTier));
+          'Cornerstones · rarest first · floor tier ' + cs.plan.maxTier +
+          (hideHave && csHave ? ' · ' + csHave + ' owned hidden' : '')));
         csList.forEach(function (v) {
-          var t = F.tierOf(v.tierOrder, v.degree);
+          var t = F.tierOf(v.tierOrder, v.degree, v.crossOrder, v.intrinsicOrder);
+          var rr = v.rarr != null ? v.rarr : F.rarityOrder(v.crossOrder, v.intrinsicOrder);
           var have = !!collected[csName(v.name)];
-          var exceptional = v.degree === 3 || v.tierOrder <= F.EXCEPTIONAL_ORDER;
+          var exceptional = v.degree === 3 || rr <= F.EXCEPTIONAL_ORDER;
           var b = el('button', 'nf' + (have ? ' have' : '') +
                                 (exceptional ? ' exceptional' : ''));
           b.type = 'button';
@@ -1151,31 +1199,36 @@ dl{margin:.7rem 0 0}
           b.appendChild(body);
           var right = el('div', 'nf-right');
           right.appendChild(el('div', 'nf-dist', fmtDist(v.distanceM)));
-          right.appendChild(el('div', 'nf-tier', 'tier ' + v.tierOrder.toFixed(1)));
+          right.appendChild(el('div', 'nf-tier', 'tier ' + rr.toFixed(1)));
           b.appendChild(right);
           b.addEventListener('click', function () { navigateToPoint(v.lat, v.lon, v.name); });
           box.appendChild(b);
         });
-        if (cs.list.length > csList.length)
+        if (csPool.length > csList.length)
           box.appendChild(el('p', 'nearby-busy',
-            '+' + (cs.list.length - csList.length) + ' more cornerstones in range.'));
+            '+' + (csPool.length - csList.length) + ' more cornerstones in range.'));
       }
 
       // Stars.
       if (stList.length) {
-        box.appendChild(el('div', 'nf-group', 'Stars · brightest first · loaded + logged'));
+        box.appendChild(el('div', 'nf-group',
+          'Stars · rarest tier first · loaded + logged' +
+          (hideHave && stHave ? ' · ' + stHave + ' owned hidden' : '')));
         stList.forEach(function (s) {
-          var st = s.star;
+          var st = s.star, t = s.tier || F.starTier(st.mag);
           var b = el('button', 'nf star' + (s.bagged ? ' have' : ''));
           b.type = 'button';
           b.appendChild(el('span', 'nf-dot'));
           var body = el('div', 'nf-body');
           body.appendChild(el('div', 'nf-name', st.name || ('Gaia DR3 ' + s.id)));
-          var mag = st.mag == null ? 'brightness unknown'
-                  : 'G ≈ ' + Number(st.mag).toFixed(1) +
-                    (st.mag < 6.5 ? ' · unaided eye' : st.mag < 10 ? ' · binocular'
-                     : st.mag < 14 ? ' · small scope' : ' · deep');
-          body.appendChild(el('div', 'nf-sub', mag + (s.bagged ? ' · already yours' : '')));
+          // Lead with the TIER word (the rare thing to notice), magnitude after.
+          var label = (t.key === 'unaided' ? 'unaided eye'
+                     : t.key === 'binocular' ? 'binocular'
+                     : t.key === 'telescopic' ? 'small scope'
+                     : t.key === 'deep' ? 'deep' : 'brightness unknown');
+          var sub = label + (st.mag == null ? '' : ' · G ≈ ' + Number(st.mag).toFixed(1)) +
+                    (s.bagged ? ' · already yours' : '');
+          body.appendChild(el('div', 'nf-sub', sub));
           b.appendChild(body);
           var right = el('div', 'nf-right');
           right.appendChild(el('div', 'nf-dist', fmtDist(s.distanceM)));
@@ -1184,10 +1237,22 @@ dl{margin:.7rem 0 0}
             navigateToPoint(st.lat, st.lon, st.name || ('Gaia DR3 ' + s.id)); });
           box.appendChild(b);
         });
-      } else {
+        if (stPool.length > stList.length)
+          box.appendChild(el('p', 'nearby-busy',
+            '+' + (stPool.length - stList.length) + ' more stars in range.'));
+      } else if (stNew.length === 0 && stHave > 0 && hideHave) {
+        box.appendChild(el('div', 'nf-group', 'Stars'));
         box.appendChild(el('p', 'nearby-busy',
-          'No stars loaded in range. Open the Map near here to load the catalogue, ' +
-          'then search again.'));
+          'All ' + stHave + ' star' + (stHave > 1 ? 's' : '') + ' in range ' +
+          (stHave > 1 ? 'are' : 'is') + ' already yours. The live lookup only ' +
+          'loads stars near the map view, so there may be more here it has not ' +
+          'fetched — pan the Map over this area to pull them in.'));
+      } else {
+        box.appendChild(el('div', 'nf-group', 'Stars'));
+        box.appendChild(el('p', 'nearby-busy',
+          'No stars loaded in range. The catalogue lookup only loads stars near ' +
+          'the map view — open the Map over this area, then search again. ' +
+          'Cornerstones above are exact regardless.'));
       }
     }, 20);
   }
@@ -1203,6 +1268,10 @@ dl{margin:.7rem 0 0}
   $('nearby-go').addEventListener('click', renderNearby);
   $('nearby-km').addEventListener('keydown', function (e) {
     if (e.key === 'Enter') { e.preventDefault(); renderNearby(); }
+  });
+  // Re-render live when the toggle flips, but only if results are already shown.
+  $('nearby-hide').addEventListener('change', function () {
+    if ($('nearby-list').childNodes.length) renderNearby();
   });
 
   // ── records ────────────────────────────────────────────────────────────
@@ -2298,8 +2367,15 @@ dl{margin:.7rem 0 0}
         var m = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
         var p = null;
         try { p = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
-        if (p) { try { return S.nearestCornerstone(p.lat, p.lon, m[1].length).tierOrder; }
-                 catch (e) {} }
+        if (p) {
+          try {
+            var v = S.nearestCornerstone(p.lat, p.lon, m[1].length);
+            // Rarity is population-derived, not (c+i)/2: equal-population
+            // crossings sort together (6x7 with 7x7), and a fat coarse line
+            // crossing a fine one no longer outranks a genuinely rarer vertex.
+            return F.rarityOrder(v.crossOrder, v.intrinsicOrder);
+          } catch (e) {}
+        }
         return m ? m[1].length : 14;
       }
       // The RECORD first. map.stars() is whatever VizieR last returned around
