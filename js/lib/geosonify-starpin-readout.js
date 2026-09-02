@@ -194,16 +194,59 @@ var GeosonifyStarpinReadout = (function () {
     };
   });
 
+  // Strip DISPLAY sugar before handing a code to the card decoder.
+  //
+  // The card encoders insert a per-grid delimiter between tokens for legibility
+  // (BIP39: "release-ranch-index-brown"; Japanese: middle dots; Chinese: 、),
+  // but CardRenderer.decode -> GeoCodec.decodeHierarchical tokenizes against the
+  // raw wordlist and does NOT strip that delimiter, so the delimited form a user
+  // reads off the screen tokenizes to nothing and decode returns null. That was
+  // the "I could not read that as BIP39 EN" bug: encode adds the hyphens, decode
+  // could not remove them. Normalising here (not in the frozen decoder) turns
+  // the shown form back into the canonical concatenated form the decoder already
+  // accepts. Delimiter + CJK ASCII fallbacks mirror card-renderer's own
+  // codeToIndexString; a trailing checksum after '.'/'。' is stripped defensively
+  // in case a pasted code carries one.
+  function normalizeCardCode(gridKey, text) {
+    var s = String(text == null ? '' : text).trim();
+    var G = mod('CARD_GRIDS');
+    var def = G && G[gridKey];
+    // Drop a trailing checksum word: "...-brown.acid" or CJK "…。…".
+    var dotIdx = s.lastIndexOf('.');
+    var cjkDot = s.lastIndexOf('\u3002');
+    if (cjkDot >= 0) s = s.slice(0, cjkDot);
+    else if (dotIdx >= 0 && def && def.delimiter && s.indexOf(def.delimiter) >= 0
+             && dotIdx > s.indexOf(def.delimiter)) s = s.slice(0, dotIdx);
+    if (def && def.delimiter) {
+      s = s.split(def.delimiter).join('');
+      // ASCII fallbacks people actually type for the CJK delimiters.
+      if (def.delimiter === '\u3001') s = s.split(',').join('').split('\u3001').join('');
+      if (def.delimiter === '\u30FB') s = s.split(' ').join('');   // middle dot often typed as space
+    }
+    // A friend reading four words down a phone leaves spaces; the concatenated
+    // form has none, so collapse remaining whitespace for word vocabularies.
+    if (def && def.grid && !def.isEmoji) s = s.replace(/\s+/g, '');
+    return s;
+  }
+
   function parse(key, text) {
     if (PARSERS[key]) return PARSERS[key](text);
     var f = FORMATS[key];
     if (f && f.gridKey) {
       var CR = mod('CardRenderer');
       if (!CR || !CR.decode) return null;
-      try {
-        var r = CR.decode(f.gridKey, String(text).trim());
-        return (r && r.length >= 2 && isFinite(r[0])) ? [r[0], r[1]] : null;
-      } catch (e) { return null; }
+      var raw = String(text).trim();
+      var norm = normalizeCardCode(f.gridKey, raw);
+      // Try the normalised (delimiter-stripped) form first, then the raw form,
+      // so nothing that used to decode can regress.
+      var candidates = norm && norm !== raw ? [norm, raw] : [raw];
+      for (var i = 0; i < candidates.length; i++) {
+        try {
+          var r = CR.decode(f.gridKey, candidates[i]);
+          if (r && r.length >= 2 && isFinite(r[0])) return [r[0], r[1]];
+        } catch (e) {}
+      }
+      return null;
     }
     return null;
   }

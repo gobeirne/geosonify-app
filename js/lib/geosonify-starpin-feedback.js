@@ -73,10 +73,59 @@ var GeosonifyStarpinFeedback = (function () {
     return Math.round(nearbyCount(Math.round(intrinsic), radiusKm) *
                       crossShare(cross, intrinsic));
   }
+  // How many of THIS crossing class exist on the whole planet, EXACTLY. The
+  // honest headline for a crossing must count the same population its spacing
+  // describes. Deriving it as round(vertexCount * crossShare) is off by one for
+  // classes where crossShare*vertexCount is a half-integer (e.g. 6x7 gives
+  // 49,152.5 -> 49,153, but the true count is 49,152). This closed form is
+  // exact and was checked by brute-force enumeration of every order-i vertex on
+  // the sphere, classified by the same 2-adic rule the lattice uses:
+  //
+  //   C(c,i) = 12 * 4^(i-1)      when c == i        (both lines at the finest order)
+  //          = 12 * 2^(i+c-1)    when 2 <= c < i    (a coarser line crosses a finer)
+  //          = 24 * 2^i          when c == 1 < i    (base-face edges; the classifier
+  //                                                  starts at order 1, folding the
+  //                                                  order-0 great circles in here)
+  //
+  // It is consistent with crossSpacingM by construction to within rounding:
+  // sqrt(EARTH_KM2 / crossOnEarth) matches crossSpacingM. crossShare is NOT
+  // changed by this — it remains correct (49,152/196,610 ~ 0.25); only the
+  // on-Earth headline is made an exact integer instead of a rounded product.
+  function crossOnEarth(cross, intrinsic) {
+    var i = Math.round(intrinsic), c = Math.round(cross);
+    if (!(i >= 1) || c > i) return Math.round(vertexCount(i) * crossShare(cross, intrinsic));
+    if (c === i) return 12 * Math.pow(4, i - 1);
+    if (c === 1) return 24 * Math.pow(2, i);
+    return 12 * Math.pow(2, i + c - 1);
+  }
   // Mean pitch. HEALPix cells are equal-AREA but not equal-shape, so real
   // neighbour distances vary around this; it is an average, not a guarantee.
   function crossSpacingM(cross, intrinsic) {
     return spacingM(Math.round(intrinsic)) / Math.sqrt(crossShare(cross, intrinsic));
+  }
+
+  // Rarity as a single number, derived from the EXACT population of the crossing
+  // class rather than from the mean of the two line orders. This is the fix for
+  // the deeper issue behind the whole "6x7 vs 7x7" thread: tierOrder = (c+i)/2
+  // measures the coarseness/prominence of the constituent lines, NOT how rare
+  // the crossing is. Those disagree — 6x7 and 7x7 have identical populations
+  // (49,152) yet different (c+i)/2 — and the celebration is explicitly a RARITY
+  // scale, so it must key off population.
+  //
+  //   rarityOrder = 1 + log4(crossOnEarth / 12)
+  //
+  // Inverts vertexCount: an N-by-N symmetric vertex has ~12*4^N of them, so its
+  // rarityOrder is N, matching the old scale where the two agree. Asymmetric
+  // crossings now land by how many exist: 6x7 -> 7.0 (same as 7x7, same
+  // population), 4x7 -> 6.0 (same as 6x6, same population). Fewer on Earth =>
+  // lower number => rarer, monotonically. The line orders (crossOrder x
+  // intrinsicOrder) are kept everywhere as DESCRIPTIVE GEOMETRY — they tell you
+  // a 4x7 and a 6x6 have different character even though they are equally rare —
+  // but they no longer set the rarity tier.
+  function rarityOrder(cross, intrinsic) {
+    var pop = crossOnEarth(cross, intrinsic);
+    if (!(pop > 0)) return (Number(cross) + Number(intrinsic)) / 2;   // defensive
+    return 1 + Math.log(pop / 12) / Math.log(4);
   }
 
   // Finest order treated as a collectible. At order 14 there are ~50,000
@@ -89,7 +138,17 @@ var GeosonifyStarpinFeedback = (function () {
 
   // order may be fractional: a crossing of a rare line and a common one sits
   // between the two, so its tier does too.
-  function tierOf(order, degree) {
+  //
+  // cross/intrinsic (optional): when the caller knows the two crossing orders,
+  // the count and spacing are computed with the SAME cross-aware model the
+  // claim card and log use (crossCount / crossSpacingM), instead of the plain
+  // intrinsic-order figure. Without them the old plain-order text is kept, so
+  // nothing that did not pass them changes. This is the fix for the "the
+  // celebration said 2 within 50 km / 196,610 on Earth but the log said 1
+  // within 50 km / 101.9 km apart" disagreement: a 6x7 crossing is a quarter as
+  // dense as order-7 vertices in general, and only the cross-aware model knew
+  // that. The card is the source of truth; the celebration now agrees with it.
+  function tierOf(order, degree, cross, intrinsic) {
     order = Math.round(Number(order) * 2) / 2;
     if (degree === 3) return {
       key: 'exceptional', label: 'one of only eight',
@@ -97,25 +156,58 @@ var GeosonifyStarpinFeedback = (function () {
       blurb: 'A three-cell vertex. There are eight on the planet, at every ' +
              'order, forever. They are worth no points at all.'
     };
+
+    // Cross-aware figures when available, else the plain intrinsic-order ones.
+    var haveCross = cross != null && intrinsic != null &&
+                    isFinite(cross) && isFinite(intrinsic);
+    // RARITY is population-derived when we have the orders; the passed-in `order`
+    // (tierOrder = (c+i)/2) is only a fallback for callers without them. Buckets
+    // and the exceptional gate read rOrd, so equal populations get equal tiers.
+    var rOrd = haveCross ? rarityOrder(cross, intrinsic) : order;
+    var within50 = haveCross ? crossCount(cross, intrinsic, 50) : nearbyCount(order, 50);
+    function spacingText() {
+      var m = haveCross ? crossSpacingM(cross, intrinsic) : spacingM(order);
+      return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km';
+    }
+
     var n = vertexCount(Math.round(order)), r;
-    if (order > COLLECTIBLE_FLOOR) return {
+    if (rOrd > COLLECTIBLE_FLOOR) return {
       key: 'commonplace', rarity: 0.04, particles: 0,
-      label: 'about ' + nearbyCount(order, 50).toLocaleString() + ' within 50 km of here',
-      blurb: 'Order ' + order + ', one every ' + Math.round(spacingM(order)) + ' m. ' +
+      label: 'about ' + within50.toLocaleString() + ' within 50 km of here',
+      blurb: 'Order ' + order + ', one every ' + spacingText() + '. ' +
              'Logged, but too common to be worth a walk \u2014 try order ' +
              COLLECTIBLE_FLOOR + ' or coarser.'
     };
-    if      (order <= 6)  r = { key: 'exceptional', rarity: 1.00 };
-    else if (order <= 8)  r = { key: 'very rare',   rarity: 0.80 };
-    else if (order <= 10) r = { key: 'rare',        rarity: 0.58 };
-    else if (order <= 12) r = { key: 'uncommon',    rarity: 0.36 };
-    else                  r = { key: 'everyday',    rarity: 0.16 };
+    if      (rOrd <= 6)  r = { key: 'exceptional', rarity: 1.00 };
+    else if (rOrd <= 8)  r = { key: 'very rare',   rarity: 0.80 };
+    else if (rOrd <= 10) r = { key: 'rare',        rarity: 0.58 };
+    else if (rOrd <= 12) r = { key: 'uncommon',    rarity: 0.36 };
+    else                 r = { key: 'everyday',    rarity: 0.16 };
+    // Headline stays the impressive, correct on-Earth total. Only the LOCAL
+    // density is made cross-aware, because that is the figure that was
+    // contradicting the log (a 6x7 crossing is a quarter as dense near you as
+    // order-7 vertices in general). "about 1" reads oddly, so the singular gets
+    // its own phrasing.
+    var localCount = haveCross
+      ? (within50 <= 1 ? 'the only one within 50 km of here'
+                       : 'about ' + within50.toLocaleString() + ' within 50 km')
+      : 'about ' + within50.toLocaleString() + ' within 50 km';
+    // Headline counts the SAME population the spacing describes. With the
+    // crossing orders that is the crossing class (crossOnEarth); without them,
+    // the plain intrinsic-order total. Never mix the two in one sentence.
+    var onEarth = haveCross ? crossOnEarth(cross, intrinsic) : n;
+    // Lead with the crossing GEOMETRY when we have it ("a 6x7 crossing"): that
+    // is the find's character, and it is honest next to a population-derived
+    // rarity. Without the orders, fall back to the mean order.
+    var geom = haveCross
+      ? 'A ' + Math.round(cross) + '\u00D7' + Math.round(intrinsic) + ' crossing'
+      : 'Order ' + order;
     return {
       key: r.key, rarity: r.rarity,
       particles: Math.round(20 + r.rarity * 260),
-      label: 'one of ' + n.toLocaleString() + ' on Earth',
-      blurb: 'Order ' + order + ', about ' + nearbyCount(order, 50).toLocaleString() +
-             ' within 50 km. It is a corner at every finer order too, and always will be.'
+      label: 'one of ' + onEarth.toLocaleString() + ' on Earth',
+      blurb: geom + ', ' + localCount + ', ~' + spacingText() +
+             ' apart. It is a corner at every finer order too, and always will be.'
     };
   }
 
@@ -882,22 +974,25 @@ var GeosonifyStarpinFeedback = (function () {
     injectCss(doc);
     var isStar = opts.kind === 'starpin';
     var tier = isStar ? starTier(opts.mag)
-                      : tierOf(opts.order == null ? 14 : opts.order, opts.degree);
+                      : tierOf(opts.order == null ? 14 : opts.order, opts.degree,
+                               opts.crossOrder, opts.intrinsicOrder);
     var quiet = reduced(doc);
 
     // Continuous fanfare intensity, cornerstones only. Stars keep their own
     // brightness-driven treatment untouched (they are not lattice-rare).
-    // crossShare sharpens it when the caller has the crossing orders; the demo's
-    // lastCs/probe both carry crossOrder + intrinsicOrder, so pass them through.
-    var cs = null;
+    // Rarity is population-derived (rarityOrder), NOT (c+i)/2, so the fanfare
+    // scales with how rare the find actually is: 6x7 and 7x7 throw the same
+    // party because there are equally many of each. crossShare still sharpens
+    // the continuous curve where the orders are known.
+    var cs = null, rOrd = opts.order == null ? 14 : opts.order;
     if (!isStar && opts.crossOrder != null && opts.intrinsicOrder != null) {
       cs = crossShare(opts.crossOrder, opts.intrinsicOrder);
+      rOrd = rarityOrder(opts.crossOrder, opts.intrinsicOrder);
     }
     var intens = isStar ? (tier.rarity == null ? 0.4 : tier.rarity)
-                        : intensity(opts.order == null ? 14 : opts.order, opts.degree, cs);
+                        : intensity(rOrd, opts.degree, cs);
     var exceptional = !isStar &&
-      (opts.degree === 3 ||
-       (opts.order != null && Number(opts.order) <= EXCEPTIONAL_ORDER));
+      (opts.degree === 3 || (rOrd != null && Number(rOrd) <= EXCEPTIONAL_ORDER));
     var fan = fanfareFor(intens, exceptional);
 
     var b = doc.createElement('div');
@@ -953,6 +1048,7 @@ var GeosonifyStarpinFeedback = (function () {
     tierOf: tierOf, starTier: starTier, vertexCount: vertexCount, nearbyCount: nearbyCount,
     intensity: intensity, fanfareFor: fanfareFor, EXCEPTIONAL_ORDER: EXCEPTIONAL_ORDER,
     crossShare: crossShare, crossCount: crossCount, crossSpacingM: crossSpacingM,
+    crossOnEarth: crossOnEarth, rarityOrder: rarityOrder,
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     composeCulminationRun: composeCulminationRun, playCulminationRun: playCulminationRun,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
