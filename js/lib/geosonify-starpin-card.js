@@ -58,12 +58,27 @@ var GeosonifyStarpinCard = (function () {
     '.spc-card .bg{position:absolute;inset:0;opacity:.5;pointer-events:none}',
     '.spc-card .inner{position:relative;z-index:1}',
     // Legibility over the bright sunrise band: a soft dark halo on the text,
-    // and muted labels lifted toward the light ink so they don't sink into the
-    // gold. This keeps the sunrise itself clean and vivid — no scrim.
+    // and muted labels lifted toward the light ink. On the rarest cards, whole
+    // lower zones instead flip to dark navy ink (see zone-flip below) — dark on
+    // gold is the naturally legible pairing, so the sunrise stays untouched.
     '.spc-card.spc-sunlit .inner{text-shadow:0 1px 2px rgba(4,8,20,.7),0 0 2px rgba(4,8,20,.85)}',
     '.spc-card.spc-sunlit .spc-ledger .k,.spc-card.spc-sunlit .spc-title .cat,',
     '.spc-card.spc-sunlit .spc-stub .k,',
     '.spc-card.spc-sunlit .spc-note{color:#D6DAE6}',
+    // The printable-hint footer is light like the rest on sunlit cards (unless it
+    // flips to dark ink over gold — see dark-footer below).
+    '.spc-card.spc-sunlit .spc-flip{color:#D6DAE6;opacity:1}',
+    // Zone-aware dark ink. When a zone sits on pale gold it flips to navy ink and
+    // drops its shadow; each zone flips independently of the other.
+    '.spc-card.zone-flip .spc-stub,.spc-card.zone-flip .spc-stub .k,',
+    '.spc-card.zone-flip .spc-stub .yes,.spc-card.zone-flip .spc-perf,',
+    '.spc-card.zone-flip .spc-flip{transition:color .2s,border-color .2s,opacity .2s}',
+    '.spc-card.zone-flip.dark-stub .spc-stub{color:#0A0E1C;text-shadow:none}',
+    '.spc-card.zone-flip.dark-stub .spc-stub .k{color:rgba(10,14,28,.68)}',
+    '.spc-card.zone-flip.dark-stub .spc-stub .v{color:#0A0E1C}',
+    '.spc-card.zone-flip.dark-stub .spc-stub .yes{color:#354A12}',
+    '.spc-card.zone-flip.dark-stub .spc-perf{border-color:rgba(10,14,28,.28)}',
+    '.spc-card.zone-flip.dark-footer .spc-flip{color:#0A0E1C;text-shadow:none;opacity:.68}',
     '.spc-kicker{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.18em;',
     '  text-transform:uppercase;color:var(--brass);text-align:center}',
     '.spc-brand{font-family:"Source Code Pro","SF Mono",ui-monospace,monospace;',
@@ -118,10 +133,13 @@ var GeosonifyStarpinCard = (function () {
     '.spc-card .k.culm,.spc-card .v.culm{color:var(--brass)}',
     // Print variant: the same card on paper. The dark one is for a screen at
     // night; this one is for a printer that would otherwise flood a page.
-    '.spc-card.light{--text:#22270F;--muted:#6A7355;--brass:#8A7513;',
+    '.spc-card.light{--text:#22270F;--muted:#5C6349;--brass:#7A6710;',
     '  --verdigris:#4F6620;--green:#3F6318;',
-    '  background:#FCFDF4;border-color:rgba(138,117,19,.4);',
+    '  background:#FCFDF4;border-color:rgba(122,103,16,.45);',
     '  box-shadow:0 10px 30px -18px rgba(34,39,15,.5)}',
+    // Printable: black-on-white, coloured header stays high-contrast. The sunrise
+    // inline background is stripped on flip (see render click handler), so paper
+    // shows through cleanly.
     '.spc-card.light .bg{opacity:.85}',
     '.spc-card{cursor:pointer}',
     '.spc-flip{font-family:"IBM Plex Mono",monospace;font-size:9px;letter-spacing:.12em;',
@@ -332,8 +350,7 @@ var GeosonifyStarpinCard = (function () {
   }
   // Build the sunrise gradient, exactly as the design sketch does: at each
   // vertical point y, sample the ramp at source position y*depth. depth = value.
-  // No scrim, no gamma — those muddied the gold. Legibility is handled by a
-  // text-shadow on the card's text (see CSS), not by darkening the picture.
+  // No scrim, no gamma — those muddied the gold. The picture is never darkened.
   function sunriseCss(value) {
     var depth = value, N = 24, stops = [];
     for (var i = 0; i <= N; i++) {
@@ -341,6 +358,23 @@ var GeosonifyStarpinCard = (function () {
       stops.push('rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ') ' + (y * 100).toFixed(1) + '%');
     }
     return { bg: 'linear-gradient(to bottom,' + stops.join(',') + ')' };
+  }
+  // Zone-aware legibility. Rather than smudge the text with a shadow, we sample
+  // the background luminance BEHIND each lower text zone and, only when it turns
+  // pale gold, flip that zone to dark navy ink — the naturally legible pairing on
+  // gold. The sunrise is left completely untouched; the text adapts to it. Each
+  // zone decides independently, because on a very-rare card the footer can be on
+  // gold while the stub above it is still on blue.
+  function relLum(rgb) {
+    function s(c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+    return 0.2126 * s(rgb[0]) + 0.7152 * s(rgb[1]) + 0.0722 * s(rgb[2]);
+  }
+  var STUB_Y = 0.885, FOOTER_Y = 0.965, FLIP_LUM = 0.43;
+  function zoneFlips(value) {
+    return {
+      stub:   relLum(sampleSun(STUB_Y * value)) > FLIP_LUM,
+      footer: relLum(sampleSun(FOOTER_Y * value)) > FLIP_LUM
+    };
   }
 
   // opts: { kind, mini, star:{id,name,ra,dec,mag,bpRp,distLy}, cornerstone:{...},
@@ -357,8 +391,10 @@ var GeosonifyStarpinCard = (function () {
         : (c.tierOrder != null ? c.tierOrder : c.order);
       var tier = F ? F.tierOf(c.tierOrder != null ? c.tierOrder : c.order, c.degree,
                               c.crossOrder, c.intrinsicOrder) : null;
-      var sun = sunriseCss(sunriseValue(c));
+      var sunVal = sunriseValue(c);
+      var sun = sunriseCss(sunVal);
       opts._sunbg = sun.bg;                       // picked up by render()
+      opts._sunFlips = zoneFlips(sunVal);
       bg = c.lat != null ? '<div class="bg">' +
            gridSVG(c.lat, c.lon, Math.round(c.order || 12)) + '</div>' : '';
       body =
@@ -391,8 +427,7 @@ var GeosonifyStarpinCard = (function () {
         '<div class="spc-stub"><div class="spc-perf"></div>' +
           row('Visited', v.whenMs ? fmtDate(v.whenMs) : '\u2014') +
           row('Accuracy', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014') +
-          row('Geometry', esc(v.verdict || '\u2014'),
-              v.verdict === 'well-supported' ? 'yes' : '') +
+          row('Geometry', esc(v.verdict || '\u2014')) +
         '</div>';
 
     } else {
@@ -444,6 +479,12 @@ var GeosonifyStarpinCard = (function () {
     var sunStyle = (opts._sunbg && !opts.light)
       ? ' style="background-image:' + opts._sunbg + '"' : '';
     var sunlit = (opts._sunbg && !opts.light) ? ' spc-sunlit' : '';
+    // Zone-aware dark-ink flips for the bright lower bands (rarest cards only).
+    if (opts._sunFlips && !opts.light) {
+      sunlit += ' zone-flip';
+      if (opts._sunFlips.stub) sunlit += ' dark-stub';
+      if (opts._sunFlips.footer) sunlit += ' dark-footer';
+    }
     return '<div class="spc-card' + mini + (opts.light ? ' light' : '') +
            (opts.culminationMs ? ' culm' : '') + sunlit + '"' + sunStyle + '>' +
            bg + '<div class="inner">' + body + '</div></div>';
@@ -471,7 +512,23 @@ var GeosonifyStarpinCard = (function () {
     var card = wrap.firstChild;
     card.addEventListener('click', function (e) {
       if (e.target.closest('a,button')) return;
+      var toLight = !card.classList.contains('light');
       card.classList.toggle('light');
+      if (toLight) {
+        // Printable version: black-on-white. The sunrise is an inline background
+        // and inline styles beat the .light class, so it must be stripped here or
+        // the dark print text lands on the gradient. Stash it to restore on flip
+        // back. The sunlit / zone-flip classes come off too.
+        card._sun = card.style.backgroundImage;
+        card.style.backgroundImage = '';
+        card._sunClasses = [];
+        ['spc-sunlit', 'zone-flip', 'dark-stub', 'dark-footer'].forEach(function (k) {
+          if (card.classList.contains(k)) { card._sunClasses.push(k); card.classList.remove(k); }
+        });
+      } else if (card._sun != null) {
+        card.style.backgroundImage = card._sun;
+        (card._sunClasses || []).forEach(function (k) { card.classList.add(k); });
+      }
       var g = card.querySelector('.bg svg');
       if (g) g.setAttribute('data-light', card.classList.contains('light') ? '1' : '0');
       recolourGrid(card);
@@ -551,8 +608,8 @@ var GeosonifyStarpinCard = (function () {
       g.fillStyle = grad; g.fillRect(0, 0, W, H);
     }
     var INK   = light ? '#22270F' : '#E9E4D6';
-    var MUTED = light ? '#6A7355' : '#8891A8';
-    var BRASS = light ? '#8A7513' : '#DCC949';
+    var MUTED = light ? '#5C6349' : '#8891A8';
+    var BRASS = light ? '#7A6710' : '#DCC949';
     var GOOD  = light ? '#3F6318' : '#8FBF3F';
     var MOSS  = light ? '#4F6620' : '#7D9D33';
 
@@ -620,12 +677,6 @@ var GeosonifyStarpinCard = (function () {
       g.font = font; g.fillStyle = colour; g.textAlign = align || 'left';
       g.fillText(String(t), x, y);
     }
-    // Legibility over the bright sunrise band, matching the on-screen text-shadow.
-    // Applied to all subsequent text; harmless on the dark upper card.
-    if (!light && !isStar) {
-      g.shadowColor = 'rgba(4,8,20,0.6)'; g.shadowBlur = 3;
-      g.shadowOffsetX = 0; g.shadowOffsetY = 1;
-    }
     var MONO = '"SF Mono",ui-monospace,Menlo,monospace';
     var SANS = 'system-ui,-apple-system,"Segoe UI",sans-serif';
 
@@ -661,7 +712,9 @@ var GeosonifyStarpinCard = (function () {
         : Number(d.distLy).toLocaleString() + ' ly']);
     } else {
       rows.push(['LINES', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder]);
-      if (c.tierOrder != null) rows.push(['TIER', c.tierOrder.toFixed(1)]);
+      if (F && c.crossOrder != null && c.intrinsicOrder != null) {
+        rows.push(['TIER', F.rarityOrder(c.crossOrder, c.intrinsicOrder).toFixed(1)]);
+      } else if (c.tierOrder != null) { rows.push(['TIER', c.tierOrder.toFixed(1)]); }
       if (F) {
         rows.push(['FREQUENCY', F.crossCount(c.crossOrder, c.intrinsicOrder, 50)
           .toLocaleString() + ' within 50 km']);
@@ -680,16 +733,43 @@ var GeosonifyStarpinCard = (function () {
     rows.push(['ACCURACY', v.accuracyM != null ? '\u00B1' + Math.round(v.accuracyM) + ' m' : '\u2014']);
     rows.push(['GEOMETRY', v.verdict || '\u2014']);
 
+    // For the sunrise export, each row picks dark or light ink based on the
+    // background luminance directly behind it — the canvas equivalent of the
+    // zone-flip on screen, done per row so it is exact.
+    var sunlitExport = !light && !isStar;
+    var exportDepth = sunlitExport ? sunriseValue(c) : 0;
+    function inkAt(yPx, isVerdict) {
+      if (!sunlitExport) return isVerdict ? GOOD : INK;
+      var bg = sampleSun((yPx / H) * exportDepth);
+      var dark = relLum(bg) > FLIP_LUM;
+      if (isVerdict) return dark ? '#354A12' : GOOD;
+      return dark ? '#0A0E1C' : INK;
+    }
+    function labelAt(yPx) {
+      if (!sunlitExport) return MUTED;
+      var bg = sampleSun((yPx / H) * exportDepth);
+      // Dark ink on gold; else the LIFTED light label (matches the on-screen
+      // .spc-sunlit .k colour) so labels never sink into the blue.
+      return relLum(bg) > FLIP_LUM ? 'rgba(10,14,28,0.68)' : '#D6DAE6';
+    }
     function paintRows(top) {
+      // Turn off the drop shadow where a row flips to dark ink (shadow is only
+      // wanted under light text on the darker upper card).
       rows.forEach(function (r, i) {
         var y = top + i * 52;
-        text(r[0], pad, y, '16px ' + MONO, MUTED);
-        text(r[1], W - pad, y, '22px ' + SANS,
-             r[1] === 'well-supported' ? GOOD : INK, 'right');
+        // Only star cards colour the verdict green; on cornerstones it reads as
+        // ordinary text, same as every other value.
+        var isVerdict = isStar && r[1] === 'well-supported';
+        var dark = sunlitExport && relLum(sampleSun((y / H) * exportDepth)) > FLIP_LUM;
+        if (dark) { g.shadowColor = 'rgba(0,0,0,0)'; g.shadowBlur = 0; }
+        else if (sunlitExport) { g.shadowColor = 'rgba(4,8,20,0.6)'; g.shadowBlur = 3; g.shadowOffsetY = 1; }
+        text(r[0], pad, y, '16px ' + MONO, labelAt(y));
+        text(r[1], W - pad, y, '22px ' + SANS, inkAt(y, isVerdict), 'right');
+        g.shadowColor = 'rgba(0,0,0,0)'; g.shadowBlur = 0;   // divider without shadow
         g.fillStyle = light ? 'rgba(34,39,15,.14)' : 'rgba(184,192,212,.12)';
         g.fillRect(pad, y + 16, W - pad * 2, 1);
       });
-      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, MUTED, 'center');
+      text('geosonify.org', W / 2, H - 34, '15px ' + MONO, labelAt(H - 34), 'center');
     }
 
     return new Promise(function (resolve) {
