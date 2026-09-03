@@ -56,7 +56,14 @@ var GeosonifyStarpinCard = (function () {
     '  box-shadow:0 24px 60px rgba(0,0,0,.55);display:flex;flex-direction:column;',
     '  border:1px solid rgba(220,201,73,.30);overflow:hidden}',
     '.spc-card .bg{position:absolute;inset:0;opacity:.5;pointer-events:none}',
-    '.spc-card .inner{position:relative}',
+    '.spc-card .inner{position:relative;z-index:1}',
+    // Legibility over the bright sunrise band: a soft dark halo on the text,
+    // and muted labels lifted toward the light ink so they don't sink into the
+    // gold. This keeps the sunrise itself clean and vivid — no scrim.
+    '.spc-card.spc-sunlit .inner{text-shadow:0 1px 2px rgba(4,8,20,.7),0 0 2px rgba(4,8,20,.85)}',
+    '.spc-card.spc-sunlit .spc-ledger .k,.spc-card.spc-sunlit .spc-title .cat,',
+    '.spc-card.spc-sunlit .spc-stub .k,',
+    '.spc-card.spc-sunlit .spc-note{color:#D6DAE6}',
     '.spc-kicker{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.18em;',
     '  text-transform:uppercase;color:var(--brass);text-align:center}',
     '.spc-brand{font-family:"Source Code Pro","SF Mono",ui-monospace,monospace;',
@@ -273,6 +280,69 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
+  // ── the sunrise ────────────────────────────────────────────────────────────
+  //
+  // A cornerstone card's background rises like a sunrise as the find gets rarer:
+  // common cards stay in the dark navy the card has always used; the rarest
+  // bloom all the way up through blue into a gold dawn. The amount of sunrise is
+  // driven by POPULATION rarity (rarityOrder), the same measure the tier, the
+  // sort and the celebration now use — not by (c+i)/2. Stars are left alone;
+  // their rarity is not yet calibrated.
+  //
+  // Legibility is handled by a soft text-shadow on the card's text (see the
+  // spc-sunlit CSS and the canvas shadow in toBlob), NOT by darkening the
+  // picture. An earlier version laid a dark scrim over the lower card to hold
+  // contrast; it muddied the gold into brown and killed exactly the clean
+  // sunrise this is meant to be, so the gradient is now sampled straight.
+  var SUN = [
+    [0, [0, 24, 39]], [0.15, [0, 46, 72]], [0.30, [0, 77, 115]],
+    [0.45, [50, 112, 155]], [0.60, [86, 140, 178]], [0.72, [109, 159, 196]],
+    [0.82, [134, 174, 200]], [0.90, [179, 195, 191]], [0.96, [201, 196, 147]],
+    [1, [204, 186, 102]]
+  ];
+  function clamp01(x) { return x < 0 ? 0 : x > 1 ? 1 : x; }
+  function sampleSun(t) {
+    t = clamp01(t);
+    for (var i = 0; i < SUN.length - 1; i++) {
+      var a = SUN[i], b = SUN[i + 1];
+      if (t >= a[0] && t <= b[0]) {
+        var f = (b[0] - a[0]) ? (t - a[0]) / (b[0] - a[0]) : 0;
+        return [0, 1, 2].map(function (j) { return Math.round(a[1][j] + (b[1][j] - a[1][j]) * f); });
+      }
+    }
+    return SUN[SUN.length - 1][1];
+  }
+  // Rarity -> how much of the sunrise is revealed (0 = flat navy, 1 = full dawn).
+  // rarityOrder runs ~6 (rarest collectible: 6x6, 4x7) to 12 (floor). Exceptional
+  // finds (<=6) reveal the whole dawn; commoner finds stay nearer the dark end.
+  // This is the design-sketch mechanism verbatim: linear map, then smoothstep,
+  // and the gradient is sampled cleanly with no scrim or gamma muddying it.
+  var RARE_CEIL = 6, RARE_FLOOR = 12;
+  function sunriseValue(c) {
+    if (!c) return 0;
+    if (c.degree === 3) return 1;
+    var rr;
+    if (F && c.crossOrder != null && c.intrinsicOrder != null) {
+      rr = F.rarityOrder(c.crossOrder, c.intrinsicOrder);
+    } else if (c.tierOrder != null) { rr = c.tierOrder; }
+    else if (c.order != null) { rr = c.order; }
+    else return 0;
+    var lin = clamp01((RARE_FLOOR - rr) / (RARE_FLOOR - RARE_CEIL));
+    return lin * lin * (3 - 2 * lin);              // smoothstep, as in the sketch
+  }
+  // Build the sunrise gradient, exactly as the design sketch does: at each
+  // vertical point y, sample the ramp at source position y*depth. depth = value.
+  // No scrim, no gamma — those muddied the gold. Legibility is handled by a
+  // text-shadow on the card's text (see CSS), not by darkening the picture.
+  function sunriseCss(value) {
+    var depth = value, N = 24, stops = [];
+    for (var i = 0; i <= N; i++) {
+      var y = i / N, rgb = sampleSun(y * depth);
+      stops.push('rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ') ' + (y * 100).toFixed(1) + '%');
+    }
+    return { bg: 'linear-gradient(to bottom,' + stops.join(',') + ')' };
+  }
+
   // opts: { kind, mini, star:{id,name,ra,dec,mag,bpRp,distLy}, cornerstone:{...},
   //         visit:{distanceM,bearingDeg,accuracyM,verdict,whenMs}, findNumber }
   function html(opts) {
@@ -281,7 +351,14 @@ var GeosonifyStarpinCard = (function () {
 
     if (opts.kind === 'cornerstone') {
       var c = opts.cornerstone || {};
-      var tier = F ? F.tierOf(c.tierOrder != null ? c.tierOrder : c.order, c.degree) : null;
+      // Population rarity, consistent with the tier / sort / celebration.
+      var rr = (F && c.crossOrder != null && c.intrinsicOrder != null)
+        ? F.rarityOrder(c.crossOrder, c.intrinsicOrder)
+        : (c.tierOrder != null ? c.tierOrder : c.order);
+      var tier = F ? F.tierOf(c.tierOrder != null ? c.tierOrder : c.order, c.degree,
+                              c.crossOrder, c.intrinsicOrder) : null;
+      var sun = sunriseCss(sunriseValue(c));
+      opts._sunbg = sun.bg;                       // picked up by render()
       bg = c.lat != null ? '<div class="bg">' +
            gridSVG(c.lat, c.lon, Math.round(c.order || 12)) + '</div>' : '';
       body =
@@ -294,7 +371,7 @@ var GeosonifyStarpinCard = (function () {
           ' &nbsp; <b>LON</b> ' + c.lon.toFixed(6) + '</div>' : '') +
         '<div class="spc-ledger">' +
           row('Lines', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder) +
-          row('Tier', (c.tierOrder != null ? c.tierOrder.toFixed(1) : '\u2014') +
+          row('Tier', (rr != null ? rr.toFixed(1) : '\u2014') +
               (tier ? ' \u00B7 ' + tier.key : '')) +
           // The rarity of THIS CROSSING, not of its finer order. Quoting the
           // plain order figure understated a mixed crossing by up to 64x.
@@ -360,8 +437,15 @@ var GeosonifyStarpinCard = (function () {
     }
 
     body += '<div class="spc-flip">tap the card for the printable version</div>';
+    // The sunrise is a per-card background (rarer = more dawn). Only cornerstones,
+    // only the dark (screen) face — the printable light variant keeps paper.
+    // Legibility over the bright lower band is handled by a text-shadow applied
+    // via the spc-sunlit class, NOT by darkening the gradient.
+    var sunStyle = (opts._sunbg && !opts.light)
+      ? ' style="background-image:' + opts._sunbg + '"' : '';
+    var sunlit = (opts._sunbg && !opts.light) ? ' spc-sunlit' : '';
     return '<div class="spc-card' + mini + (opts.light ? ' light' : '') +
-           (opts.culminationMs ? ' culm' : '') + '">' +
+           (opts.culminationMs ? ' culm' : '') + sunlit + '"' + sunStyle + '>' +
            bg + '<div class="inner">' + body + '</div></div>';
   }
 
@@ -448,6 +532,18 @@ var GeosonifyStarpinCard = (function () {
 
     var light = !!opts.light;
     if (light) { g.fillStyle = '#FCFDF4'; g.fillRect(0, 0, W, H); }
+    else if (!isStar) {
+      // Clean sunrise, matching the on-screen card: source position = y*depth,
+      // sampled straight from the ramp. No scrim — legibility comes from the
+      // text shadow set below.
+      var val = sunriseValue(c), depth = val;
+      var vgrad = g.createLinearGradient(0, 0, 0, H);
+      for (var s = 0; s <= 24; s++) {
+        var yy = s / 24, rgb = sampleSun(yy * depth);
+        vgrad.addColorStop(yy, 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')');
+      }
+      g.fillStyle = vgrad; g.fillRect(0, 0, W, H);
+    }
     else {
       var grad = g.createLinearGradient(0, 0, W * 0.4, H);
       grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
@@ -523,6 +619,12 @@ var GeosonifyStarpinCard = (function () {
     function text(t, x, y, font, colour, align) {
       g.font = font; g.fillStyle = colour; g.textAlign = align || 'left';
       g.fillText(String(t), x, y);
+    }
+    // Legibility over the bright sunrise band, matching the on-screen text-shadow.
+    // Applied to all subsequent text; harmless on the dark upper card.
+    if (!light && !isStar) {
+      g.shadowColor = 'rgba(4,8,20,0.6)'; g.shadowBlur = 3;
+      g.shadowOffsetX = 0; g.shadowOffsetY = 1;
     }
     var MONO = '"SF Mono",ui-monospace,Menlo,monospace';
     var SANS = 'system-ui,-apple-system,"Segoe UI",sans-serif';
@@ -617,12 +719,9 @@ var GeosonifyStarpinCard = (function () {
           g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
           g.stroke();
         }
-        // Open crosshair with a wide central gap, so even a faint target is
-        // never covered by the arms. Gap and arm are ~26% of the sky radius
-        // (R=116): the arms frame the star from a distance rather than sitting
-        // on top of it. Thin arms (2.5) keep it legible without bulk.
-        g.strokeStyle = GOOD; g.lineWidth = 2.5; g.lineCap = 'round';
-        var gap = 30, arm = 30;
+        // Open crosshair, gap in the middle, so a faint target is not covered.
+        g.strokeStyle = GOOD; g.lineWidth = 3; g.lineCap = 'round';
+        var gap = 7, arm = 20;
         g.beginPath();
         g.moveTo(cx, cy - gap - arm); g.lineTo(cx, cy - gap);
         g.moveTo(cx, cy + gap); g.lineTo(cx, cy + gap + arm);
