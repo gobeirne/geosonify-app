@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>geosonify-starpin — Firebase smoke test</title>
+<!--
+  A throwaway page to prove the REAL geosonify-starpin backend works before
+  wiring anything into the app. It signs in anonymously, writes a blob under a
+  test handle, reads it back, lists the handle, and reports each step.
+
+  HOW TO USE:
+    1. Fill in firebaseConfig in geosonify-starpin-firebase.js first.
+    2. Deploy firestore.rules to the project.
+    3. Serve this folder over http (NOT file://) — modules + Firebase need it:
+         python3 -m http.server 8000
+       then open http://localhost:8000/firebase-smoketest.html
+    4. Watch the log. All green = the backend + rules + adapter all work.
+
+  It uses a FIXED fake handle (43 chars) and random hashes, so it never touches
+  real group data. Delete these test docs from the console when done, or leave
+  them — they're inert.
+
+  This is SCRATCH — a diagnostic, not part of the app.
+-->
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 680px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.2rem; }
+  #log { background: #0b0b0c; color: #d6d6d6; padding: 1rem; border-radius: 8px; white-space: pre-wrap; word-break: break-word; }
+  .ok { color: #6ee787; } .err { color: #ff7b72; } .info { color: #9db1c7; }
+  button { font: inherit; padding: .5rem 1rem; border-radius: 6px; border: 1px solid #888; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>geosonify-starpin — Firebase smoke test</h1>
+<p>Proves anonymous auth + immutable write + read + bounded list against the real
+project. Fill in the config and deploy the rules first, then press run.</p>
+<p><button id="run">Run smoke test</button></p>
+<div id="log">idle.</div>
+
+<!-- adapter loads first as a classic script (exposes the global) -->
+<script src="./geosonify-starpin-storage.js"></script>
+
+<script type="module">
+import { initStarpinFirebase } from './geosonify-starpin-firebase.js';
+
+const logEl = document.getElementById('log');
+function line(msg, cls) {
+  const span = document.createElement('div');
+  if (cls) span.className = cls;
+  span.textContent = msg;
+  logEl.appendChild(span);
+}
+function clear() { logEl.textContent = ''; }
+
+// 43-char base64url handle (fixed, obviously-fake, never a real derived handle)
+const TEST_HANDLE = 'SMOKETEST_0000000000000000000000000000aaaaaa'.slice(0, 43);
+function randHash() {
+  const b = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(b).map(x => x.toString(16).padStart(2, '0')).join('');
+}
+
+async function run() {
+  clear();
+  try {
+    line('initialising Firebase + anonymous sign-in…', 'info');
+    const { store, uid } = await initStarpinFirebase();
+    line('✓ signed in anonymously, uid = ' + uid.slice(0, 8) + '…', 'ok');
+
+    const hash = randHash();
+    const bytes = crypto.getRandomValues(new Uint8Array(64));
+    line('writing a 64-byte blob under the test handle…', 'info');
+    await store.put(TEST_HANDLE, hash, bytes);
+    line('✓ put succeeded (immutable create)', 'ok');
+
+    line('reading it back by exact hash…', 'info');
+    const got = await store.get(TEST_HANDLE, hash);
+    const same = got && got.length === bytes.length && got.every((v, i) => v === bytes[i]);
+    line(same ? '✓ get returned identical bytes' : '✗ get mismatch', same ? 'ok' : 'err');
+
+    line('listing the test handle (bounded)…', 'info');
+    const page = await store.list(TEST_HANDLE, { limit: 100 });
+    const found = page.items.some(it => it.hash === hash);
+    line(found ? '✓ list returned our blob (' + page.items.length + ' total in bucket)' : '✗ list did not find it', found ? 'ok' : 'err');
+
+    line('checking immutability: a second put of DIFFERENT bytes at the same hash…', 'info');
+    try {
+      await store.put(TEST_HANDLE, hash, crypto.getRandomValues(new Uint8Array(64)));
+      // If rules are correct this should FAIL (update denied). If it "succeeds",
+      // either the rules aren't deployed or they allow overwrite — a red flag.
+      const after = await store.get(TEST_HANDLE, hash);
+      const unchanged = after && after.every((v, i) => v === bytes[i]);
+      line(unchanged
+        ? '✓ overwrite had no effect (original bytes preserved)'
+        : '✗ DANGER: blob was overwritten — check rules (update must be denied)',
+        unchanged ? 'ok' : 'err');
+    } catch (e) {
+      line('✓ overwrite rejected by rules (' + (e.code || e.message) + ')', 'ok');
+    }
+
+    line('\nall done. If every line is green, the backend + rules + adapter work.', 'ok');
+  } catch (e) {
+    line('✗ ' + (e.code ? e.code + ' — ' : '') + e.message, 'err');
+    line('\nCommon causes: config not filled in; rules not deployed; anonymous ' +
+         'auth not enabled; or served over file:// instead of http.', 'info');
+  }
+}
+document.getElementById('run').addEventListener('click', run);
+</script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+rules_version = '2';
+
+// ============================================================================
+// Starpin group-v1 blob storage — Firestore security rules (NOT FROZEN)
+//
+// Layout:  /handles/{handle}/blobs/{hash}
+//
+// What these rules CAN enforce:  structure, immutability, size, bounded reads,
+//   and — critically — NO enumeration of handles.
+// What they CANNOT enforce (bearer-code group-v1):  who may write. The server
+//   holds no group key and no signature to check, so anyone who knows a handle
+//   can create well-formed blobs under it. That authorisation gate arrives only
+//   with group-mod/1 (a Cloud Function verifying member signatures). Anonymous
+//   Auth here is NOT group membership — it only keeps out fully unauthenticated
+//   drive-by traffic and gives Firebase's abuse tooling a uid to work with.
+//   Knowledge of the unguessable handle remains the effective capability.
+//
+// TESTING: rules cannot be unit-tested from the app. Verify in the Firebase
+// emulator or console with the allow/deny cases listed in the companion notes.
+// The load-bearing one: a list() WITHOUT a bounded limit MUST be denied.
+// ============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- helpers ----------------------------------------------------------
+    function isAnon() {
+      return request.auth != null;   // anonymous sign-in satisfies this
+    }
+
+    // A handle is base64url of 32 bytes: exactly 43 chars, [A-Za-z0-9_-], no pad.
+    function handleShapeOk(h) {
+      return h.matches('^[A-Za-z0-9_-]{43}$');
+    }
+
+    // A blob doc id is a SHA-256 hex digest: exactly 64 lowercase hex chars.
+    function hashShapeOk(x) {
+      return x.matches('^[0-9a-f]{64}$');
+    }
+
+    // The stored document is JUST the ciphertext, base64, within the size cap.
+    // No other fields permitted — no handle, group id, target, or timestamp,
+    // which would re-leak what the sealing layer hid. Firestore has no direct
+    // byte-length of a string, so we bound the base64 string length: 2,000,000
+    // chars comfortably covers a 1.5 MB blob (~2,000,000 b64 chars) and stays
+    // under Firestore's ~1 MiB DOCUMENT limit for share-sized objects. (Media,
+    // when it arrives, goes to object storage behind the adapter, NOT here.)
+    function blobDocOk(data) {
+      return data.keys().hasOnly(['b'])
+             && data.b is string
+             && data.b.size() > 0
+             && data.b.size() <= 2000000;
+    }
+
+    // A bounded list: the query MUST carry a limit at or below the cap. This is
+    // evaluated against the QUERY, before results exist — so removing the limit
+    // does not "return everything", it fails the rule. MAX_LIMIT must equal the
+    // adapter's MAX_LIMIT (100).
+    function boundedList() {
+      return request.query.limit != null && request.query.limit <= 100;
+    }
+
+    // ---- the blobs subcollection -----------------------------------------
+    match /handles/{handle}/blobs/{hash} {
+
+      // Read a single named blob: allowed to any anon-authed caller who already
+      // knows both the handle and the exact hash.
+      allow get: if isAnon();
+
+      // List blobs beneath an ALREADY-KNOWN handle: allowed, but ONLY bounded.
+      // This is the "enumerate within a known bucket is fine; enumerate handles
+      // is not" distinction. Handle discovery is impossible because there is no
+      // readable /handles collection (see the catch-all deny below) and no
+      // collection-group rule over 'blobs'.
+      allow list: if isAnon() && boundedList();
+
+      // Immutable create only. Shape + size validated. The doc id must be the
+      // content hash shape; the parent path segment must be the handle shape.
+      allow create: if isAnon()
+                    && handleShapeOk(handle)
+                    && hashShapeOk(hash)
+                    && blobDocOk(request.resource.data);
+
+      // No client may ever edit or remove a blob. Deletion is operator-only
+      // (console for the beta) / owner-signed moderation later — never here.
+      allow update, delete: if false;
+    }
+
+    // ---- everything else is denied, including /handles itself -------------
+    // No rule permits reading or listing /handles, so handle enumeration is
+    // impossible. No collection-group rule over 'blobs' exists, so a
+    // collectionGroup('blobs') scan is denied. This explicit catch-all makes
+    // the default-deny intent unmistakable and guards against a stray future
+    // match block loosening things by accident.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
