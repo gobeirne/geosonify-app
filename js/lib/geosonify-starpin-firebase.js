@@ -52,7 +52,7 @@ function getStorageFactory() {
 // generated and cannot be guessed, so they must come from the console verbatim.
 // ============================================================================
 const firebaseConfig = {
-  apiKey:            '"AIzaSyCna8NRmXsc-m0lCDb9t_KJQ3lzORoZUoQ",
+  apiKey:            'AIzaSyCna8NRmXsc-m0lCDb9t_KJQ3lzORoZUoQ',
   authDomain:        'geosonify-starpin.firebaseapp.com',
   projectId:         'geosonify-starpin',
   storageBucket:     'geosonify-starpin.firebasestorage.app',
