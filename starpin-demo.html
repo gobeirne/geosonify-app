@@ -250,8 +250,15 @@ dl{margin:.7rem 0 0}
 .chip.r0{background:#9AA382} .chip.r1{background:var(--moss)}
 .chip.r2{background:var(--bark-lit);color:#241d05}
 .chip.r3{background:var(--rust)} .chip.r4{background:var(--sun);color:#2A2405}
+/* How you bagged it — a DIFFERENT axis from rarity, so it sits off the warm
+   ladder in a cool tone. Drive-by is the loud one (you earned a moving grab);
+   static is quiet, the default way most finds happen. */
+.chip.mode{color:#fff;letter-spacing:.02em}
+.chip.mode.driveby{background:#4E6E8E}
+.chip.mode.static{background:color-mix(in srgb,#4E6E8E 14%,transparent);color:#3A566F}
 @media (prefers-color-scheme:dark){
-  .chip.good{color:var(--moss-lit)} .chip.warn{color:var(--rust-lit)}}
+  .chip.good{color:var(--moss-lit)} .chip.warn{color:var(--rust-lit)}
+  .chip.mode.static{color:#9DB6CE}}
 .rec .acts{display:flex;gap:.4rem;margin-top:.55rem}
 .rec .acts button{flex:1;font-size:.72rem;padding:.4rem .5rem;border-radius:11px;
   box-shadow:0 3px 0 color-mix(in srgb,var(--moss) 45%,transparent)}
@@ -513,6 +520,17 @@ dl{margin:.7rem 0 0}
     .visitline.culm .vl-label{color:#9a7b12;font-weight:700}
     .visitline.culm{color:#7a6410}
     .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
+    /* Per-line drive-by, set apart the same way "at culmination" is: the line
+       takes a cool tint (vs culm's warm gold) and carries a small "drive-by"
+       tag under the label. A find with one static and one drive-by visit then
+       shows exactly which was which, per event. The tag sits below the label
+       rather than beside it, because the label column is a fixed 5.5rem cell. */
+    .visitline.driveby .vl-label{color:#3A566F;font-weight:700}
+    .visitline.driveby{color:#42586e}
+    .visitline .vl-label{display:flex;flex-direction:column;align-items:flex-start}
+    .visitline .vl-mode{margin-top:.05rem;font-size:.6rem;font-weight:800;
+      font-variant:small-caps;letter-spacing:.04em;color:#fff;background:#4E6E8E;
+      padding:.02rem .3rem;border-radius:999px}
   </style>
 </section>
 
@@ -719,8 +737,7 @@ dl{margin:.7rem 0 0}
     return best;
   }
 
-  function visitedOn(key) {
-    if (!key) return null;
+  function visitedOn(key) {    if (!key) return null;
     var hits = log.current().filter(function (r) {
       if (r.target.cornerstone) return csName(r.target.cornerstone) === csName(key);
       return r.target.starpin && sourceIdOf(r.target.starpin) === key;
@@ -1871,7 +1888,8 @@ dl{margin:.7rem 0 0}
         var a = null; try { a = S.assessRecord(r); } catch (e) {}
         return { rec: r, ms: r.event.time_ms,
                  distanceM: a && a.visit ? a.visit.distanceM : null,
-                 verdict: a && a.visit ? a.visit.verdict : null };
+                 verdict: a && a.visit ? a.visit.verdict : null,
+                 driveBy: !!(r.approach_reason && /\bdrive-by\b/.test(r.approach_reason)) };
       }
       var vs = visits.map(withDist);
       var first = vs.slice().sort(function (a, b) { return a.ms - b.ms; })[0] || null;
@@ -1885,13 +1903,13 @@ dl{margin:.7rem 0 0}
       var onlyCulm = !first && culm;
       var oneVisit = first && vs.length === 1 && !culm;
       if (oneVisit) {
-        lines.push({ label: 'visited', ms: first.ms, distanceM: first.distanceM });
+        lines.push({ label: 'visited', ms: first.ms, distanceM: first.distanceM, driveBy: first.driveBy });
       } else {
-        if (first) lines.push({ label: 'first', ms: first.ms, distanceM: first.distanceM });
+        if (first) lines.push({ label: 'first', ms: first.ms, distanceM: first.distanceM, driveBy: first.driveBy });
         if (closest && first && closest.rec.record_id !== first.rec.record_id)
-          lines.push({ label: 'closest', ms: closest.ms, distanceM: closest.distanceM });
+          lines.push({ label: 'closest', ms: closest.ms, distanceM: closest.distanceM, driveBy: closest.driveBy });
         if (culm) lines.push({ label: 'at culmination', ms: culm.ms,
-                               distanceM: culm.distanceM, culm: true });
+                               distanceM: culm.distanceM, culm: true, driveBy: culm.driveBy });
       }
 
       // The representative record the card and buttons open.
@@ -2339,14 +2357,34 @@ dl{margin:.7rem 0 0}
       // per record is replaced by the visit lines below, one per event.
       chip(verdictText(verdict), verdict === 'well-supported' ? 'good'
                   : verdict === 'not-supported' ? 'warn' : null);
+      // How you bagged it, as a single verdict for the whole find. Static is the
+      // "best case": if you EVER walked up to it, the card reads static, and the
+      // drive-by grabs are still visible per-line below. Only when every visit
+      // was a drive-by does the card itself read drive-by. Cornerstone visits
+      // and starpin visits/closest-approaches all count; culmination-attempts
+      // are the same standing-there event as their visit, so they don't sway it.
+      var visitRecs = gp.records.filter(function (x) { return x.kind !== 'culmination-attempt'; });
+      var modeRecs = visitRecs.length ? visitRecs : gp.records;
+      var anyDb = modeRecs.some(function (x) {
+        return x.approach_reason && /\bdrive-by\b/.test(x.approach_reason); });
+      var allDb = anyDb && modeRecs.every(function (x) {
+        return x.approach_reason && /\bdrive-by\b/.test(x.approach_reason); });
+      if (allDb) chip('drive-by', 'mode driveby');
+      else chip('static', 'mode static');
       body.appendChild(chips);
 
       // The visit lines: first / closest / at culmination, or a single line.
       var dateFmt = { day: 'numeric', month: 'short', year: 'numeric' };
       var visitsEl = el('div', 'visits');
       gp.lines.forEach(function (ln) {
-        var rowEl = el('div', 'visitline' + (ln.culm ? ' culm' : ''));
-        rowEl.appendChild(el('span', 'vl-label', ln.label));
+        var rowEl = el('div', 'visitline' + (ln.culm ? ' culm' : '') +
+                                (ln.driveBy ? ' driveby' : ''));
+        var lab = el('span', 'vl-label', ln.label);
+        // A drive-by visit is marked on its own line, the same way "at
+        // culmination" is set apart — so a card with one static and one
+        // drive-by visit shows exactly which was which, per event.
+        if (ln.driveBy) lab.appendChild(el('span', 'vl-mode', 'drive-by'));
+        rowEl.appendChild(lab);
         rowEl.appendChild(el('span', 'vl-date',
           new Date(ln.ms).toLocaleDateString(undefined, dateFmt)));
         rowEl.appendChild(el('span', 'vl-dist',
