@@ -47,11 +47,11 @@ function nobleSha256(bytes) { return sha2.sha256(bytes); }
 
 // Build the browser module twice: once fully noble-backed, once with WebCrypto
 // (Node's) HKDF/SHA-256 to prove the browser defaults also match the oracle.
-var Gnoble = Group.create({
+var Gnoble = Group.create({ allowProvisional:true,
   argon2id: nobleArgon2id, xchacha20poly1305: nobleXchacha,
   hkdfSha256: nobleHkdf, sha256: nobleSha256
 });
-var Gwc = Group.create({
+var Gwc = Group.create({ allowProvisional:true,
   argon2id: nobleArgon2id, xchacha20poly1305: nobleXchacha
   // hkdfSha256 + sha256 omitted -> module uses global crypto.subtle (Node 20+ WebCrypto)
 });

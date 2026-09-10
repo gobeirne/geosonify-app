@@ -84,6 +84,18 @@ var GeosonifyStarpinStorage = (function () {
   // ==========================================================================
   function firestore(fb) {
     if (!fb || !fb.db) throw new Error('storage(firestore): db + SDK fns required');
+    // Optional sha256(bytes)->Uint8Array|Promise. If provided, the adapter
+    // VERIFIES that every blob it reads actually hashes to the document id it was
+    // filed under (review pt 10 — otherwise the "content_hash is the id" contract
+    // is unenforced and a client could file valid ciphertext under a wrong id).
+    var sha256 = fb.sha256 || null;
+
+    async function verifyHash(handle, hash, bytes) {
+      if (!sha256) return;                       // verification opt-in; caller warned below
+      var d = await sha256(bytes);
+      var hex = ''; for (var i = 0; i < d.length; i++) { var h = d[i].toString(16); hex += (h.length === 1 ? '0' : '') + h; }
+      if (hex !== hash) throw new Error('storage: blob hash mismatch (id ' + hash.slice(0, 12) + '… ≠ sha256) — rejected');
+    }
 
     function blobsCol(handle) {
       return fb.collection(fb.db, 'handles', handle, 'blobs');
@@ -96,11 +108,25 @@ var GeosonifyStarpinStorage = (function () {
       assertHandle(handle); assertHash(hash);
       if (!(blobBytes instanceof Uint8Array)) throw new Error('storage.put: bytes required');
       if (blobBytes.length > MAX_BLOB_BYTES) throw new Error('storage.put: blob too large');
-      // Immutable create. The rules forbid update, so a genuine overwrite attempt
-      // is rejected server-side; an identical retry writes identical bytes (no-op
-      // in effect). We do not read-before-write: that would cost an extra read and
-      // the rules already guarantee no silent edit.
-      await fb.setDoc(blobDoc(handle, hash), { b: bytesToB64(blobBytes) });
+      // Idempotent create (review pt 9 — the lost-ACK case). The rules are
+      // create-only, so a genuine overwrite with DIFFERENT bytes is rejected
+      // server-side. But a network drop after a successful write, followed by an
+      // identical retry, must read as SUCCESS, not permission-denied. So:
+      //   create → if it fails, re-read; if what's there is byte-identical, treat
+      //   as success (our write landed); otherwise surface the error.
+      var ref = blobDoc(handle, hash);
+      var payload = { b: bytesToB64(blobBytes) };
+      try {
+        await fb.setDoc(ref, payload);
+        return { created: true };
+      } catch (err) {
+        var snap;
+        try { snap = await fb.getDoc(ref); } catch (e2) { throw err; }
+        if (snap && snap.exists() && snap.data() && snap.data().b === payload.b) {
+          return { created: false, idempotent: true };   // our identical bytes are there
+        }
+        throw err;                                        // real conflict / real error
+      }
     }
 
     async function get(handle, hash) {
@@ -108,7 +134,10 @@ var GeosonifyStarpinStorage = (function () {
       var snap = await fb.getDoc(blobDoc(handle, hash));
       if (!snap.exists()) return null;
       var data = snap.data();
-      return data && typeof data.b === 'string' ? b64ToBytes(data.b) : null;
+      if (!data || typeof data.b !== 'string') return null;
+      var bytes = b64ToBytes(data.b);
+      await verifyHash(handle, hash, bytes);              // review pt 10
+      return bytes;
     }
 
     // Bounded listing WITHIN a known handle. Always sends a limit — the rules
@@ -124,10 +153,17 @@ var GeosonifyStarpinStorage = (function () {
         : fb.query(blobsCol(handle), fb.orderBy(fb.documentId()), fb.limit(lim));
       var qs = await fb.getDocs(q);
       var items = [];
+      var pending = [];
       qs.forEach(function (d) {
         var v = d.data();
-        if (v && typeof v.b === 'string') items.push({ hash: d.id, blob: b64ToBytes(v.b) });
+        if (v && typeof v.b === 'string') pending.push({ hash: d.id, b: v.b });
       });
+      for (var i = 0; i < pending.length; i++) {
+        var bytes = b64ToBytes(pending[i].b);
+        try { await verifyHash(handle, pending[i].hash, bytes); }
+        catch (e) { continue; }                 // drop a blob filed under a wrong id
+        items.push({ hash: pending[i].hash, blob: bytes });
+      }
       var nextCursor = items.length === lim ? items[items.length - 1].hash : null;
       return { items: items, cursor: nextCursor };
     }
@@ -140,17 +176,36 @@ var GeosonifyStarpinStorage = (function () {
   // In-memory implementation — for tests and for the single-device / passed-file
   // flow (seal to memory, open it back) with no network at all.
   // ==========================================================================
-  function memory() {
+  function memory(opts) {
+    opts = opts || {};
+    var sha256 = opts.sha256 || null;
     var store = {};  // handle -> { hash -> Uint8Array }
+    async function verify(hash, bytes) {
+      if (!sha256) return;
+      var d = await sha256(bytes);
+      var hex = ''; for (var i = 0; i < d.length; i++) { var h = d[i].toString(16); hex += (h.length === 1 ? '0' : '') + h; }
+      if (hex !== hash) throw new Error('storage(memory): blob hash mismatch — rejected');
+    }
+    function sameBytes(a, b) { if (a.length !== b.length) return false; for (var i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
     async function put(handle, hash, blobBytes) {
       assertHandle(handle); assertHash(hash);
       if (blobBytes.length > MAX_BLOB_BYTES) throw new Error('storage.put: blob too large');
       if (!store[handle]) store[handle] = {};
-      if (!(hash in store[handle])) store[handle][hash] = blobBytes.slice(); // immutable-ish
+      if (hash in store[handle]) {
+        // model Firestore create-only: identical bytes = idempotent success;
+        // different bytes at the same id = rejected (the immutability guarantee).
+        if (sameBytes(store[handle][hash], blobBytes)) return { created: false, idempotent: true };
+        throw new Error('storage(memory): create-only — differing bytes at existing id rejected');
+      }
+      store[handle][hash] = blobBytes.slice();
+      return { created: true };
     }
     async function get(handle, hash) {
       assertHandle(handle); assertHash(hash);
-      return (store[handle] && store[handle][hash]) ? store[handle][hash].slice() : null;
+      if (!(store[handle] && store[handle][hash])) return null;
+      var bytes = store[handle][hash].slice();
+      await verify(hash, bytes);
+      return bytes;
     }
     async function list(handle, opts) {
       assertHandle(handle);

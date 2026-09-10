@@ -132,6 +132,29 @@ var GeosonifyStarpinSharing = (function () {
     function listGroups() { return readJSON(storage, GROUPS_STORE, {}); }
     function getGroup(groupUuid) { return listGroups()[groupUuid] || null; }
 
+    // keyring: an (epoch -> group_key_b64) map preserving historical keys, so a
+    // restore or rotation never loses the ability to decrypt older material.
+    // Backward-compatible: a group always keeps its flat current group_key_b64 too.
+    function withKeyring(g) {
+      var out = {}; for (var k in g) out[k] = g[k];
+      out.keys = out.keys || {};
+      if (g.group_key_b64 && g.epoch != null) out.keys[String(g.epoch)] = g.group_key_b64;
+      return out;
+    }
+    function mergeKeyrings(a, b) {
+      var out = withKeyring(a);
+      var bk = withKeyring(b).keys;
+      for (var e in bk) if (!out.keys[e]) out.keys[e] = bk[e];
+      return out;
+    }
+    // resolve the key for a specific epoch (for decrypting historical material)
+    function keyForEpoch(groupUuid, epoch) {
+      var g = getGroup(groupUuid); if (!g) return null;
+      if (g.keys && g.keys[String(epoch)]) return g.keys[String(epoch)];
+      if (String(g.epoch) === String(epoch)) return g.group_key_b64;
+      return null;
+    }
+
     // Join / create a group: derive the group_key ONCE (Argon2) and cache it.
     // groupUuid is 16 bytes (b64url in storage); code is the bearer secret; epoch
     // starts at 1. For the beta, "create" and "join" are the same operation — you
@@ -142,23 +165,46 @@ var GeosonifyStarpinSharing = (function () {
       var gk = await G.groupKey(opts.code, groupUuidBytes, epoch);   // Argon2 — once
       var groups = listGroups();
       var uuidKey = b64url(groupUuidBytes);
+      var existing = groups[uuidKey] || {};
+      var keyring = (existing.keys) ? existing.keys : {};
+      keyring[String(epoch)] = b64url(gk);       // preserve/accumulate this epoch's key
       groups[uuidKey] = {
         epoch: epoch,
-        endpoint: opts.endpoint || null,
-        label: opts.label || '',
-        group_key_b64: b64url(gk)          // cached; code itself is NOT stored
+        endpoint: opts.endpoint || existing.endpoint || null,
+        label: opts.label || existing.label || '',
+        group_key_b64: b64url(gk),         // current-epoch key (flat, backward-compatible)
+        keys: keyring,                     // (epoch -> key) keyring, historical-preserving
+        // stable per-group identity. Generated once and then PRESERVED across
+        // re-joins on this device, so this device always contributes as the same
+        // member. member_id is per-group (never global) to keep the no-cross-group
+        // -correlator invariant. Both travel in the portable bundle so a second
+        // device can adopt the SAME identity (see snapshotIdentity/restoreIdentity).
+        member_id: opts.memberId || existing.member_id || b64url(rand(16)),
+        handle: (opts.handle != null ? opts.handle : (existing.handle || ''))
       };
       writeJSON(storage, GROUPS_STORE, groups);
-      return { groupUuid: uuidKey, epoch: epoch };
+      return { groupUuid: uuidKey, epoch: epoch, member_id: groups[uuidKey].member_id };
     }
 
     function createGroup(opts) {
-      // invent a fresh uuid; caller supplies/ää generates the code and shares it.
+      // invent a fresh uuid; caller supplies or generates the code and shares it.
       var uuid = rand(16);
       return joinGroup({
         groupUuidBytes: uuid, code: opts.code, epoch: 1,
-        endpoint: opts.endpoint, label: opts.label
-      }).then(function (r) { return { groupUuid: r.groupUuid, groupUuidBytes: uuid, epoch: 1 }; });
+        endpoint: opts.endpoint, label: opts.label, handle: opts.handle
+      }).then(function (r) { return { groupUuid: r.groupUuid, groupUuidBytes: uuid, epoch: 1, member_id: r.member_id }; });
+    }
+
+    // read/update this device's identity within a group
+    function getIdentity(groupUuid) {
+      var g = getGroup(groupUuid);
+      return g ? { member_id: g.member_id, handle: g.handle } : null;
+    }
+    function setHandle(groupUuid, handle) {
+      var groups = listGroups();
+      if (!groups[groupUuid]) throw new Error('sharing: unknown group ' + groupUuid);
+      groups[groupUuid].handle = handle || '';
+      writeJSON(storage, GROUPS_STORE, groups);
     }
 
     function groupKeyBytes(groupUuid) {
@@ -184,6 +230,65 @@ var GeosonifyStarpinSharing = (function () {
       return sharesOf(recordId).some(function (e) { return e.group_uuid === groupUuid && e.dir === 'out'; });
     }
 
+    // ---- private ownership ledger (content_hash -> {group_uuid, publication_id, record_id})
+    // Unforgeable "you": only my own device writes here, keyed by the content_hash
+    // it actually produced. Carried in the portable bundle so "you" survives a
+    // device move. Never derived from anything an attacker controls.
+    var OWNED_STORE = 'starpin.owned.v1';
+    function ownedIndex() { return readJSON(storage, OWNED_STORE, {}); }
+    function markOwned(contentHash, meta) {
+      var idx = ownedIndex();
+      if (!idx[contentHash]) { idx[contentHash] = meta; writeJSON(storage, OWNED_STORE, idx); }
+    }
+    function ownsContentHash(contentHash) { return !!ownedIndex()[contentHash]; }
+
+    // ---- publication ledger (review round 2, pt 1): the multi-device double-
+    // publish guard. Keyed "group_uuid|record_id" -> {publication_id, content_hash}.
+    // Synced through the personal channel, so a second device that has record R
+    // via self-sync learns R was ALREADY published to this group and won't publish
+    // a second (different-ciphertext) copy. This is the cross-device extension of
+    // shareRecord's local isSharedOut() idempotency.
+    var PUB_STORE = 'starpin.published.v1';
+    function pubIndex() { return readJSON(storage, PUB_STORE, {}); }
+    function pubKey(groupUuid, recordId) { return groupUuid + '|' + recordId; }
+    function markPublished(groupUuid, recordId, meta) {
+      var idx = pubIndex(); var k = pubKey(groupUuid, recordId);
+      if (!idx[k]) { idx[k] = meta; writeJSON(storage, PUB_STORE, idx); }
+    }
+    function isPublished(groupUuid, recordId) { return !!pubIndex()[pubKey(groupUuid, recordId)]; }
+
+    // ---- group cache (data-safety invariant): a SEPARATE, non-authoritative
+    // store for records that arrived from OTHER people's group-shares. Kept apart
+    // from the personal log so bearer-code group data can never inject into or
+    // delete from your authoritative history. Keyed "group_uuid|record_id".
+    // Append-only here too: a differing-bytes collision quarantines, never
+    // overwrites.
+    var GROUPCACHE_STORE = 'starpin.groupcache.v1';
+    function groupCache() { return readJSON(storage, GROUPCACHE_STORE, {}); }
+    function cacheGroupRecord(groupUuid, rec) {
+      if (!rec || !rec.record_id) return;
+      var idx = groupCache(); var k = groupUuid + '|' + rec.record_id;
+      var incoming = canonical(rec);
+      if (idx[k]) {
+        if (idx[k].c !== incoming) {
+          // same record_id, different bytes from the group: quarantine, don't clobber
+          idx[k].conflicts = idx[k].conflicts || [];
+          idx[k].conflicts.push(incoming);
+          writeJSON(storage, GROUPCACHE_STORE, idx);
+        }
+        return;
+      }
+      idx[k] = { rec: rec, c: incoming };
+      writeJSON(storage, GROUPCACHE_STORE, idx);
+    }
+    function groupRecordsAt(groupUuid) {
+      var idx = groupCache(), out = [];
+      Object.keys(idx).forEach(function (k) {
+        if (k.indexOf(groupUuid + '|') === 0) out.push(idx[k].rec);
+      });
+      return out;
+    }
+
     // ---- AAD (must match the sealing module's fixed field order) ----------
     function aadFor(groupUuid, handle) {
       return {
@@ -205,8 +310,11 @@ var GeosonifyStarpinSharing = (function () {
       if (!g) throw new Error('sharing: unknown group ' + groupUuid);
 
       // idempotent: already shared this exact record to this group? no-op.
-      if (isSharedOut(record.record_id, groupUuid)) {
-        return { skipped: true, reason: 'already shared to this group' };
+      // Checks BOTH the local out-marker AND the synced publication ledger, so a
+      // second device that learned of the publication via personal sync won't
+      // double-publish (review round 2, pt 1).
+      if (isSharedOut(record.record_id, groupUuid) || isPublished(groupUuid, record.record_id)) {
+        return { skipped: true, reason: 'already published to this group' };
       }
 
       var gk = groupKeyBytes(groupUuid);
@@ -218,8 +326,9 @@ var GeosonifyStarpinSharing = (function () {
         publication_id: b64url(rand(16)),      // random; NOT the record_id
         record: record,                        // full immutable record (incl. record_id)
         member: {
-          member_id: opts.memberId || 'local', // self-asserted in bearer-code group-v1
-          handle: opts.handle || 'me'
+          // default to this device's stable per-group identity; opts can override
+          member_id: opts.memberId || g.member_id || 'local',
+          handle: opts.handle || g.handle || 'me'
         }
       };
       if (typeof opts.comment === 'string' && opts.comment.length) wrapper.comment = opts.comment;
@@ -233,8 +342,16 @@ var GeosonifyStarpinSharing = (function () {
       recordSharedTo(record.record_id, {
         group_uuid: groupUuid, epoch: g.epoch,
         content_hash: sealed.content_hash, publication_id: wrapper.publication_id,
+        member_id: wrapper.member.member_id,
+        handle: wrapper.member.handle, comment: wrapper.comment || null,
         dir: 'out'
       });
+      // PRIVATE OWNERSHIP LEDGER (review pt 4): record that THIS device produced
+      // this exact ciphertext. "You" is decided from this, never from member_id
+      // equality — a bearer-code holder can copy your member_id into their own
+      // wrapper, but cannot produce different ciphertext under your content_hash.
+      markOwned(sealed.content_hash, { group_uuid: groupUuid, publication_id: wrapper.publication_id, record_id: record.record_id });
+      markPublished(groupUuid, record.record_id, { publication_id: wrapper.publication_id, content_hash: sealed.content_hash });
       return { skipped: false, handle: handle, content_hash: sealed.content_hash,
                publication_id: wrapper.publication_id };
     }
@@ -271,14 +388,19 @@ var GeosonifyStarpinSharing = (function () {
           try { wrapper = JSON.parse(td.decode(plaintext)); } catch (e) { continue; }
           if (!wrapper || wrapper.schema !== SHARE_SCHEMA || !wrapper.record) continue;
 
-          // merge the record into the log (set-union by record_id) unless it's
-          // our own coming back. dir:'in' so the UI can distinguish.
-          if (log && typeof log.merge === 'function') {
-            log.merge(JSON.stringify({ schema: 'starpin.export/1', records: [wrapper.record] }));
-          }
+          // DATA-SAFETY INVARIANT: another person's decrypted group-share must
+          // NEVER enter your authoritative personal record store. It goes into a
+          // separate, non-authoritative group cache/view. An unauthenticated
+          // bearer-code group must not be a route to inject records/tombstones
+          // into your personal source of truth.
+          cacheGroupRecord(groupUuid, wrapper.record);
           recordSharedTo(wrapper.record.record_id, {
             group_uuid: groupUuid, epoch: g.epoch,
-            content_hash: item.hash, publication_id: wrapper.publication_id, dir: 'in'
+            content_hash: item.hash, publication_id: wrapper.publication_id,
+            member_id: (wrapper.member && wrapper.member.member_id) || null,
+            handle: (wrapper.member && wrapper.member.handle) || null,
+            comment: wrapper.comment || null,
+            dir: 'in'
           });
           fresh.push({ wrapper: wrapper, content_hash: item.hash });
         }
@@ -311,15 +433,145 @@ var GeosonifyStarpinSharing = (function () {
       return res;
     }
 
+    // ---- portability: snapshot / restore this device's identity -----------
+    // snapshotIdentity() returns the PLAINTEXT bundle: every group membership
+    // (incl. the cached group_key and this device's per-group member_id + handle)
+    // and optionally the record log. It is highly sensitive — the caller must
+    // encrypt it (see geosonify-starpin-portable.js) before it ever leaves the
+    // device. Schema is versioned so a future app can still read today's bundle.
+    function snapshotIdentity(opts) {
+      opts = opts || {};
+      var bundle = {
+        schema: 'starpin.portable/1',
+        created_ms: Date.now(),
+        groups: listGroups(),                 // {uuid -> {epoch,endpoint,label,group_key_b64,member_id,handle}}
+        sync: opts.includeSync ? syncIndex() : null,
+        owned: opts.includeOwned !== false ? ownedIndex() : null,
+        published: opts.includePublished !== false ? pubIndex() : null,
+        self: opts.includeSelf !== false ? readJSON(storage, 'starpin.self.v1', null) : null
+      };
+      if (opts.includeLog && log && typeof log.all === 'function') {
+        bundle.log = { schema: 'starpin.export/1', records: log.all() };
+      }
+      return bundle;
+    }
+
+    // restoreIdentity() merges a bundle into this device. mode:
+    //   'bundle-wins' (default) — bundle's membership/identity overwrites local
+    //                             (what you want when adopting an identity on a
+    //                              fresh device);
+    //   'keep-local'            — only add groups not already present.
+    // Records (if present) always merge via log.merge (set-union, no loss).
+    // restoreIdentity() merges a bundle into this device. Default is
+    // NON-DESTRUCTIVE / MONOTONIC (review pt 7): importing an OLD vault must never
+    // silently downgrade newer local state or detach a working device.
+    //   'safe' (default) — union groups; for a group already present, keep the
+    //                      HIGHER epoch and never overwrite a newer key; adopt the
+    //                      self-key only if none exists locally; conflicts are
+    //                      reported, not resolved by clobbering.
+    //   'overwrite'      — explicit destructive restore (bundle wins). Only for a
+    //                      genuinely fresh device or a deliberate reset.
+    // Records always merge via log.merge (set-union, lossless) regardless of mode.
+    function restoreIdentity(bundle, opts) {
+      opts = opts || {};
+      var mode = opts.mode || 'safe';
+      if (!bundle || bundle.schema !== 'starpin.portable/1')
+        throw new Error('sharing.restoreIdentity: not a starpin.portable/1 bundle');
+
+      var report = { groupsAdded: 0, groupsKept: 0, conflicts: [], records: 0, self: 'unchanged' };
+      var local = listGroups();
+      var incoming = bundle.groups || {};
+
+      Object.keys(incoming).forEach(function (uuid) {
+        var inc = incoming[uuid], cur = local[uuid];
+        if (!cur) { local[uuid] = withKeyring(inc); report.groupsAdded++; return; }
+        if (mode === 'overwrite') { local[uuid] = mergeKeyrings(withKeyring(inc), cur); report.groupsAdded++; return; }
+        // safe mode: monotonic CURRENT epoch, but PRESERVE historical keys as a
+        // keyring (review round 2, pt 2) — an old vault's epoch-3 key may be the
+        // only thing that can decrypt historical epoch-3 material.
+        var incEpoch = inc.epoch || 1, curEpoch = cur.epoch || 1;
+        var merged = mergeKeyrings(cur, inc);           // union all (epoch->key) we've ever seen
+        // conflict: same epoch, different key
+        var ek = String(incEpoch);
+        if (cur.keys && cur.keys[ek] && inc.group_key_b64 && cur.keys[ek] !== inc.group_key_b64)
+          report.conflicts.push({ group_uuid: uuid, epoch: incEpoch, kind: 'key-differs-same-epoch' });
+        if (inc.member_id && cur.member_id && inc.member_id !== cur.member_id)
+          report.conflicts.push({ group_uuid: uuid, kind: 'member-id-differs' });
+        // current epoch never downgrades
+        if (incEpoch > curEpoch) {
+          merged.epoch = incEpoch; merged.group_key_b64 = inc.group_key_b64;
+          merged.endpoint = inc.endpoint || merged.endpoint; report.groupsAdded++;
+        } else { report.groupsKept++; }
+        if (!merged.handle && inc.handle) merged.handle = inc.handle;
+        local[uuid] = merged;
+      });
+      writeJSON(storage, GROUPS_STORE, local);
+
+      if (bundle.published) {
+        var pidx = pubIndex();
+        Object.keys(bundle.published).forEach(function (k) { if (!pidx[k]) pidx[k] = bundle.published[k]; });
+        writeJSON(storage, PUB_STORE, pidx);
+      }
+
+      if (bundle.sync) {
+        var idx = syncIndex();
+        Object.keys(bundle.sync).forEach(function (rid) {
+          var have = idx[rid] || [];
+          bundle.sync[rid].forEach(function (e) {
+            var dup = have.some(function (x) {
+              return x.group_uuid === e.group_uuid && x.dir === e.dir &&
+                     (x.content_hash === e.content_hash || x.publication_id === e.publication_id);
+            });
+            if (!dup) have.push(e);
+          });
+          idx[rid] = have;
+        });
+        writeJSON(storage, SYNC_STORE, idx);
+      }
+
+      if (bundle.log && log && typeof log.merge === 'function') {
+        log.merge(JSON.stringify(bundle.log));
+        report.records = (bundle.log.records || []).length;
+      }
+
+      if (bundle.owned) {
+        var oidx = ownedIndex();
+        Object.keys(bundle.owned).forEach(function (h) { if (!oidx[h]) oidx[h] = bundle.owned[h]; });
+        writeJSON(storage, OWNED_STORE, oidx);
+      }
+
+      if (bundle.self && bundle.self.self_key_b64) {
+        var localSelf = readJSON(storage, 'starpin.self.v1', null);
+        if (!localSelf || !localSelf.self_key_b64) {
+          writeJSON(storage, 'starpin.self.v1', { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
+          report.self = 'adopted';
+        } else if (localSelf.self_key_b64 === bundle.self.self_key_b64) {
+          report.self = 'same';
+        } else if (mode === 'overwrite') {
+          writeJSON(storage, 'starpin.self.v1', { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
+          report.self = 'replaced';
+        } else {
+          // safe mode: DO NOT detach a working device from its live channel.
+          report.self = 'conflict-kept-local';
+          report.conflicts.push({ kind: 'self-key-differs' });
+        }
+      }
+      return report;
+    }
+
     return {
       // groups
       createGroup: createGroup, joinGroup: joinGroup,
       listGroups: listGroups, getGroup: getGroup,
+      getIdentity: getIdentity, setHandle: setHandle,
       // sharing
       shareRecord: shareRecord,
       syncTarget: syncTarget, syncTargetAllGroups: syncTargetAllGroups,
+      // portability
+      snapshotIdentity: snapshotIdentity, restoreIdentity: restoreIdentity,
       // introspection for UI ("shared to: …")
-      sharesOf: sharesOf,
+      sharesOf: sharesOf, ownsContentHash: ownsContentHash,
+      keyForEpoch: keyForEpoch, isPublished: isPublished, groupRecordsAt: groupRecordsAt,
       // exposed for tests / advanced callers
       canonicalTarget: canonicalTarget, canonical: canonical
     };

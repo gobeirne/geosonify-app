@@ -47,6 +47,7 @@ var GeosonifyStarpinGroup = (function () {
   // regenerate vectors. Nothing else here is a knob.
   // ==========================================================================
   var PROFILE = {
+    frozen: false,                                         // FUSE — see seal()
     argon2: { t: 2, m: 512 /* KiB */, p: 1, dkLen: 32 },   // PLACEHOLDER COST
     paddingClasses: [64, 128, 256, 512, 1024]              // PLACEHOLDER CLASSES
   };
@@ -107,6 +108,12 @@ var GeosonifyStarpinGroup = (function () {
   // ==========================================================================
   function create(primitives) {
     primitives = primitives || {};
+    // FUSE (review addendum): under a placeholder (unfrozen) PROFILE, seal() must
+    // refuse by default, so a UI click can never mint the first PERMANENT blob
+    // under throwaway Argon2/padding params. Tests and provisional callers opt in
+    // explicitly with { allowProvisional: true }. When the real params + JCS +
+    // vectors are frozen, set PROFILE.frozen = true and this fuse opens itself.
+    var allowProvisional = primitives.allowProvisional === true;
     var argon2idFn = primitives.argon2id;
     var xchachaFn  = primitives.xchacha20poly1305;
 
@@ -199,6 +206,11 @@ var GeosonifyStarpinGroup = (function () {
     // blob = concat(recordSalt32, nonce24, ciphertext+tag)
     // content_hash = SHA-256(blob) hex. Retry = identical bytes, NOT re-encrypt.
     async function seal(gk, aadFields, recordSalt32, nonce24, plaintextBytes) {
+      if (!PROFILE.frozen && !allowProvisional)
+        throw new Error('group-v1: refusing to seal under a placeholder PROFILE ' +
+          '(frozen=false). Pass { allowProvisional:true } for tests/dev, or freeze ' +
+          'the PROFILE before any real upload. This fuse prevents a permanent blob ' +
+          'under throwaway Argon2/padding params.');
       var rk = await recordKey(gk, recordSalt32);
       var aad = canonicalAAD(aadFields);
       var padded = pad(plaintextBytes);

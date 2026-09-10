@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starpin groups — wiring demo</title>
+<!--
+  ⚠️ UNTESTED IN A BROWSER. A concrete reference for how the seven group modules
+  wire together, against the LIVE geosonify-starpin Firebase backend. The logic
+  underneath is Node-tested; this page is the assembly, which needs a real
+  browser to exercise.
+
+  It pulls the two crypto primitives the browser lacks (Argon2id, XChaCha20) from
+  the @noble ESM CDN, and uses native WebCrypto (via the sealing module's default)
+  for HKDF + SHA-256. Everything else is your own modules as classic scripts.
+
+  RUN (once off the plane):
+    1. geosonify-starpin-firebase.js must have your config filled in.
+    2. firestore.rules deployed.
+    3. Serve over http (not file://):  python3 -m http.server 8000
+       open http://localhost:8000/starpin-groups-demo.html
+    4. Make a group, copy the link, open it in a second browser/profile, join,
+       and share a fake visit. Then "Who's been here" should show it.
+
+  This is SCRATCH scaffolding, not the real app screen — the real integration is
+  into starpin-demo.html / index.html's inline URL parser (see note at bottom).
+-->
+<link rel="stylesheet" href="./geosonify-starpin-groups.css">
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 640px; margin: 1.5rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.15rem; }
+  .demo-block { border: 1px solid #ddd; border-radius: 10px; padding: 1rem; margin: 1rem 0; }
+  #status { font: 13px monospace; color: #555; }
+</style>
+</head>
+<body>
+<h1>Starpin groups — wiring demo</h1>
+<p id="status">loading…</p>
+
+<div class="demo-block">
+  <div id="groups-panel"></div>
+</div>
+
+<div class="demo-block">
+  <h3>“Who’s been here” (test target)</h3>
+  <p class="sp-muted">Simulates the block that would sit on a starpin/cornerstone screen.
+     Pick a group and it syncs + shows this group’s visits to a fixed demo target.</p>
+  <select id="group-select"></select>
+  <button id="log-fake" class="sp-btn">Log &amp; share a fake visit here</button>
+  <div id="here-block"></div>
+</div>
+
+<!-- your modules, classic scripts (globals), load order matters -->
+<script src="./geosonify-starpin-group.js"></script>
+<script src="./geosonify-starpin-storage.js"></script>
+<script src="./geosonify-starpin-sharing.js"></script>
+<script src="./geosonify-starpin-invite.js"></script>
+<script src="./geosonify-starpin-groups.js"></script>
+<script src="./geosonify-starpin-groups-ui.js"></script>
+
+<script type="module">
+import { argon2id } from 'https://esm.sh/@noble/hashes@1.8.0/argon2';
+import { xchacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.3.0/chacha';
+import { initStarpinFirebase } from './geosonify-starpin-firebase.js';
+
+const status = (m) => { document.getElementById('status').textContent = m; };
+
+// a throwaway in-memory record log with the methods the controller needs.
+// (The real app passes GeosonifyStarpinLog here instead.)
+function demoLog() {
+  const byId = {};
+  return {
+    merge: (j) => { const p = JSON.parse(j); (p.records||[]).forEach(r => byId[r.record_id]=r); },
+    add:   (r) => { byId[r.record_id] = r; },
+    get:   (id) => byId[id] || null, has: (id) => id in byId,
+    all:   () => Object.values(byId), current: () => Object.values(byId)
+  };
+}
+
+const DEMO_TARGET = { starpin: 'starpin:gdr3:5382128182680588160', lat_1e7: -435264111, lon_1e7: 1725909921 };
+
+(async function () {
+  try {
+    status('connecting to geosonify-starpin…');
+    const { store } = await initStarpinFirebase();     // live Firestore adapter
+
+    // build the sealing module with the injected primitives:
+    const group = GeosonifyStarpinGroup.create({
+      argon2id: (pw, salt, o) => argon2id(pw, salt, { t:o.t, m:o.m, p:o.p, dkLen:o.dkLen }),
+      xchacha20poly1305: (k, n) => {
+        return { encrypt:(pt,aad)=>xchacha20poly1305(k,n,aad).encrypt(pt),
+                 decrypt:(ct,aad)=>xchacha20poly1305(k,n,aad).decrypt(ct) };
+      }
+      // hkdfSha256 + sha256 omitted → native WebCrypto used
+    });
+
+    const log = demoLog();
+    const sharing = GeosonifyStarpinSharing.create({ group, store, log, localStorage });
+    const ctrl = GeosonifyStarpinGroups.create({
+      sharing, invite: GeosonifyStarpinInvite, log,
+      baseUrl: 'https://geosonify.org/starpin-demo.html'
+    });
+
+    const ui = GeosonifyStarpinGroupsUI.create({
+      controller: ctrl,
+      onChange: refreshGroupSelect,
+      toast: status
+    });
+    ui.mountPanel(document.getElementById('groups-panel'));
+    ui.maybePromptJoinFromURL();     // if this page was opened from an invite link
+
+    function refreshGroupSelect() {
+      const sel = document.getElementById('group-select');
+      sel.textContent = '';
+      ctrl.myGroups().forEach(g => {
+        const o = document.createElement('option');
+        o.value = g.groupUuid; o.textContent = g.label || '(unnamed)';
+        sel.appendChild(o);
+      });
+    }
+    refreshGroupSelect();
+
+    document.getElementById('log-fake').addEventListener('click', async () => {
+      const gid = document.getElementById('group-select').value;
+      if (!gid) { status('make or join a group first'); return; }
+      const rec = { schema:'starpin.record/1',
+        record_id: crypto.randomUUID(), kind:'visit',
+        target: DEMO_TARGET, event: { time_ms: Date.now() } };
+      log.add(rec);
+      await ctrl.share(gid, rec, { handle: 'demo-' + Math.floor(Math.random()*90+10), comment: 'test visit' });
+      ui.renderOnTarget(document.getElementById('here-block'), gid, DEMO_TARGET);
+    });
+
+    document.getElementById('group-select').addEventListener('change', (e) => {
+      if (e.target.value) ui.renderOnTarget(document.getElementById('here-block'), e.target.value, DEMO_TARGET);
+    });
+
+    status('ready. Make a group, copy its link, open it in another browser to join.');
+  } catch (e) {
+    status('error: ' + (e.code ? e.code + ' — ' : '') + e.message);
+  }
+})();
+</script>
+
+<!--
+  REAL INTEGRATION (later, not here): the join-link is an ADDITIVE param
+  (spgroup) in the app's frozen URL grammar. It must be parsed where all URL
+  parsing lives — the inline script in index.html, NOT main.js (whose parseURL
+  is a stub). maybePromptJoinFromURL() shows the intended behaviour; the actual
+  hook belongs in that inline parser, adding 'spgroup' alongside the existing
+  params without repurposing any of them.
+-->
+</body>
+</html>
