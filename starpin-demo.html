@@ -427,32 +427,6 @@ dl{margin:.7rem 0 0}
      tier 12 &mdash; a real find on a walk. Lower the tier to hunt rarer
      crossings further afield; raise it and commonplace vertices appear too.</p>
   <p class="hint" id="readout-src"></p>
-
-  <!-- ── best finds within N km ──────────────────────────────────────────
-       Arriving somewhere new: what rare lattice vertices are close, and what
-       might be worth a bus ride? Cornerstones are pure geometry, so this works
-       offline at any radius; stars are whatever the live lookup has loaded near
-       the map, plus anything already in your log. -->
-  <div id="nearby" class="nearby">
-    <h3 class="nearby-h">Best finds within
-      <input id="nearby-km" type="number" min="0.5" max="25" step="0.5" value="5"
-             inputmode="decimal" aria-label="radius in kilometres"> km of here</h3>
-    <div class="btnrow">
-      <button id="nearby-go" type="button">Show best finds</button>
-    </div>
-    <label class="nearby-toggle" for="nearby-hide">
-      <input id="nearby-hide" type="checkbox" checked>
-      <span>Hide finds I already have</span></label>
-    <p class="hint" id="nearby-note" style="margin-top:.4rem">
-      Cornerstones are exact everywhere. As you widen the search the rarity bar
-      rises on its own — a tier-12 vertex is worth a short walk, but only rarer
-      crossings justify a longer trip. Stars are ranked by tier (bright, rare
-      ones first — the same scale the log uses), not by tiny magnitude
-      differences. The star pool is the live lookup around the map plus your own
-      logged finds, so a wide star search is not exhaustive.</p>
-    <div id="nearby-list"></div>
-  </div>
-
   <style>
     /* The moment. Unhurried on purpose: nothing flashes, nothing bounces,
        nothing shouts that you have won. The countdown fades as the words
@@ -539,40 +513,6 @@ dl{margin:.7rem 0 0}
     .visitline.culm .vl-label{color:#9a7b12;font-weight:700}
     .visitline.culm{color:#7a6410}
     .chip.culm{background:#DCC949;color:#241f05;font-weight:700;letter-spacing:.02em}
-
-    /* best finds nearby */
-    .nearby{margin-top:1rem;padding-top:.9rem;border-top:1px solid var(--line)}
-    .nearby-h{font-size:1rem;margin:0 0 .55rem;display:flex;align-items:center;
-      gap:.4rem;flex-wrap:wrap}
-    .nearby-h input{width:4.2rem;padding:.28rem .45rem;border-radius:9px;
-      border:1px solid var(--line);background:var(--card);color:var(--ink);
-      font:600 1rem/1 inherit;font-variant-numeric:tabular-nums;text-align:right}
-    #nearby-list{margin-top:.7rem;display:flex;flex-direction:column;gap:.4rem}
-    .nf-group{font:600 .68rem/1 inherit;letter-spacing:.12em;text-transform:uppercase;
-      color:var(--ink-2);margin:.5rem 0 .1rem}
-    .nf{display:grid;grid-template-columns:auto 1fr auto;gap:.55rem;align-items:center;
-      padding:.55rem .7rem;border-radius:13px;background:var(--card-2);
-      border:1px solid var(--line);cursor:pointer;text-align:left;width:100%;
-      font:inherit;color:inherit}
-    .nf:hover{border-color:var(--moss)}
-    .nf-dot{width:.85rem;height:.85rem;border-radius:50%;background:var(--moss);
-      box-shadow:0 0 0 1px rgba(0,0,0,.08) inset}
-    .nf.star .nf-dot{background:var(--sun)}
-    .nf-body{min-width:0}
-    .nf-name{font:600 .82rem/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;
-      overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .nf-sub{font-size:.72rem;color:var(--ink-2);margin-top:.1rem}
-    .nf-right{text-align:right;white-space:nowrap}
-    .nf-dist{font:600 .82rem/1.2 inherit;font-variant-numeric:tabular-nums}
-    .nf-tier{font-size:.68rem;color:var(--ink-2);margin-top:.1rem}
-    .nf.have{opacity:.62}
-    .nf.have .nf-name::after{content:" \2713";color:var(--moss)}
-    .nf.exceptional{border-color:var(--sun);
-      box-shadow:0 0 0 1px var(--sun) inset,0 2px 14px rgba(220,201,73,.18)}
-    .nearby-busy{font-size:.8rem;color:var(--ink-2);padding:.4rem 0}
-    .nearby-toggle{display:flex;align-items:center;gap:.5rem;margin-top:.6rem;
-      font-size:.82rem;color:var(--ink-2);cursor:pointer;user-select:none}
-    .nearby-toggle input{width:1.05rem;height:1.05rem;accent-color:var(--moss);cursor:pointer}
   </style>
 </section>
 
@@ -655,9 +595,9 @@ dl{margin:.7rem 0 0}
 <script src="js/lib/geosonify-starpin.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-feedback.js?v=20260902a"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20260810"></script>
-<script src="js/lib/geosonify-starpin-readout.js?v=20260902a"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20260810"></script>
 <script>
 (function () {
@@ -728,6 +668,11 @@ dl{margin:.7rem 0 0}
 
   var activeTab = 'corner', heading = null, nearestStar = null, lastStarFix = null;
   var lastTargets = [], headingRaf = 0;
+  // The current drive-by target ({lat, lon, radiusM}) whose countdown row is on
+  // screen, or null. Set when paintTabBody draws the row; read by a 1 Hz ticker
+  // that updates JUST that row's text between GPS fixes, so the seconds tick
+  // down smoothly instead of freezing until the next watchPosition callback.
+  var driveByTick = null;
 
   // Recomputed from scratch every paint. Nothing is remembered between calls,
   // so the answer cannot lag behind your feet.
@@ -827,6 +772,7 @@ dl{margin:.7rem 0 0}
 
   function paintTabBody() {
     var b = $('tab-body'); b.textContent = '';
+    driveByTick = null;   // repaint rebuilds the row; the ticker re-finds it by id
     if (!fix) { b.appendChild(el('p', 'hint', 'Use my location first.')); return; }
 
     if (activeTab === 'star') {
@@ -845,6 +791,13 @@ dl{margin:.7rem 0 0}
       detailRow(dl, 'distance', sp.distLy == null ? 'unknown parallax'
         : Number(sp.distLy).toLocaleString() + ' light years');
       detailRow(dl, 'direction', walk(nearestStar.distanceM, bs));
+      var caS = closestApproach(sp.lat, sp.lon);
+      if (caS) {
+        var ddS = detailRow(dl, 'drive-by', driveByLine(caS, vr.radiusM),
+          caS.distanceM <= vr.radiusM ? 'ok' : null);
+        ddS.id = 'driveby-row';
+        driveByTick = { lat: sp.lat, lon: sp.lon, radiusM: vr.radiusM };
+      }
       detailRow(dl, 'visit', verdictText(vr.verdict),
         vr.verdict === 'well-supported' ? 'ok' : vr.verdict === 'not-supported' ? 'bad' : null);
       b.appendChild(dl);
@@ -869,22 +822,23 @@ dl{margin:.7rem 0 0}
       if (!lastCs) { b.appendChild(el('p', 'hint', 'Looking for the nearest vertex\u2026')); return; }
       var bc = bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon);
       var vc2 = S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon });
-      var t = F.tierOf(lastCs.tierOrder, lastCs.degree,
-                       lastCs.crossOrder, lastCs.intrinsicOrder);
-      var rr = F.rarityOrder(lastCs.crossOrder, lastCs.intrinsicOrder);
+      var t = F.tierOf(lastCs.tierOrder, lastCs.degree);
       var dl2 = el('dl');
       detailRow(dl2, 'name', lastCs.name);
       detailRow(dl2, 'lines', 'order ' + lastCs.crossOrder + ' \u00D7 order ' + lastCs.intrinsicOrder);
-      // Tier is population rarity now; the line orders above carry the geometry.
-      detailRow(dl2, 'tier', rr.toFixed(1) + ' \u00B7 ' + t.key);
-      // Cross-aware, matching the claim card and the celebration: a rare line
-      // crossing a common one is scarcer than its intrinsic order alone implies.
-      detailRow(dl2, 'others within 50 km',
-        F.crossCount(lastCs.crossOrder, lastCs.intrinsicOrder, 50).toLocaleString() +
-        '  (one every ' + (function (m) {
-          return m < 1000 ? Math.round(m) + ' m' : (m / 1000).toFixed(1) + ' km';
-        })(F.crossSpacingM(lastCs.crossOrder, lastCs.intrinsicOrder)) + ')');
+      detailRow(dl2, 'tier', lastCs.tierOrder.toFixed(1) + ' \u00B7 ' + t.key);
+      detailRow(dl2, 'others within 50 km', F.nearbyCount(lastCs.intrinsicOrder, 50).toLocaleString() +
+        '  (one every ' + (F.spacingM(lastCs.intrinsicOrder) < 1000
+          ? Math.round(F.spacingM(lastCs.intrinsicOrder)) + ' m'
+          : (F.spacingM(lastCs.intrinsicOrder) / 1000).toFixed(1) + ' km') + ')');
       detailRow(dl2, 'direction', walk(vc2.distanceM, bc));
+      var caC = closestApproach(lastCs.lat, lastCs.lon);
+      if (caC) {
+        var ddC = detailRow(dl2, 'drive-by', driveByLine(caC, vc2.radiusM),
+          caC.distanceM <= vc2.radiusM ? 'ok' : null);
+        ddC.id = 'driveby-row';
+        driveByTick = { lat: lastCs.lat, lon: lastCs.lon, radiusM: vc2.radiusM };
+      }
       var pips = detailRow(dl2, 'corners of this cell', '\u2014', 'pips');
       detailRow(dl2, 'visit', verdictText(vc2.verdict),
         vc2.verdict === 'well-supported' ? 'ok' : vc2.verdict === 'not-supported' ? 'bad' : null);
@@ -1024,255 +978,6 @@ dl{margin:.7rem 0 0}
     map.setHighlight(lastCs.name);
     paintTargets();
   }
-
-  // ── best finds within N km ────────────────────────────────────────────────
-  //
-  // Two very different sources, kept honest about their differences:
-  //
-  //   CORNERSTONES are pure geometry — enumerable at any radius, no network. We
-  //   reuse the disc-walk of S.nearestBaggable: sample a disc, resolve each
-  //   sample to its nearest vertex, dedupe by name, keep those no more common
-  //   than a rarity floor. The floor RISES as the search widens (a tier-12
-  //   vertex is worth a short walk; only rarer crossings justify a bus ride),
-  //   and the probe order tracks the floor, which is also what keeps a wide
-  //   search fast — coarse lattices have far fewer points to find.
-  //
-  //   STARS need the remote catalogue. We can only rank what is already loaded
-  //   around the map plus what is in your log, so a wide star search is honestly
-  //   labelled non-exhaustive rather than pretending to be complete.
-
-  // Rarity floor + probe as a function of radius. Overridable by the caller.
-  function nearbyPlan(radiusM) {
-    var km = radiusM / 1000, maxTier;
-    if (km <= 2)       maxTier = 12;
-    else if (km <= 5)  maxTier = 11;
-    else if (km <= 10) maxTier = 10;
-    else if (km <= 18) maxTier = 9;
-    else               maxTier = 8.5;
-    return { maxTier: maxTier, probe: Math.min(14, Math.ceil(maxTier) + 1) };
-  }
-
-  function cornerstonesWithin(lat, lon, radiusM, opts) {
-    opts = opts || {};
-    var plan = nearbyPlan(radiusM);
-    var maxTier = opts.maxTier != null ? opts.maxTier : plan.maxTier;
-    var probe   = opts.probeOrder != null ? opts.probeOrder : plan.probe;
-    var cellM = Math.sqrt(Math.PI / 3) / Math.pow(2, probe) * 6371008.8;
-    var step  = cellM / 2.5;                 // finer than a cell, so no vertex is skipped
-    var D2R = Math.PI / 180, seen = {}, out = [];
-    for (var r = 0; r <= radiusM; r += step) {
-      var n = Math.max(1, Math.ceil(2 * Math.PI * r / step));
-      for (var i = 0; i < n; i++) {
-        var th = 2 * Math.PI * i / n;
-        var dLat = (r * Math.cos(th)) / 111320;
-        var dLon = (r * Math.sin(th)) / (111320 * Math.cos(lat * D2R));
-        var v;
-        try { v = S.nearestCornerstone(lat + dLat, lon + dLon, probe); }
-        catch (e) { continue; }
-        if (seen[v.name]) continue;
-        seen[v.name] = 1;
-        v.rarr = F.rarityOrder(v.crossOrder, v.intrinsicOrder);
-        if (v.rarr > maxTier) continue;      // population rarity floor, not (c+i)/2
-        var d = S.haversineM(lat, lon, v.lat, v.lon);
-        if (d > radiusM) continue;           // a vertex resolved from an edge sample may sit outside
-        v.distanceM = d;
-        out.push(v);
-      }
-    }
-    // Rarer first (lower rarityOrder = fewer on Earth), then nearer.
-    out.sort(function (a, b) {
-      return (a.rarr - b.rarr) || (a.distanceM - b.distanceM); });
-    return { plan: { maxTier: maxTier, probe: probe }, list: out };
-  }
-
-  // Stars within radius, from the loaded lookup AND the log, deduped by source.
-  function starpinsWithin(lat, lon, radiusM) {
-    var by = {}, out = [];
-    function add(st, bagged) {
-      if (st.lat == null || st.lon == null) return;
-      var d = S.haversineM(lat, lon, st.lat, st.lon);
-      if (d > radiusM) return;
-      var id = sourceIdOf(st.name);
-      var prev = by[id];
-      if (prev) { if (bagged) prev.bagged = true; return; }
-      var rec = { star: st, distanceM: d, bagged: !!bagged, id: id };
-      by[id] = rec; out.push(rec);
-    }
-    map.stars().forEach(function (st) { add(st, false); });
-    log.current().forEach(function (r) {
-      if (!r.target.starpin || r.target.lat_1e7 == null) return;
-      add({ name: 'Gaia DR3 ' + sourceIdOf(r.target.starpin),
-            lat: r.target.lat_1e7 / 1e7, lon: r.target.lon_1e7 / 1e7,
-            ra: r.target.ra_deg, dec: r.target.dec_deg,
-            mag: r.target.mag_g, distLy: r.target.dist_ly }, true);
-    });
-    // Rank the SAME way the log ranks star rarity: by tier, not by hair-splitting
-    // magnitude. All the "deep" mag-16+ stars share one tier, so ordering them by
-    // 0.1-mag steps was noise; starTier collapses them and lifts the genuinely
-    // rare bright ones (unaided / binocular / small-scope) to the top where they
-    // belong. rarity DESC = rarer first; unknown magnitude sinks to the bottom.
-    out.forEach(function (rec) {
-      var t = F.starTier(rec.star.mag);
-      rec.tier = t;
-      rec.rarity = t.rarity == null ? 0 : t.rarity;
-    });
-    out.sort(function (a, b) {
-      return (b.rarity - a.rarity) || (a.distanceM - b.distanceM);
-    });
-    return out;
-  }
-
-  function fmtDist(m) {
-    return m < 950 ? Math.round(m) + ' m' : (m / 1000).toFixed(m < 9500 ? 1 : 0) + ' km';
-  }
-
-  function renderNearby() {
-    var box = $('nearby-list'); box.textContent = '';
-    if (!fix) {
-      box.appendChild(el('p', 'nearby-busy',
-        'No fix yet — press “Recentre on me” or allow location, then try again.'));
-      return;
-    }
-    var km = Math.max(0.5, Math.min(25, parseFloat($('nearby-km').value) || 5));
-    $('nearby-km').value = km;
-    var radiusM = km * 1000;
-    var hideHave = $('nearby-hide').checked;
-    box.appendChild(el('p', 'nearby-busy', 'Searching the lattice…'));
-
-    // Let the "searching" line paint before the (short) synchronous scan.
-    setTimeout(function () {
-      box.textContent = '';
-      var cs = cornerstonesWithin(fix.lat, fix.lon, radiusM);
-      var stars = starpinsWithin(fix.lat, fix.lon, radiusM);
-
-      // Split each source into new vs already-yours. The whole complaint was
-      // that a list full of "already yours" reads as "you've got them all", so
-      // NEW always comes first, and the toggle can drop the owned ones entirely.
-      var csHave = 0, stHave = 0;
-      var csNew = [], csOwned = [];
-      cs.list.forEach(function (v) {
-        (collected[csName(v.name)] ? csOwned : csNew).push(v);
-      });
-      csHave = csOwned.length;
-      var stNew = [], stOwned = [];
-      stars.forEach(function (s) { (s.bagged ? stOwned : stNew).push(s); });
-      stHave = stOwned.length;
-
-      // Ordered pool: new first (rarest within each, already sorted), then owned
-      // unless hidden. Caps applied AFTER ordering so new finds are never pushed
-      // off the list by owned ones.
-      var CS_CAP = 12, ST_CAP = 8;
-      var csPool = hideHave ? csNew : csNew.concat(csOwned);
-      var stPool = hideHave ? stNew : stNew.concat(stOwned);
-      var csList = csPool.slice(0, CS_CAP), stList = stPool.slice(0, ST_CAP);
-
-      if (!csList.length && !stList.length) {
-        var msg = hideHave && (csHave + stHave) > 0
-          ? 'Nothing new within ' + km + ' km — you already have everything the ' +
-            'search turned up here. Widen the radius, or untick “Hide finds I ' +
-            'already have” to see them.'
-          : 'Nothing rare enough within ' + km + ' km. Widen the radius, or the ' +
-            'lattice here is simply quiet.';
-        box.appendChild(el('p', 'nearby-busy', msg));
-        return;
-      }
-
-      // Cornerstones.
-      if (csList.length) {
-        box.appendChild(el('div', 'nf-group',
-          'Cornerstones · rarest first · floor tier ' + cs.plan.maxTier +
-          (hideHave && csHave ? ' · ' + csHave + ' owned hidden' : '')));
-        csList.forEach(function (v) {
-          var t = F.tierOf(v.tierOrder, v.degree, v.crossOrder, v.intrinsicOrder);
-          var rr = v.rarr != null ? v.rarr : F.rarityOrder(v.crossOrder, v.intrinsicOrder);
-          var have = !!collected[csName(v.name)];
-          var exceptional = v.degree === 3 || rr <= F.EXCEPTIONAL_ORDER;
-          var b = el('button', 'nf' + (have ? ' have' : '') +
-                                (exceptional ? ' exceptional' : ''));
-          b.type = 'button';
-          b.appendChild(el('span', 'nf-dot'));
-          var body = el('div', 'nf-body');
-          body.appendChild(el('div', 'nf-name', v.name));
-          body.appendChild(el('div', 'nf-sub',
-            t.key + ' · orders ' + v.crossOrder + '×' + v.intrinsicOrder +
-            (have ? ' · already yours' : '')));
-          b.appendChild(body);
-          var right = el('div', 'nf-right');
-          right.appendChild(el('div', 'nf-dist', fmtDist(v.distanceM)));
-          right.appendChild(el('div', 'nf-tier', 'tier ' + rr.toFixed(1)));
-          b.appendChild(right);
-          b.addEventListener('click', function () { navigateToPoint(v.lat, v.lon, v.name); });
-          box.appendChild(b);
-        });
-        if (csPool.length > csList.length)
-          box.appendChild(el('p', 'nearby-busy',
-            '+' + (csPool.length - csList.length) + ' more cornerstones in range.'));
-      }
-
-      // Stars.
-      if (stList.length) {
-        box.appendChild(el('div', 'nf-group',
-          'Stars · rarest tier first · loaded + logged' +
-          (hideHave && stHave ? ' · ' + stHave + ' owned hidden' : '')));
-        stList.forEach(function (s) {
-          var st = s.star, t = s.tier || F.starTier(st.mag);
-          var b = el('button', 'nf star' + (s.bagged ? ' have' : ''));
-          b.type = 'button';
-          b.appendChild(el('span', 'nf-dot'));
-          var body = el('div', 'nf-body');
-          body.appendChild(el('div', 'nf-name', st.name || ('Gaia DR3 ' + s.id)));
-          // Lead with the TIER word (the rare thing to notice), magnitude after.
-          var label = (t.key === 'unaided' ? 'unaided eye'
-                     : t.key === 'binocular' ? 'binocular'
-                     : t.key === 'telescopic' ? 'small scope'
-                     : t.key === 'deep' ? 'deep' : 'brightness unknown');
-          var sub = label + (st.mag == null ? '' : ' · G ≈ ' + Number(st.mag).toFixed(1)) +
-                    (s.bagged ? ' · already yours' : '');
-          body.appendChild(el('div', 'nf-sub', sub));
-          b.appendChild(body);
-          var right = el('div', 'nf-right');
-          right.appendChild(el('div', 'nf-dist', fmtDist(s.distanceM)));
-          b.appendChild(right);
-          b.addEventListener('click', function () {
-            navigateToPoint(st.lat, st.lon, st.name || ('Gaia DR3 ' + s.id)); });
-          box.appendChild(b);
-        });
-        if (stPool.length > stList.length)
-          box.appendChild(el('p', 'nearby-busy',
-            '+' + (stPool.length - stList.length) + ' more stars in range.'));
-      } else if (stNew.length === 0 && stHave > 0 && hideHave) {
-        box.appendChild(el('div', 'nf-group', 'Stars'));
-        box.appendChild(el('p', 'nearby-busy',
-          'All ' + stHave + ' star' + (stHave > 1 ? 's' : '') + ' in range ' +
-          (stHave > 1 ? 'are' : 'is') + ' already yours. The live lookup only ' +
-          'loads stars near the map view, so there may be more here it has not ' +
-          'fetched — pan the Map over this area to pull them in.'));
-      } else {
-        box.appendChild(el('div', 'nf-group', 'Stars'));
-        box.appendChild(el('p', 'nearby-busy',
-          'No stars loaded in range. The catalogue lookup only loads stars near ' +
-          'the map view — open the Map over this area, then search again. ' +
-          'Cornerstones above are exact regardless.'));
-      }
-    }, 20);
-  }
-
-  // Send the map and the address box to a chosen point, and drop a pin there.
-  function navigateToPoint(lat, lon, label) {
-    goTab('map');
-    try { map.leaflet.setView([lat, lon], Math.max(map.leaflet.getZoom(), 16)); } catch (e) {}
-    try { map.dropPin(lat, lon); } catch (e) {}
-    try { readAt(lat, lon, label || 'chosen find'); } catch (e) {}
-  }
-
-  $('nearby-go').addEventListener('click', renderNearby);
-  $('nearby-km').addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') { e.preventDefault(); renderNearby(); }
-  });
-  // Re-render live when the toggle flips, but only if results are already shown.
-  $('nearby-hide').addEventListener('change', function () {
-    if ($('nearby-list').childNodes.length) renderNearby();
-  });
 
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
@@ -1428,9 +1133,7 @@ dl{margin:.7rem 0 0}
           F.unlock();
           logIt({ cornerstone: v0.name });
           F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
-                        degree: v0.degree, crossOrder: v0.crossOrder,
-                        intrinsicOrder: v0.intrinsicOrder,
-                        digits: v0.name.replace(/\D/g, '') });
+                        degree: v0.degree, digits: v0.name.replace(/\D/g, '') });
           try {
             var st0 = S.cellComplete(v0.incident[0], Object.keys(collected));
             if (st0.complete) setTimeout(function () {
@@ -1768,7 +1471,17 @@ dl{margin:.7rem 0 0}
   });
 
   // ── tabs ─────────────────────────────────────────────────────────────────
+  // Each tab remembers where you had it scrolled. Leaving the Log scrolled
+  // halfway down, glancing at the Map, and coming back used to dump you at the
+  // top — painful when cross-referencing a long list against the map. Stash the
+  // outgoing tab's scroll offset and restore the incoming one; a tab never seen
+  // before still starts at the top (undefined -> 0).
+  var tabScroll = {};
+  var currentTab = document.body.getAttribute('data-active') || 'go';
   function goTab(name) {
+    if (name === currentTab) return;              // no-op re-tap must not lose position
+    tabScroll[currentTab] = window.scrollY;       // remember where we were
+    currentTab = name;
     document.body.setAttribute('data-active', name);
     [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
       b.setAttribute('aria-selected', b.getAttribute('data-go') === name ? 'true' : 'false');
@@ -1777,7 +1490,10 @@ dl{margin:.7rem 0 0}
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
     if (name === 'log') { $('lg-show').click(); refreshFillButton(); }
-    window.scrollTo(0, 0);
+    // Restore after layout settles (the Log rebuilds its panel synchronously
+    // above, but the map's invalidate is deferred, so defer the scroll too).
+    var y = tabScroll[name] || 0;
+    setTimeout(function () { window.scrollTo(0, y); }, 0);
   }
   [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
     b.addEventListener('click', function () { goTab(b.getAttribute('data-go')); });
@@ -2032,13 +1748,63 @@ dl{margin:.7rem 0 0}
   setInterval(culmTick, 1000);
   culmTick();
 
+  // Drive-by countdown ticker. GPS fixes arrive every 1–3 s, so without this the
+  // seconds-to-closest-approach would sit frozen between fixes and then jump.
+  // This recomputes from the LAST known fix + velocity each second and rewrites
+  // only the one row's text and ok-class — it never rebuilds the tab body, so it
+  // cannot destroy the bag button mid-tap (the hazard that the heading handler
+  // documents). When the straight-line moment has passed (closestApproach goes
+  // null, e.g. you are now receding), the row is left showing its final state
+  // until the next real repaint replaces or removes it.
+  setInterval(function () {
+    if (!driveByTick) return;
+    var row = document.getElementById('driveby-row');
+    if (!row) return;
+    var ca = closestApproach(driveByTick.lat, driveByTick.lon);
+    if (!ca) return;
+    row.textContent = driveByLine(ca, driveByTick.radiusM);
+    if (ca.distanceM <= driveByTick.radiusM) row.classList.add('ok');
+    else row.classList.remove('ok');
+  }, 1000);
+
   // ── tracking: watchPosition, so the readout follows you ──────────────────
+  // Velocity for drive-by: the Geolocation API gives coords.speed (m/s) and
+  // coords.heading (deg from true north) on most phones, but they are null on
+  // desktop, on cold fixes, and in some browsers. So prefer them, and fall back
+  // to a finite difference against the previous fix. If neither yields a finite
+  // speed, velocity stays null and every drive-by feature degrades to "off"
+  // rather than showing a fabricated number. This is live telemetry only — it
+  // never enters a record (see approachReasonFor); the record stores a reason,
+  // not a sensor reading.
+  var prevFix = null;   // { lat, lon, t }  — for the finite-difference fallback
+  function velocityFrom(p) {
+    var t = (p.timestamp != null) ? p.timestamp : Date.now();
+    var out = { speedMps: null, headingDeg: null, t: t };
+    // 1) native
+    if (p.coords && p.coords.speed != null && isFinite(p.coords.speed) && p.coords.speed >= 0) {
+      out.speedMps = p.coords.speed;
+      if (p.coords.heading != null && isFinite(p.coords.heading)) out.headingDeg = p.coords.heading;
+    } else if (prevFix) {
+      // 2) finite difference from the previous fix
+      var dt = (t - prevFix.t) / 1000;
+      if (dt > 0.15) {   // ignore sub-150ms jitter that inflates speed
+        var d = S.haversineM(prevFix.lat, prevFix.lon, p.coords.latitude, p.coords.longitude);
+        out.speedMps = d / dt;
+        out.headingDeg = bearing(prevFix.lat, prevFix.lon, p.coords.latitude, p.coords.longitude);
+      }
+    }
+    prevFix = { lat: p.coords.latitude, lon: p.coords.longitude, t: t };
+    return out;
+  }
   var watchId = null;
   function startTracking() {
     if (watchId != null || !navigator.geolocation) return;
+    prevFix = null;   // start each tracking run clean
     $('track').setAttribute('aria-pressed', 'true'); $('track').textContent = 'Tracking\u2026';
     watchId = navigator.geolocation.watchPosition(function (p) {
-      fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy };
+      var vel = velocityFrom(p);
+      fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy,
+              speedMps: vel.speedMps, headingDeg: vel.headingDeg };
       $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
       $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
       map.setFix(fix.lat, fix.lon, fix.accuracy_m);
@@ -2061,6 +1827,7 @@ dl{margin:.7rem 0 0}
   }
   function stopTracking() {
     if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+    prevFix = null;   // don't diff across a stop/start gap
     $('track').setAttribute('aria-pressed', 'false'); $('track').textContent = 'Track me';
   }
   $('track').addEventListener('click', function () {
@@ -2172,6 +1939,82 @@ dl{margin:.7rem 0 0}
     refreshFillButton();
   }
 
+  // ── drive-by: bagging from a moving vehicle ──────────────────────────────
+  //
+  // Two passengers — one walking up to a star, one grabbing it from a taxi at
+  // 50 km/h — are doing two equally valid, equally fun things. Drive-by does
+  // NOT change what counts: visit-geometry-v1 is untouched, the acceptance
+  // radius is untouched, the press is still yours. It adds exactly two things:
+  //   (1) a "drive-by" reason on the record, when your speed at bag time is
+  //       above a walking pace — an honest note about HOW you approached, the
+  //       same kind of thing as the existing "logged from N m away" reason; and
+  //   (2) a live countdown to closest approach while you are moving, so you can
+  //       time the press. The countdown is assistance, never an auto-bag.
+  //
+  // WALKING_MPS: a brisk walk is ~1.4 m/s; joggers reach ~3 m/s. 2.2 m/s
+  // (~8 km/h) sits above walking and below any vehicle, so a stroll never gets
+  // tagged and a bus always does. It is a presentation threshold, not a rule.
+  var WALKING_MPS = 2.2;
+
+  function driveBySpeed() {
+    // The speed we would tag with right now, or null if we cannot tell.
+    return (fix && fix.speedMps != null && isFinite(fix.speedMps)) ? fix.speedMps : null;
+  }
+  function isDriveBy() {
+    var s = driveBySpeed();
+    return s != null && s > WALKING_MPS;
+  }
+  // Compose the reason string for a record. Keeps the existing distance note
+  // for unsupported approaches and adds the drive-by clause when moving, so a
+  // fast closest-approach reads "logged from 140 m away · drive-by". The record
+  // stores this sentence; it never stores the raw speed.
+  function approachReasonFor(supported, distanceM) {
+    var parts = [];
+    if (!supported && distanceM != null) parts.push('logged from ' + Math.round(distanceM) + ' m away');
+    if (isDriveBy()) parts.push('drive-by');
+    return parts.length ? parts.join(' \u00B7 ') : null;
+  }
+
+  // Seconds until closest approach along a straight path at the current
+  // velocity, plus the distance at that point. Works even when the target is
+  // off to the side. Sub-km ranges, so a local east/north tangent plane is
+  // exact enough and avoids spherical trig. Returns null when we are not
+  // moving usefully, are already past the target (receding), or lack velocity.
+  //   r = target - me (metres, ENU)   v = velocity (m/s, ENU)
+  //   t* = (r·v)/(v·v)   clamped to >= 0    d_min = |r - v·t*|
+  var MPS_PER_DEG_LAT = 111320;
+  function closestApproach(tLat, tLon) {
+    if (!fix || fix.speedMps == null || !isFinite(fix.speedMps) || fix.speedMps < 0.3) return null;
+    if (fix.headingDeg == null || !isFinite(fix.headingDeg)) return null;
+    var cosLat = Math.cos(fix.lat * Math.PI / 180);
+    // target relative to me, in metres east/north
+    var rE = (tLon - fix.lon) * MPS_PER_DEG_LAT * cosLat;
+    var rN = (tLat - fix.lat) * MPS_PER_DEG_LAT;
+    // velocity east/north from speed + heading (heading is deg CW from north)
+    var hdg = fix.headingDeg * Math.PI / 180;
+    var vE = fix.speedMps * Math.sin(hdg);
+    var vN = fix.speedMps * Math.cos(hdg);
+    var vv = vE * vE + vN * vN;
+    if (vv <= 0) return null;
+    var tStar = (rE * vE + rN * vN) / vv;
+    if (tStar < 0) return null;                 // target is behind you; already receding
+    var cE = rE - vE * tStar, cN = rN - vN * tStar;
+    return { seconds: tStar, distanceM: Math.sqrt(cE * cE + cN * cN) };
+  }
+
+  // The countdown sentence. "closest in 8 s · within 40 m — time your press" when
+  // the straight path passes inside the acceptance radius; "closest in 8 s ·
+  // nearest 130 m (too far to count)" when it will not. Rounds honestly and never
+  // implies more precision than a moving GPS fix supports.
+  function driveByLine(ca, radiusM) {
+    var secs = ca.seconds < 1 ? 'now' : Math.round(ca.seconds) + ' s';
+    var within = ca.distanceM <= radiusM;
+    var dist = within ? 'within ' + Math.max(1, Math.round(radiusM)) + ' m'
+                      : 'nearest ' + Math.round(ca.distanceM) + ' m';
+    var tail = within ? ' \u2014 time your press' : ' (too far to count)';
+    return 'closest in ' + secs + ' \u00B7 ' + dist + tail;
+  }
+
   // What rules actually applied to this record. A cornerstone is a corner of
   // the lattice; it has no star, so it has no culmination, and stamping
   // culmination-v1 on it was meaningless. Every cornerstone in the 10 Aug
@@ -2189,6 +2032,7 @@ dl{margin:.7rem 0 0}
     log.add(L.visit({
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
+      approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
       provenance: provenanceFor(target)
     }));
     drawLog(); redraw();
@@ -2250,6 +2094,7 @@ dl{margin:.7rem 0 0}
       log.add(L.build('culmination-attempt', {
         target: target,
         fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
+        approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
         provenance: provenanceFor(target)
       }));
       // A first-ever visit at culmination is two events, so it writes two
@@ -2272,8 +2117,7 @@ dl{margin:.7rem 0 0}
     log.add(L.build(supported ? 'visit' : 'closest-approach', {
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
-      approachReason: supported ? null
-        : 'logged from ' + Math.round(vr.distanceM) + ' m away',
+      approachReason: approachReasonFor(supported, vr.distanceM),
       provenance: provenanceFor(target)
     }));
     drawLog(); redraw();
@@ -2311,9 +2155,7 @@ dl{margin:.7rem 0 0}
     // tierOrder, not intrinsicOrder: a rare line crossing a common one sits
     // between the two, and the celebration should reflect that.
     F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
-                  degree: lastCs.degree, crossOrder: lastCs.crossOrder,
-                  intrinsicOrder: lastCs.intrinsicOrder,
-                  digits: lastCs.name.replace(/\D/g, '') });
+                  degree: lastCs.degree, digits: lastCs.name.replace(/\D/g, '') });
     try {
       var st = S.cellComplete(lastCs.incident[0], Object.keys(collected));
       if (st.complete) setTimeout(function () {
@@ -2367,15 +2209,8 @@ dl{margin:.7rem 0 0}
         var m = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
         var p = null;
         try { p = S.cornerstonePoint(r.target.cornerstone); } catch (e) {}
-        if (p) {
-          try {
-            var v = S.nearestCornerstone(p.lat, p.lon, m[1].length);
-            // Rarity is population-derived, not (c+i)/2: equal-population
-            // crossings sort together (6x7 with 7x7), and a fat coarse line
-            // crossing a fine one no longer outranks a genuinely rarer vertex.
-            return F.rarityOrder(v.crossOrder, v.intrinsicOrder);
-          } catch (e) {}
-        }
+        if (p) { try { return S.nearestCornerstone(p.lat, p.lon, m[1].length).tierOrder; }
+                 catch (e) {} }
         return m ? m[1].length : 14;
       }
       // The RECORD first. map.stars() is whatever VizieR last returned around
