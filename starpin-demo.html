@@ -618,6 +618,11 @@ dl{margin:.7rem 0 0}
 <script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20260810"></script>
 <!-- ── group sharing (additive; app works without these) ───────────── -->
+<!-- Vendored crypto: copy the noble builds into js/lib/ (do NOT load from a CDN at
+     runtime — this page holds keys + irreplaceable records; third-party runtime JS
+     would have full page privileges). Each exposes a global used below. -->
+<script src="js/lib/noble-argon2.min.js?v=20260907"></script>
+<script src="js/lib/noble-chacha.min.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260907"></script>
@@ -625,13 +630,9 @@ dl{margin:.7rem 0 0}
 <script src="js/lib/geosonify-starpin-selfsync.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-portable.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-groups.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-firebase.js?v=20260907"></script>
 <script src="js/lib/geosonify-starpin-groups-integration.js?v=20260907"></script>
 <link rel="stylesheet" href="js/lib/geosonify-starpin-groups.css?v=20260907">
-<script type="module">
-  import { argon2id } from 'https://esm.sh/@noble/hashes@1.8.0/argon2';
-  import { xchacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.3.0/chacha';
-  window.StarpinCrypto = { argon2id, xchacha20poly1305 };
-</script>
 <script>
 (function () {
   'use strict';
@@ -1013,8 +1014,18 @@ dl{margin:.7rem 0 0}
 
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
-  // expose the log + helpers to the (optional) group-sharing integration
-  window.StarpinGroupsHost = { log: log, $: $, el: el };
+
+  // ── group-sharing host contract (target builders live HERE, one source of
+  //    truth, so the integration never re-derives the Gaia-id parse) ─────────
+  function _targetForCornerstone(name) { return name ? { cornerstone: name } : null; }
+  function _targetForStar(st) {
+    if (!st) return null;
+    var id = ((String(st.name || '').match(/(\d{5,})\s*$/) || [])[1] || '').trim();
+    if (!/^\d+$/.test(id)) return null;   // no stable id => refuse (never a pseudo-id)
+    return { starpin: 'starpin:gdr3:' + id };
+  }
+  window.StarpinGroupsHost = { log: log, $: $, el: el,
+    targetForCornerstone: _targetForCornerstone, targetForStar: _targetForStar };
   var F = GeosonifyStarpinFeedback;
   var prox = F.proximity($('cs-prox'));
   var SN = (typeof GeosonifySkyNeighbour !== 'undefined') ? GeosonifySkyNeighbour : null;
@@ -1212,14 +1223,12 @@ dl{margin:.7rem 0 0}
       box.appendChild(m);
       box.appendChild(el('div', 'meta',
         'A public log for this point will live here. Nothing is published today.'));
-      // group "who's been here" (additive; renders nothing if sharing disabled)
       try {
-        if (typeof StarpinGroups !== 'undefined' && StarpinGroups.isReady()) {
-          var _hereCs = el('div', 'sp-here-wrap');
-          box.appendChild(_hereCs);
-          StarpinGroups.renderHere(_hereCs, { cornerstone: d.name });
+        if (window.StarpinGroups && StarpinGroups.isReady()) {
+          var _tc = StarpinGroups.targetForCornerstone(d.name);
+          if (_tc) { var _hc = el('div', 'sp-here-wrap'); box.appendChild(_hc); StarpinGroups.renderHere(_hc, _tc); }
         }
-      } catch (e) {}
+      } catch (e) { console.warn('[starpin] here-block failed:', e); }
 
     } else if (sel.kind === 'star') {
       var st = sel.data;
@@ -1244,18 +1253,12 @@ dl{margin:.7rem 0 0}
       var vrec = visitedOn(sourceIdOf(st.name));
       if (vrec) sm.appendChild(visitedLine(vrec));
       box.appendChild(sm);
-      // group "who's been here" — rebuild the SAME target key this file logs with
       try {
-        if (typeof StarpinGroups !== 'undefined' && StarpinGroups.isReady()) {
-          var _sid = ((String(st.name || '').match(/(\d{5,})\s*$/) || [])[1] || '').trim();
-          var _starTgt = /^\d+$/.test(_sid)
-            ? { starpin: 'starpin:gdr3:' + _sid }
-            : { starpin: 'starpin:name:' + (st.name || 'unknown') };
-          var _hereStar = el('div', 'sp-here-wrap');
-          box.appendChild(_hereStar);
-          StarpinGroups.renderHere(_hereStar, _starTgt);
+        if (window.StarpinGroups && StarpinGroups.isReady()) {
+          var _ts = StarpinGroups.targetForStar(st);
+          if (_ts) { var _hs = el('div', 'sp-here-wrap'); box.appendChild(_hs); StarpinGroups.renderHere(_hs, _ts); }
         }
-      } catch (e) {}
+      } catch (e) { console.warn('[starpin] here-block failed:', e); }
       // You can always log. The verdict is DERIVED, so a record made from
       // 252 m away is a perfectly good closest-approach record and can be
       // re-assessed later; refusing to store it would lose a real fact.
@@ -2090,8 +2093,8 @@ dl{margin:.7rem 0 0}
       approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
       provenance: provenanceFor(target)
     });
-    log.add(_rec);
-    try { if (typeof StarpinGroups !== 'undefined') StarpinGroups.onRecordLogged(_rec); } catch (e) {}
+    log.add(_rec);   // local record committed BEFORE any group hook (invariant)
+    try { if (window.StarpinGroups && StarpinGroups.isReady()) StarpinGroups.onRecordLogged(_rec); } catch (e) { console.warn('[starpin] share hook threw (local record safe):', e); }
     drawLog(); redraw();
   }
 
@@ -2780,14 +2783,42 @@ dl{margin:.7rem 0 0}
       ' had a malformed starpin identity and now has a corrected superseding ' +
       'record. The originals are kept.';
   }
-  // start group sharing if its modules + crypto + a frozen PROFILE are all present.
-  // Safe no-op otherwise — the app is unaffected.
-  try {
-    if (typeof StarpinGroups !== 'undefined') {
-      var _sg = StarpinGroups.init();
-      if (!_sg.ready) console.info('[starpin] sharing not enabled:', _sg.reason);
-    }
-  } catch (e) { console.warn('[starpin] sharing init failed (non-fatal):', e); }
+  // ── group sharing: explicit ASYNC boot (never infer readiness from script order)
+  //    1) capture + scrub any invite fragment EARLY  2) vendored crypto  3) Firebase
+  //    store  4) await init. Fail closed + visible; the local app is unaffected.
+  (function bootStarpinGroups() {
+    if (!window.StarpinGroups) return;   // integration not deployed
+    // 1) capture the whole private invite from the fragment, then scrub the URL
+    var invite = null;
+    try {
+      if (location.hash && location.hash.indexOf('spinvite=') >= 0 && GeosonifyStarpinInvite) {
+        invite = GeosonifyStarpinInvite.parseInvite(location.href);
+        if (invite) invite._sourceUrl = location.href;
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    } catch (e) { console.warn('[starpin] invite capture failed:', e); }
+
+    // 2) crypto from vendored globals (adjust the names to your noble build)
+    var C = window.StarpinCrypto ||
+            (window.nobleHashes && window.nobleCiphers
+              ? { argon2id: window.nobleHashes.argon2id, xchacha20poly1305: window.nobleCiphers.xchacha20poly1305 }
+              : null);
+
+    // 3) obtain a PERSISTENT store (Firebase). If it fails, pass null => fail-closed.
+    var storeP = Promise.resolve(null);
+    try {
+      if (typeof GeosonifyStarpinFirebase !== 'undefined' && GeosonifyStarpinFirebase.initStarpinFirebase)
+        storeP = GeosonifyStarpinFirebase.initStarpinFirebase().then(function (r) { return r.store; })
+                   .catch(function (e) { console.warn('[starpin] Firebase init failed — sharing will be unavailable:', e); return null; });
+    } catch (e) { console.warn('[starpin] Firebase not wired:', e); }
+
+    storeP.then(function (store) {
+      return StarpinGroups.init({ host: window.StarpinGroupsHost, crypto: C, store: store, invite: invite });
+    }).then(function (res) {
+      if (!res.ready) console.info('[starpin] sharing not enabled:', res.reason);
+      else console.info('[starpin] group sharing ready.');
+    }).catch(function (e) { console.warn('[starpin] sharing init failed (non-fatal):', e); });
+  })();
 
   drawLog();
   showRamp();
