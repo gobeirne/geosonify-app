@@ -52,12 +52,12 @@ function getStorageFactory() {
 // generated and cannot be guessed, so they must come from the console verbatim.
 // ============================================================================
 const firebaseConfig = {
-  apiKey:            'PASTE_FROM_CONSOLE',
-  authDomain:        'geosonify-starpin.firebaseapp.com',
-  projectId:         'geosonify-starpin',
-  storageBucket:     'geosonify-starpin.firebasestorage.app',  // or .appspot.com — copy what the console shows
-  messagingSenderId: 'PASTE_FROM_CONSOLE',
-  appId:             'PASTE_FROM_CONSOLE'
+  apiKey:            'AIzaSyCna8NRmXsc-m0lCDb9t_KJQ3lzORoZUoQ',
+authDomain:        'geosonify-starpin.firebaseapp.com',
+projectId:         'geosonify-starpin',
+storageBucket:     'geosonify-starpin.firebasestorage.app',
+messagingSenderId: '306324213252',
+appId:             '1:306324213252:web:8d382c496a2467040eef51'
 };
 
 let _app = null, _auth = null, _db = null, _store = null, _uid = null, _initPromise = null;
