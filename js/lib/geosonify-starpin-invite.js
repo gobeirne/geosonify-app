@@ -31,8 +31,9 @@
 
 var GeosonifyStarpinInvite = (function () {
 
-  var PARAM = 'spgroup';        // query param carrying the descriptor (additive)
-  var FRAG  = 'spcode';         // fragment key carrying the code (full mode only)
+  var PARAM = 'spgroup';        // query param carrying the descriptor (legacy split)
+  var FRAG  = 'spcode';         // fragment key carrying the code (legacy split)
+  var FULLFRAG = 'spinvite';    // fragment key carrying the WHOLE invite (preferred)
   var VER   = 1;
 
   // ---- base64url of a UTF-8 JSON string ------------------------------------
@@ -102,12 +103,21 @@ var GeosonifyStarpinInvite = (function () {
       l: opts.label || ''
     };
     var base = opts.baseUrl || '';             // e.g. 'https://gobeirne.github.io/starpin/'
+
+    // PREFERRED: the WHOLE invite (descriptor + optional code) in the FRAGMENT, so
+    // NOTHING — not even the privacy-relevant descriptor — reaches the web server.
+    // The page must capture and history.replaceState()-scrub it early.
+    if (opts.mode === 'fragment' || opts.mode === 'full-fragment') {
+      var payload = { d: descriptor };
+      if (opts.code) payload.c = opts.code;
+      return base + '#' + FULLFRAG + '=' + b64urlEncodeStr(JSON.stringify(payload));
+    }
+
+    // LEGACY split: descriptor in query, code (if any) in fragment.
     var q = PARAM + '=' + b64urlEncodeStr(JSON.stringify(descriptor));
     var url = base + (base.indexOf('?') >= 0 ? '&' : '?') + q;
-
     if (opts.mode === 'full') {
       if (!opts.code) throw new Error('invite: full mode needs the code');
-      // code in the FRAGMENT, percent-encoded, never the query.
       url += '#' + FRAG + '=' + encodeURIComponent(opts.code);
     }
     return url;
@@ -123,6 +133,22 @@ var GeosonifyStarpinInvite = (function () {
     if (qIndex >= 0) query = url.slice(qIndex + 1, hIndex >= 0 ? hIndex : undefined);
     if (hIndex >= 0) frag = url.slice(hIndex + 1);
 
+    // PREFERRED: whole invite in the fragment (spinvite=...)
+    var whole = paramFrom(frag, FULLFRAG);
+    if (whole) {
+      var payload;
+      try { payload = JSON.parse(b64urlDecodeStr(whole)); }
+      catch (e) { throw new Error('invite: malformed fragment invite'); }
+      if (!payload || !payload.d || !payload.d.g) throw new Error('invite: fragment invite missing group id');
+      return {
+        descriptor: { groupUuid: payload.d.g, epoch: payload.d.e || 1,
+                      endpoint: payload.d.ep || null, label: payload.d.l || '' },
+        code: payload.c || null,
+        mode: payload.c ? 'fragment-full' : 'fragment'
+      };
+    }
+
+    // LEGACY split: descriptor in query, code in fragment.
     var enc = paramFrom(query, PARAM);
     if (!enc) return null;                      // not an invite link
     var descriptor;
@@ -158,7 +184,7 @@ var GeosonifyStarpinInvite = (function () {
   }
 
   return {
-    PARAM: PARAM, FRAG: FRAG,
+    PARAM: PARAM, FRAG: FRAG, FULLFRAG: FULLFRAG,
     generateHumanCode: generateHumanCode, estimateBits: estimateBits,
     HUMAN_ALPHABET: HUMAN_ALPHABET,
     makeInvite: makeInvite, parseInvite: parseInvite
