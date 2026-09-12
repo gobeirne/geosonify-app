@@ -617,6 +617,21 @@ dl{margin:.7rem 0 0}
 <script src="js/lib/geosonify-starpin-map.js?v=20260810"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20260810"></script>
+<!-- ── group sharing (additive; app works without these) ───────────── -->
+<script src="js/lib/geosonify-starpin-group.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-storage.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-sharing.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-invite.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-selfsync.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-portable.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-groups.js?v=20260907"></script>
+<script src="js/lib/geosonify-starpin-groups-integration.js?v=20260907"></script>
+<link rel="stylesheet" href="js/lib/geosonify-starpin-groups.css?v=20260907">
+<script type="module">
+  import { argon2id } from 'https://esm.sh/@noble/hashes@1.8.0/argon2';
+  import { xchacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.3.0/chacha';
+  window.StarpinCrypto = { argon2id, xchacha20poly1305 };
+</script>
 <script>
 (function () {
   'use strict';
@@ -998,6 +1013,8 @@ dl{margin:.7rem 0 0}
 
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
+  // expose the log + helpers to the (optional) group-sharing integration
+  window.StarpinGroupsHost = { log: log, $: $, el: el };
   var F = GeosonifyStarpinFeedback;
   var prox = F.proximity($('cs-prox'));
   var SN = (typeof GeosonifySkyNeighbour !== 'undefined') ? GeosonifySkyNeighbour : null;
@@ -1195,6 +1212,14 @@ dl{margin:.7rem 0 0}
       box.appendChild(m);
       box.appendChild(el('div', 'meta',
         'A public log for this point will live here. Nothing is published today.'));
+      // group "who's been here" (additive; renders nothing if sharing disabled)
+      try {
+        if (typeof StarpinGroups !== 'undefined' && StarpinGroups.isReady()) {
+          var _hereCs = el('div', 'sp-here-wrap');
+          box.appendChild(_hereCs);
+          StarpinGroups.renderHere(_hereCs, { cornerstone: d.name });
+        }
+      } catch (e) {}
 
     } else if (sel.kind === 'star') {
       var st = sel.data;
@@ -1219,6 +1244,18 @@ dl{margin:.7rem 0 0}
       var vrec = visitedOn(sourceIdOf(st.name));
       if (vrec) sm.appendChild(visitedLine(vrec));
       box.appendChild(sm);
+      // group "who's been here" — rebuild the SAME target key this file logs with
+      try {
+        if (typeof StarpinGroups !== 'undefined' && StarpinGroups.isReady()) {
+          var _sid = ((String(st.name || '').match(/(\d{5,})\s*$/) || [])[1] || '').trim();
+          var _starTgt = /^\d+$/.test(_sid)
+            ? { starpin: 'starpin:gdr3:' + _sid }
+            : { starpin: 'starpin:name:' + (st.name || 'unknown') };
+          var _hereStar = el('div', 'sp-here-wrap');
+          box.appendChild(_hereStar);
+          StarpinGroups.renderHere(_hereStar, _starTgt);
+        }
+      } catch (e) {}
       // You can always log. The verdict is DERIVED, so a record made from
       // 252 m away is a perfectly good closest-approach record and can be
       // re-assessed later; refusing to store it would lose a real fact.
@@ -2047,12 +2084,14 @@ dl{margin:.7rem 0 0}
   function logIt(target) {
     if (!fix) { alert('Use my location first — a record without a fix cannot be assessed.'); return; }
     stopSoundGuide();
-    log.add(L.visit({
+    var _rec = L.visit({
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
       approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
       provenance: provenanceFor(target)
-    }));
+    });
+    log.add(_rec);
+    try { if (typeof StarpinGroups !== 'undefined') StarpinGroups.onRecordLogged(_rec); } catch (e) {}
     drawLog(); redraw();
   }
 
@@ -2741,6 +2780,15 @@ dl{margin:.7rem 0 0}
       ' had a malformed starpin identity and now has a corrected superseding ' +
       'record. The originals are kept.';
   }
+  // start group sharing if its modules + crypto + a frozen PROFILE are all present.
+  // Safe no-op otherwise — the app is unaffected.
+  try {
+    if (typeof StarpinGroups !== 'undefined') {
+      var _sg = StarpinGroups.init();
+      if (!_sg.ready) console.info('[starpin] sharing not enabled:', _sg.reason);
+    }
+  } catch (e) { console.warn('[starpin] sharing init failed (non-fatal):', e); }
+
   drawLog();
   showRamp();
   redraw();
