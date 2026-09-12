@@ -97,9 +97,7 @@
     <h2>4. Who’s been here</h2>
     <label>Place</label>
     <select id="h-place"></select>
-    <label>Group</label>
-    <select id="h-group"></select>
-    <button id="h-show" style="margin-top:.6rem">Show visits</button>
+    <button id="h-show" style="margin-top:.6rem">Show who’s been here</button>
     <div id="h-out" style="margin-top:.6rem"></div>
   </div>
 
@@ -186,9 +184,13 @@ let ctrl = null, sharing = null;
           try {
             const r = await ctrl.joinFromLink(location.href);
             history.replaceState(null, '', location.pathname);
-            js.textContent = (r.rejoined ? 'Already in ' : 'Joined ') + '“' + (r.label || 'group') + '” ✓  — scroll down to log a visit.';
-            js.className = 'status ok';
             refreshGroups();
+            if (r.rejoined) {
+              js.textContent = 'You were already in “' + (r.label || 'group') + '”.'; js.className = 'status muted';
+            } else {
+              js.textContent = 'Joined “' + (r.label || 'group') + '”.'; js.className = 'status ok';
+              showJoinedModal(r.label);
+            }
           } catch (e) {
             js.textContent = 'One-click join failed: ' + e.message + '. Try pasting the link + code below.';
             js.className = 'status err'; console.error('[trial] auto-join failed:', e);
@@ -213,7 +215,7 @@ function refreshGroups() {
   mg.textContent = '';
   if (!groups.length) { mg.innerHTML = '<span class="muted">none yet</span>'; }
   else groups.forEach(g => { const d = document.createElement('div'); d.textContent = '• ' + (g.label || '(unnamed)'); mg.appendChild(d); });
-  ['s-group', 'h-group'].forEach(id => {
+  ['s-group'].forEach(id => {
     const sel = $(id); sel.textContent = '';
     groups.forEach(g => { const o = document.createElement('option'); o.value = g.groupUuid; o.textContent = g.label || '(unnamed)'; sel.appendChild(o); });
   });
@@ -255,9 +257,10 @@ function wireUI() {
     const st = $('j-status'); st.textContent = 'joining…'; st.className = 'status';
     try {
       const link = $('j-link').value.trim() || location.href;
-      await ctrl.joinFromLink(link, $('j-code').value.trim() || undefined);
-      st.textContent = 'Joined!'; st.className = 'status ok';
+      const r = await ctrl.joinFromLink(link, $('j-code').value.trim() || undefined);
       refreshGroups();
+      if (r.rejoined) { st.textContent = 'You were already in “' + (r.label || 'group') + '”.'; st.className = 'status muted'; }
+      else { st.textContent = 'Joined “' + (r.label || 'group') + '”.'; st.className = 'status ok'; showJoinedModal(r.label); }
     } catch (e) { st.textContent = 'Could not join: ' + e.message + ' (need the code?)'; st.className = 'status err'; }
   });
 
@@ -279,19 +282,52 @@ function wireUI() {
   $('h-show').addEventListener('click', async () => {
     const out = $('h-out'); out.textContent = 'checking…';
     try {
-      const gid = $('h-group').value, place = PLACES[+$('h-place').value];
-      if (!gid) { out.textContent = 'Join a group first.'; return; }
-      const view = await ctrl.onTargetView(gid, place.target);
+      const place = PLACES[+$('h-place').value];
+      const groups = ctrl.myGroups();
+      if (!groups.length) { out.innerHTML = '<span class="muted">Join or make a group first.</span>'; return; }
+
+      // aggregate across EVERY group you're in, but keep them VISUALLY SEPARATE:
+      // each group is its own private universe (different handle per group), so we
+      // show one labelled section per group rather than blending them into one
+      // list that would imply a shared world that doesn't exist.
+      const results = await Promise.all(groups.map(g =>
+        ctrl.onTargetView(g.groupUuid, place.target)
+          .then(view => ({ g, view }))
+          .catch(() => ({ g, view: { count: 0, visitors: [] } }))
+      ));
+
       out.textContent = '';
-      if (!view.count) { out.innerHTML = '<span class="muted">No visits here yet in this group.</span>'; return; }
-      const ul = document.createElement('ul'); ul.className = 'sp-here-list';
-      view.visitors.forEach(v => {
-        const li = document.createElement('li'); if (v.you) li.className = 'sp-here-you';
-        li.textContent = '#' + v.ordinal + '  ' + (v.you ? v.handle + ' (you)' : v.handle) +
-          (v.time_ms ? '  ·  ' + new Date(v.time_ms).toLocaleString() : '') + (v.comment ? '  — ' + v.comment : '');
-        ul.appendChild(li);
-      });
-      out.appendChild(ul);
+      const withVisits = results.filter(r => r.view.count > 0);
+      if (!withVisits.length) {
+        out.innerHTML = '<span class="muted">No visits here yet in any of your groups.</span>';
+      } else {
+        withVisits.forEach(({ g, view }) => {
+          const sec = document.createElement('div'); sec.className = 'sp-here';
+          const h = document.createElement('div'); h.className = 'sp-here-title';
+          h.textContent = g.label || 'group'; sec.appendChild(h);
+          const ul = document.createElement('ul'); ul.className = 'sp-here-list';
+          view.visitors.forEach(v => {
+            const li = document.createElement('li'); if (v.you) li.className = 'sp-here-you';
+            li.textContent = '#' + v.ordinal + '  ' + (v.you ? v.handle + ' (you)' : v.handle) +
+              (v.time_ms ? '  ·  ' + new Date(v.time_ms).toLocaleString() : '') + (v.comment ? '  — ' + v.comment : '');
+            ul.appendChild(li);
+          });
+          sec.appendChild(ul);
+          // per-group firstness only — never a global count across universes
+          if (view.youArePresent) {
+            const y = document.createElement('div'); y.className = 'muted';
+            y.textContent = 'You’re #' + view.yourOrdinal + ' here in ' + (g.label || 'this group') + '.';
+            sec.appendChild(y);
+          }
+          out.appendChild(sec);
+        });
+      }
+      // make it clear the app looked across everything, even where empty
+      const note = document.createElement('div'); note.className = 'muted';
+      note.style.marginTop = '.5rem';
+      note.textContent = 'Checked ' + groups.length + ' group' + (groups.length === 1 ? '' : 's') +
+        (withVisits.length < groups.length ? ' · ' + (groups.length - withVisits.length) + ' had no visits here' : '');
+      out.appendChild(note);
     } catch (e) { out.textContent = 'Failed: ' + e.message; console.error(e); }
   });
 
@@ -302,6 +338,19 @@ function wireUI() {
     $('wipe-status').textContent = 'Wiped. Reload the page to start fresh.'; $('wipe-status').className = 'status ok';
     refreshGroups();
   });
+}
+
+function showJoinedModal(label) {
+  const wrap = document.createElement('div'); wrap.className = 'sp-modal';
+  const sheet = document.createElement('div'); sheet.className = 'sp-join-sheet';
+  const h = document.createElement('div'); h.style.fontSize = '1.1rem'; h.style.fontWeight = '600'; h.style.marginBottom = '.4rem';
+  h.textContent = 'You\u2019re now a member of \u201C' + (label || 'the group') + '\u201D \uD83C\uDF89';
+  const p = document.createElement('div'); p.className = 'muted'; p.style.marginBottom = '.8rem';
+  p.textContent = 'Log a visit and share it, then check who else has been to a place.';
+  const ok = document.createElement('button'); ok.className = 'primary'; ok.textContent = 'Got it';
+  ok.addEventListener('click', () => { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); });
+  sheet.appendChild(h); sheet.appendChild(p); sheet.appendChild(ok);
+  wrap.appendChild(sheet); document.body.appendChild(wrap);
 }
 
 function field(labelText, value) {
