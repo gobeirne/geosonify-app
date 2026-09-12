@@ -34,7 +34,7 @@ import {
   browserSessionPersistence
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
-  getFirestore, doc, getDoc, setDoc, collection, query, limit,
+  getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, query, limit,
   getDocs, startAfter, orderBy, documentId
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
 
@@ -52,12 +52,12 @@ function getStorageFactory() {
 // generated and cannot be guessed, so they must come from the console verbatim.
 // ============================================================================
 const firebaseConfig = {
-  apiKey:            'AIzaSyCna8NRmXsc-m0lCDb9t_KJQ3lzORoZUoQ',
+  apiKey:            'PASTE_FROM_CONSOLE',
   authDomain:        'geosonify-starpin.firebaseapp.com',
   projectId:         'geosonify-starpin',
-  storageBucket:     'geosonify-starpin.firebasestorage.app',
-  messagingSenderId: '306324213252',
-  appId:             '1:306324213252:web:8d382c496a2467040eef51'
+  storageBucket:     'geosonify-starpin.firebasestorage.app',  // or .appspot.com — copy what the console shows
+  messagingSenderId: 'PASTE_FROM_CONSOLE',
+  appId:             'PASTE_FROM_CONSOLE'
 };
 
 let _app = null, _auth = null, _db = null, _store = null, _uid = null, _initPromise = null;
@@ -94,7 +94,18 @@ export async function initStarpinFirebase() {
     try { await setPersistence(_auth, browserLocalPersistence); } catch (_) { /* non-fatal */ }
 
     _uid = await ensureAnonSession(_auth);
-    _db = getFirestore(_app);
+    // Use initializeFirestore with auto-detected long polling. The default
+    // streaming ("Listen channel") connection is what gets wedged behind ad/
+    // privacy blockers and corporate proxies, causing an endless retry storm
+    // (the "ticking up 20000 times" symptom). Long-polling auto-detect falls back
+    // to plain HTTPS requests that blockers are far less likely to kill, and our
+    // reads are all one-shot getDocs anyway (no real-time listeners needed).
+    try {
+      _db = initializeFirestore(_app, { experimentalAutoDetectLongPolling: true });
+    } catch (e) {
+      // initializeFirestore throws if Firestore was already initialised; fall back.
+      _db = getFirestore(_app);
+    }
 
     // Build the Firestore-backed adapter by injecting the SDK functions. The
     // adapter never imports Firebase itself — that's what keeps it swappable.

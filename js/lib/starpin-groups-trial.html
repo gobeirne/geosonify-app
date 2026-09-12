@@ -136,6 +136,7 @@ const PLACES = [
 ];
 
 let ctrl = null, sharing = null;
+const _hereCache = {};   // groupUuid|targetKey -> { at, p }  (read dedup)
 
 (async function () {
   try {
@@ -285,6 +286,8 @@ function wireUI() {
       // add to my own log, then share (share is additive; local record is safe first)
       window.__starpinLog.add(rec);
       const r = await ctrl.share(gid, rec, { handle: myName, comment: $('s-comment').value.trim() });
+      // let "who's been here" re-read this place next time (fresh visit added)
+      Object.keys(_hereCache).forEach(k => { if (k.indexOf(gid + '|') === 0) delete _hereCache[k]; });
       st.textContent = r.skipped ? 'Already shared this one.' : ('Shared “' + place.label + '” ✓'); st.className = 'status ok';
     } catch (e) { st.textContent = 'Share failed: ' + e.message; st.className = 'status err'; console.error(e); }
   });
@@ -296,15 +299,18 @@ function wireUI() {
       const groups = ctrl.myGroups();
       if (!groups.length) { out.innerHTML = '<span class="muted">Join or make a group first.</span>'; return; }
 
-      // aggregate across EVERY group you're in, but keep them VISUALLY SEPARATE:
-      // each group is its own private universe (different handle per group), so we
-      // show one labelled section per group rather than blending them into one
-      // list that would imply a shared world that doesn't exist.
-      const results = await Promise.all(groups.map(g =>
-        ctrl.onTargetView(g.groupUuid, place.target)
-          .then(view => ({ g, view }))
-          .catch(() => ({ g, view: { count: 0, visitors: [] } }))
-      ));
+      // dedup + cache (15s) per group+place so repeated clicks / re-renders can't
+      // turn into a Firestore-read storm, and a failing group fails ONCE.
+      const now = Date.now();
+      const results = await Promise.all(groups.map(g => {
+        const ck = g.groupUuid + '|' + (place.target.starpin || place.target.cornerstone);
+        const hit = _hereCache[ck];
+        if (hit && (now - hit.at) < 15000) return hit.p.then(view => ({ g, view }));
+        const p = ctrl.onTargetView(g.groupUuid, place.target)
+          .catch(() => ({ count: 0, visitors: [] }));
+        _hereCache[ck] = { at: now, p };
+        return p.then(view => ({ g, view }));
+      }));
 
       out.textContent = '';
       const withVisits = results.filter(r => r.view.count > 0);
