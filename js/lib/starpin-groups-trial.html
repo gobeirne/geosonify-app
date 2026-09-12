@@ -173,19 +173,34 @@ let ctrl = null, sharing = null;
     ctrl = GeosonifyStarpinGroups.create({ sharing, invite: GeosonifyStarpinInvite, log,
       portable, store, baseUrl: 'https://geosonify.org/js/lib/starpin-groups-trial.html' });
 
-    // auto-join if this page was opened from a one-click link
-    try {
-      const inv = ctrl.inviteFromLocation();
-      if (inv && inv.codeInLink) {
-        await ctrl.joinFromLink(location.href);
-        history.replaceState(null, '', location.pathname);
-      } else if (inv) {
-        $('j-link').value = location.href;
-      }
-    } catch (e) { /* not an invite link */ }
-
     wireUI();
     $('boot').hidden = true; $('app').hidden = false;
+
+    // auto-join if this page was opened from a one-click link. Runs AFTER wireUI
+    // so the group lists refresh. Errors are shown, never swallowed silently.
+    try {
+      const inv = ctrl.inviteFromLocation();
+      if (inv) {
+        if (inv.codeInLink) {
+          const js = $('j-status'); js.textContent = 'joining “' + (inv.label || 'group') + '” from your link…'; js.className = 'status';
+          try {
+            const r = await ctrl.joinFromLink(location.href);
+            history.replaceState(null, '', location.pathname);
+            js.textContent = (r.rejoined ? 'Already in ' : 'Joined ') + '“' + (r.label || 'group') + '” ✓  — scroll down to log a visit.';
+            js.className = 'status ok';
+            refreshGroups();
+          } catch (e) {
+            js.textContent = 'One-click join failed: ' + e.message + '. Try pasting the link + code below.';
+            js.className = 'status err'; console.error('[trial] auto-join failed:', e);
+            $('j-link').value = location.href;
+          }
+        } else {
+          // descriptor-only link: prefill, ask for the code
+          $('j-link').value = location.href;
+          const js = $('j-status'); js.textContent = 'This link needs the code — enter it above and press Join.'; js.className = 'status';
+        }
+      }
+    } catch (e) { console.warn('[trial] invite parse failed:', e); }
   } catch (e) {
     boot('startup error: ' + e.message, 'err');
     console.error(e);
