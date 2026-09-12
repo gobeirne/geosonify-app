@@ -1,0 +1,54 @@
+/* geosonify-starpin-groups.css v0.1 — styles for the group UI panel (NOT FROZEN)
+   Neutral, self-contained; restyle to match the app. Class names match
+   geosonify-starpin-groups-ui.js. */
+
+.sp-groups { font: inherit; }
+.sp-groups-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+.sp-groups-head h3 { margin: 0; font-size: 1.05rem; }
+.sp-groups-actions { display: flex; gap: .4rem; }
+
+.sp-group-list { list-style: none; margin: .75rem 0 0; padding: 0; }
+.sp-group-list li { display: flex; align-items: center; justify-content: space-between;
+  padding: .5rem .6rem; border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: .4rem; }
+.sp-group-label { font-weight: 600; }
+
+.sp-card { border: 1px solid #e0e0e0; border-radius: 10px; padding: 1rem; margin-top: .75rem; }
+.sp-card h4 { margin: 0 0 .6rem; }
+
+.sp-lbl { display: block; font-size: .82rem; color: #555; margin: .6rem 0 .2rem; }
+.sp-in { width: 100%; box-sizing: border-box; padding: .5rem .6rem; border: 1px solid #ccc;
+  border-radius: 7px; font: inherit; }
+.sp-in.sp-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
+.sp-check { display: flex; gap: .5rem; align-items: flex-start; margin: .7rem 0; font-size: .9rem; }
+
+.sp-field { margin: .6rem 0; }
+.sp-field-row { display: flex; gap: .4rem; }
+.sp-field-row .sp-in { flex: 1; }
+
+.sp-btn { font: inherit; padding: .45rem .8rem; border: 1px solid #bbb; background: #fafafa;
+  border-radius: 7px; cursor: pointer; }
+.sp-btn:hover { background: #f0f0f0; }
+.sp-btn-primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+.sp-btn-primary:hover { background: #245a94; }
+.sp-btn-sm { padding: .25rem .55rem; font-size: .82rem; }
+.sp-link { background: none; border: none; color: #2b6cb0; cursor: pointer; padding: .5rem 0; font: inherit; }
+
+.sp-muted { color: #777; font-size: .88rem; }
+.sp-ok { color: #237a3f; font-weight: 600; }
+.sp-warn { color: #b0442b; font-size: .88rem; }
+
+/* who's-been-here block */
+.sp-here-head { display: flex; align-items: center; justify-content: space-between; }
+.sp-here-title { font-weight: 600; }
+.sp-here-list { list-style: none; margin: .5rem 0 0; padding: 0; }
+.sp-here-list li { padding: .45rem .5rem; border-bottom: 1px solid #eee; }
+.sp-here-list li.sp-here-you { background: #f3f8ff; border-radius: 6px; }
+.sp-ord { display: inline-block; min-width: 2.2em; color: #999; font-variant-numeric: tabular-nums; }
+.sp-who { font-weight: 600; }
+.sp-when { color: #888; font-size: .82rem; margin-left: .5rem; }
+.sp-cmt { margin: .2rem 0 0 2.2em; color: #444; font-size: .9rem; }
+
+/* auto join sheet */
+.sp-modal { position: fixed; inset: 0; background: rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: center; padding: 1rem; z-index: 1000; }
+.sp-join-sheet { background: #fff; border-radius: 12px; padding: 1.25rem; max-width: 420px; width: 100%; }
