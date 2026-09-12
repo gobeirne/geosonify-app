@@ -113,7 +113,14 @@ var GeosonifyStarpinGroup = (function () {
     // under throwaway Argon2/padding params. Tests and provisional callers opt in
     // explicitly with { allowProvisional: true }. When the real params + JCS +
     // vectors are frozen, set PROFILE.frozen = true and this fuse opens itself.
-    var allowProvisional = primitives.allowProvisional === true;
+    var allowProvisional = primitives.allowProvisional === true || !!primitives.provisionalTag;
+    // A provisionalTag mixes into the Argon2 salt so a trial derives a DIFFERENT
+    // group_key (and therefore different handles + record keys) than the real
+    // frozen format ever will. Trial data thus lives in its own namespace: when
+    // the real PROFILE is frozen (no tag), real blobs never collide with, and can
+    // never be mis-decoded as, trial blobs. The tag also implies allowProvisional
+    // so seal() runs. Untagged behaviour is byte-identical to the oracle.
+    var provisionalTag = primitives.provisionalTag || null;
     var argon2idFn = primitives.argon2id;
     var xchachaFn  = primitives.xchacha20poly1305;
 
@@ -150,8 +157,10 @@ var GeosonifyStarpinGroup = (function () {
     // ---- 2. Key schedule ---------------------------------------------------
     // Argon2id is (probably) sync in the injected build; wrap so callers await.
     async function groupKey(code, groupUuidBytes, epoch) {
+      var saltPrefix = FROZEN.ARGON2_SALT_PREFIX;
+      if (provisionalTag) saltPrefix = 'starpin-group-PROVISIONAL-' + provisionalTag + '|';
       var salt = concat(
-        utf8(FROZEN.ARGON2_SALT_PREFIX),
+        utf8(saltPrefix),
         groupUuidBytes,                         // raw 16 bytes
         utf8('|' + String(epoch))
       );

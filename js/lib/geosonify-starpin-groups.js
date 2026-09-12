@@ -48,18 +48,19 @@ var GeosonifyStarpinGroups = (function () {
 
       var made = await sharing.createGroup({ code: code, label: opts.label || '', endpoint: opts.endpoint || null });
 
+      var linkMode = (opts.mode === 'full' || opts.mode === 'fragment') ? opts.mode : 'descriptor';
       var link = invite.makeInvite({
         baseUrl: baseUrl,
         groupUuid: made.groupUuid,
         epoch: made.epoch,
         endpoint: opts.endpoint || null,
         label: opts.label || '',
-        mode: opts.mode === 'full' ? 'full' : 'descriptor',
-        code: opts.mode === 'full' ? code : undefined
+        mode: linkMode,
+        code: (linkMode === 'full' || linkMode === 'fragment') ? code : undefined
       });
 
       return { groupUuid: made.groupUuid, code: code, link: link,
-               mode: opts.mode === 'full' ? 'full' : 'descriptor',
+               mode: linkMode,
                codeBits: invite.estimateBits(code) };
     }
 
@@ -88,15 +89,16 @@ var GeosonifyStarpinGroups = (function () {
       var parsed = invite.parseInvite(url);
       if (!parsed) return null;
       var already = !!sharing.getGroup(parsed.descriptor.groupUuid);
+      var hasCode = (parsed.mode === 'full' || parsed.mode === 'fragment-full') && !!parsed.code;
       return {
         label: parsed.descriptor.label,
         groupUuid: parsed.descriptor.groupUuid,
         epoch: parsed.descriptor.epoch,
         endpoint: parsed.descriptor.endpoint,
-        codeInLink: parsed.mode === 'full',
-        needsCode: parsed.mode !== 'full',
+        codeInLink: hasCode,
+        needsCode: !hasCode,
         alreadyJoined: already,
-        _code: parsed.code            // present only in full mode
+        _code: parsed.code            // present only when the link carried it
       };
     }
 

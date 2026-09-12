@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starpin — whānau sharing trial</title>
+<!--
+  A REAL, USABLE trial of group sharing for family — but PROVISIONAL.
+
+  What "provisional" means here (read this):
+    * The crypto uses PLACEHOLDER parameters and a PROVISIONAL NAMESPACE tag, so
+      everything shared here lives in its own corner. When the real format is
+      frozen later, this trial data is orphaned — it can never collide with, or be
+      mis-decoded as, real data. So trying this CANNOT mess up a future real launch.
+    * Your own device's saved logs are never touched destructively — sharing only
+      ADDS, and other people's shares go into a separate cache, not your log.
+    * When you're done trialling, you can wipe it (button at the bottom) and/or just
+      stop using it. Nothing here is permanent unless you decide to freeze the real
+      format on purpose.
+
+  It talks to the live geosonify-starpin Firebase, so family on different phones
+  really do see each other's visits.
+
+  NOTE: this trial page loads crypto from esm.sh for convenience. That's fine for a
+  family trial you run yourselves; the PRODUCTION app must vendor the crypto (see
+  the integration doc). Don't advertise this URL widely while it's on esm.sh.
+-->
+<link rel="stylesheet" href="./geosonify-starpin-groups.css">
+<style>
+  body { font: 15px/1.55 system-ui, sans-serif; max-width: 620px; margin: 0 auto; padding: 1rem 1rem 4rem; }
+  h1 { font-size: 1.25rem; margin: .2rem 0; }
+  .prov { background: #fff4e5; border: 1px solid #f0c890; border-radius: 8px; padding: .6rem .8rem; font-size: .85rem; color: #7a4a10; margin: .6rem 0 1rem; }
+  .card { border: 1px solid #e2e2e2; border-radius: 10px; padding: 1rem; margin: .9rem 0; }
+  .card h2 { font-size: 1rem; margin: 0 0 .6rem; }
+  label { display: block; font-size: .82rem; color: #555; margin: .5rem 0 .2rem; }
+  input, select { width: 100%; box-sizing: border-box; padding: .5rem .6rem; border: 1px solid #ccc; border-radius: 7px; font: inherit; }
+  .mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+  .row { display: flex; gap: .4rem; }
+  .row > * { flex: 1; }
+  button { font: inherit; padding: .5rem .9rem; border: 1px solid #bbb; background: #fafafa; border-radius: 7px; cursor: pointer; }
+  button.primary { background: #2b6cb0; color: #fff; border-color: #2b6cb0; }
+  button.sm { padding: .3rem .6rem; font-size: .85rem; flex: 0 0 auto; }
+  .status { font-size: .85rem; color: #555; min-height: 1.2em; margin-top: .5rem; }
+  .ok { color: #237a3f; } .err { color: #b0442b; }
+  .muted { color: #777; font-size: .85rem; }
+  .place-btns { display: flex; flex-wrap: wrap; gap: .4rem; }
+  .place-btns button { flex: 0 0 auto; }
+  #boot { font: 13px monospace; color: #666; }
+</style>
+</head>
+<body>
+<h1>Starpin — whānau sharing trial</h1>
+<div class="prov"><strong>Provisional trial.</strong> Shared data lives in a throwaway namespace and can’t affect a future real launch. Your own saved logs are never overwritten. Wipe anytime (bottom of page).</div>
+<div id="boot">starting…</div>
+
+<div id="app" hidden>
+
+  <div class="card">
+    <h2>1. Make a group (one person does this)</h2>
+    <label>Group name</label>
+    <input id="g-name" type="text" placeholder="e.g. Our Whānau" value="Our Whānau">
+    <label><input type="checkbox" id="g-oneclick" style="width:auto" checked> One-click link (code included — only send to people you trust)</label>
+    <button class="primary" id="g-create" style="margin-top:.6rem">Create group &amp; get link</button>
+    <div id="g-out"></div>
+    <div class="status" id="g-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>2. Join a group (everyone else)</h2>
+    <p class="muted">If you opened a one-click link, you may already be in — check the list below. Otherwise paste a link and/or enter the code.</p>
+    <label>Invite link</label>
+    <input id="j-link" type="text" placeholder="paste the link you were sent">
+    <label>Code (if the link didn’t include it)</label>
+    <input id="j-code" type="text" class="mono" placeholder="e.g. ABCD-2345">
+    <button class="primary" id="j-join" style="margin-top:.6rem">Join</button>
+    <div class="status" id="j-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>Your groups</h2>
+    <div id="my-groups"><span class="muted">none yet</span></div>
+  </div>
+
+  <div class="card">
+    <h2>3. Log a visit &amp; share it</h2>
+    <p class="muted">Pick a place everyone can “visit” so you see each other. (A real visit uses your GPS; these presets let the whole whānau meet at the same spot for the trial.)</p>
+    <div class="place-btns" id="place-btns"></div>
+    <label>Share to</label>
+    <select id="s-group"></select>
+    <label>Comment (optional)</label>
+    <input id="s-comment" type="text" placeholder="Found it with Dad!">
+    <button class="primary" id="s-share" style="margin-top:.6rem">Log this place &amp; share</button>
+    <div class="status" id="s-status"></div>
+  </div>
+
+  <div class="card">
+    <h2>4. Who’s been here</h2>
+    <label>Place</label>
+    <select id="h-place"></select>
+    <label>Group</label>
+    <select id="h-group"></select>
+    <button id="h-show" style="margin-top:.6rem">Show visits</button>
+    <div id="h-out" style="margin-top:.6rem"></div>
+  </div>
+
+  <div class="card">
+    <h2>Done trialling?</h2>
+    <button id="wipe">Wipe all trial groups &amp; sharing from this device</button>
+    <p class="muted">Removes trial group keys, sync state and the group cache from this browser. Your own visit log is left alone.</p>
+    <div class="status" id="wipe-status"></div>
+  </div>
+</div>
+
+<script src="./geosonify-starpin-group.js"></script>
+<script src="./geosonify-starpin-storage.js"></script>
+<script src="./geosonify-starpin-sharing.js"></script>
+<script src="./geosonify-starpin-invite.js"></script>
+<script src="./geosonify-starpin-selfsync.js"></script>
+<script src="./geosonify-starpin-portable.js"></script>
+<script src="./geosonify-starpin-groups.js"></script>
+
+<script type="module">
+import { argon2id } from 'https://esm.sh/@noble/hashes@1.8.0/argon2';
+import { xchacha20poly1305 } from 'https://esm.sh/@noble/ciphers@1.3.0/chacha';
+import { initStarpinFirebase } from './geosonify-starpin-firebase.js';
+
+const boot = (m, cls) => { const b = document.getElementById('boot'); b.textContent = m; if (cls) b.className = cls; };
+const $ = id => document.getElementById(id);
+
+// preset "places" so the whole whānau can visit the same target during the trial
+const PLACES = [
+  { label: 'St Martins Church', target: { starpin: 'starpin:gdr3:5382128182680588160' } },
+  { label: 'The Playground',    target: { cornerstone: 'V:trial-playground' } },
+  { label: 'Nana’s House',      target: { cornerstone: 'V:trial-nanas-house' } },
+  { label: 'The Beach',         target: { starpin: 'starpin:gdr3:4711122233344455566' } }
+];
+
+let ctrl = null, sharing = null;
+
+(async function () {
+  try {
+    boot('connecting to Firebase…');
+    let store = null;
+    try { const fb = await initStarpinFirebase(); store = fb.store; }
+    catch (e) { boot('Firebase not connected — check config in geosonify-starpin-firebase.js: ' + e.message, 'err'); return; }
+
+    boot('setting up crypto…');
+    // PROVISIONAL: a namespace tag makes this trial data separate from any future
+    // real format, and lets sealing run under placeholder params.
+    const group = GeosonifyStarpinGroup.create({
+      provisionalTag: 'trial-2026-09',
+      argon2id: (pw, s, o) => argon2id(pw, s, { t: o.t, m: o.m, p: o.p, dkLen: o.dkLen }),
+      xchacha20poly1305: (k, n) => ({ encrypt: (pt, a) => xchacha20poly1305(k, n, a).encrypt(pt),
+                                      decrypt: (c, a) => xchacha20poly1305(k, n, a).decrypt(c) })
+    });
+
+    // a tiny record log for the trial (own visits). The real app passes
+    // GeosonifyStarpinLog here; a self-contained store keeps the trial simple.
+    const _recs = {};
+    const log = {
+      add: r => { _recs[r.record_id] = r; },
+      merge: j => { (JSON.parse(j).records || []).forEach(r => { if (!_recs[r.record_id]) _recs[r.record_id] = r; }); },
+      get: id => _recs[id] || null, has: id => id in _recs,
+      all: () => Object.values(_recs), current: () => Object.values(_recs)
+    };
+
+    sharing = GeosonifyStarpinSharing.create({ group, store, log, localStorage });
+    window.__starpinLog = log;   // so the share handler can add to the SAME log
+    const portable = GeosonifyStarpinPortable.create({
+      argon2id, xchacha20poly1305,
+      sha256: b => crypto.subtle.digest('SHA-256', b).then(x => new Uint8Array(x))
+    });
+    ctrl = GeosonifyStarpinGroups.create({ sharing, invite: GeosonifyStarpinInvite, log,
+      portable, store, baseUrl: 'https://geosonify.org/js/lib/starpin-groups-trial.html' });
+
+    // auto-join if this page was opened from a one-click link
+    try {
+      const inv = ctrl.inviteFromLocation();
+      if (inv && inv.codeInLink) {
+        await ctrl.joinFromLink(location.href);
+        history.replaceState(null, '', location.pathname);
+      } else if (inv) {
+        $('j-link').value = location.href;
+      }
+    } catch (e) { /* not an invite link */ }
+
+    wireUI();
+    $('boot').hidden = true; $('app').hidden = false;
+  } catch (e) {
+    boot('startup error: ' + e.message, 'err');
+    console.error(e);
+  }
+})();
+
+function refreshGroups() {
+  const groups = ctrl.myGroups();
+  const mg = $('my-groups');
+  mg.textContent = '';
+  if (!groups.length) { mg.innerHTML = '<span class="muted">none yet</span>'; }
+  else groups.forEach(g => { const d = document.createElement('div'); d.textContent = '• ' + (g.label || '(unnamed)'); mg.appendChild(d); });
+  ['s-group', 'h-group'].forEach(id => {
+    const sel = $(id); sel.textContent = '';
+    groups.forEach(g => { const o = document.createElement('option'); o.value = g.groupUuid; o.textContent = g.label || '(unnamed)'; sel.appendChild(o); });
+  });
+}
+
+function fillPlaces() {
+  ['h-place'].forEach(id => {
+    const sel = $(id); sel.textContent = '';
+    PLACES.forEach((p, i) => { const o = document.createElement('option'); o.value = i; o.textContent = p.label; sel.appendChild(o); });
+  });
+  const pb = $('place-btns'); pb.textContent = '';
+  PLACES.forEach((p, i) => {
+    const b = document.createElement('button'); b.textContent = p.label; b.dataset.i = i;
+    b.addEventListener('click', () => { pb.querySelectorAll('button').forEach(x => x.classList.remove('primary')); b.classList.add('primary'); pb._sel = i; });
+    pb.appendChild(b);
+  });
+  pb._sel = 0; pb.querySelector('button').classList.add('primary');
+}
+
+function wireUI() {
+  refreshGroups(); fillPlaces();
+
+  $('g-create').addEventListener('click', async () => {
+    const st = $('g-status'); st.textContent = 'creating…'; st.className = 'status';
+    try {
+      const res = await ctrl.createGroup({
+        label: $('g-name').value.trim() || 'Group',
+        mode: $('g-oneclick').checked ? 'fragment' : 'descriptor'
+      });
+      const out = $('g-out'); out.textContent = '';
+      out.appendChild(field('Code (say this to your people)', res.code));
+      out.appendChild(field($('g-oneclick').checked ? 'One-click invite link' : 'Invite link (send code separately)', res.link));
+      st.textContent = 'Group ready. Send the link' + ($('g-oneclick').checked ? '.' : ', then tell them the code.'); st.className = 'status ok';
+      refreshGroups();
+    } catch (e) { st.textContent = 'Could not create: ' + e.message; st.className = 'status err'; }
+  });
+
+  $('j-join').addEventListener('click', async () => {
+    const st = $('j-status'); st.textContent = 'joining…'; st.className = 'status';
+    try {
+      const link = $('j-link').value.trim() || location.href;
+      await ctrl.joinFromLink(link, $('j-code').value.trim() || undefined);
+      st.textContent = 'Joined!'; st.className = 'status ok';
+      refreshGroups();
+    } catch (e) { st.textContent = 'Could not join: ' + e.message + ' (need the code?)'; st.className = 'status err'; }
+  });
+
+  $('s-share').addEventListener('click', async () => {
+    const st = $('s-status'); st.textContent = 'logging & sharing…'; st.className = 'status';
+    try {
+      const gid = $('s-group').value;
+      if (!gid) { st.textContent = 'Join or make a group first.'; st.className = 'status err'; return; }
+      const place = PLACES[$('place-btns')._sel || 0];
+      const rec = { schema: 'starpin.record/1', record_id: crypto.randomUUID(), kind: 'visit',
+                    target: place.target, event: { time_ms: Date.now() } };
+      // add to my own log, then share (share is additive; local record is safe first)
+      window.__starpinLog.add(rec);
+      const r = await ctrl.share(gid, rec, { comment: $('s-comment').value.trim() });
+      st.textContent = r.skipped ? 'Already shared this one.' : ('Shared “' + place.label + '” ✓'); st.className = 'status ok';
+    } catch (e) { st.textContent = 'Share failed: ' + e.message; st.className = 'status err'; console.error(e); }
+  });
+
+  $('h-show').addEventListener('click', async () => {
+    const out = $('h-out'); out.textContent = 'checking…';
+    try {
+      const gid = $('h-group').value, place = PLACES[+$('h-place').value];
+      if (!gid) { out.textContent = 'Join a group first.'; return; }
+      const view = await ctrl.onTargetView(gid, place.target);
+      out.textContent = '';
+      if (!view.count) { out.innerHTML = '<span class="muted">No visits here yet in this group.</span>'; return; }
+      const ul = document.createElement('ul'); ul.className = 'sp-here-list';
+      view.visitors.forEach(v => {
+        const li = document.createElement('li'); if (v.you) li.className = 'sp-here-you';
+        li.textContent = '#' + v.ordinal + '  ' + (v.you ? v.handle + ' (you)' : v.handle) +
+          (v.time_ms ? '  ·  ' + new Date(v.time_ms).toLocaleString() : '') + (v.comment ? '  — ' + v.comment : '');
+        ul.appendChild(li);
+      });
+      out.appendChild(ul);
+    } catch (e) { out.textContent = 'Failed: ' + e.message; console.error(e); }
+  });
+
+  $('wipe').addEventListener('click', () => {
+    if (!confirm('Remove all trial group keys, sync state and group cache from this browser? Your own visit log is left alone.')) return;
+    ['starpin.groups.v1', 'starpin.sync.v1', 'starpin.owned.v1', 'starpin.published.v1',
+     'starpin.groupcache.v1', 'starpin.self.v1'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} });
+    $('wipe-status').textContent = 'Wiped. Reload the page to start fresh.'; $('wipe-status').className = 'status ok';
+    refreshGroups();
+  });
+}
+
+function field(labelText, value) {
+  const wrap = document.createElement('div'); wrap.style.margin = '.5rem 0';
+  const l = document.createElement('label'); l.textContent = labelText; wrap.appendChild(l);
+  const row = document.createElement('div'); row.className = 'row';
+  const inp = document.createElement('input'); inp.className = 'mono'; inp.readOnly = true; inp.value = value;
+  inp.addEventListener('focus', () => inp.select());
+  const btn = document.createElement('button'); btn.className = 'sm'; btn.textContent = 'Copy';
+  btn.addEventListener('click', () => { navigator.clipboard && navigator.clipboard.writeText(value); btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1200); });
+  row.appendChild(inp); row.appendChild(btn); wrap.appendChild(row);
+  return wrap;
+}
+</script>
+</body>
+</html>
