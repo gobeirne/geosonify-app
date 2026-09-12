@@ -84,6 +84,8 @@
   <div class="card">
     <h2>3. Log a visit &amp; share it</h2>
     <p class="muted">Pick a place everyone can “visit” so you see each other. (A real visit uses your GPS; these presets let the whole whānau meet at the same spot for the trial.)</p>
+    <label>Your name (how you’ll show up to the group)</label>
+    <input id="s-name" type="text" placeholder="e.g. Dad, Nana, Tane">
     <div class="place-btns" id="place-btns"></div>
     <label>Share to</label>
     <select id="s-group"></select>
@@ -238,6 +240,10 @@ function fillPlaces() {
 function wireUI() {
   refreshGroups(); fillPlaces();
 
+  // remember the person's display name across sessions
+  try { const n = localStorage.getItem('starpin.trial.name'); if (n) $('s-name').value = n; } catch (e) {}
+  $('s-name').addEventListener('change', () => { try { localStorage.setItem('starpin.trial.name', $('s-name').value.trim()); } catch (e) {} });
+
   $('g-create').addEventListener('click', async () => {
     const st = $('g-status'); st.textContent = 'creating…'; st.className = 'status';
     try {
@@ -270,11 +276,15 @@ function wireUI() {
       const gid = $('s-group').value;
       if (!gid) { st.textContent = 'Join or make a group first.'; st.className = 'status err'; return; }
       const place = PLACES[$('place-btns')._sel || 0];
+      const myName = $('s-name').value.trim();
+      if (!myName) { st.textContent = 'Enter your name first (so the group knows who you are).'; st.className = 'status err'; return; }
+      // remember this name for the group so "you" is correct + readable
+      try { sharing.setHandle(gid, myName); } catch (e) {}
       const rec = { schema: 'starpin.record/1', record_id: crypto.randomUUID(), kind: 'visit',
                     target: place.target, event: { time_ms: Date.now() } };
       // add to my own log, then share (share is additive; local record is safe first)
       window.__starpinLog.add(rec);
-      const r = await ctrl.share(gid, rec, { comment: $('s-comment').value.trim() });
+      const r = await ctrl.share(gid, rec, { handle: myName, comment: $('s-comment').value.trim() });
       st.textContent = r.skipped ? 'Already shared this one.' : ('Shared “' + place.label + '” ✓'); st.className = 'status ok';
     } catch (e) { st.textContent = 'Share failed: ' + e.message; st.className = 'status err'; console.error(e); }
   });
