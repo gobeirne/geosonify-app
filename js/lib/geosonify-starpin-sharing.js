@@ -288,6 +288,9 @@ var GeosonifyStarpinSharing = (function () {
       });
       return out;
     }
+    function groupCacheHas(groupUuid, recordId) {
+      return !!groupCache()[groupUuid + '|' + recordId];
+    }
 
     // ---- AAD (must match the sealing module's fixed field order) ----------
     function aadFor(groupUuid, handle) {
@@ -370,8 +373,26 @@ var GeosonifyStarpinSharing = (function () {
       var handle = await G.targetHandle(gk, ct);
       var aad = aadFor(groupUuid, handle);
 
-      var seenHashes = {};
-      sharesInAtHandle(groupUuid, handle).forEach(function (h) { seenHashes[h] = true; });
+      // A blob is "already have it" ONLY if the record it carries is actually
+      // present locally right now — in the log OR the group cache. Merely having
+      // a sync entry for its hash is NOT proof of local presence: after a reload
+      // or storage eviction the sync entries can survive while the log is empty,
+      // which would otherwise make this skip our OWN records forever and drop them
+      // from the view. So we skip on durable presence, not on sync history.
+      function haveRecordFor(hash) {
+        var idx = syncIndex();
+        for (var rid in idx) {
+          if (!idx.hasOwnProperty(rid)) continue;
+          for (var e = 0; e < idx[rid].length; e++) {
+            if (idx[rid][e].group_uuid === groupUuid && idx[rid][e].content_hash === hash) {
+              if (log && log.has && log.has(rid)) return true;      // in my log
+              if (groupCacheHas(groupUuid, rid)) return true;        // in group cache
+              return false;                                          // known hash, record NOT held
+            }
+          }
+        }
+        return false;
+      }
 
       var fresh = [];
       var cursor = null, guard = 0;
@@ -379,7 +400,7 @@ var GeosonifyStarpinSharing = (function () {
         var page = await store.list(handle, { limit: 100, cursor: cursor });
         for (var i = 0; i < page.items.length; i++) {
           var item = page.items[i];
-          if (seenHashes[item.hash]) continue;         // already have it
+          if (haveRecordFor(item.hash)) continue;      // already held locally
           var plaintext;
           try {
             plaintext = await G.open(gk, aad, item.blob);   // throws on bad tag/AAD
