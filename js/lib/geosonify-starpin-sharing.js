@@ -48,6 +48,10 @@
 var GeosonifyStarpinSharing = (function () {
 
   var SHARE_SCHEMA = 'starpin.group-share/1';
+  // Base local-store key names. Inside create() these are shadowed by
+  // namespace-suffixed instance-local versions (see nsKey()); these module-scope
+  // copies exist only for the default-name exports below and any test that reads
+  // them. Production (untagged) uses exactly these base names.
   var GROUPS_STORE = 'starpin.groups.v1';
   var SYNC_STORE   = 'starpin.sync.v1';
 
@@ -127,6 +131,25 @@ var GeosonifyStarpinSharing = (function () {
     if (!G) throw new Error('sharing: group sealing module required');
     if (!store) throw new Error('sharing: storage adapter required');
     if (!storage) throw new Error('sharing: localStorage (or injected) required');
+
+    // ---- LOCAL-STORE NAMESPACE -------------------------------------------
+    // A provisional namespace (e.g. "trial-2026-09") must scope the LOCAL
+    // sharing state — group registry, sync/ownership/publication ledgers, group
+    // cache and the shared self store — not just the remote sealed blobs. The
+    // blobs are already namespaced inside the group module (the tag is mixed
+    // into the Argon2 salt prefix). But the local ledgers are plain localStorage
+    // keys; without scoping, a statement only true in the provisional universe
+    // ("record R was published to group G") would be inherited by the frozen
+    // production app and could suppress a real publication. So every local key
+    // gets a ":<namespace>" suffix. Untagged (production) => NO suffix, so
+    // existing/future production keys are unchanged and backward-compatible.
+    // This is LOCAL KEYING ONLY: it changes no sealed byte, handle, AAD or
+    // canonical target — nothing frozen.
+    var NS = deps.namespace ? String(deps.namespace) : '';
+    function nsKey(base) { return NS ? (base + ':' + NS) : base; }
+    var GROUPS_STORE     = nsKey('starpin.groups.v1');
+    var SYNC_STORE       = nsKey('starpin.sync.v1');
+    var SELF_STORE       = nsKey('starpin.self.v1');   // SHARED with selfsync; must namespace identically
 
     // ---- group registry ---------------------------------------------------
     function listGroups() { return readJSON(storage, GROUPS_STORE, {}); }
@@ -234,7 +257,7 @@ var GeosonifyStarpinSharing = (function () {
     // Unforgeable "you": only my own device writes here, keyed by the content_hash
     // it actually produced. Carried in the portable bundle so "you" survives a
     // device move. Never derived from anything an attacker controls.
-    var OWNED_STORE = 'starpin.owned.v1';
+    var OWNED_STORE = nsKey('starpin.owned.v1');
     function ownedIndex() { return readJSON(storage, OWNED_STORE, {}); }
     function markOwned(contentHash, meta) {
       var idx = ownedIndex();
@@ -248,7 +271,7 @@ var GeosonifyStarpinSharing = (function () {
     // via self-sync learns R was ALREADY published to this group and won't publish
     // a second (different-ciphertext) copy. This is the cross-device extension of
     // shareRecord's local isSharedOut() idempotency.
-    var PUB_STORE = 'starpin.published.v1';
+    var PUB_STORE = nsKey('starpin.published.v1');
     function pubIndex() { return readJSON(storage, PUB_STORE, {}); }
     function pubKey(groupUuid, recordId) { return groupUuid + '|' + recordId; }
     function markPublished(groupUuid, recordId, meta) {
@@ -263,7 +286,7 @@ var GeosonifyStarpinSharing = (function () {
     // delete from your authoritative history. Keyed "group_uuid|record_id".
     // Append-only here too: a differing-bytes collision quarantines, never
     // overwrites.
-    var GROUPCACHE_STORE = 'starpin.groupcache.v1';
+    var GROUPCACHE_STORE = nsKey('starpin.groupcache.v1');
     function groupCache() { return readJSON(storage, GROUPCACHE_STORE, {}); }
     function cacheGroupRecord(groupUuid, rec) {
       if (!rec || !rec.record_id) return;
@@ -469,7 +492,7 @@ var GeosonifyStarpinSharing = (function () {
         sync: opts.includeSync ? syncIndex() : null,
         owned: opts.includeOwned !== false ? ownedIndex() : null,
         published: opts.includePublished !== false ? pubIndex() : null,
-        self: opts.includeSelf !== false ? readJSON(storage, 'starpin.self.v1', null) : null
+        self: opts.includeSelf !== false ? readJSON(storage, SELF_STORE, null) : null
       };
       if (opts.includeLog && log && typeof log.all === 'function') {
         bundle.log = { schema: 'starpin.export/1', records: log.all() };
@@ -562,14 +585,14 @@ var GeosonifyStarpinSharing = (function () {
       }
 
       if (bundle.self && bundle.self.self_key_b64) {
-        var localSelf = readJSON(storage, 'starpin.self.v1', null);
+        var localSelf = readJSON(storage, SELF_STORE, null);
         if (!localSelf || !localSelf.self_key_b64) {
-          writeJSON(storage, 'starpin.self.v1', { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
+          writeJSON(storage, SELF_STORE, { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
           report.self = 'adopted';
         } else if (localSelf.self_key_b64 === bundle.self.self_key_b64) {
           report.self = 'same';
         } else if (mode === 'overwrite') {
-          writeJSON(storage, 'starpin.self.v1', { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
+          writeJSON(storage, SELF_STORE, { self_key_b64: bundle.self.self_key_b64, seen: {}, pushed: {} });
           report.self = 'replaced';
         } else {
           // safe mode: DO NOT detach a working device from its live channel.

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StarpinCrypto vendored bundle — browser smoke test</title>
+<style>
+  body { font: 15px/1.5 system-ui, sans-serif; max-width: 760px; margin: 1.5rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.2rem; }
+  #log { background:#0b0b0c; color:#d6d6d6; padding:1rem; border-radius:8px; white-space:pre-wrap; word-break:break-word; }
+  .p { color:#7CFC9B; } .f { color:#ff6b6b; } .h { color:#9ecbff; }
+</style>
+</head>
+<body>
+<h1>StarpinCrypto vendored bundle — browser smoke test</h1>
+<p>Loads <code>starpin-crypto-noble-h1.8.0-c1.3.0.js</code> as a classic
+<code>&lt;script&gt;</code> and the sealing module, then verifies live in the
+browser that the vendored crypto reproduces the oracle's known-good values and a
+seal&rarr;open round-trip works. All green = the IIFE/global and real-WebCrypto
+loading behaviour work in the target environment.</p>
+<div id="log">running…</div>
+
+<!-- load exactly as the real app will: classic scripts, vendored crypto first -->
+<script src="./starpin-crypto-noble-h1.8.0-c1.3.0.js"></script>
+<script src="../geosonify-starpin-group.js"></script>
+<script>
+(async function () {
+  var out = [], pass = 0, fail = 0;
+  function line(cls, s){ out.push('<span class="'+cls+'">'+s+'</span>'); document.getElementById('log').innerHTML = out.join('\n'); }
+  function ok(label, cond){ if(cond){pass++; line('p','  PASS  '+label);} else {fail++; line('f','  FAIL  '+label);} }
+  function head(s){ line('h', s); }
+
+  // ground truth captured from the Node oracle (group-v1-reference.js)
+  var GT = {
+    GK: '3a92202d39fcbbd14933851adb09029268da895f3f809434a1b4968cf4bc5feb',
+    HANDLE: 'D0YQbZQkC7VKlzddypGQ9PYGHjlsECjsixSOugPJGhQ',
+    RK: 'e274c643bd61b278abce4afc47441e06fb6dcfd3567435d6c90049fb040e3eb4'
+  };
+
+  try {
+    head('load + surface');
+    ok('window.StarpinCrypto present', !!window.StarpinCrypto);
+    ok('argon2id is a function', typeof window.StarpinCrypto.argon2id === 'function');
+    ok('xchacha20poly1305 is a function', typeof window.StarpinCrypto.xchacha20poly1305 === 'function');
+    ok('vendor stamp h1.8.0/c1.3.0',
+       window.StarpinCrypto._vendor && window.StarpinCrypto._vendor.hashes==='1.8.0'
+       && window.StarpinCrypto._vendor.ciphers==='1.3.0');
+    ok('GeosonifyStarpinGroup present', typeof GeosonifyStarpinGroup !== 'undefined');
+
+    var C = window.StarpinCrypto;
+    var G = GeosonifyStarpinGroup.create({
+      allowProvisional: true,
+      argon2id: function(pw, salt, o){ return C.argon2id(pw, salt, o); },
+      xchacha20poly1305: function(k, n){ return {
+        encrypt: function(pt, aad){ return C.xchacha20poly1305(k, n, aad).encrypt(pt); },
+        decrypt: function(ct, aad){ return C.xchacha20poly1305(k, n, aad).decrypt(ct); }
+      }; }
+      // hkdfSha256 + sha256 omitted -> real browser WebCrypto (crypto.subtle)
+    });
+
+    var GU = Uint8Array.from('0123456789abcdef0123456789abcdef'.match(/../g).map(function(h){return parseInt(h,16);}));
+    var TARGET = 'starpin:gdr3:5382128182680588160';
+
+    head('byte-equality vs oracle ground truth (live WebCrypto HKDF/SHA-256)');
+    var gk = await G.groupKey('MRSK-7QF2', GU, 1);
+    ok('group_key == oracle', G.hex(gk) === GT.GK);
+    var handle = await G.targetHandle(gk, TARGET);
+    ok('target_handle == oracle', handle === GT.HANDLE);
+    var salt = new Uint8Array(32); salt.fill(0x11);
+    var rk = await G.recordKey(gk, salt);
+    ok('record_key == oracle', G.hex(rk) === GT.RK);
+
+    head('seal -> open round-trip (in-browser)');
+    var aad = { schema: GeosonifyStarpinGroup.FROZEN.SCHEMA, target_handle: handle,
+      group_uuid: G.b64url(GU), epoch: 1,
+      kdf: GeosonifyStarpinGroup.FROZEN.KDF_MARKER, cipher: GeosonifyStarpinGroup.FROZEN.CIPHER_MARKER };
+    var nonce = new Uint8Array(24); nonce.fill(0x22);
+    var recStr = JSON.stringify({ record_id:'11111111-1111-4111-8111-111111111111',
+      kind:'visit', target:TARGET, event:{ time_ms:1786000000000, time_uncertainty_ms:null } });
+    var sealed = await G.seal(gk, aad, salt, nonce, G.utf8(recStr));
+    ok('seal produced a blob', sealed && sealed.blob && sealed.blob.length > 56);
+    var opened = await G.open(gk, aad, sealed.blob);
+    var openedStr = new TextDecoder().decode(opened);
+    ok('open(seal(x)) == x', openedStr === recStr);
+
+    head('');
+    line(fail===0?'p':'f', 'VENDORED CRYPTO BROWSER SMOKE TEST: ' + (fail===0?'PASS':'FAIL') +
+         '  (' + pass + '/' + (pass+fail) + ')');
+  } catch (e) {
+    line('f', 'HARNESS ERROR: ' + (e && e.message ? e.message : e));
+  }
+})();
+</script>
+</body>
+</html>

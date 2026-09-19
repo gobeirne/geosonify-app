@@ -69,6 +69,15 @@ var GeosonifyStarpinSelfSync = (function () {
     if (!log) throw new Error('selfsync: record log required');
     if (!storage) throw new Error('selfsync: localStorage (or injected) required');
 
+    // LOCAL-STORE NAMESPACE — see the long note in geosonify-starpin-sharing.js.
+    // The self store is SHARED with the sharing module, so both MUST namespace it
+    // identically or a provisional and a production instance would desync (or,
+    // worse, cross-contaminate) the personal-sync credential. Untagged => base
+    // key, unchanged. This is local keying only; SELF_TARGET / SELF_UUID feed the
+    // sealed AAD/handle derivation and are FROZEN — do not touch them.
+    var NS = deps.namespace ? String(deps.namespace) : '';
+    var SELF_STORE = NS ? ('starpin.self.v1:' + NS) : 'starpin.self.v1';
+
     function readSelf() {
       try { var raw = storage.getItem(SELF_STORE); return raw ? JSON.parse(raw) : null; }
       catch (_) { return null; }

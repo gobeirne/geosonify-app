@@ -28,6 +28,7 @@ var StarpinGroups = (function () {
 
   var ctrl = null, sharing = null, selfsync = null, portable = null;
   var host = null, ready = false, reason = 'not initialised';
+  var provisional = null;      // the active provisionalTag, or null when running frozen
   var renderCache = {};        // key "group|handle" -> { at, promise }
   var CACHE_MS = 15000;
 
@@ -51,8 +52,29 @@ var StarpinGroups = (function () {
       if (typeof GeosonifyStarpinGroup === 'undefined') return fail('sharing modules not loaded');
       if (!C || typeof C.argon2id !== 'function' || typeof C.xchacha20poly1305 !== 'function')
         return fail('crypto build (Argon2id + XChaCha20) not available');
-      if (!GeosonifyStarpinGroup.PROFILE || GeosonifyStarpinGroup.PROFILE.frozen !== true)
-        return fail('PROFILE not frozen — sharing disabled until Argon2/padding/JCS are finalised');
+
+      // PROFILE gate, two states:
+      //   - No provisionalTag => this layer requires a FROZEN profile, so a plain
+      //     UI wiring can never mint a PERMANENT blob under placeholder params.
+      //   - provisionalTag set => run under a NAMESPACED provisional profile. The
+      //     tag is mixed into the Argon2 salt prefix by the sealing module, so this
+      //     data derives different handles/keys than the real frozen format ever
+      //     will and can never collide with or be mis-decoded as real data. This is
+      //     exactly how starpin-groups-trial.html already operates; it lets goals
+      //     (a)/(b) be wired and tested NOW, before the Argon2 benchmark/freeze.
+      // Untagged behaviour is unchanged: still fail-closed on an unfrozen PROFILE.
+      var provisionalTag = opts.provisionalTag || null;
+      if (!GeosonifyStarpinGroup.PROFILE || GeosonifyStarpinGroup.PROFILE.frozen !== true) {
+        if (!provisionalTag)
+          return fail('PROFILE not frozen — sharing disabled until Argon2/padding/JCS are finalised ' +
+                      '(pass opts.provisionalTag to run under a namespaced provisional profile)');
+        warn('running under PROVISIONAL namespace "' + provisionalTag + '" — data is namespaced and NOT permanent');
+      } else if (provisionalTag) {
+        // Frozen profile but a tag was passed: refuse rather than silently namespace
+        // real data into a provisional bucket (that would strand it after freeze).
+        return fail('PROFILE is frozen but a provisionalTag was supplied — refuse to namespace real data');
+      }
+
       if (!host || !host.log) return fail('host log not provided');
 
       // STORAGE: fail closed.
@@ -67,6 +89,7 @@ var StarpinGroups = (function () {
       }
 
       var group = GeosonifyStarpinGroup.create({
+        provisionalTag: provisionalTag,   // null under a frozen profile; a tag namespaces trial data
         argon2id: function (pw, salt, o) { return C.argon2id(pw, salt, { t: o.t, m: o.m, p: o.p, dkLen: o.dkLen }); },
         xchacha20poly1305: function (k, n) {
           return { encrypt: function (pt, aad) { return C.xchacha20poly1305(k, n, aad).encrypt(pt); },
@@ -74,13 +97,14 @@ var StarpinGroups = (function () {
         }
       });
       var lg = host.log;
-      sharing  = GeosonifyStarpinSharing.create({ group: group, store: store, log: lg, localStorage: window.localStorage });
-      selfsync = GeosonifyStarpinSelfSync.create({ group: group, store: store, log: lg, localStorage: window.localStorage });
+      sharing  = GeosonifyStarpinSharing.create({ group: group, store: store, log: lg, localStorage: window.localStorage, namespace: provisionalTag });
+      selfsync = GeosonifyStarpinSelfSync.create({ group: group, store: store, log: lg, localStorage: window.localStorage, namespace: provisionalTag });
       portable = GeosonifyStarpinPortable.create({ argon2id: C.argon2id, xchacha20poly1305: C.xchacha20poly1305, sha256: webSha256 });
       ctrl     = GeosonifyStarpinGroups.create({ sharing: sharing, invite: GeosonifyStarpinInvite, log: lg,
                                                  portable: portable, store: store,
+                                                 realm: provisionalTag || GeosonifyStarpinInvite.REALM_PRODUCTION,
                                                  baseUrl: 'https://geosonify.org/starpin-demo.html' });
-      ready = true; reason = '';
+      ready = true; reason = ''; provisional = provisionalTag;
 
       var inv = opts.invite || null;
       try { if (!inv && ctrl.inviteFromLocation) inv = ctrl.inviteFromLocation(); } catch (e) { warn('invite parse failed', e); }
@@ -88,7 +112,7 @@ var StarpinGroups = (function () {
       return { ready: true };
     });
   }
-  function fail(r) { ready = false; reason = r; return { ready: false, reason: r }; }
+  function fail(r) { ready = false; reason = r; provisional = null; return { ready: false, reason: r }; }
 
   // host provides the target builders; the group code never re-derives them.
   function targetForCornerstone(name) {
@@ -211,6 +235,8 @@ var StarpinGroups = (function () {
     targetForCornerstone: targetForCornerstone,
     isReady: function () { return ready; },
     readiness: function () { return reason; },
+    provisionalTag: function () { return provisional; },
+    isProvisional: function () { return provisional != null; },
     controller: function () { return ctrl; }
   };
 })();

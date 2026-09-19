@@ -16,9 +16,10 @@
   Wire it with the pieces built earlier:
 
     var ctrl = GeosonifyStarpinGroups.create({
-      sharing:  GeosonifyStarpinSharing.create({ group, store, log, localStorage }),
+      sharing:  GeosonifyStarpinSharing.create({ group, store, log, localStorage, namespace: 'trial-2026-09' }),
       invite:   GeosonifyStarpinInvite,
       log:      theRecordLog,
+      realm:    'trial-2026-09',   // or GeosonifyStarpinInvite.REALM_PRODUCTION when frozen
       baseUrl:  'https://geosonify.org/starpin-demo.html'
     });
 */
@@ -35,6 +36,15 @@ var GeosonifyStarpinGroups = (function () {
     if (!sharing) throw new Error('groups: sharing controller required');
     if (!invite)  throw new Error('groups: invite module required');
     if (!log)     throw new Error('groups: record log required');
+
+    // CONFIGURED REALM — this app's cryptographic/storage universe. Provisional
+    // apps pass their tag (e.g. "trial-2026-09"); a frozen production app passes
+    // invite.REALM_PRODUCTION. Every invite this controller MINTS carries it, and
+    // every invite it ACCEPTS must match it (see joinFromLink). The invite never
+    // gets to choose the runtime realm — the app's configuration does.
+    var realm = deps.realm;
+    if (!invite.validRealm || !invite.validRealm(realm))
+      throw new Error('groups: a valid configured realm is required (got ' + JSON.stringify(realm) + ')');
 
     // ---- 1. create a group and hand back an invite link ------------------
     // opts: { label, code?, generateCode?, mode:'descriptor'|'full', endpoint? }
@@ -55,6 +65,7 @@ var GeosonifyStarpinGroups = (function () {
         epoch: made.epoch,
         endpoint: opts.endpoint || null,
         label: opts.label || '',
+        realm: realm,
         mode: linkMode,
         code: (linkMode === 'full' || linkMode === 'fragment') ? code : undefined
       });
@@ -76,7 +87,7 @@ var GeosonifyStarpinGroups = (function () {
         throw new Error('groups.inviteLink: full mode needs the code re-entered');
       return invite.makeInvite({
         baseUrl: baseUrl, groupUuid: groupUuid, epoch: g.epoch,
-        endpoint: g.endpoint, label: g.label,
+        endpoint: g.endpoint, label: g.label, realm: realm,
         mode: opts.mode === 'full' ? 'full' : 'descriptor',
         code: opts.mode === 'full' ? opts.code : undefined
       });
@@ -85,9 +96,20 @@ var GeosonifyStarpinGroups = (function () {
     // ---- 2. join from a link ---------------------------------------------
     // Step A: preview — parse the link, tell the UI what it is and whether a
     // code still needs typing. Never joins. Returns null if not an invite link.
+    // realmVerdict: compares this app's configured realm against the invite's.
+    //   'match'          invite realm === configured realm       -> ok to join
+    //   'mismatch'       invite realm present but different       -> refuse
+    //   'legacy-unknown' invite carried NO realm (v1)            -> refuse; do NOT
+    //                    assume production, do NOT assume trial — it is unknown.
+    function realmVerdict(parsed) {
+      if (!parsed.realmKnown || parsed.realm == null) return 'legacy-unknown';
+      return parsed.realm === realm ? 'match' : 'mismatch';
+    }
+
     function previewInvite(url) {
       var parsed = invite.parseInvite(url);
       if (!parsed) return null;
+      var verdict = realmVerdict(parsed);
       var already = !!sharing.getGroup(parsed.descriptor.groupUuid);
       var hasCode = (parsed.mode === 'full' || parsed.mode === 'fragment-full') && !!parsed.code;
       return {
@@ -95,6 +117,10 @@ var GeosonifyStarpinGroups = (function () {
         groupUuid: parsed.descriptor.groupUuid,
         epoch: parsed.descriptor.epoch,
         endpoint: parsed.descriptor.endpoint,
+        realm: parsed.realm,
+        configuredRealm: realm,
+        realmVerdict: verdict,
+        realmOk: verdict === 'match',
         codeInLink: hasCode,
         needsCode: !hasCode,
         alreadyJoined: already,
@@ -107,6 +133,16 @@ var GeosonifyStarpinGroups = (function () {
     async function joinFromLink(url, codeArg) {
       var p = previewInvite(url);
       if (!p) throw new Error('groups.joinFromLink: not an invite link');
+      // REALM GATE — refuse before touching storage or deriving any key. An
+      // invite from another universe (wrong provisional tag, or a legacy invite
+      // with no realm, or a production invite opened in a provisional app) must
+      // never join here. Absence of a realm is NOT production and NOT this trial.
+      if (p.realmVerdict === 'mismatch')
+        throw new Error('groups.joinFromLink: this invite belongs to a different realm ("' +
+                        p.realm + '"), not this app ("' + realm + '")');
+      if (p.realmVerdict === 'legacy-unknown')
+        throw new Error('groups.joinFromLink: this invite predates realms and cannot be ' +
+                        'safely attributed to a universe; re-issue it from the current app');
       var code = p.codeInLink ? p._code : codeArg;
       if (!code) throw new Error('groups.joinFromLink: this link needs a code');
       var r = await sharing.joinGroup({

@@ -34,7 +34,22 @@ var GeosonifyStarpinInvite = (function () {
   var PARAM = 'spgroup';        // query param carrying the descriptor (legacy split)
   var FRAG  = 'spcode';         // fragment key carrying the code (legacy split)
   var FULLFRAG = 'spinvite';    // fragment key carrying the WHOLE invite (preferred)
-  var VER   = 1;
+  var VER   = 2;                // v2 adds the realm field (r). v1 = pre-realm legacy.
+
+  // ---- realm (namespace / cryptographic-storage universe) ------------------
+  // An invitation identifies which universe a group lives in: group_uuid, epoch,
+  // endpoint, secret AND realm. The realm is the provisional namespace
+  // (e.g. "trial-2026-09") or, for frozen production, a positive production
+  // marker. It is NOT UI metadata: it decides which Argon2 salt prefix / local
+  // stores a conforming client must use. A v2 invite always carries an explicit
+  // realm; a v1 invite (no realm) is legacy and its realm is UNKNOWN — the app
+  // must treat that as "provisional-unknown", NEVER silently as production.
+  //
+  // Constrain the value so an invite can't make a client manufacture arbitrary
+  // localStorage universes or derive handles in an attacker-named realm.
+  var REALM_RE = /^[a-z0-9][a-z0-9._-]{0,63}$/;   // small ASCII id, <=64 chars
+  var REALM_PRODUCTION = 'production-1';            // positive production marker (frozen apps assert this)
+  function validRealm(r) { return typeof r === 'string' && REALM_RE.test(r); }
 
   // ---- base64url of a UTF-8 JSON string ------------------------------------
   function b64urlEncodeStr(s) {
@@ -92,15 +107,22 @@ var GeosonifyStarpinInvite = (function () {
   // ==========================================================================
   // Descriptor <-> link
   // ==========================================================================
-  // descriptor = { v, group_uuid (b64url of 16 bytes), epoch, endpoint, label }
+  // descriptor = { v, group_uuid (b64url of 16 bytes), epoch, endpoint, label, realm }
   function makeInvite(opts) {
     if (!opts || !opts.groupUuid) throw new Error('invite: groupUuid (b64url) required');
+    // Realm is mandatory for v2. The caller passes its CONFIGURED realm (its
+    // provisional tag, or REALM_PRODUCTION when frozen). Refuse to mint an invite
+    // with a missing or malformed realm rather than emit an ambiguous link.
+    var realm = opts.realm;
+    if (!validRealm(realm))
+      throw new Error('invite: a valid realm is required (got ' + JSON.stringify(realm) + ')');
     var descriptor = {
       v: VER,
       g: opts.groupUuid,                       // b64url of the 16 uuid bytes
       e: opts.epoch || 1,
       ep: opts.endpoint || null,
-      l: opts.label || ''
+      l: opts.label || '',
+      r: realm                                 // the cryptographic/storage universe
     };
     var base = opts.baseUrl || '';             // e.g. 'https://gobeirne.github.io/starpin/'
 
@@ -140,9 +162,17 @@ var GeosonifyStarpinInvite = (function () {
       try { payload = JSON.parse(b64urlDecodeStr(whole)); }
       catch (e) { throw new Error('invite: malformed fragment invite'); }
       if (!payload || !payload.d || !payload.d.g) throw new Error('invite: fragment invite missing group id');
+      var fRealmRaw = payload.d.r;
+      // realm present+valid => that realm; absent => null (legacy/unknown, the app
+      // must NOT read null as production); present+invalid => hard reject.
+      if (fRealmRaw != null && !validRealm(fRealmRaw)) throw new Error('invite: invalid realm');
       return {
         descriptor: { groupUuid: payload.d.g, epoch: payload.d.e || 1,
-                      endpoint: payload.d.ep || null, label: payload.d.l || '' },
+                      endpoint: payload.d.ep || null, label: payload.d.l || '',
+                      realm: fRealmRaw != null ? fRealmRaw : null,
+                      version: payload.d.v || 1 },
+        realm: fRealmRaw != null ? fRealmRaw : null,
+        realmKnown: fRealmRaw != null,
         code: payload.c || null,
         mode: payload.c ? 'fragment-full' : 'fragment'
       };
@@ -155,6 +185,8 @@ var GeosonifyStarpinInvite = (function () {
     try { descriptor = JSON.parse(b64urlDecodeStr(enc)); }
     catch (e) { throw new Error('invite: malformed descriptor'); }
     if (!descriptor || !descriptor.g) throw new Error('invite: descriptor missing group id');
+    var qRealmRaw = descriptor.r;
+    if (qRealmRaw != null && !validRealm(qRealmRaw)) throw new Error('invite: invalid realm');
 
     var code = null;
     var fcode = paramFrom(frag, FRAG);
@@ -165,8 +197,12 @@ var GeosonifyStarpinInvite = (function () {
         groupUuid: descriptor.g,
         epoch: descriptor.e || 1,
         endpoint: descriptor.ep || null,
-        label: descriptor.l || ''
+        label: descriptor.l || '',
+        realm: qRealmRaw != null ? qRealmRaw : null,
+        version: descriptor.v || 1
       },
+      realm: qRealmRaw != null ? qRealmRaw : null,
+      realmKnown: qRealmRaw != null,
       code: code,
       mode: code ? 'full' : 'descriptor'
     };
@@ -184,7 +220,8 @@ var GeosonifyStarpinInvite = (function () {
   }
 
   return {
-    PARAM: PARAM, FRAG: FRAG, FULLFRAG: FULLFRAG,
+    PARAM: PARAM, FRAG: FRAG, FULLFRAG: FULLFRAG, VER: VER,
+    REALM_PRODUCTION: REALM_PRODUCTION, validRealm: validRealm,
     generateHumanCode: generateHumanCode, estimateBits: estimateBits,
     HUMAN_ALPHABET: HUMAN_ALPHABET,
     makeInvite: makeInvite, parseInvite: parseInvite
