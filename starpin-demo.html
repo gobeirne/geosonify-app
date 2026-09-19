@@ -265,6 +265,17 @@ dl{margin:.7rem 0 0}
 .rec .acts button{flex:1;font-size:.72rem;padding:.4rem .5rem;border-radius:11px;
   box-shadow:0 3px 0 color-mix(in srgb,var(--moss) 45%,transparent)}
 
+/* share sheet (4C): modal overlay + bottom sheet */
+.share-wrap{position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.45);
+  display:flex;align-items:flex-end;justify-content:center}
+.share-sheet{background:var(--paper,#fff);color:inherit;width:100%;max-width:520px;
+  border-radius:18px 18px 0 0;padding:1.1rem 1.1rem calc(1.1rem + env(safe-area-inset-bottom));
+  box-shadow:0 -8px 40px rgba(0,0,0,.25);max-height:86vh;overflow:auto}
+.share-sheet h3{margin:.1rem 0 .6rem}
+.share-sheet label{font-size:.85rem;color:var(--ink-soft,#555)}
+.share-sheet input,.share-sheet select{width:100%;box-sizing:border-box;margin-top:.15rem}
+@media (prefers-color-scheme:dark){.share-sheet{background:var(--paper-dk,#1b1c1a)}}
+
 /* swipe: deliberately stiff — see the JS for why */
 .swipe{position:relative;overflow:hidden;border-radius:18px;margin-bottom:.6rem}
 .swipeface{position:relative;z-index:1;transition:transform .3s cubic-bezier(.2,.9,.25,1);
@@ -943,6 +954,12 @@ dl{margin:.7rem 0 0}
     b.type = 'button'; b.style.marginLeft = '.5rem';
     b.addEventListener('click', function () { showCardFor(r, null); });
     d.appendChild(b);
+    if (sharingAvailable()) {
+      var sh = el('button', 'close', 'share');
+      sh.type = 'button'; sh.style.marginLeft = '.4rem';
+      (function (rec) { sh.addEventListener('click', function () { openShareSheet(rec, 'existing'); }); })(r);
+      d.appendChild(sh);
+    }
     return d;
   }
 
@@ -1167,6 +1184,111 @@ dl{margin:.7rem 0 0}
       row.appendChild(nl); row.appendChild(ni);
       box.appendChild(row);
     });
+  }
+
+  // ── Sharing finds (Step 4C) ──────────────────────────────────────────────
+  // ONE reusable share sheet, reached two ways: auto-OFFERED once right after a
+  // new find is logged (commitAndOffer), and on-demand via per-record "Share"
+  // buttons in the Log view and showInfo. It NEVER publishes without an explicit
+  // tap on Share — closing or "Not now" leaves the immutable local record intact.
+  function sharingAvailable() {
+    return !!(window.StarpinGroups && StarpinGroups.isReady());
+  }
+
+  // Open the share sheet for a specific record. `mode` tweaks only the wording
+  // ('new' just-logged vs 'existing' on-demand); the mechanism is identical.
+  function openShareSheet(record, mode) {
+    if (!sharingAvailable()) {
+      alert('Sharing isn’t available right now. Your find is saved to your own log; you can share it later.');
+      return;
+    }
+    var ctrl = StarpinGroups.controller();
+    var groups = ctrl.myGroups();
+
+    // backdrop + sheet
+    var wrap = el('div'); wrap.className = 'share-wrap';
+    var sheet = el('div'); sheet.className = 'share-sheet';
+
+    sheet.appendChild(el('h3', null, mode === 'new' ? 'Logged \u2014 share this find?' : 'Share this find'));
+
+    if (!groups.length) {
+      sheet.appendChild(el('p', 'hint',
+        'You’re not in any groups yet. Make or join one in the Groups tab, then share from your log.'));
+    } else {
+      var gl = el('label', null, 'Share to'); gl.style.display = 'block';
+      var gsel = document.createElement('select');
+      groups.forEach(function (g) {
+        var o = document.createElement('option');
+        o.value = g.groupUuid; o.textContent = g.label || '(unnamed)';
+        gsel.appendChild(o);
+      });
+      sheet.appendChild(gl); sheet.appendChild(gsel);
+
+      var nl = el('label', null, 'Your name in this group'); nl.style.display = 'block'; nl.style.marginTop = '.5rem';
+      var nin = document.createElement('input'); nin.type = 'text'; nin.placeholder = 'e.g. Dad, Nana, Tane';
+      function loadNameForSel() { try { nin.value = StarpinGroups.getName(gsel.value) || ''; } catch (_) { nin.value = ''; } }
+      loadNameForSel();
+      gsel.addEventListener('change', loadNameForSel);
+      sheet.appendChild(nl); sheet.appendChild(nin);
+
+      var cl = el('label', null, 'Comment (optional)'); cl.style.display = 'block'; cl.style.marginTop = '.5rem';
+      var cin = document.createElement('input'); cin.type = 'text'; cin.placeholder = 'Found it with Dad!';
+      sheet.appendChild(cl); sheet.appendChild(cin);
+
+      var status = el('p', 'hint', ''); status.style.marginTop = '.5rem';
+
+      var shareBtn = el('button', 'primary', 'Share'); shareBtn.type = 'button'; shareBtn.style.marginTop = '.6rem';
+      shareBtn.addEventListener('click', function () {
+        var gid = gsel.value;
+        if (!gid) { status.textContent = 'Pick a group first.'; return; }
+        var name = (nin.value || '').trim();
+        if (!name) { status.textContent = 'Enter your name so the group knows who you are.'; return; }
+        shareBtn.disabled = true; status.textContent = 'sharing…';
+        // persist the per-group name so "you" is correct + readable
+        try { StarpinGroups.setName(gid, name); } catch (_) {}
+        ctrl.share(gid, record, { handle: name, comment: (cin.value || '').trim() })
+          .then(function (res) {
+            if (res && res.skipped) status.textContent = 'Already shared to that group.';
+            else status.textContent = 'Shared to “' + (groupLabel(groups, gid)) + '”.';
+            shareBtn.textContent = 'Shared \u2713';
+            setTimeout(closeSheet, 900);
+          })
+          .catch(function (e) {
+            shareBtn.disabled = false;
+            status.textContent = 'Could not share: ' + (e && e.message ? e.message : e);
+          });
+      });
+      sheet.appendChild(shareBtn);
+      sheet.appendChild(status);
+    }
+
+    var closeBtn = el('button', null, groups.length ? 'Not now' : 'Close'); closeBtn.type = 'button';
+    closeBtn.style.marginTop = '.5rem';
+    closeBtn.addEventListener('click', closeSheet);
+    sheet.appendChild(closeBtn);
+
+    function closeSheet() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+    wrap.addEventListener('click', function (e) { if (e.target === wrap) closeSheet(); });
+
+    wrap.appendChild(sheet);
+    document.body.appendChild(wrap);
+  }
+
+  function groupLabel(groups, gid) {
+    for (var i = 0; i < groups.length; i++) if (groups[i].groupUuid === gid) return groups[i].label || '(unnamed)';
+    return 'group';
+  }
+
+  // Commit an immutable record to the local log, THEN offer to share it.
+  // The local add always happens first and is never unwound by a share failure.
+  // Backfills/migrations must NOT call this — they use log.add directly.
+  function commitAndOffer(record) {
+    var added = log.add(record);          // immutable local record, safe first
+    if (sharingAvailable()) {
+      // offer, never auto-publish; defer so any post-log UI settles first
+      setTimeout(function () { try { openShareSheet(added || record, 'new'); } catch (e) { console.warn('[starpin] share offer failed:', e); } }, 0);
+    }
+    return added;
   }
 
   var groupsWired = false;
@@ -1480,7 +1602,7 @@ dl{margin:.7rem 0 0}
           if (st.mag != null) target.mag_g = Number(st.mag);
           if (st.distLy != null) target.dist_ly = Number(st.distLy);
           F.unlock();
-          log.add(L.build(supported ? 'visit' : 'closest-approach', {
+          commitAndOffer(L.build(supported ? 'visit' : 'closest-approach', {
             target: target,
             fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m,
                    source: 'web-geolocation' },
@@ -2285,7 +2407,7 @@ dl{margin:.7rem 0 0}
   function logIt(target) {
     if (!fix) { alert('Use my location first — a record without a fix cannot be assessed.'); return; }
     stopSoundGuide();
-    log.add(L.visit({
+    commitAndOffer(L.visit({
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
       approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
@@ -2371,7 +2493,7 @@ dl{margin:.7rem 0 0}
                         : 'already yours' });
       return;
     }
-    log.add(L.build(supported ? 'visit' : 'closest-approach', {
+    commitAndOffer(L.build(supported ? 'visit' : 'closest-approach', {
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
       approachReason: approachReasonFor(supported, vr.distanceM),
@@ -2657,6 +2779,14 @@ dl{margin:.7rem 0 0}
           if (!isStar) map.setHighlight(csName(r.target.cornerstone));
         });
         acts.appendChild(go);
+      }
+      // Share this find to a group (4C). Shown only when sharing is available;
+      // opens the same sheet used after a new find. `r` is the immutable record.
+      if (sharingAvailable()) {
+        var sh = el('button', null, 'share');
+        sh.type = 'button';
+        (function (rec) { sh.addEventListener('click', function () { openShareSheet(rec, 'existing'); }); })(r);
+        acts.appendChild(sh);
       }
       body.appendChild(acts);
       d.appendChild(body);
