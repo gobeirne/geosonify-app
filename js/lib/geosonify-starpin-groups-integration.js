@@ -237,7 +237,19 @@ var StarpinGroups = (function () {
     readiness: function () { return reason; },
     provisionalTag: function () { return provisional; },
     isProvisional: function () { return provisional != null; },
-    controller: function () { return ctrl; }
+    controller: function () { return ctrl; },
+    // per-group display name ("how you show up to the group"). Thin passthroughs
+    // to the sharing module so the app talks only to StarpinGroups, not the
+    // internal sharing object. No-ops safely if sharing isn't ready.
+    setName: function (groupUuid, name) {
+      if (!sharing) throw new Error('sharing not ready');
+      return sharing.setHandle(groupUuid, name);
+    },
+    getName: function (groupUuid) {
+      if (!sharing) return null;
+      var id = sharing.getIdentity(groupUuid);
+      return id ? id.handle : null;
+    }
   };
 })();
 
