@@ -335,6 +335,7 @@ var GeosonifyStarpinGroups = (function () {
       previewInvite: previewInvite, joinFromLink: joinFromLink,
       inviteFromLocation: inviteFromLocation,
       share: share, onTargetView: onTargetView, myGroups: myGroups,
+      leaveGroup: function (groupUuid) { return sharing.leaveGroup(groupUuid); },
       exportIdentity: exportIdentity, importIdentity: importIdentity,
       pushTransfer: pushTransfer, pullTransfer: pullTransfer
     };

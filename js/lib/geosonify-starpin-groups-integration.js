@@ -249,6 +249,21 @@ var StarpinGroups = (function () {
       if (!sharing) return null;
       var id = sharing.getIdentity(groupUuid);
       return id ? id.handle : null;
+    },
+    // Leave/forget a group on this device (not a global delete — see sharing.js).
+    leaveGroup: function (groupUuid) {
+      if (!sharing) throw new Error('sharing not ready');
+      var res = sharing.leaveGroup(groupUuid);
+      try { for (var k in renderCache) if (k.indexOf(groupUuid + '|') === 0) delete renderCache[k]; } catch (_) {}
+      return res;
+    },
+    // The AUTHORITATIVE canonical target identity (same value the handle derives
+    // from). Callers gathering "records for this find" MUST use this, not a
+    // presentation-layer grouping heuristic, so the share sheet groups exactly as
+    // the sharing system keys (avoids reintroducing the gdr3-style identity drift).
+    canonicalTarget: function (target) {
+      if (!sharing) return null;
+      try { return sharing.canonicalTarget(target); } catch (_) { return null; }
     }
   };
 })();

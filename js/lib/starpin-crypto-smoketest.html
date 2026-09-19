@@ -20,9 +20,13 @@ seal&rarr;open round-trip works. All green = the IIFE/global and real-WebCrypto
 loading behaviour work in the target environment.</p>
 <div id="log">running…</div>
 
-<!-- load exactly as the real app will: classic scripts, vendored crypto first -->
+<!-- Load order = the real app's: vendored crypto (classic) first, then the
+     sealing module. This file is committed at js/lib/vendor/, and the sealing
+     module at js/lib/, so the correct relative path is ../ (one level up).
+     If you copy this smoke test somewhere flat to run it, put
+     geosonify-starpin-group.js beside it and change ../ to ./ below. -->
 <script src="./starpin-crypto-noble-h1.8.0-c1.3.0.js"></script>
-<script src="./geosonify-starpin-group.js"></script>
+<script src="../geosonify-starpin-group.js"></script>
 <script>
 (async function () {
   var out = [], pass = 0, fail = 0;

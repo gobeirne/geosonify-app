@@ -31,7 +31,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
 import {
   getAuth, signInAnonymously, onAuthStateChanged, setPersistence,
-  browserSessionPersistence
+  browserLocalPersistence
 } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
 import {
   getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, query, limit,
@@ -89,9 +89,18 @@ export async function initStarpinFirebase() {
     _app = initializeApp(firebaseConfig);
     _auth = getAuth(_app);
 
-    // Persist the anonymous session across reloads so a device keeps its uid.
-    // (RapidPair learned this the hard way — anon tokens expiring mid-flight.)
-    try { await setPersistence(_auth, browserLocalPersistence); } catch (_) { /* non-fatal */ }
+    // Persist the anonymous session across reloads so a device keeps its uid
+    // (LOCAL, not SESSION — deliberate: a family logs visits over days, and the
+    // anon uid is an infrastructure gate, not a Starpin identity). The uid living
+    // across sessions is a disclosed correlation residual; App Check + a future
+    // capability endpoint are the real mitigations, not persistence lifetime.
+    try {
+      await setPersistence(_auth, browserLocalPersistence);
+    } catch (e) {
+      // Firebase's default is already LOCAL, so this is non-fatal, but don't
+      // hide it — a silent throw here is how the wrong-import bug stayed hidden.
+      try { console.warn('[starpin] setPersistence failed; using Firebase default:', e && e.message ? e.message : e); } catch (_) {}
+    }
 
     _uid = await ensureAnonSession(_auth);
     // Use initializeFirestore with auto-detected long polling. The default

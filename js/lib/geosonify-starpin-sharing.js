@@ -202,8 +202,10 @@ var GeosonifyStarpinSharing = (function () {
         // member. member_id is per-group (never global) to keep the no-cross-group
         // -correlator invariant. Both travel in the portable bundle so a second
         // device can adopt the SAME identity (see snapshotIdentity/restoreIdentity).
-        member_id: opts.memberId || existing.member_id || b64url(rand(16)),
-        handle: (opts.handle != null ? opts.handle : (existing.handle || ''))
+        // On rejoin after a Leave, recover the identity from the tombstone so old
+        // and new shares read as the SAME family member, not two people.
+        member_id: opts.memberId || existing.member_id || tombstoneIdentity(uuidKey).member_id || b64url(rand(16)),
+        handle: (opts.handle != null ? opts.handle : (existing.handle || tombstoneIdentity(uuidKey).handle || ''))
       };
       writeJSON(storage, GROUPS_STORE, groups);
       return { groupUuid: uuidKey, epoch: epoch, member_id: groups[uuidKey].member_id };
@@ -230,6 +232,61 @@ var GeosonifyStarpinSharing = (function () {
       writeJSON(storage, GROUPS_STORE, groups);
     }
 
+    // Leave / forget a group ON THIS DEVICE. This is NOT a global delete: shared
+    // blobs are immutable and create-only server-side, and a bearer-code group
+    // has no owner, so nothing can destroy them for everyone. Leaving removes the
+    // group from your local registry (you lose the keys and stop syncing it) and
+    // purges the group CACHE (other people's records for it — non-authoritative,
+    // re-fetchable if you rejoin). It deliberately PRESERVES the publication and
+    // ownership ledgers: they honour "never destroy", keep your unforgeable-you
+    // intact, and keep a later rejoin double-publish-safe. Ledger entries for an
+    // absent group are inert (all reads are by key). Returns {left, purgedCache}.
+    // Identity tombstone: groupUuid -> {member_id, handle}. Survives Leave so a
+    // later rejoin recovers the SAME per-group identity (see joinGroup). It holds
+    // no key material — just the self-asserted display identity.
+    var TOMB_STORE = nsKey('starpin.idtomb.v1');
+    function tombstoneIdentity(groupUuid) { return readJSON(storage, TOMB_STORE, {})[groupUuid] || {}; }
+    function writeTombstone(groupUuid, member_id, handle) {
+      var t = readJSON(storage, TOMB_STORE, {});
+      t[groupUuid] = { member_id: member_id || null, handle: handle || '' };
+      writeJSON(storage, TOMB_STORE, t);
+    }
+
+    function leaveGroup(groupUuid) {
+      var groups = listGroups();
+      if (!groups[groupUuid]) return { left: false, reason: 'not a member' };
+      // preserve identity for a coherent rejoin (member_id + display handle)
+      writeTombstone(groupUuid, groups[groupUuid].member_id, groups[groupUuid].handle);
+      delete groups[groupUuid];
+      writeJSON(storage, GROUPS_STORE, groups);
+
+      // purge OTHER people's cached records for this group (non-authoritative;
+      // re-fetchable on rejoin — haveRecordFor() re-opens them from Firestore).
+      var cache = groupCache(), purgedCache = 0, keptCache = {};
+      for (var ck in cache) if (cache.hasOwnProperty(ck)) {
+        if (ck.indexOf(groupUuid + '|') === 0) purgedCache++; else keptCache[ck] = cache[ck];
+      }
+      if (purgedCache) writeJSON(storage, GROUPCACHE_STORE, keptCache);
+
+      // purge this group's SYNC/SEEN markers (review #1). haveRecordFor() already
+      // prevents seen-outranks-durable, so rejoin reconstructs regardless; we purge
+      // anyway so no stale per-group sync state lingers. We keep entries that also
+      // belong to OTHER groups (an entry array is per record_id, mixed groups).
+      var sidx = syncIndex(), touchedSync = false;
+      for (var rid in sidx) if (sidx.hasOwnProperty(rid)) {
+        var kept = sidx[rid].filter(function (e) { return e.group_uuid !== groupUuid; });
+        if (kept.length !== sidx[rid].length) {
+          touchedSync = true;
+          if (kept.length) sidx[rid] = kept; else delete sidx[rid];
+        }
+      }
+      if (touchedSync) writeJSON(storage, SYNC_STORE, sidx);
+
+      // PRESERVED: publication ledger + ownership ledger (never-destroy; keeps
+      // unforgeable-you and keeps a later rejoin double-publish-safe).
+      return { left: true, purgedCache: purgedCache };
+    }
+
     function groupKeyBytes(groupUuid) {
       var g = getGroup(groupUuid);
       if (!g) throw new Error('sharing: unknown group ' + groupUuid);
@@ -249,8 +306,11 @@ var GeosonifyStarpinSharing = (function () {
       if (!dup) { arr.push(entry); idx[recordId] = arr; writeJSON(storage, SYNC_STORE, idx); }
     }
     function sharesOf(recordId) { return syncIndex()[recordId] || []; }
-    function isSharedOut(recordId, groupUuid) {
-      return sharesOf(recordId).some(function (e) { return e.group_uuid === groupUuid && e.dir === 'out'; });
+    function isSharedOut(recordId, groupUuid, epoch) {
+      return sharesOf(recordId).some(function (e) {
+        return e.group_uuid === groupUuid && e.dir === 'out' &&
+               (epoch == null || e.epoch == null || e.epoch === epoch);
+      });
     }
 
     // ---- private ownership ledger (content_hash -> {group_uuid, publication_id, record_id})
@@ -266,19 +326,42 @@ var GeosonifyStarpinSharing = (function () {
     function ownsContentHash(contentHash) { return !!ownedIndex()[contentHash]; }
 
     // ---- publication ledger (review round 2, pt 1): the multi-device double-
-    // publish guard. Keyed "group_uuid|record_id" -> {publication_id, content_hash}.
+    // publish guard. Keyed "group_uuid|e{epoch}|record_id" -> {publication_id, content_hash}.
+    //
+    // PROTOCOL INVARIANT (review round 3): the publication identity is now
+    // (namespace, group_uuid, epoch, record_id). This is correct ONLY if `epoch`
+    // truly versions the cryptographic universe. Therefore: ANY operation that
+    // changes the group_key for an existing group_uuid — including "change the
+    // Family bearer code" — MUST allocate a NEW epoch. Rotating the key while
+    // leaving epoch unchanged would change handles/keys but leave the ledger
+    // saying "already shared in epoch N", silently blocking re-publication under
+    // the new key. Neither key-rotation nor code-change is implemented yet; when
+    // they are, they must honour this. (Also belongs in the group design doc.)
     // Synced through the personal channel, so a second device that has record R
     // via self-sync learns R was ALREADY published to this group and won't publish
     // a second (different-ciphertext) copy. This is the cross-device extension of
     // shareRecord's local isSharedOut() idempotency.
     var PUB_STORE = nsKey('starpin.published.v1');
     function pubIndex() { return readJSON(storage, PUB_STORE, {}); }
-    function pubKey(groupUuid, recordId) { return groupUuid + '|' + recordId; }
-    function markPublished(groupUuid, recordId, meta) {
-      var idx = pubIndex(); var k = pubKey(groupUuid, recordId);
+    // Keyed by (group_uuid, epoch, record_id): a new epoch derives a different
+    // group key/handle/storage universe, so "already published" must be answered
+    // PER EPOCH. Without epoch, re-publishing R after an epoch rotation (so new-
+    // epoch members can read it) would be wrongly skipped.
+    //
+    // No legacy (epoch-less) fallback: we are provisional with no compatibility
+    // obligation, and an epoch-less key cannot answer "published under THIS epoch"
+    // without guessing the entry's epoch — exactly the leak the epoch key fixes.
+    // The handful of trial entries live under the throwaway namespace and are
+    // wiped with the other bare provisional keys; a duplicate publication there is
+    // harmless. One correct key format, no ambiguity.
+    function pubKey(groupUuid, epoch, recordId) { return groupUuid + '|e' + (epoch == null ? 1 : epoch) + '|' + recordId; }
+    function markPublished(groupUuid, epoch, recordId, meta) {
+      var idx = pubIndex(); var k = pubKey(groupUuid, epoch, recordId);
       if (!idx[k]) { idx[k] = meta; writeJSON(storage, PUB_STORE, idx); }
     }
-    function isPublished(groupUuid, recordId) { return !!pubIndex()[pubKey(groupUuid, recordId)]; }
+    function isPublished(groupUuid, epoch, recordId) {
+      return !!pubIndex()[pubKey(groupUuid, epoch, recordId)];
+    }
 
     // ---- group cache (data-safety invariant): a SEPARATE, non-authoritative
     // store for records that arrived from OTHER people's group-shares. Kept apart
@@ -290,6 +373,9 @@ var GeosonifyStarpinSharing = (function () {
     function groupCache() { return readJSON(storage, GROUPCACHE_STORE, {}); }
     function cacheGroupRecord(groupUuid, rec) {
       if (!rec || !rec.record_id) return;
+      // In-flight-sync guard: a sync that began before leaveGroup() must not
+      // resurrect the cache it purged. If we're no longer a member, drop it.
+      if (!getGroup(groupUuid)) return;
       var idx = groupCache(); var k = groupUuid + '|' + rec.record_id;
       var incoming = canonical(rec);
       if (idx[k]) {
@@ -339,7 +425,7 @@ var GeosonifyStarpinSharing = (function () {
       // Checks BOTH the local out-marker AND the synced publication ledger, so a
       // second device that learned of the publication via personal sync won't
       // double-publish (review round 2, pt 1).
-      if (isSharedOut(record.record_id, groupUuid) || isPublished(groupUuid, record.record_id)) {
+      if (isSharedOut(record.record_id, groupUuid, g.epoch) || isPublished(groupUuid, g.epoch, record.record_id)) {
         return { skipped: true, reason: 'already published to this group' };
       }
 
@@ -377,7 +463,7 @@ var GeosonifyStarpinSharing = (function () {
       // equality — a bearer-code holder can copy your member_id into their own
       // wrapper, but cannot produce different ciphertext under your content_hash.
       markOwned(sealed.content_hash, { group_uuid: groupUuid, publication_id: wrapper.publication_id, record_id: record.record_id });
-      markPublished(groupUuid, record.record_id, { publication_id: wrapper.publication_id, content_hash: sealed.content_hash });
+      markPublished(groupUuid, g.epoch, record.record_id, { publication_id: wrapper.publication_id, content_hash: sealed.content_hash });
       return { skipped: false, handle: handle, content_hash: sealed.content_hash,
                publication_id: wrapper.publication_id };
     }
@@ -431,6 +517,17 @@ var GeosonifyStarpinSharing = (function () {
           var wrapper;
           try { wrapper = JSON.parse(td.decode(plaintext)); } catch (e) { continue; }
           if (!wrapper || wrapper.schema !== SHARE_SCHEMA || !wrapper.record) continue;
+
+          // IN-FLIGHT INVALIDATION (review round 3): a sync that began before a
+          // Leave (or a Leave+rejoin at a new epoch) must make NO further local
+          // writes for this group's OLD universe. Re-read the current group and
+          // bail the whole sync if we're no longer a member OR the epoch we
+          // started under has changed. This covers BOTH the cache write and the
+          // sync-marker write below — not just cacheGroupRecord's own guard.
+          var nowG = getGroup(groupUuid);
+          if (!nowG || nowG.epoch !== g.epoch) {
+            return { handle: handle, fresh: fresh, count: fresh.length, invalidated: true };
+          }
 
           // DATA-SAFETY INVARIANT: another person's decrypted group-share must
           // NEVER enter your authoritative personal record store. It goes into a
@@ -607,7 +704,7 @@ var GeosonifyStarpinSharing = (function () {
       // groups
       createGroup: createGroup, joinGroup: joinGroup,
       listGroups: listGroups, getGroup: getGroup,
-      getIdentity: getIdentity, setHandle: setHandle,
+      getIdentity: getIdentity, setHandle: setHandle, leaveGroup: leaveGroup,
       // sharing
       shareRecord: shareRecord,
       syncTarget: syncTarget, syncTargetAllGroups: syncTargetAllGroups,
