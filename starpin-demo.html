@@ -68,6 +68,7 @@ section[data-tab]{display:none}
 body[data-active="go"]  section[data-tab="go"],
 body[data-active="map"] section[data-tab="map"],
 body[data-active="sky"] section[data-tab="sky"],
+body[data-active="groups"] section[data-tab="groups"],
 body[data-active="log"] section[data-tab="log"]{display:block;
   animation:rise .34s cubic-bezier(.2,.9,.25,1) both}
 @keyframes rise{from{opacity:0;transform:translateY(10px) scale(.99)}}
@@ -105,6 +106,7 @@ section[data-tab="go"]{--accent:linear-gradient(90deg,var(--sun),var(--moss))}
 section[data-tab="map"]{--accent:linear-gradient(90deg,var(--moss),var(--lichen))}
 section[data-tab="sky"]{--accent:linear-gradient(90deg,var(--bark-lit),var(--sun))}
 section[data-tab="log"]{--accent:linear-gradient(90deg,var(--rust),var(--sun))}
+section[data-tab="groups"]{--accent:linear-gradient(90deg,var(--lichen),var(--moss))}
 
 h2{font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;
   color:var(--ink-2);margin:.15rem 0 .8rem;font-weight:800}
@@ -534,6 +536,43 @@ dl{margin:.7rem 0 0}
   </style>
 </section>
 
+<section data-tab="groups">
+  <h2>groups</h2>
+  <p class="hint" id="grp-boot">starting…</p>
+
+  <div id="grp-app" hidden>
+    <p class="hint" id="grp-prov"></p>
+
+    <div class="card">
+      <h3>Make a group</h3>
+      <label for="grp-name">Group name</label>
+      <input id="grp-name" type="text" placeholder="e.g. Our Whānau">
+      <label style="display:block;margin-top:.5rem"><input type="checkbox" id="grp-oneclick" style="width:auto" checked> One-click link (code included — only send to people you trust)</label>
+      <button class="primary" id="grp-create" type="button" style="margin-top:.6rem">Create group &amp; get link</button>
+      <div id="grp-out"></div>
+      <p class="hint" id="grp-create-status"></p>
+    </div>
+
+    <div class="card">
+      <h3>Join a group</h3>
+      <p class="hint">If you opened a one-click link you may already be in — check your groups below. Otherwise paste a link and/or enter the code.</p>
+      <label for="grp-link">Invite link</label>
+      <input id="grp-link" type="text" placeholder="paste the link you were sent">
+      <label for="grp-code" style="margin-top:.5rem">Code (if the link didn’t include it)</label>
+      <input id="grp-code" type="text" placeholder="e.g. ABCD-2345">
+      <button class="primary" id="grp-join" type="button" style="margin-top:.6rem">Join</button>
+      <p class="hint" id="grp-join-status"></p>
+    </div>
+
+    <div class="card">
+      <h3>Your groups</h3>
+      <div id="grp-list"><span class="hint">none yet</span></div>
+    </div>
+  </div>
+
+  <p class="hint" id="grp-unavailable" hidden>Sharing is unavailable right now (offline, or the sharing service didn’t load). Your own records are unaffected; you can still log visits.</p>
+</section>
+
 <section data-tab="log">
   <h2>your records</h2>
   <dl>
@@ -592,6 +631,7 @@ dl{margin:.7rem 0 0}
   <button type="button" data-go="go"  aria-selected="true"><span>◎</span>Go</button>
   <button type="button" data-go="map" aria-selected="false"><span>▦</span>Map</button>
   <button type="button" data-go="sky" aria-selected="false"><span>✦</span>Sky</button>
+  <button type="button" data-go="groups" aria-selected="false"><span>⌘</span>Groups</button>
   <button type="button" data-go="log" aria-selected="false"><span>▤</span>Log</button>
 </nav>
 
@@ -1072,16 +1112,130 @@ dl{margin:.7rem 0 0}
         if (res && res.ready) {
           console.info('[starpin] sharing ready (provisional "' + SHARING_TAG + '", uid ' +
                        (session.uid || '?') + ')');
+          try { wireGroupsUI(); } catch (e) { console.warn('[starpin] groups UI wiring failed:', e); }
         } else {
           console.warn('[starpin] sharing unavailable:', res && res.reason);
+          try { showGroupsUnavailable(res && res.reason); } catch (_) {}
         }
       } catch (e) {
         // Firebase/auth/glue failure must NOT break the app. Sharing stays off.
         console.warn('[starpin] sharing boot failed (ordinary Starpin unaffected):',
                      e && e.message ? e.message : e);
+        try { showGroupsUnavailable(e && e.message); } catch (_) {}
       }
     })();
   })();
+
+  // ── Groups UI (Step 4B: create / join / list / name) ─────────────────────
+  // Create + join + naming only. Sharing finds from the log is 4C. All handlers
+  // fail visibly (never silently) and never touch the local record log here.
+  function showGroupsUnavailable(reason) {
+    var boot = $('grp-boot'); if (boot) boot.hidden = true;
+    var un = $('grp-unavailable');
+    if (un) { un.hidden = false; if (reason) un.textContent = 'Sharing is unavailable: ' + reason +
+      '. Your own records are unaffected; you can still log visits.'; }
+  }
+
+  function grpField(labelText, value) {
+    var wrap = el('div'); wrap.style.marginTop = '.5rem';
+    var l = el('label', null, labelText); l.style.display = 'block';
+    var i = document.createElement('input');
+    i.type = 'text'; i.readOnly = true; i.value = value;
+    i.addEventListener('focus', function () { i.select(); });
+    wrap.appendChild(l); wrap.appendChild(i);
+    return wrap;
+  }
+
+  function refreshGroupList() {
+    if (!window.StarpinGroups || !StarpinGroups.isReady()) return;
+    var ctrl = StarpinGroups.controller();
+    var groups = ctrl.myGroups();
+    var box = $('grp-list'); box.textContent = '';
+    if (!groups.length) { box.innerHTML = '<span class="hint">none yet</span>'; return; }
+    groups.forEach(function (g) {
+      var row = el('div'); row.style.marginBottom = '.7rem';
+      var title = el('div', null, g.label || '(unnamed)'); title.style.fontWeight = '700';
+      row.appendChild(title);
+      // per-group display name ("how you show up to this group")
+      var nl = el('label', null, 'Your name in this group'); nl.style.display = 'block'; nl.style.marginTop = '.3rem';
+      var ni = document.createElement('input'); ni.type = 'text'; ni.placeholder = 'e.g. Dad, Nana, Tane';
+      try { ni.value = StarpinGroups.getName(g.groupUuid) || ''; } catch (_) {}
+      ni.addEventListener('change', function () {
+        try { StarpinGroups.setName(g.groupUuid, ni.value.trim()); ni.style.borderColor = ''; }
+        catch (e) { ni.style.borderColor = 'var(--rust)'; console.warn('[starpin] setName failed:', e); }
+      });
+      row.appendChild(nl); row.appendChild(ni);
+      box.appendChild(row);
+    });
+  }
+
+  var groupsWired = false;
+  function wireGroupsUI() {
+    var boot = $('grp-boot'); if (boot) boot.hidden = true;
+    var app = $('grp-app'); if (app) app.hidden = false;
+    var prov = $('grp-prov');
+    if (prov && StarpinGroups.isProvisional()) {
+      prov.textContent = 'Provisional trial ("' + StarpinGroups.provisionalTag() +
+        '"): shared data lives in a throwaway namespace and can’t affect a real launch. Your own records are never overwritten.';
+    }
+
+    refreshGroupList();
+
+    // Auto-join from a one-click link in the URL (additive; refreshes the list).
+    (function tryAutoJoin() {
+      try {
+        var ctrl = StarpinGroups.controller();
+        var inv = ctrl.inviteFromLocation();
+        if (!inv) return;
+        var js = $('grp-join-status');
+        if (inv.codeInLink) {
+          if (js) js.textContent = 'joining “' + (inv.label || 'group') + '” from your link…';
+          ctrl.joinFromLink(location.href).then(function (r) {
+            history.replaceState(null, '', location.pathname);
+            refreshGroupList();
+            if (js) js.textContent = r.rejoined ? 'You were already in “' + (r.label || 'group') + '”.'
+                                                : 'Joined “' + (r.label || 'group') + '”.';
+          }).catch(function (e) {
+            if (js) js.textContent = 'One-click join failed: ' + e.message + '. Paste the link + code below.';
+            $('grp-link').value = location.href;
+          });
+        } else {
+          $('grp-link').value = location.href;
+          if (js) js.textContent = 'This link needs the code — enter it above and press Join.';
+        }
+      } catch (e) { console.warn('[starpin] invite parse failed:', e); }
+    })();
+
+    if (groupsWired) return;   // wire click handlers once
+    groupsWired = true;
+
+    $('grp-create').addEventListener('click', function () {
+      var st = $('grp-create-status'); st.textContent = 'creating…';
+      var ctrl = StarpinGroups.controller();
+      ctrl.createGroup({
+        label: ($('grp-name').value || '').trim() || 'Group',
+        mode: $('grp-oneclick').checked ? 'fragment' : 'descriptor'
+      }).then(function (res) {
+        var out = $('grp-out'); out.textContent = '';
+        out.appendChild(grpField('Code (say this to your people)', res.code));
+        out.appendChild(grpField($('grp-oneclick').checked ? 'One-click invite link' : 'Invite link (send code separately)', res.link));
+        st.textContent = 'Group ready. Send the link' + ($('grp-oneclick').checked ? '.' : ', then tell them the code.');
+        refreshGroupList();
+      }).catch(function (e) { st.textContent = 'Could not create: ' + e.message; });
+    });
+
+    $('grp-join').addEventListener('click', function () {
+      var st = $('grp-join-status'); st.textContent = 'joining…';
+      var ctrl = StarpinGroups.controller();
+      var link = ($('grp-link').value || '').trim() || location.href;
+      var code = ($('grp-code').value || '').trim() || undefined;
+      ctrl.joinFromLink(link, code).then(function (r) {
+        refreshGroupList();
+        st.textContent = r.rejoined ? 'You were already in “' + (r.label || 'group') + '”.'
+                                    : 'Joined “' + (r.label || 'group') + '”.';
+      }).catch(function (e) { st.textContent = 'Could not join: ' + e.message + ' (need the code?)'; });
+    });
+  }
 
 
   var map = GeosonifyStarpinMap.mount($('map'), {
@@ -1590,6 +1744,7 @@ dl{margin:.7rem 0 0}
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
     if (name === 'log') { $('lg-show').click(); refreshFillButton(); }
+    if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) refreshGroupList(); } catch (_) {} }
     // Restore after layout settles (the Log rebuilds its panel synchronously
     // above, but the map's invalidate is deferred, so defer the scroll too).
     var y = tabScroll[name] || 0;
