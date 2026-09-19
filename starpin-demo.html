@@ -579,6 +579,11 @@ dl{margin:.7rem 0 0}
       <h3>Your groups</h3>
       <div id="grp-list"><span class="hint">none yet</span></div>
     </div>
+
+    <div class="card" id="grp-faq-card">
+      <h3>How this works &amp; how safe it is</h3>
+      <div id="grp-faq"></div>
+    </div>
   </div>
 
   <p class="hint" id="grp-unavailable" hidden>Sharing is unavailable right now (offline, or the sharing service didn’t load). Your own records are unaffected; you can still log visits.</p>
@@ -678,6 +683,7 @@ dl{margin:.7rem 0 0}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
+<script src="js/lib/starpin-faq-data.js?v=20260920"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1151,6 +1157,15 @@ dl{margin:.7rem 0 0}
     var un = $('grp-unavailable');
     if (un) { un.hidden = false; if (reason) un.textContent = 'Sharing is unavailable: ' + reason +
       '. Your own records are unaffected; you can still log visits.'; }
+    // still show the explanatory FAQ card even though the create/join UI is off
+    try {
+      renderFaq();
+      var card = $('grp-faq-card');
+      if (card && card.parentNode && card.parentNode.id === 'grp-app') {
+        // lift the FAQ card out of the hidden grp-app so it's visible
+        card.parentNode.parentNode.insertBefore(card, card.parentNode.nextSibling);
+      }
+    } catch (_) {}
   }
 
   function grpField(labelText, value) {
@@ -1171,7 +1186,9 @@ dl{margin:.7rem 0 0}
     if (!groups.length) { box.innerHTML = '<span class="hint">none yet</span>'; return; }
     groups.forEach(function (g) {
       var row = el('div'); row.style.marginBottom = '.7rem';
-      var title = el('div', null, g.label || '(unnamed)'); title.style.fontWeight = '700';
+      var shortId = (g.groupUuid || '').slice(-6);
+      var title = el('div', null, (g.label || '(unnamed)') + '  ·  #' + shortId);
+      title.style.fontWeight = '700';
       row.appendChild(title);
       // per-group display name ("how you show up to this group")
       var nl = el('label', null, 'Your name in this group'); nl.style.display = 'block'; nl.style.marginTop = '.3rem';
@@ -1182,6 +1199,22 @@ dl{margin:.7rem 0 0}
         catch (e) { ni.style.borderColor = 'var(--rust)'; console.warn('[starpin] setName failed:', e); }
       });
       row.appendChild(nl); row.appendChild(ni);
+      // Leave (forget on this device). Honest label: shared blobs are immutable
+      // server-side, so this removes YOUR access, not everyone's data.
+      var leave = el('button', null, 'Leave group'); leave.type = 'button';
+      leave.style.marginTop = '.4rem'; leave.style.fontSize = '.78rem';
+      (function (gid, label) {
+        var shortId = (gid || '').slice(-6);
+        leave.addEventListener('click', function () {
+          if (!confirm('Leave “' + label + '” (#' + shortId + ')? This removes it and its shared items from THIS device. ' +
+                       'Your own visit log is untouched. (Shared items already sent can’t be recalled.)')) return;
+          try {
+            StarpinGroups.leaveGroup(gid);
+            refreshGroupList();
+          } catch (e) { alert('Could not leave: ' + (e && e.message ? e.message : e)); }
+        });
+      })(g.groupUuid, g.label || '(unnamed)');
+      row.appendChild(leave);
       box.appendChild(row);
     });
   }
@@ -1215,6 +1248,24 @@ dl{margin:.7rem 0 0}
       sheet.appendChild(el('p', 'hint',
         'You’re not in any groups yet. Make or join one in the Groups tab, then share from your log.'));
     } else {
+      // Gather ALL records for this find using the AUTHORITATIVE canonical target
+      // (the exact identity the sharing system keys on) — never a presentation
+      // grouping heuristic, so the sheet groups exactly as sharing does.
+      var myCt = StarpinGroups.canonicalTarget(record.target);
+      var sameTarget = log.current().filter(function (r) {
+        var rct = null; try { rct = StarpinGroups.canonicalTarget(r.target); } catch (_) {}
+        return myCt != null && rct === myCt;
+      }).sort(function (a, b) { return a.event.time_ms - b.event.time_ms; });
+      if (!sameTarget.length) sameTarget = [record];   // safety
+
+      function defaultChecked(r) { return r.kind !== 'closest-approach'; }
+      function kindLabel(r) {
+        if (r.kind === 'culmination-attempt') return 'culmination \u2605';
+        if (r.kind === 'closest-approach') return 'closest approach';
+        if (r.kind === 'observation') return 'observation';
+        return 'visit';
+      }
+
       var gl = el('label', null, 'Share to'); gl.style.display = 'block';
       var gsel = document.createElement('select');
       groups.forEach(function (g) {
@@ -1223,6 +1274,23 @@ dl{margin:.7rem 0 0}
         gsel.appendChild(o);
       });
       sheet.appendChild(gl); sheet.appendChild(gsel);
+
+      // record checklist
+      var rl = el('label', null, sameTarget.length > 1 ? 'Which to share' : 'Sharing');
+      rl.style.display = 'block'; rl.style.marginTop = '.5rem';
+      sheet.appendChild(rl);
+      var checks = [];
+      sameTarget.forEach(function (r) {
+        var row = el('label', 'share-rec'); row.style.display = 'flex'; row.style.gap = '.5rem';
+        row.style.alignItems = 'center'; row.style.margin = '.25rem 0'; row.style.fontSize = '.85rem';
+        var cb = document.createElement('input'); cb.type = 'checkbox'; cb.style.width = 'auto';
+        cb.checked = defaultChecked(r);
+        var when = new Date(r.event.time_ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+        row.appendChild(cb);
+        row.appendChild(el('span', null, kindLabel(r) + ' \u00b7 ' + when));
+        sheet.appendChild(row);
+        checks.push({ cb: cb, rec: r });
+      });
 
       var nl = el('label', null, 'Your name in this group'); nl.style.display = 'block'; nl.style.marginTop = '.5rem';
       var nin = document.createElement('input'); nin.type = 'text'; nin.placeholder = 'e.g. Dad, Nana, Tane';
@@ -1243,20 +1311,27 @@ dl{margin:.7rem 0 0}
         if (!gid) { status.textContent = 'Pick a group first.'; return; }
         var name = (nin.value || '').trim();
         if (!name) { status.textContent = 'Enter your name so the group knows who you are.'; return; }
+        var chosen = checks.filter(function (c) { return c.cb.checked; }).map(function (c) { return c.rec; });
+        if (!chosen.length) { status.textContent = 'Tick at least one record to share.'; return; }
         shareBtn.disabled = true; status.textContent = 'sharing…';
-        // persist the per-group name so "you" is correct + readable
         try { StarpinGroups.setName(gid, name); } catch (_) {}
-        ctrl.share(gid, record, { handle: name, comment: (cin.value || '').trim() })
-          .then(function (res) {
-            if (res && res.skipped) status.textContent = 'Already shared to that group.';
-            else status.textContent = 'Shared to “' + (groupLabel(groups, gid)) + '”.';
-            shareBtn.textContent = 'Shared \u2713';
-            setTimeout(closeSheet, 900);
-          })
-          .catch(function (e) {
-            shareBtn.disabled = false;
-            status.textContent = 'Could not share: ' + (e && e.message ? e.message : e);
-          });
+        var comment = (cin.value || '').trim();
+        // share each chosen record; idempotent module skips any already shared.
+        var shared = 0, skipped = 0, failed = 0;
+        (function next(i) {
+          if (i >= chosen.length) {
+            var msg = 'Shared ' + shared + (skipped ? ', ' + skipped + ' already there' : '') +
+                      (failed ? ', ' + failed + ' failed' : '') + ' to “' + groupLabel(groups, gid) + '”.';
+            status.textContent = msg;
+            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
+            if (!failed) setTimeout(closeSheet, 1100); else shareBtn.disabled = false;
+            return;
+          }
+          ctrl.share(gid, chosen[i], { handle: name, comment: comment })
+            .then(function (res) { if (res && res.skipped) skipped++; else shared++; })
+            .catch(function () { failed++; })
+            .then(function () { next(i + 1); });
+        })(0);
       });
       sheet.appendChild(shareBtn);
       sheet.appendChild(status);
@@ -1291,6 +1366,40 @@ dl{margin:.7rem 0 0}
     return added;
   }
 
+  var faqRendered = false;
+  function renderFaq() {
+    if (faqRendered) return;
+    var root = $('grp-faq');
+    if (!root || typeof STARPIN_FAQ === 'undefined') return;
+    faqRendered = true;
+    try {
+      var card = $('grp-faq-card');
+      if (card && STARPIN_FAQ.title) {
+        var hh = card.querySelector('h3');
+        if (hh) hh.textContent = STARPIN_FAQ.title;
+      }
+    } catch (_) {}
+    STARPIN_FAQ.sections.forEach(function (sec) {
+      var h = el('div', null, sec.title);
+      h.style.fontWeight = '700'; h.style.margin = '.8rem 0 .3rem';
+      root.appendChild(h);
+      sec.items.forEach(function (it) {
+        var wrap = el('div'); wrap.style.borderTop = '1px solid rgba(0,0,0,.08)';
+        var q = el('button', null, it.q);
+        q.type = 'button';
+        q.style.cssText = 'display:block;width:100%;text-align:left;background:none;border:none;' +
+          'padding:.55rem 0;font-size:.9rem;font-weight:600;cursor:pointer;color:inherit;box-shadow:none';
+        var a = el('div'); a.style.cssText = 'display:none;font-size:.85rem;padding:0 0 .6rem;line-height:1.5';
+        a.innerHTML = it.a;
+        q.addEventListener('click', function () {
+          a.style.display = a.style.display === 'none' ? 'block' : 'none';
+        });
+        wrap.appendChild(q); wrap.appendChild(a);
+        root.appendChild(wrap);
+      });
+    });
+  }
+
   var groupsWired = false;
   function wireGroupsUI() {
     var boot = $('grp-boot'); if (boot) boot.hidden = true;
@@ -1302,6 +1411,7 @@ dl{margin:.7rem 0 0}
     }
 
     refreshGroupList();
+    renderFaq();
 
     // Auto-join from a one-click link in the URL (additive; refreshes the list).
     (function tryAutoJoin() {
@@ -2430,6 +2540,7 @@ dl{margin:.7rem 0 0}
   function bagStar(sp, vr, supported) {
     F.unlock();
     stopSoundGuide();
+    var offeredThisBag = false;   // ensures ONE share offer per bag (culmination + visit)
     var id = sourceIdOf(sp.name);
     var addr = S.starpinAddress(String(sp.ra), String(sp.dec));
     // Identity via the shared builder (sourceIdOf uses the same /(\d{5,})\s*$/
@@ -2470,12 +2581,13 @@ dl{margin:.7rem 0 0}
     });
 
     if (att.attended && supported && !haveThisCulmination) {
-      log.add(L.build('culmination-attempt', {
+      commitAndOffer(L.build('culmination-attempt', {
         target: target,
         fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
         approachReason: approachReasonFor(true, null),   // drive-by clause only, if moving
         provenance: provenanceFor(target)
       }));
+      offeredThisBag = true;   // the culmination offer will gather any sibling visit too
       // A first-ever visit at culmination is two events, so it writes two
       // records; falling through covers that.
       if (already.length) {
@@ -2493,12 +2605,14 @@ dl{margin:.7rem 0 0}
                         : 'already yours' });
       return;
     }
-    commitAndOffer(L.build(supported ? 'visit' : 'closest-approach', {
+    var vrec = L.build(supported ? 'visit' : 'closest-approach', {
       target: target,
       fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
       approachReason: approachReasonFor(supported, vr.distanceM),
       provenance: provenanceFor(target)
-    }));
+    });
+    if (offeredThisBag) log.add(vrec);      // culmination already opened the offer (it gathers this too)
+    else commitAndOffer(vrec);
     drawLog(); redraw();
     F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
                   kicker: !supported
