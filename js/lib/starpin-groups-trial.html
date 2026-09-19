@@ -165,14 +165,15 @@ const _hereCache = {};   // groupUuid|targetKey -> { at, p }  (read dedup)
       all: () => Object.values(_recs), current: () => Object.values(_recs)
     };
 
-    sharing = GeosonifyStarpinSharing.create({ group, store, log, localStorage });
+    sharing = GeosonifyStarpinSharing.create({ group, store, log, localStorage, namespace: 'trial-2026-09' });
     window.__starpinLog = log;   // so the share handler can add to the SAME log
     const portable = GeosonifyStarpinPortable.create({
       argon2id, xchacha20poly1305,
       sha256: b => crypto.subtle.digest('SHA-256', b).then(x => new Uint8Array(x))
     });
     ctrl = GeosonifyStarpinGroups.create({ sharing, invite: GeosonifyStarpinInvite, log,
-      portable, store, baseUrl: 'https://geosonify.org/js/lib/starpin-groups-trial.html' });
+      portable, store, realm: 'trial-2026-09',
+      baseUrl: 'https://geosonify.org/js/lib/starpin-groups-trial.html' });
 
     wireUI();
     $('boot').hidden = true; $('app').hidden = false;
