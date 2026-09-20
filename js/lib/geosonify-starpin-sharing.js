@@ -317,6 +317,7 @@ var GeosonifyStarpinSharing = (function () {
 
       // PRESERVED: publication ledger + ownership ledger (never-destroy; keeps
       // unforgeable-you and keeps a later rejoin double-publish-safe).
+      try { purgeActivityFor(groupUuid); } catch (_) {}   // feed cache is disposable
       return { left: true, purgedCache: purgedCache };
     }
 
@@ -483,7 +484,23 @@ var GeosonifyStarpinSharing = (function () {
       var aad = aadFor(groupUuid, handle);
       var sealed = await G.seal(gk, aad, recordSalt, nonce, plaintext);
 
-      await store.put(handle, sealed.content_hash, sealed.blob);
+      try {
+        if (typeof console !== 'undefined' && console.info) {
+          console.info('[starpin] store.put attempt — backend: ' + (store._kind || '?') +
+                       ', handle.len: ' + (handle ? handle.length : 0) +
+                       ', hash.len: ' + (sealed.content_hash ? sealed.content_hash.length : 0) +
+                       ', blob.bytes: ' + (sealed.blob ? sealed.blob.length : 0));
+        }
+        await store.put(handle, sealed.content_hash, sealed.blob);
+        if (typeof console !== 'undefined' && console.info) console.info('[starpin] store.put OK');
+      } catch (putErr) {
+        if (typeof console !== 'undefined' && console.error) {
+          console.error('[starpin] store.put FAILED — name: ' + (putErr && putErr.name) +
+                        ', code: ' + (putErr && (putErr.code || putErr.status || '(none)')) +
+                        ', message: ' + (putErr && putErr.message));
+        }
+        throw putErr;   // re-throw so the caller's per-record handler records it
+      }
       recordSharedTo(record.record_id, {
         group_uuid: groupUuid, epoch: g.epoch,
         content_hash: sealed.content_hash, publication_id: wrapper.publication_id,
@@ -499,6 +516,179 @@ var GeosonifyStarpinSharing = (function () {
       markPublished(groupUuid, g.epoch, record.record_id, { publication_id: wrapper.publication_id, content_hash: sealed.content_hash });
       return { skipped: false, handle: handle, content_hash: sealed.content_hash,
                publication_id: wrapper.publication_id };
+    }
+
+    // ======================================================================
+    // ACTIVITY FEED (weekly-sharded, Starpin-like folder). SECONDARY to sharing:
+    // an announcement failure must NEVER fail or hide a share. One announcement
+    // blob per Share ACTION (bundling the records shared), carrying a small
+    // preview + pointers (publication_id + target_handle + content_hash) to the
+    // authoritative publications. Its own schema + cache + sync; NOT syncTarget.
+    // ======================================================================
+    var ACTIVITY_SCHEMA = 'starpin.group-activity/1';
+    var PERIOD_MS = 7 * 24 * 60 * 60 * 1000;                  // 7-day UTC period
+    var ACTCACHE_STORE = nsKey('starpin.actcache.v1');       // decrypted feed entries
+    var ACTPENDING_STORE = nsKey('starpin.actpending.v1');   // announcements awaiting write
+    function periodFor(ms) { return Math.floor(ms / PERIOD_MS); }
+    function currentPeriod() { return periodFor(Date.now()); }
+    function actCache() { return readJSON(storage, ACTCACHE_STORE, {}); }
+    function actPending() { return readJSON(storage, ACTPENDING_STORE, {}); }
+
+    // AAD for an activity blob: same shape as a share blob, with the activity
+    // handle in the handle slot (binds the blob to this feed folder + epoch).
+    function activityAad(groupUuid, actHandle) {
+      return {
+        schema: G.FROZEN.SCHEMA, target_handle: actHandle,
+        group_uuid: groupUuid, epoch: getGroup(groupUuid).epoch,
+        kdf: G.FROZEN.KDF_MARKER, cipher: G.FROZEN.CIPHER_MARKER
+      };
+    }
+
+    function cacheActivityEntry(groupUuid, hash, announcement) {
+      var idx = actCache();
+      var k = groupUuid + '|' + hash;
+      if (!idx[k]) { idx[k] = { group_uuid: groupUuid, hash: hash, a: announcement }; writeJSON(storage, ACTCACHE_STORE, idx); }
+    }
+
+    // Build (but don't write) one announcement for a Share action. `items` are the
+    // NEWLY-published records (skip already-published, so re-Sharing can't bump
+    // the feed). Returns null if nothing new to announce.
+    function buildAnnouncement(groupUuid, member, items, comment) {
+      if (!items || !items.length) return null;
+      var now = Date.now();
+      return {
+        schema: ACTIVITY_SCHEMA,
+        activity_id: b64url(rand(16)),
+        member: { member_id: member.member_id || null, handle: member.handle || '' },
+        shared_at_ms: now,
+        period: periodFor(now),
+        comment: comment || null,
+        items: items.map(function (it) {
+          return {
+            publication_id: it.publication_id, target_handle: it.handle,
+            content_hash: it.content_hash, kind: it.kind,
+            target: it.target || null,          // identity only (for card draw); no coords
+            event_time_ms: it.event_time_ms != null ? it.event_time_ms : null
+          };
+        })
+      };
+    }
+
+    // Seal + write one announcement into its weekly folder.
+    async function writeAnnouncement(groupUuid, announcement) {
+      var gk = groupKeyBytes(groupUuid);
+      var g = getGroup(groupUuid);
+      var actHandle = await G.activityHandle(gk, g.epoch, announcement.period);
+      var aad = activityAad(groupUuid, actHandle);
+      var salt = rand(32), nonce = rand(24);
+      var pt = te.encode(canonical(announcement));
+      var sealed = await G.seal(gk, aad, salt, nonce, pt);
+      await store.put(actHandle, sealed.content_hash, sealed.blob);
+      cacheActivityEntry(groupUuid, sealed.content_hash, announcement);  // show our own immediately
+      return { handle: actHandle, content_hash: sealed.content_hash };
+    }
+
+    // Public: announce a Share action. Publication-first is the CALLER's job; this
+    // only records the feed entry. On failure it queues a pending announcement and
+    // returns {ok:false, pending:true} WITHOUT throwing — the share is durable.
+    async function announceActivity(groupUuid, items, opts) {
+      opts = opts || {};
+      var g = getGroup(groupUuid);
+      if (!g) return { ok: false, reason: 'unknown group' };
+      var member = { member_id: g.member_id, handle: opts.handle != null ? opts.handle : g.handle };
+      var announcement = buildAnnouncement(groupUuid, member, items, opts.comment);
+      if (!announcement) return { ok: true, nothingToAnnounce: true };
+      try {
+        var res = await writeAnnouncement(groupUuid, announcement);
+        return { ok: true, handle: res.handle, content_hash: res.content_hash };
+      } catch (e) {
+        var pend = actPending();
+        pend[announcement.activity_id] = { group_uuid: groupUuid, announcement: announcement };
+        writeJSON(storage, ACTPENDING_STORE, pend);
+        try { console.warn('[starpin] activity announce failed; queued pending:', e && e.message); } catch (_) {}
+        return { ok: false, pending: true, reason: e && e.message ? e.message : String(e) };
+      }
+    }
+
+    // Retry queued announcements (call opportunistically, e.g. on app open).
+    async function flushPendingAnnouncements() {
+      var pend = actPending(); var ids = Object.keys(pend); var done = 0, failed = 0;
+      for (var i = 0; i < ids.length; i++) {
+        try { await writeAnnouncement(pend[ids[i]].group_uuid, pend[ids[i]].announcement); delete pend[ids[i]]; done++; }
+        catch (e) { failed++; }
+      }
+      writeJSON(storage, ACTPENDING_STORE, pend);
+      return { flushed: done, stillPending: failed };
+    }
+
+    // Read side: list a group's activity for recent periods, decrypt new entries
+    // into the activity cache. Its OWN cache — never the group target-record cache.
+    async function syncActivityPeriod(groupUuid, opts) {
+      opts = opts || {};
+      var g = getGroup(groupUuid);
+      if (!g) return { ok: false, reason: 'unknown group' };
+      var gk = groupKeyBytes(groupUuid);
+      var periods = opts.periods || [currentPeriod(), currentPeriod() - 1];  // this week + last
+      var seen = 0, added = 0;
+      for (var p = 0; p < periods.length; p++) {
+        var actHandle = await G.activityHandle(gk, g.epoch, periods[p]);
+        var aad = activityAad(groupUuid, actHandle);
+        var cursor = null;
+        do {
+          var page;
+          try { page = await store.list(actHandle, { limit: 100, cursor: cursor }); }
+          catch (e) { break; }
+          for (var i = 0; i < page.items.length; i++) {
+            var item = page.items[i]; seen++;
+            if (actCache()[groupUuid + '|' + item.hash]) continue;
+            var nowG = getGroup(groupUuid);
+            if (!nowG || nowG.epoch !== g.epoch) return { ok: true, invalidated: true };
+            var pt;
+            try { pt = await G.open(gk, aad, item.blob); } catch (e) { continue; }
+            var ann;
+            try { ann = JSON.parse(td.decode(pt)); } catch (e) { continue; }
+            if (!ann || ann.schema !== ACTIVITY_SCHEMA || !ann.items) continue;
+            cacheActivityEntry(groupUuid, item.hash, ann); added++;
+          }
+          cursor = page.cursor || null;
+        } while (cursor);
+      }
+      return { ok: true, seen: seen, added: added };
+    }
+
+    // Merged, newest-first activity across all groups. Client-side only — no
+    // server cross-group id. De-dupes an entry seen in multiple of the user's
+    // groups by activity_id, collecting the group labels.
+    function listActivity(opts) {
+      opts = opts || {};
+      var idx = actCache(); var byId = {}; var groups = listGroups();
+      Object.keys(idx).forEach(function (k) {
+        var e = idx[k]; var a = e.a; if (!a) return;
+        if (opts.groupUuid && e.group_uuid !== opts.groupUuid) return;
+        var g = groups[e.group_uuid];
+        var label = g ? (g.label || '(unnamed)') : '(left group)';
+        var prev = byId[a.activity_id];
+        if (prev) { if (prev.groups.indexOf(label) < 0) prev.groups.push(label); return; }
+        byId[a.activity_id] = {
+          activity_id: a.activity_id, member: a.member, shared_at_ms: a.shared_at_ms,
+          comment: a.comment, items: a.items, groups: [label], primary_group_uuid: e.group_uuid
+        };
+      });
+      var out = Object.keys(byId).map(function (id) { return byId[id]; });
+      out.sort(function (x, y) { return y.shared_at_ms - x.shared_at_ms; });
+      if (opts.limit) out = out.slice(0, opts.limit);
+      return out;
+    }
+
+    // Purge a group's activity cache + pending on Leave (called from leaveGroup).
+    function purgeActivityFor(groupUuid) {
+      var idx = actCache(), keptA = {}, na = 0;
+      for (var k in idx) if (idx.hasOwnProperty(k)) { if (idx[k].group_uuid === groupUuid) na++; else keptA[k] = idx[k]; }
+      if (na) writeJSON(storage, ACTCACHE_STORE, keptA);
+      var pend = actPending(), keptP = {}, np = 0;
+      for (var pk in pend) if (pend.hasOwnProperty(pk)) { if (pend[pk].group_uuid === groupUuid) np++; else keptP[pk] = pend[pk]; }
+      if (np) writeJSON(storage, ACTPENDING_STORE, keptP);
+      return { cache: na, pending: np };
     }
 
     // ======================================================================
@@ -741,6 +931,8 @@ var GeosonifyStarpinSharing = (function () {
       getIdentity: getIdentity, setHandle: setHandle, leaveGroup: leaveGroup,
       // sharing
       shareRecord: shareRecord,
+      announceActivity: announceActivity, syncActivityPeriod: syncActivityPeriod,
+      listActivity: listActivity, flushPendingAnnouncements: flushPendingAnnouncements,
       syncTarget: syncTarget, syncTargetAllGroups: syncTargetAllGroups,
       // portability
       snapshotIdentity: snapshotIdentity, restoreIdentity: restoreIdentity,

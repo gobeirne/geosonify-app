@@ -58,6 +58,8 @@ const FROZEN = {
   // Exact strings: spelling, case, hyphens, trailing '|' where shown.
   ARGON2_SALT_PREFIX: 'starpin-group-v1|',      // + group_uuid + '|' + epoch
   HANDLE_INFO_PREFIX: 'starpin-handle-v1|',     // + canonical_target   (HKDF info)
+  ACTIVITY_HANDLE_INFO_PREFIX: 'starpin-group-activity-handle-v1|',  // + epoch + '|' + period
+  ACTIVITY_KEY_INFO:  'starpin-group-activity-key-v1',  // HKDF info for per-entry activity seal key
   RECORD_KEY_INFO:    'starpin-record-key-v1',  // HKDF info (no target; per-record salt carries uniqueness)
   KDF_MARKER: 'argon2id',
   CIPHER_MARKER: 'xchacha20poly1305',
@@ -142,6 +144,16 @@ function targetHandle(gk, canonicalTarget) {
   const salt = new Uint8Array(0);        // HKDF zero-length salt (RFC 5869, valid)
   const h = hkdf(sha256, gk, salt, info, 32);
   return b64url(h);                       // the flat-namespace folder name
+}
+
+// Weekly-sharded activity ("feed") folder handle — domain-separated from target
+// handles. period = floor(shared_at_utc_ms / 7 days).
+function activityHandle(gk, epoch, period) {
+  const info = utf8(FROZEN.ACTIVITY_HANDLE_INFO_PREFIX + epoch + '|' + period);
+  return b64url(hkdf(sha256, gk, new Uint8Array(0), info, 32));
+}
+function activityKey(gk, entrySalt32) {
+  return hkdf(sha256, gk, entrySalt32, utf8(FROZEN.ACTIVITY_KEY_INFO), 32);
 }
 
 function recordKey(gk, recordSalt32) {
@@ -294,7 +306,7 @@ function selfTest() {
 
 module.exports = {
   PROFILE, FROZEN,
-  codeNormalised, groupKey, targetHandle, recordKey,
+  codeNormalised, groupKey, targetHandle, activityHandle, activityKey, recordKey,
   canonicalAAD, pad, unpad, seal, open, b64url,
 };
 

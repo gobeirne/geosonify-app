@@ -268,6 +268,33 @@ var StarpinGroups = (function () {
     getInvite: function (groupUuid, opts) {
       if (!ctrl) throw new Error('sharing not ready');
       return ctrl.getInvite(groupUuid, opts);
+    },
+    // ---- activity feed passthroughs ----
+    announceActivity: function (groupUuid, items, opts) {
+      if (!sharing) throw new Error('sharing not ready');
+      return sharing.announceActivity(groupUuid, items, opts);
+    },
+    syncActivity: function (groupUuid, opts) {
+      if (!sharing) throw new Error('sharing not ready');
+      return sharing.syncActivityPeriod(groupUuid, opts);
+    },
+    // sync every group the user is in, then return the merged newest-first feed
+    syncAllActivity: function () {
+      if (!sharing) return Promise.resolve([]);
+      var groups = ctrl.myGroups();
+      var chain = Promise.resolve();
+      groups.forEach(function (g) {
+        chain = chain.then(function () { return sharing.syncActivityPeriod(g.groupUuid, {}).catch(function () {}); });
+      });
+      return chain.then(function () { return sharing.listActivity({}); });
+    },
+    listActivity: function (opts) {
+      if (!sharing) return [];
+      return sharing.listActivity(opts);
+    },
+    flushPendingAnnouncements: function () {
+      if (!sharing) return Promise.resolve({ flushed: 0, stillPending: 0 });
+      return sharing.flushPendingAnnouncements();
     }
   };
 })();
