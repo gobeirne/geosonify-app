@@ -49,7 +49,7 @@ var GeosonifyStarpinGroup = (function () {
   var PROFILE = {
     frozen: false,                                         // FUSE — see seal()
     argon2: { t: 2, m: 512 /* KiB */, p: 1, dkLen: 32 },   // PLACEHOLDER COST
-    paddingClasses: [64, 128, 256, 512, 1024]              // PLACEHOLDER CLASSES
+    paddingClasses: [2048, 8192, 32768, 131072]           // group-share classes (v4 §; still provisional)
   };
 
   // ==========================================================================
