@@ -25,6 +25,10 @@ Three tiers, only the first of which exists in code:
   credential** (descriptor + secret code). No accounts, no admin, no moderation.
   Anyone with the credential can read what's shared and post under any name. This
   is the honest limit of the tier, and it's appropriate only for people you trust.
+  **There is no owner in group-v1.** Every credential holder is equal; the device
+  that created a group has no protocol authority the others lack (it merely retains
+  the code for convenience — §8). A real owner with authority arrives only in
+  `group-mod/1`. Do not add an `owner` authorization bit to group-v1 state.
 - **group-mod/1** — a separate, future *moderated* profile (owner/member keys,
   invitations, signed writes, moderation). **Designed elsewhere, not built.**
 - **Public sharing** — world-readable logs. **Deferred**; needs its own reviewed
@@ -239,6 +243,21 @@ view from remote storage.
 - **Same-origin hostile JS** is outside the local-storage safety guarantees; the
   "sync never destroys your log" invariant is about the sharing/sync system, not a
   claim against arbitrary code running on the page or the user clearing storage.
+- **Retained invitation secret on creator devices.** For usability, a device that
+  *creates* a group-v1 group may retain the current epoch's human-readable bearer
+  code so it can later reproduce a one-click invitation; devices that merely *join*
+  do not retain the code by default. This retained secret confers **no owner/admin
+  authority** — group-v1 remains a peer bearer-credential profile, and the retention
+  is modelled as a capability ("this device still holds the code"), never as an
+  `owner` bit. It is a local security trade-off: malicious same-origin code, or
+  other compromise of that device, may recover a reusable group credential. The
+  incremental exposure is narrow, though: the group registry *already* persists
+  `group_key`, so a device compromise could already read the group's content —
+  stealing the key did that. What the retained code adds is a *human-portable*
+  credential that can be reused on another device and redistributed. The encrypted
+  portable identity vault carries the retained code when the identity is explicitly
+  transferred (so a new device can still issue invites); leaving the group removes
+  the retained code. Kept per-epoch: a code rotation (new epoch) supersedes it.
 
 ---
 

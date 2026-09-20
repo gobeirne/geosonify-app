@@ -154,6 +154,16 @@ var GeosonifyStarpinSharing = (function () {
     // ---- group registry ---------------------------------------------------
     function listGroups() { return readJSON(storage, GROUPS_STORE, {}); }
     function getGroup(groupUuid) { return listGroups()[groupUuid] || null; }
+    // The retained bearer code for a group at its current epoch, or null. Present
+    // only on a device that chose to retain it (a creator). This is a CAPABILITY
+    // ("this device still knows the code"), never an authority bit.
+    function retainedCode(groupUuid) {
+      var g = getGroup(groupUuid);
+      if (!g || !g.retained_codes) return null;
+      return g.retained_codes[String(g.epoch)] || null;
+    }
+    // Can this device rebuild a one-click invite for the current epoch unaided?
+    function canReissueOneClickInvite(groupUuid) { return retainedCode(groupUuid) != null; }
 
     // keyring: an (epoch -> group_key_b64) map preserving historical keys, so a
     // restore or rotation never loses the ability to decrypt older material.
@@ -166,8 +176,16 @@ var GeosonifyStarpinSharing = (function () {
     }
     function mergeKeyrings(a, b) {
       var out = withKeyring(a);
-      var bk = withKeyring(b).keys;
-      for (var e in bk) if (!out.keys[e]) out.keys[e] = bk[e];
+      var bw = withKeyring(b);
+      for (var e in bw.keys) if (!out.keys[e]) out.keys[e] = bw.keys[e];
+      // union retained invite codes too (per-epoch), so transferring the identity
+      // to another device carries the ability to reissue one-click invites. This
+      // is the vault-portability property: the retained secret travels with the
+      // identity it belongs to. Keep any code we already hold; add ones we lack.
+      if (bw.retained_codes) {
+        out.retained_codes = out.retained_codes || {};
+        for (var ep in bw.retained_codes) if (!out.retained_codes[ep]) out.retained_codes[ep] = bw.retained_codes[ep];
+      }
       return out;
     }
     // resolve the key for a specific epoch (for decrypting historical material)
@@ -205,7 +223,21 @@ var GeosonifyStarpinSharing = (function () {
         // On rejoin after a Leave, recover the identity from the tombstone so old
         // and new shares read as the SAME family member, not two people.
         member_id: opts.memberId || existing.member_id || tombstoneIdentity(uuidKey).member_id || b64url(rand(16)),
-        handle: (opts.handle != null ? opts.handle : (existing.handle || tombstoneIdentity(uuidKey).handle || ''))
+        handle: (opts.handle != null ? opts.handle : (existing.handle || tombstoneIdentity(uuidKey).handle || '')),
+        // RETAINED INVITE SECRET (capability, NOT authority). A device that creates
+        // a group-v1 group may keep the current epoch's human bearer code so it can
+        // reproduce a one-click invite later — otherwise the creator is locked out
+        // of inviting after a reload. This confers NO owner/admin power: group-v1 is
+        // a peer bearer-credential profile where every credential holder is equal.
+        // Do NOT reintroduce an `owner` flag — a future reader would use it as an
+        // authorization bit, silently mutating the trust model. Capability is simply
+        // "does this device still hold the code?" (see retainedCode()). Joiners keep
+        // nothing by default. Kept per-epoch: a rotation makes a new code.
+        retained_codes: (function () {
+          var rc = existing.retained_codes || {};
+          if (opts.retainCode === true && opts.code) rc[String(epoch)] = opts.code;
+          return rc;
+        })()
       };
       writeJSON(storage, GROUPS_STORE, groups);
       return { groupUuid: uuidKey, epoch: epoch, member_id: groups[uuidKey].member_id };
@@ -216,7 +248,8 @@ var GeosonifyStarpinSharing = (function () {
       var uuid = rand(16);
       return joinGroup({
         groupUuidBytes: uuid, code: opts.code, epoch: 1,
-        endpoint: opts.endpoint, label: opts.label, handle: opts.handle
+        endpoint: opts.endpoint, label: opts.label, handle: opts.handle,
+        retainCode: true
       }).then(function (r) { return { groupUuid: r.groupUuid, groupUuidBytes: uuid, epoch: 1, member_id: r.member_id }; });
     }
 
@@ -704,6 +737,7 @@ var GeosonifyStarpinSharing = (function () {
       // groups
       createGroup: createGroup, joinGroup: joinGroup,
       listGroups: listGroups, getGroup: getGroup,
+      retainedCode: retainedCode, canReissueOneClickInvite: canReissueOneClickInvite,
       getIdentity: getIdentity, setHandle: setHandle, leaveGroup: leaveGroup,
       // sharing
       shareRecord: shareRecord,

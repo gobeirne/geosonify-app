@@ -264,6 +264,10 @@ var StarpinGroups = (function () {
     canonicalTarget: function (target) {
       if (!sharing) return null;
       try { return sharing.canonicalTarget(target); } catch (_) { return null; }
+    },
+    getInvite: function (groupUuid, opts) {
+      if (!ctrl) throw new Error('sharing not ready');
+      return ctrl.getInvite(groupUuid, opts);
     }
   };
 })();

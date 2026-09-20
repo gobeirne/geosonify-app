@@ -83,13 +83,14 @@ var GeosonifyStarpinGroups = (function () {
       opts = opts || {};
       var g = sharing.getGroup(groupUuid);
       if (!g) throw new Error('groups.inviteLink: unknown group');
-      if (opts.mode === 'full' && !opts.code)
-        throw new Error('groups.inviteLink: full mode needs the code re-entered');
+      var wantsCode = (opts.mode === 'full' || opts.mode === 'fragment');
+      if (wantsCode && !opts.code)
+        throw new Error('groups.inviteLink: ' + opts.mode + ' mode needs the code re-entered');
       return invite.makeInvite({
         baseUrl: baseUrl, groupUuid: groupUuid, epoch: g.epoch,
         endpoint: g.endpoint, label: g.label, realm: realm,
-        mode: opts.mode === 'full' ? 'full' : 'descriptor',
-        code: opts.mode === 'full' ? opts.code : undefined
+        mode: (opts.mode === 'full' || opts.mode === 'fragment') ? opts.mode : 'descriptor',
+        code: wantsCode ? opts.code : undefined
       });
     }
 
@@ -251,7 +252,8 @@ var GeosonifyStarpinGroups = (function () {
       var groups = sharing.listGroups();
       return Object.keys(groups).map(function (uuid) {
         return { groupUuid: uuid, label: groups[uuid].label, epoch: groups[uuid].epoch,
-                 endpoint: groups[uuid].endpoint };
+                 endpoint: groups[uuid].endpoint,
+                 canReissueOneClick: sharing.canReissueOneClickInvite(uuid) };
       });
     }
 
@@ -336,6 +338,23 @@ var GeosonifyStarpinGroups = (function () {
       inviteFromLocation: inviteFromLocation,
       share: share, onTargetView: onTargetView, myGroups: myGroups,
       leaveGroup: function (groupUuid) { return sharing.leaveGroup(groupUuid); },
+      // Reproduce invite links for a group already on this device. The descriptor
+      // (no-secret) link is always available. The one-click link needs the code:
+      // if THIS device retained it (a creator, or an identity transferred in) we
+      // rebuild it; otherwise oneClickLink is null and the caller asks the user to
+      // paste the code, or shares the descriptor link + tells people the code.
+      // "Retained the code" is a capability, not ownership — group-v1 has no owner.
+      getInvite: function (groupUuid, opts) {
+        opts = opts || {};
+        var g = sharing.getGroup(groupUuid);
+        if (!g) throw new Error('groups.getInvite: unknown group');
+        var descriptorLink = inviteLink(groupUuid, { mode: 'descriptor' });
+        var code = opts.code || sharing.retainedCode(groupUuid) || null;
+        var oneClickLink = null;
+        if (code) oneClickLink = inviteLink(groupUuid, { mode: 'fragment', code: code });
+        return { label: g.label, canReissueOneClick: sharing.canReissueOneClickInvite(groupUuid),
+                 code: code, descriptorLink: descriptorLink, oneClickLink: oneClickLink };
+      },
       exportIdentity: exportIdentity, importIdentity: importIdentity,
       pushTransfer: pushTransfer, pullTransfer: pullTransfer
     };
