@@ -1366,19 +1366,48 @@ dl{margin:.7rem 0 0}
         try { StarpinGroups.setName(gid, name); } catch (_) {}
         var comment = (cin.value || '').trim();
         // share each chosen record; idempotent module skips any already shared.
-        var shared = 0, skipped = 0, failed = 0;
+        var shared = 0, skipped = 0, failed = 0, errors = [];
+        console.info('[starpin] share: starting', {
+          group: gid, groupLabel: groupLabel(groups, gid), handle: name,
+          comment: comment, recordCount: chosen.length,
+          recordIds: chosen.map(function (r) { return r.record_id; })
+        });
         (function next(i) {
           if (i >= chosen.length) {
             var msg = 'Shared ' + shared + (skipped ? ', ' + skipped + ' already there' : '') +
                       (failed ? ', ' + failed + ' failed' : '') + ' to “' + groupLabel(groups, gid) + '”.';
+            if (failed && errors.length) msg += ' — ' + errors[0];
             status.textContent = msg;
             shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
+            if (failed) console.error('[starpin] share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
+            else console.info('[starpin] share: finished ok', { shared: shared, skipped: skipped });
             if (!failed) setTimeout(closeSheet, 1100); else shareBtn.disabled = false;
             return;
           }
-          ctrl.share(gid, chosen[i], { handle: name, comment: comment })
+          var rec = chosen[i];
+          var ct = null; try { ct = StarpinGroups.canonicalTarget(rec.target); } catch (_) {}
+          ctrl.share(gid, rec, { handle: name, comment: comment })
             .then(function (res) { if (res && res.skipped) skipped++; else shared++; })
-            .catch(function () { failed++; })
+            .catch(function (e) {
+              failed++;
+              var emsg = (e && e.message) ? e.message : String(e);
+              errors.push(emsg);
+              // extensive per-record diagnostics — this is what was missing.
+              console.error('[starpin] share FAILED for a record', {
+                index: i,
+                group_uuid: gid,
+                group_label: groupLabel(groups, gid),
+                record_id: rec && rec.record_id,
+                record_kind: rec && rec.kind,
+                target: rec && rec.target,
+                canonical_target: ct,
+                handle: name,
+                error_message: emsg,
+                error_name: e && e.name,
+                error: e,
+                stack: e && e.stack
+              });
+            })
             .then(function () { next(i + 1); });
         })(0);
       });
