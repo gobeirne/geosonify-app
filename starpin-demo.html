@@ -604,6 +604,8 @@ dl{margin:.7rem 0 0}
     </select>
   </div>
   <button id="lg-show" type="button" hidden></button>
+  <button id="lg-shareall" type="button" hidden style="margin-bottom:.5rem">Share all to a group…</button>
+  <div id="lg-shareall-out"></div>
   <button id="lg-export" type="button">Download my records</button>
   <button id="lg-import" type="button" style="margin-top:.5rem">Merge a file</button>
   <input id="lg-file" type="file" accept="application/json" hidden>
@@ -1392,7 +1394,12 @@ dl{margin:.7rem 0 0}
               failed++;
               var emsg = (e && e.message) ? e.message : String(e);
               errors.push(emsg);
-              // extensive per-record diagnostics — this is what was missing.
+              // flat string logs FIRST — these can't be collapsed behind a "…".
+              console.error('[starpin] share FAILED — error_name: ' + (e && e.name));
+              console.error('[starpin] share FAILED — error_message: ' + emsg);
+              console.error('[starpin] share FAILED — error_code: ' + (e && (e.code || e.status || '(none)')));
+              console.error('[starpin] share FAILED — stack:\n' + (e && e.stack ? e.stack : '(no stack)'));
+              // then the structured object (expand it in the console for the rest).
               console.error('[starpin] share FAILED for a record', {
                 index: i,
                 group_uuid: gid,
@@ -1404,6 +1411,7 @@ dl{margin:.7rem 0 0}
                 handle: name,
                 error_message: emsg,
                 error_name: e && e.name,
+                error_code: e && (e.code || e.status),
                 error: e,
                 stack: e && e.stack
               });
@@ -1430,6 +1438,147 @@ dl{margin:.7rem 0 0}
   function groupLabel(groups, gid) {
     for (var i = 0; i < groups.length; i++) if (groups[i].groupUuid === gid) return groups[i].label || '(unnamed)';
     return 'group';
+  }
+
+  // Bulk "share all to a group" from the Log tab. Same mechanics as the single
+  // sheet (group + name + comment + batched idempotent share), but lists every
+  // record grouped by find, all pre-ticked, so it's control-without-tedium.
+  function openBulkShareSheet() {
+    if (!sharingAvailable()) {
+      alert('Sharing isn’t available right now. Your finds are safe in your own log; you can share later.');
+      return;
+    }
+    var ctrl = StarpinGroups.controller();
+    var groups = ctrl.myGroups();
+    var allRecords = log.current();
+
+    var wrap = el('div'); wrap.className = 'share-wrap';
+    var sheet = el('div'); sheet.className = 'share-sheet';
+    sheet.appendChild(el('h3', null, 'Share all to a group'));
+
+    if (!groups.length) {
+      sheet.appendChild(el('p', 'hint', 'You’re not in any groups yet. Make or join one in the Groups tab first.'));
+    } else if (!allRecords.length) {
+      sheet.appendChild(el('p', 'hint', 'Your log is empty — nothing to share yet.'));
+    } else {
+      var gl = el('label', null, 'Share to'); gl.style.display = 'block';
+      var gsel = document.createElement('select');
+      groups.forEach(function (g) {
+        var o = document.createElement('option'); o.value = g.groupUuid; o.textContent = g.label || '(unnamed)';
+        gsel.appendChild(o);
+      });
+      sheet.appendChild(gl); sheet.appendChild(gsel);
+
+      var nl = el('label', null, 'Your name in this group'); nl.style.display = 'block'; nl.style.marginTop = '.5rem';
+      var nin = document.createElement('input'); nin.type = 'text'; nin.placeholder = 'e.g. Dad, Nana, Tane';
+      function loadName() { try { nin.value = StarpinGroups.getName(gsel.value) || ''; } catch (_) { nin.value = ''; } }
+      loadName(); gsel.addEventListener('change', loadName);
+      sheet.appendChild(nl); sheet.appendChild(nin);
+
+      // group records by canonical find for a readable, honest ticklist
+      var byFind = {};
+      allRecords.forEach(function (r) {
+        var ct = null; try { ct = StarpinGroups.canonicalTarget(r.target); } catch (_) {}
+        var key = ct || ('?' + (r.record_id || ''));
+        (byFind[key] = byFind[key] || []).push(r);
+      });
+      var findKeys = Object.keys(byFind);
+
+      var countLine = el('p', 'hint', '');
+      sheet.appendChild(countLine);
+
+      var checks = [];
+      var listWrap = el('div');
+      listWrap.style.cssText = 'max-height:38vh;overflow:auto;border:1px solid rgba(0,0,0,.08);border-radius:10px;padding:.4rem .6rem;margin-top:.4rem';
+      findKeys.forEach(function (key) {
+        var recs = byFind[key].slice().sort(function (a, b) { return a.event.time_ms - b.event.time_ms; });
+        var label = key.indexOf('cornerstone|') === 0 ? key.slice('cornerstone|'.length)
+                  : key.indexOf('starpin|') === 0 ? key.slice('starpin|'.length) : key;
+        var head = el('div', null, label);
+        head.style.cssText = 'font-weight:700;font-size:.8rem;margin:.5rem 0 .2rem;word-break:break-all';
+        listWrap.appendChild(head);
+        recs.forEach(function (r) {
+          var row = el('label'); row.style.cssText = 'display:flex;gap:.5rem;align-items:center;margin:.15rem 0;font-size:.82rem';
+          var cb = document.createElement('input'); cb.type = 'checkbox'; cb.style.width = 'auto'; cb.checked = true;
+          var kind = r.kind === 'culmination-attempt' ? 'culmination ★' : (r.kind || 'visit');
+          var when = new Date(r.event.time_ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+          cb.addEventListener('change', updateCount);
+          row.appendChild(cb); row.appendChild(el('span', null, kind + ' · ' + when));
+          listWrap.appendChild(row);
+          checks.push({ cb: cb, rec: r });
+        });
+      });
+      sheet.appendChild(listWrap);
+
+      var toggle = el('button', null, 'Untick all'); toggle.type = 'button';
+      toggle.style.cssText = 'margin-top:.4rem;font-size:.78rem';
+      toggle.addEventListener('click', function () {
+        var anyOn = checks.some(function (c) { return c.cb.checked; });
+        checks.forEach(function (c) { c.cb.checked = !anyOn; });
+        toggle.textContent = anyOn ? 'Tick all' : 'Untick all';
+        updateCount();
+      });
+      sheet.appendChild(toggle);
+
+      function updateCount() {
+        var n = checks.filter(function (c) { return c.cb.checked; }).length;
+        countLine.textContent = n + ' of ' + checks.length + ' record' + (checks.length === 1 ? '' : 's') +
+          ' across ' + findKeys.length + ' place' + (findKeys.length === 1 ? '' : 's') + ' selected.';
+      }
+      updateCount();
+
+      var cl = el('label', null, 'Comment on all (optional)'); cl.style.display = 'block'; cl.style.marginTop = '.5rem';
+      var cin = document.createElement('input'); cin.type = 'text'; cin.placeholder = 'e.g. My whole collection so far';
+      sheet.appendChild(cl); sheet.appendChild(cin);
+
+      var status = el('p', 'hint', ''); status.style.marginTop = '.5rem';
+      var shareBtn = el('button', 'primary', 'Share selected'); shareBtn.type = 'button'; shareBtn.style.marginTop = '.6rem';
+      shareBtn.addEventListener('click', function () {
+        var gid = gsel.value;
+        if (!gid) { status.textContent = 'Pick a group first.'; return; }
+        var name = (nin.value || '').trim();
+        if (!name) { status.textContent = 'Enter your name so the group knows who you are.'; return; }
+        var chosen = checks.filter(function (c) { return c.cb.checked; }).map(function (c) { return c.rec; });
+        if (!chosen.length) { status.textContent = 'Tick at least one record.'; return; }
+        shareBtn.disabled = true; toggle.disabled = true;
+        try { StarpinGroups.setName(gid, name); } catch (_) {}
+        var comment = (cin.value || '').trim();
+        var shared = 0, skipped = 0, failed = 0, errors = [];
+        console.info('[starpin] bulk share: starting', { group: gid, count: chosen.length });
+        (function next(i) {
+          if (i >= chosen.length) {
+            var msg = 'Done: ' + shared + ' shared' + (skipped ? ', ' + skipped + ' already there' : '') +
+                      (failed ? ', ' + failed + ' failed' : '') + ' to “' + groupLabel(groups, gid) + '”.';
+            if (failed && errors.length) msg += ' — ' + errors[0];
+            status.textContent = msg;
+            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
+            shareBtn.disabled = false; toggle.disabled = false;
+            if (failed) console.error('[starpin] bulk share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
+            else { console.info('[starpin] bulk share: finished ok', { shared: shared, skipped: skipped }); setTimeout(closeSheet, 1400); }
+            return;
+          }
+          status.textContent = 'sharing ' + (i + 1) + ' of ' + chosen.length + '…';
+          ctrl.share(gid, chosen[i], { handle: name, comment: comment })
+            .then(function (res) { if (res && res.skipped) skipped++; else shared++; })
+            .catch(function (e) {
+              failed++;
+              var emsg = (e && e.message) ? e.message : String(e);
+              errors.push(emsg);
+              console.error('[starpin] bulk share FAILED — record_id: ' + (chosen[i] && chosen[i].record_id) +
+                            ' — name: ' + (e && e.name) + ' — message: ' + emsg);
+            })
+            .then(function () { next(i + 1); });
+        })(0);
+      });
+      sheet.appendChild(shareBtn); sheet.appendChild(status);
+    }
+
+    var closeBtn = el('button', null, groups.length && allRecords.length ? 'Cancel' : 'Close'); closeBtn.type = 'button';
+    closeBtn.style.marginTop = '.5rem'; closeBtn.addEventListener('click', closeSheet);
+    sheet.appendChild(closeBtn);
+    function closeSheet() { if (wrap.parentNode) wrap.parentNode.removeChild(wrap); }
+    wrap.addEventListener('click', function (e) { if (e.target === wrap) closeSheet(); });
+    wrap.appendChild(sheet); document.body.appendChild(wrap);
   }
 
   // Commit an immutable record to the local log, THEN offer to share it.
@@ -1490,6 +1639,7 @@ dl{margin:.7rem 0 0}
 
     refreshGroupList();
     renderFaq();
+    try { refreshShareAllButton(); } catch (_) {}
 
     // Auto-join from a one-click link in the URL (additive; refreshes the list).
     (function tryAutoJoin() {
@@ -2082,7 +2232,7 @@ dl{margin:.7rem 0 0}
     // Leaflet caches container size, so a map revealed by a tab switch has to
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
-    if (name === 'log') { $('lg-show').click(); refreshFillButton(); }
+    if (name === 'log') { $('lg-show').click(); refreshFillButton(); refreshShareAllButton(); }
     if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) refreshGroupList(); } catch (_) {} }
     // Restore after layout settles (the Log rebuilds its panel synchronously
     // above, but the map's invalidate is deferred, so defer the scroll too).
@@ -3267,6 +3417,13 @@ dl{margin:.7rem 0 0}
     try { localStorage.setItem('starpin.log.sort', $('lg-sort').value); } catch (e) {}
     if (!$('lg-panel').hidden) $('lg-show').click();
   });
+
+  $('lg-shareall').addEventListener('click', openBulkShareSheet);
+  function refreshShareAllButton() {
+    var btn = $('lg-shareall'); if (!btn) return;
+    var show = sharingAvailable() && log.current().length > 0;
+    btn.hidden = !show;
+  }
 
   $('lg-export').addEventListener('click', function () {
     var blob = new Blob([log.export()], { type: 'application/json' });
