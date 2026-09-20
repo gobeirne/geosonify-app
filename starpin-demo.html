@@ -558,7 +558,6 @@ dl{margin:.7rem 0 0}
       <h3>Make a group</h3>
       <label for="grp-name">Group name</label>
       <input id="grp-name" type="text" placeholder="e.g. Our Whānau">
-      <label style="display:block;margin-top:.5rem"><input type="checkbox" id="grp-oneclick" style="width:auto" checked> One-click link (code included — only send to people you trust)</label>
       <button class="primary" id="grp-create" type="button" style="margin-top:.6rem">Create group &amp; get link</button>
       <div id="grp-out"></div>
       <p class="hint" id="grp-create-status"></p>
@@ -1213,14 +1212,26 @@ dl{margin:.7rem 0 0}
           var info;
           try { info = StarpinGroups.getInvite(gid); }
           catch (e) { inviteOut.appendChild(el('p', 'hint', 'Could not build link: ' + e.message)); return; }
+
+          // Both link forms come from the SAME group — the choice is per-invite,
+          // not per-group. Show them together so you can compare without making a
+          // second group, and pick whichever suits who you're sending to.
+          var intro = el('p', 'hint', 'Two ways to invite someone to this group — same group, your choice:');
+          inviteOut.appendChild(intro);
+
           if (info.oneClickLink) {
+            inviteOut.appendChild(el('p', 'hint', '① One-click link — the code is inside the link, so tapping it joins straight away. Easiest, but anyone who gets the link is in, so only send it privately to people you trust.'));
             inviteOut.appendChild(grpField('One-click invite link', info.oneClickLink));
+            inviteOut.appendChild(el('p', 'hint', '② Plain link + spoken code — the link has no secret in it; you tell people the code separately (say it, or send it another way). A bit more effort, safer if the link might be seen by others.'));
+            inviteOut.appendChild(grpField('Plain invite link (no code inside)', info.descriptorLink));
             if (info.code) inviteOut.appendChild(grpField('Code (to say out loud)', info.code));
           } else {
-            // joined group: no stored secret
-            inviteOut.appendChild(grpField('Invite link (no code inside)', info.descriptorLink));
-            var note = el('p', 'hint', 'You joined this group, so the app didn’t keep its code. ' +
-              'Share the link above and tell people the code separately — or paste the code here to make a one-click link:');
+            // no retained code on this device (a group you joined) — plain link
+            // is always available; offer to build the one-click link from the code.
+            inviteOut.appendChild(el('p', 'hint', '② Plain link + spoken code — share this link and tell people the code separately:'));
+            inviteOut.appendChild(grpField('Plain invite link (no code inside)', info.descriptorLink));
+            var note = el('p', 'hint', 'This is a group you joined, so the app didn\u2019t keep its code. ' +
+              'To make the ① one-click version, paste the code here:');
             inviteOut.appendChild(note);
             var ci = document.createElement('input'); ci.type = 'text'; ci.placeholder = 'e.g. ABCD-2345';
             var mk = el('button', null, 'Make one-click link'); mk.type = 'button'; mk.style.marginTop = '.3rem'; mk.style.fontSize = '.78rem';
@@ -1479,19 +1490,48 @@ dl{margin:.7rem 0 0}
     if (groupsWired) return;   // wire click handlers once
     groupsWired = true;
 
+    var creating = false;
     $('grp-create').addEventListener('click', function () {
-      var st = $('grp-create-status'); st.textContent = 'creating…';
+      if (creating) return;                       // in-flight guard: kills double-tap
+      var btn = $('grp-create');
+      var st = $('grp-create-status');
       var ctrl = StarpinGroups.controller();
+      var label = ($('grp-name').value || '').trim() || 'Group';
+
+      // soft duplicate-name confirm: names aren't identifiers, so a repeat is
+      // allowed on purpose — but it's usually an accident, so ask first.
+      var clash = ctrl.myGroups().some(function (g) { return (g.label || '') === label; });
+      if (clash && !confirm('You already have a group called \u201c' + label + '\u201d. ' +
+                            'Group names don\u2019t have to be unique \u2014 make another one anyway?')) {
+        st.textContent = '';
+        return;
+      }
+
+      creating = true; btn.disabled = true; st.textContent = 'creating\u2026';
       ctrl.createGroup({
-        label: ($('grp-name').value || '').trim() || 'Group',
-        mode: $('grp-oneclick').checked ? 'fragment' : 'descriptor'
+        label: label,
+        mode: 'fragment'          // create retaining the code; both link forms are then derivable
       }).then(function (res) {
         var out = $('grp-out'); out.textContent = '';
+        // show BOTH invite forms from the new group, so the difference is visible
+        // here and now — no need to make a second group to compare them.
+        var info = null;
+        try { info = StarpinGroups.getInvite(res.groupUuid); } catch (_) {}
+        out.appendChild(el('p', 'hint', 'Group ready. Two ways to invite people \u2014 same group, your choice:'));
+        if (info && info.oneClickLink) {
+          out.appendChild(el('p', 'hint', '① One-click link (code inside \u2014 tapping it joins straight away; only send privately):'));
+          out.appendChild(grpField('One-click invite link', info.oneClickLink));
+          out.appendChild(el('p', 'hint', '② Plain link + spoken code (no secret in the link; tell people the code separately):'));
+          out.appendChild(grpField('Plain invite link', info.descriptorLink));
+        }
         out.appendChild(grpField('Code (say this to your people)', res.code));
-        out.appendChild(grpField($('grp-oneclick').checked ? 'One-click invite link' : 'Invite link (send code separately)', res.link));
-        st.textContent = 'Group ready. Send the link' + ($('grp-oneclick').checked ? '.' : ', then tell them the code.');
+        st.textContent = 'Group ready. Anyone you send a link to appears under Your groups.';
         refreshGroupList();
-      }).catch(function (e) { st.textContent = 'Could not create: ' + e.message; });
+      }).catch(function (e) {
+        st.textContent = 'Could not create: ' + e.message;
+      }).then(function () {
+        creating = false; btn.disabled = false;   // re-enable whether it succeeded or failed
+      });
     });
 
     $('grp-join').addEventListener('click', function () {
