@@ -554,6 +554,14 @@ dl{margin:.7rem 0 0}
   <div id="grp-app" hidden>
     <p class="hint" id="grp-prov"></p>
 
+    <div class="card" id="grp-activity-card">
+      <h3>Activity</h3>
+      <p class="hint">What your people have been finding.</p>
+      <div id="grp-activity-filters" style="display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0"></div>
+      <button id="grp-activity-refresh" type="button" style="font-size:.78rem">Refresh</button>
+      <div id="grp-activity"><span class="hint">No activity yet.</span></div>
+    </div>
+
     <div class="card">
       <h3>Make a group</h3>
       <label for="grp-name">Group name</label>
@@ -1368,7 +1376,7 @@ dl{margin:.7rem 0 0}
         try { StarpinGroups.setName(gid, name); } catch (_) {}
         var comment = (cin.value || '').trim();
         // share each chosen record; idempotent module skips any already shared.
-        var shared = 0, skipped = 0, failed = 0, errors = [];
+        var shared = 0, skipped = 0, failed = 0, errors = [], published = [];
         console.info('[starpin] share: starting', {
           group: gid, groupLabel: groupLabel(groups, gid), handle: name,
           comment: comment, recordCount: chosen.length,
@@ -1383,13 +1391,30 @@ dl{margin:.7rem 0 0}
             shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
             if (failed) console.error('[starpin] share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
             else console.info('[starpin] share: finished ok', { shared: shared, skipped: skipped });
+            // Announce ONE story for the newly-published records (publication-first;
+            // feed is secondary — a failure here never affects the share above).
+            if (published.length) {
+              try {
+                StarpinGroups.announceActivity(gid, published, { handle: name, comment: comment })
+                  .then(function (r) { if (r && !r.ok) console.warn('[starpin] activity announce not ok:', r.reason); })
+                  .catch(function (e) { console.warn('[starpin] activity announce threw:', e && e.message); });
+              } catch (e) { console.warn('[starpin] activity announce error:', e && e.message); }
+            }
             if (!failed) setTimeout(closeSheet, 1100); else shareBtn.disabled = false;
             return;
           }
           var rec = chosen[i];
           var ct = null; try { ct = StarpinGroups.canonicalTarget(rec.target); } catch (_) {}
           ctrl.share(gid, rec, { handle: name, comment: comment })
-            .then(function (res) { if (res && res.skipped) skipped++; else shared++; })
+            .then(function (res) {
+              if (res && res.skipped) skipped++;
+              else {
+                shared++;
+                published.push({ publication_id: res.publication_id, handle: res.handle,
+                  content_hash: res.content_hash, kind: rec.kind,
+                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms });
+              }
+            })
             .catch(function (e) {
               failed++;
               var emsg = (e && e.message) ? e.message : String(e);
@@ -1543,7 +1568,7 @@ dl{margin:.7rem 0 0}
         shareBtn.disabled = true; toggle.disabled = true;
         try { StarpinGroups.setName(gid, name); } catch (_) {}
         var comment = (cin.value || '').trim();
-        var shared = 0, skipped = 0, failed = 0, errors = [];
+        var shared = 0, skipped = 0, failed = 0, errors = [], pubByTarget = {};
         console.info('[starpin] bulk share: starting', { group: gid, count: chosen.length });
         (function next(i) {
           if (i >= chosen.length) {
@@ -1555,11 +1580,32 @@ dl{margin:.7rem 0 0}
             shareBtn.disabled = false; toggle.disabled = false;
             if (failed) console.error('[starpin] bulk share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
             else { console.info('[starpin] bulk share: finished ok', { shared: shared, skipped: skipped }); setTimeout(closeSheet, 1400); }
+            // Announce ONE story per target (per canonical find), not one giant
+            // announcement across 41 places. Publication-first; feed is secondary.
+            var keys = Object.keys(pubByTarget);
+            (function announceNext(j) {
+              if (j >= keys.length) return;
+              try {
+                StarpinGroups.announceActivity(gid, pubByTarget[keys[j]], { handle: name, comment: comment })
+                  .catch(function (e) { console.warn('[starpin] bulk announce threw:', e && e.message); })
+                  .then(function () { announceNext(j + 1); });
+              } catch (e) { console.warn('[starpin] bulk announce error:', e && e.message); announceNext(j + 1); }
+            })(0);
             return;
           }
           status.textContent = 'sharing ' + (i + 1) + ' of ' + chosen.length + '…';
-          ctrl.share(gid, chosen[i], { handle: name, comment: comment })
-            .then(function (res) { if (res && res.skipped) skipped++; else shared++; })
+          var rec = chosen[i];
+          ctrl.share(gid, rec, { handle: name, comment: comment })
+            .then(function (res) {
+              if (res && res.skipped) skipped++;
+              else {
+                shared++;
+                var ct = null; try { ct = StarpinGroups.canonicalTarget(rec.target) || 'x'; } catch (_) { ct = 'x'; }
+                (pubByTarget[ct] = pubByTarget[ct] || []).push({ publication_id: res.publication_id,
+                  handle: res.handle, content_hash: res.content_hash, kind: rec.kind,
+                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms });
+              }
+            })
             .catch(function (e) {
               failed++;
               var emsg = (e && e.message) ? e.message : String(e);
@@ -1591,6 +1637,98 @@ dl{margin:.7rem 0 0}
       setTimeout(function () { try { openShareSheet(added || record, 'new'); } catch (e) { console.warn('[starpin] share offer failed:', e); } }, 0);
     }
     return added;
+  }
+
+  // ── Activity feed rendering ──────────────────────────────────────────────
+  var activityFilter = null;   // null = All; else a groupUuid
+  function timeAgo(ms) {
+    var s = Math.floor((Date.now() - ms) / 1000);
+    if (s < 60) return 'just now';
+    var m = Math.floor(s / 60); if (m < 60) return m + ' min ago';
+    var h = Math.floor(m / 60); if (h < 24) return h + ' hr ago';
+    var d = Math.floor(h / 24); if (d < 30) return d + ' day' + (d === 1 ? '' : 's') + ' ago';
+    return new Date(ms).toLocaleDateString();
+  }
+  function fmtDate(ms) { return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+  function kindWord(k) {
+    if (k === 'culmination-attempt') return 'Culmination ★';
+    if (k === 'closest-approach') return 'Closest approach';
+    if (k === 'observation') return 'Observation';
+    return 'Visit';
+  }
+  function targetLabel(t) {
+    if (!t) return 'a place';
+    if (t.cornerstone) return t.cornerstone;
+    var s = t.starpin || '';
+    return s.indexOf('starpin:gdr3:') === 0 ? 'Gaia DR3 ' + s.slice('starpin:gdr3:'.length)
+         : s.indexOf('starpin:name:') === 0 ? s.slice('starpin:name:'.length) : (s || 'a place');
+  }
+
+  function renderActivityFilters() {
+    var box = $('grp-activity-filters'); if (!box) return;
+    box.textContent = '';
+    var groups = StarpinGroups.controller().myGroups();
+    function chip(label, val) {
+      var b = el('button', null, label); b.type = 'button';
+      var on = (activityFilter === val);
+      b.style.cssText = 'font-size:.75rem;padding:.2rem .55rem;border-radius:999px;cursor:pointer;' +
+        'border:1px solid ' + (on ? 'transparent' : 'rgba(0,0,0,.2)') + ';' +
+        (on ? 'background:var(--moss,#5a7d2a);color:#fff;' : 'background:none;color:inherit;') + 'box-shadow:none';
+      b.addEventListener('click', function () { activityFilter = val; renderActivity(); });
+      return b;
+    }
+    box.appendChild(chip('All', null));
+    groups.forEach(function (g) { box.appendChild(chip(g.label || '(unnamed)', g.groupUuid)); });
+  }
+
+  function renderActivity() {
+    var root = $('grp-activity'); if (!root || !sharingAvailable()) return;
+    renderActivityFilters();
+    var feed = StarpinGroups.listActivity(activityFilter ? { groupUuid: activityFilter } : {});
+    root.textContent = '';
+    if (!feed.length) { root.innerHTML = '<span class="hint">No activity yet. Finds your group shares will appear here.</span>'; return; }
+    feed.forEach(function (entry) {
+      var card = el('div'); card.style.cssText = 'border-top:1px solid rgba(0,0,0,.08);padding:.6rem 0';
+      // headline: primary item = culmination if present, else newest
+      var items = entry.items.slice().sort(function (a, b) { return (b.event_time_ms || 0) - (a.event_time_ms || 0); });
+      var primary = items.filter(function (it) { return it.kind === 'culmination-attempt'; })[0] || items[0];
+      var who = el('div', null, (entry.member && entry.member.handle || 'Someone') + '  ·  ' + entry.groups.join(' · '));
+      who.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#666)';
+      var line = el('div', null, kindWord(primary.kind) + ' — ' + targetLabel(primary.target));
+      line.style.cssText = 'font-weight:700;margin:.15rem 0';
+      card.appendChild(who); card.appendChild(line);
+      // event vs share time, honest about old finds
+      var evt = primary.event_time_ms;
+      var when = evt ? ('Found ' + fmtDate(evt)) : 'Found';
+      var sharedAgo = 'shared ' + timeAgo(entry.shared_at_ms);
+      var isOld = evt && (entry.shared_at_ms - evt > 30 * 24 * 3600 * 1000);
+      var meta = el('div', null, isOld ? (when + ' · ' + sharedAgo) : (when + ' · ' + sharedAgo));
+      meta.style.cssText = 'font-size:.78rem;color:var(--ink-soft,#666)';
+      card.appendChild(meta);
+      if (items.length > 1) {
+        var more = el('div', null, '+ ' + (items.length - 1) + ' earlier record' + (items.length - 1 === 1 ? '' : 's') + ' at this place');
+        more.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#888);margin-top:.15rem';
+        card.appendChild(more);
+      }
+      if (entry.comment) {
+        var c = el('div', null, '“' + entry.comment + '”'); c.style.cssText = 'font-size:.82rem;font-style:italic;margin-top:.2rem';
+        card.appendChild(c);
+      }
+      root.appendChild(card);
+    });
+  }
+
+  var activityWired = false;
+  function wireActivity() {
+    renderActivity();
+    if (activityWired) return; activityWired = true;
+    var r = $('grp-activity-refresh');
+    if (r) r.addEventListener('click', function () {
+      r.disabled = true; r.textContent = 'Refreshing…';
+      StarpinGroups.syncAllActivity().then(function () { renderActivity(); })
+        .catch(function (e) { console.warn('[starpin] activity refresh failed:', e && e.message); })
+        .then(function () { r.disabled = false; r.textContent = 'Refresh'; });
+    });
   }
 
   var faqRendered = false;
@@ -1640,6 +1778,12 @@ dl{margin:.7rem 0 0}
     refreshGroupList();
     renderFaq();
     try { refreshShareAllButton(); } catch (_) {}
+    try {
+      wireActivity();
+      // opportunistic: retry any queued announcements, then pull fresh activity
+      StarpinGroups.flushPendingAnnouncements().catch(function () {});
+      StarpinGroups.syncAllActivity().then(function () { renderActivity(); }).catch(function () {});
+    } catch (e) { console.warn('[starpin] activity init failed:', e && e.message); }
 
     // Auto-join from a one-click link in the URL (additive; refreshes the list).
     (function tryAutoJoin() {
@@ -2233,7 +2377,7 @@ dl{margin:.7rem 0 0}
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
     if (name === 'log') { $('lg-show').click(); refreshFillButton(); refreshShareAllButton(); }
-    if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) refreshGroupList(); } catch (_) {} }
+    if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) { refreshGroupList(); renderActivity(); } } catch (_) {} }
     // Restore after layout settles (the Log rebuilds its panel synchronously
     // above, but the map's invalidate is deferred, so defer the scroll too).
     var y = tabScroll[name] || 0;
