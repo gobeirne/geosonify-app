@@ -1199,6 +1199,44 @@ dl{margin:.7rem 0 0}
         catch (e) { ni.style.borderColor = 'var(--rust)'; console.warn('[starpin] setName failed:', e); }
       });
       row.appendChild(nl); row.appendChild(ni);
+
+      // Get invite link (retrievable any time, not just at creation). For a group
+      // you created, the one-click link rebuilds from the retained code; for one
+      // you joined, we kept no code, so we show the no-secret link and offer to
+      // build the one-click link if you paste the code.
+      var inviteBtn = el('button', null, 'Get invite link'); inviteBtn.type = 'button';
+      inviteBtn.style.marginTop = '.4rem'; inviteBtn.style.fontSize = '.78rem';
+      var inviteOut = el('div'); inviteOut.style.marginTop = '.4rem';
+      (function (gid) {
+        inviteBtn.addEventListener('click', function () {
+          inviteOut.textContent = '';
+          var info;
+          try { info = StarpinGroups.getInvite(gid); }
+          catch (e) { inviteOut.appendChild(el('p', 'hint', 'Could not build link: ' + e.message)); return; }
+          if (info.oneClickLink) {
+            inviteOut.appendChild(grpField('One-click invite link', info.oneClickLink));
+            if (info.code) inviteOut.appendChild(grpField('Code (to say out loud)', info.code));
+          } else {
+            // joined group: no stored secret
+            inviteOut.appendChild(grpField('Invite link (no code inside)', info.descriptorLink));
+            var note = el('p', 'hint', 'You joined this group, so the app didn’t keep its code. ' +
+              'Share the link above and tell people the code separately — or paste the code here to make a one-click link:');
+            inviteOut.appendChild(note);
+            var ci = document.createElement('input'); ci.type = 'text'; ci.placeholder = 'e.g. ABCD-2345';
+            var mk = el('button', null, 'Make one-click link'); mk.type = 'button'; mk.style.marginTop = '.3rem'; mk.style.fontSize = '.78rem';
+            mk.addEventListener('click', function () {
+              var code = (ci.value || '').trim(); if (!code) return;
+              try {
+                var i2 = StarpinGroups.getInvite(gid, { code: code });
+                if (i2.oneClickLink) inviteOut.appendChild(grpField('One-click invite link', i2.oneClickLink));
+              } catch (e) { inviteOut.appendChild(el('p', 'hint', 'Could not build link: ' + e.message)); }
+            });
+            inviteOut.appendChild(ci); inviteOut.appendChild(mk);
+          }
+        });
+      })(g.groupUuid);
+      row.appendChild(inviteBtn);
+      row.appendChild(inviteOut);
       // Leave (forget on this device). Honest label: shared blobs are immutable
       // server-side, so this removes YOUR access, not everyone's data.
       var leave = el('button', null, 'Leave group'); leave.type = 'button';
