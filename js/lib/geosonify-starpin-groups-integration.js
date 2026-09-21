@@ -274,6 +274,10 @@ var StarpinGroups = (function () {
       if (!sharing) throw new Error('sharing not ready');
       return sharing.announceActivity(groupUuid, items, opts);
     },
+    postNote: function (groupUuid, text, opts) {
+      if (!sharing) throw new Error('sharing not ready');
+      return sharing.postNote(groupUuid, text, opts);
+    },
     syncActivity: function (groupUuid, opts) {
       if (!sharing) throw new Error('sharing not ready');
       return sharing.syncActivityPeriod(groupUuid, opts);

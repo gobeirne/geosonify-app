@@ -553,24 +553,40 @@ var GeosonifyStarpinSharing = (function () {
     // Build (but don't write) one announcement for a Share action. `items` are the
     // NEWLY-published records (skip already-published, so re-Sharing can't bump
     // the feed). Returns null if nothing new to announce.
-    function buildAnnouncement(groupUuid, member, items, comment) {
+    // A feed event has an event_kind: 'find' (records for a place) or 'note'
+    // (free text from a person, optionally about a target). Per-find comments live
+    // on the record wrapper, NOT here — so a bulk share never stamps one comment
+    // across every find. A bulk-with-comment produces a separate 'note' event.
+    function buildFindEvent(member, items) {
       if (!items || !items.length) return null;
       var now = Date.now();
       return {
-        schema: ACTIVITY_SCHEMA,
+        schema: ACTIVITY_SCHEMA, event_kind: 'find',
         activity_id: b64url(rand(16)),
         member: { member_id: member.member_id || null, handle: member.handle || '' },
-        shared_at_ms: now,
-        period: periodFor(now),
-        comment: comment || null,
+        shared_at_ms: now, period: periodFor(now),
         items: items.map(function (it) {
           return {
             publication_id: it.publication_id, target_handle: it.handle,
             content_hash: it.content_hash, kind: it.kind,
-            target: it.target || null,          // identity only (for card draw); no coords
-            event_time_ms: it.event_time_ms != null ? it.event_time_ms : null
+            target: it.target || null,          // identity only; no coords
+            event_time_ms: it.event_time_ms != null ? it.event_time_ms : null,
+            comment: it.comment || null         // OPTIONAL per-find comment ("finally!")
           };
         })
+      };
+    }
+    function buildNoteEvent(member, text, aboutCount, aboutTarget) {
+      if (!text) return null;
+      var now = Date.now();
+      return {
+        schema: ACTIVITY_SCHEMA, event_kind: 'note',
+        activity_id: b64url(rand(16)),
+        member: { member_id: member.member_id || null, handle: member.handle || '' },
+        shared_at_ms: now, period: periodFor(now),
+        note: String(text),
+        about_count: (aboutCount != null ? aboutCount : null),   // "shared 43 finds"
+        about_target: aboutTarget || null                        // identity only, optional
       };
     }
 
@@ -596,16 +612,33 @@ var GeosonifyStarpinSharing = (function () {
       var g = getGroup(groupUuid);
       if (!g) return { ok: false, reason: 'unknown group' };
       var member = { member_id: g.member_id, handle: opts.handle != null ? opts.handle : g.handle };
-      var announcement = buildAnnouncement(groupUuid, member, items, opts.comment);
-      if (!announcement) return { ok: true, nothingToAnnounce: true };
+      var ev = buildFindEvent(member, items);
+      if (!ev) return { ok: true, nothingToAnnounce: true };
+      return writeOrQueue(groupUuid, ev);
+    }
+
+    // Post a note event: standalone ("well done Lucy!") or about a batch/target
+    // (a bulk-share comment). Its own event — never stamped onto find cards.
+    async function postNote(groupUuid, text, opts) {
+      opts = opts || {};
+      var g = getGroup(groupUuid);
+      if (!g) return { ok: false, reason: 'unknown group' };
+      if (!text || !String(text).trim()) return { ok: true, nothingToAnnounce: true };
+      var member = { member_id: g.member_id, handle: opts.handle != null ? opts.handle : g.handle };
+      var ev = buildNoteEvent(member, String(text).trim(), opts.aboutCount, opts.aboutTarget);
+      return writeOrQueue(groupUuid, ev);
+    }
+
+    // shared write-or-queue path for any activity event (find or note).
+    async function writeOrQueue(groupUuid, ev) {
       try {
-        var res = await writeAnnouncement(groupUuid, announcement);
+        var res = await writeAnnouncement(groupUuid, ev);
         return { ok: true, handle: res.handle, content_hash: res.content_hash };
       } catch (e) {
         var pend = actPending();
-        pend[announcement.activity_id] = { group_uuid: groupUuid, announcement: announcement };
+        pend[ev.activity_id] = { group_uuid: groupUuid, announcement: ev };
         writeJSON(storage, ACTPENDING_STORE, pend);
-        try { console.warn('[starpin] activity announce failed; queued pending:', e && e.message); } catch (_) {}
+        try { console.warn('[starpin] activity write failed; queued pending:', e && e.message); } catch (_) {}
         return { ok: false, pending: true, reason: e && e.message ? e.message : String(e) };
       }
     }
@@ -647,7 +680,8 @@ var GeosonifyStarpinSharing = (function () {
             try { pt = await G.open(gk, aad, item.blob); } catch (e) { continue; }
             var ann;
             try { ann = JSON.parse(td.decode(pt)); } catch (e) { continue; }
-            if (!ann || ann.schema !== ACTIVITY_SCHEMA || !ann.items) continue;
+            if (!ann || ann.schema !== ACTIVITY_SCHEMA) continue;
+            if (!ann.items && !ann.note) continue;   // must be a find (items) or a note
             cacheActivityEntry(groupUuid, item.hash, ann); added++;
           }
           cursor = page.cursor || null;
@@ -670,8 +704,11 @@ var GeosonifyStarpinSharing = (function () {
         var prev = byId[a.activity_id];
         if (prev) { if (prev.groups.indexOf(label) < 0) prev.groups.push(label); return; }
         byId[a.activity_id] = {
-          activity_id: a.activity_id, member: a.member, shared_at_ms: a.shared_at_ms,
-          comment: a.comment, items: a.items, groups: [label], primary_group_uuid: e.group_uuid
+          activity_id: a.activity_id, event_kind: a.event_kind || 'find',
+          member: a.member, shared_at_ms: a.shared_at_ms,
+          note: a.note || null, about_count: a.about_count != null ? a.about_count : null,
+          about_target: a.about_target || null,
+          items: a.items || [], groups: [label], primary_group_uuid: e.group_uuid
         };
       });
       var out = Object.keys(byId).map(function (id) { return byId[id]; });
@@ -931,7 +968,7 @@ var GeosonifyStarpinSharing = (function () {
       getIdentity: getIdentity, setHandle: setHandle, leaveGroup: leaveGroup,
       // sharing
       shareRecord: shareRecord,
-      announceActivity: announceActivity, syncActivityPeriod: syncActivityPeriod,
+      announceActivity: announceActivity, postNote: postNote, syncActivityPeriod: syncActivityPeriod,
       listActivity: listActivity, flushPendingAnnouncements: flushPendingAnnouncements,
       syncTarget: syncTarget, syncTargetAllGroups: syncTargetAllGroups,
       // portability
