@@ -558,7 +558,21 @@ dl{margin:.7rem 0 0}
       <h3>Activity</h3>
       <p class="hint">What your people have been finding.</p>
       <div id="grp-activity-filters" style="display:flex;gap:.3rem;flex-wrap:wrap;margin:.3rem 0"></div>
-      <button id="grp-activity-refresh" type="button" style="font-size:.78rem">Refresh</button>
+      <div style="display:flex;gap:.5rem;align-items:center;margin:.3rem 0;flex-wrap:wrap">
+        <button id="grp-activity-refresh" type="button" style="font-size:.78rem">Refresh</button>
+        <label style="font-size:.78rem">Sort:
+          <select id="grp-activity-sort" style="width:auto;font-size:.78rem">
+            <option value="shared">Recently shared</option>
+            <option value="found">When found</option>
+          </select>
+        </label>
+      </div>
+      <div id="grp-note-row" style="display:flex;gap:.4rem;margin:.3rem 0">
+        <input id="grp-note-text" type="text" placeholder="Say something to the group…" style="flex:1">
+        <button id="grp-note-post" type="button" style="font-size:.78rem">Post</button>
+      </div>
+      <select id="grp-note-group" style="width:100%;font-size:.78rem;margin-bottom:.3rem"></select>
+      <p class="hint" id="grp-note-status"></p>
       <div id="grp-activity"><span class="hint">No activity yet.</span></div>
     </div>
 
@@ -1395,7 +1409,7 @@ dl{margin:.7rem 0 0}
             // feed is secondary — a failure here never affects the share above).
             if (published.length) {
               try {
-                StarpinGroups.announceActivity(gid, published, { handle: name, comment: comment })
+                StarpinGroups.announceActivity(gid, published, { handle: name })
                   .then(function (r) { if (r && !r.ok) console.warn('[starpin] activity announce not ok:', r.reason); })
                   .catch(function (e) { console.warn('[starpin] activity announce threw:', e && e.message); });
               } catch (e) { console.warn('[starpin] activity announce error:', e && e.message); }
@@ -1410,9 +1424,11 @@ dl{margin:.7rem 0 0}
               if (res && res.skipped) skipped++;
               else {
                 shared++;
+                var tags = feedTagsFor(rec);
                 published.push({ publication_id: res.publication_id, handle: res.handle,
                   content_hash: res.content_hash, kind: rec.kind,
-                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms });
+                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms,
+                  comment: comment || null, tags: tags });
               }
             })
             .catch(function (e) {
@@ -1565,6 +1581,9 @@ dl{margin:.7rem 0 0}
         if (!name) { status.textContent = 'Enter your name so the group knows who you are.'; return; }
         var chosen = checks.filter(function (c) { return c.cb.checked; }).map(function (c) { return c.rec; });
         if (!chosen.length) { status.textContent = 'Tick at least one record.'; return; }
+        // share in FIND ORDER (oldest event first) so the feed's order is
+        // meaningful even though everything is shared in the same moment.
+        chosen.sort(function (a, b) { return (a.event && a.event.time_ms || 0) - (b.event && b.event.time_ms || 0); });
         shareBtn.disabled = true; toggle.disabled = true;
         try { StarpinGroups.setName(gid, name); } catch (_) {}
         var comment = (cin.value || '').trim();
@@ -1580,17 +1599,27 @@ dl{margin:.7rem 0 0}
             shareBtn.disabled = false; toggle.disabled = false;
             if (failed) console.error('[starpin] bulk share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
             else { console.info('[starpin] bulk share: finished ok', { shared: shared, skipped: skipped }); setTimeout(closeSheet, 1400); }
-            // Announce ONE story per target (per canonical find), not one giant
-            // announcement across 41 places. Publication-first; feed is secondary.
+            // ONE note event for the shared comment (if any), then clean find
+            // events per target — so the comment isn't stamped on every card.
             var keys = Object.keys(pubByTarget);
-            (function announceNext(j) {
-              if (j >= keys.length) return;
-              try {
-                StarpinGroups.announceActivity(gid, pubByTarget[keys[j]], { handle: name, comment: comment })
-                  .catch(function (e) { console.warn('[starpin] bulk announce threw:', e && e.message); })
-                  .then(function () { announceNext(j + 1); });
-              } catch (e) { console.warn('[starpin] bulk announce error:', e && e.message); announceNext(j + 1); }
-            })(0);
+            var totalPublished = keys.reduce(function (n, k) { return n + pubByTarget[k].length; }, 0);
+            function announceFinds() {
+              (function announceNext(j) {
+                if (j >= keys.length) return;
+                try {
+                  StarpinGroups.announceActivity(gid, pubByTarget[keys[j]], { handle: name })
+                    .catch(function (e) { console.warn('[starpin] bulk announce threw:', e && e.message); })
+                    .then(function () { announceNext(j + 1); });
+                } catch (e) { console.warn('[starpin] bulk announce error:', e && e.message); announceNext(j + 1); }
+              })(0);
+            }
+            if (comment && totalPublished > 0 && StarpinGroups.postNote) {
+              StarpinGroups.postNote(gid, comment, { handle: name, aboutCount: totalPublished })
+                .catch(function (e) { console.warn('[starpin] bulk note threw:', e && e.message); })
+                .then(announceFinds);
+            } else {
+              announceFinds();
+            }
             return;
           }
           status.textContent = 'sharing ' + (i + 1) + ' of ' + chosen.length + '…';
@@ -1603,7 +1632,8 @@ dl{margin:.7rem 0 0}
                 var ct = null; try { ct = StarpinGroups.canonicalTarget(rec.target) || 'x'; } catch (_) { ct = 'x'; }
                 (pubByTarget[ct] = pubByTarget[ct] || []).push({ publication_id: res.publication_id,
                   handle: res.handle, content_hash: res.content_hash, kind: rec.kind,
-                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms });
+                  target: rec.target, event_time_ms: rec.event && rec.event.time_ms,
+                  tags: feedTagsFor(rec) });
               }
             })
             .catch(function (e) {
@@ -1640,7 +1670,37 @@ dl{margin:.7rem 0 0}
   }
 
   // ── Activity feed rendering ──────────────────────────────────────────────
+  // Compact presentation tags for a record, baked into the shared feed item so
+  // cards render rich without a fetch. Presentation only — no coordinates.
+  function feedTagsFor(r) {
+    var out = { rarityKey: null, rarityLevel: null, extra: null, driveBy: false, culmination: false };
+    try {
+      out.culmination = (r.kind === 'culmination-attempt');
+      // drive-by: the record's approachReason or a drive-by fix source
+      var ar = (r.approachReason || '') + '';
+      out.driveBy = /drive-?by/i.test(ar) || (r.fix && r.fix.source === 'drive-by');
+      var t = r.target || {};
+      if (t.starpin) {
+        var sid = sourceIdOf(t.starpin);
+        var live = map.stars().filter(function (x) { return sourceIdOf(x.name) === sid; })[0];
+        var mg = t.mag_g != null ? t.mag_g : (live && live.mag != null ? live.mag : null);
+        var dly = t.dist_ly != null ? t.dist_ly : (live && live.distLy != null ? live.distLy : null);
+        if (mg != null) { var st = F.starTier(mg); out.rarityKey = st.key; out.rarityLevel = Math.min(4, Math.round(st.rarity * 4)); out.extra = 'G ' + Number(mg).toFixed(1); }
+        else if (dly != null) out.extra = Number(dly).toLocaleString() + ' ly';
+      } else if (t.cornerstone) {
+        var pp = S.cornerstonePoint(t.cornerstone);
+        var mm = /\.([0-3]+)(?:c[0-3])?$/.exec(t.cornerstone);
+        var probe = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
+        var ct = F.tierOf((probe.intrinsicOrder + probe.crossOrder) / 2, 4);
+        out.rarityKey = ct.key; out.rarityLevel = Math.min(4, Math.round(ct.rarity * 4));
+        out.extra = 'order ' + probe.crossOrder + '\u00D7' + probe.intrinsicOrder;
+      }
+    } catch (e) { /* tags are best-effort; a card without them still renders */ }
+    return out;
+  }
+
   var activityFilter = null;   // null = All; else a groupUuid
+  var activitySort = 'shared'; // 'shared' | 'found'
   function timeAgo(ms) {
     var s = Math.floor((Date.now() - ms) / 1000);
     if (s < 60) return 'just now';
@@ -1681,46 +1741,147 @@ dl{margin:.7rem 0 0}
     groups.forEach(function (g) { box.appendChild(chip(g.label || '(unnamed)', g.groupUuid)); });
   }
 
+  // Faint stable colour per member, so you can see at a glance who's been active.
+  function memberHue(handle) {
+    var s = String(handle || '?'), h = 0;
+    for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return h;
+  }
+  function rarityChipClass(level) { return 'rar r' + Math.min(4, Math.max(0, level || 0)); }
+
+  function openFeedTarget(target) {
+    if (!target) return;
+    try {
+      var lat = null, lon = null, label = targetLabel(target);
+      if (target.cornerstone) {
+        var pp = S.cornerstonePoint(target.cornerstone);
+        lat = pp.lat; lon = pp.lon;
+      } else if (target.starpin) {
+        // stars need coords; the feed item may carry them, else look up the catalogue
+        if (target.lat_1e7 != null && target.lon_1e7 != null) { lat = target.lat_1e7 / 1e7; lon = target.lon_1e7 / 1e7; }
+        else {
+          var sid = sourceIdOf(target.starpin);
+          var live = map.stars().filter(function (x) { return sourceIdOf(x.name) === sid; })[0];
+          if (live && live.ra != null) { var addr = S.starpinAddress(String(live.ra), String(live.dec)); lat = addr.lat_1e7 / 1e7; lon = addr.lon_1e7 / 1e7; }
+        }
+      }
+      if (lat != null && lon != null) {
+        goTab('map');
+        map.leaflet.setView([lat, lon], Math.max(map.leaflet.getZoom(), 16));
+      } else {
+        alert('This is “' + label + '”. Its exact spot isn’t loaded here — open it from the map or Sky once it’s in view.');
+      }
+    } catch (e) { console.warn('[starpin] openFeedTarget failed:', e && e.message); }
+  }
+
   function renderActivity() {
     var root = $('grp-activity'); if (!root || !sharingAvailable()) return;
     renderActivityFilters();
     var feed = StarpinGroups.listActivity(activityFilter ? { groupUuid: activityFilter } : {});
+    // sort: by shared time (default) or by the find's event time
+    feed.sort(function (a, b) {
+      if (activitySort === 'found') {
+        var ea = feedEventTime(a), eb = feedEventTime(b);
+        return (eb || 0) - (ea || 0);
+      }
+      return b.shared_at_ms - a.shared_at_ms;
+    });
     root.textContent = '';
     if (!feed.length) { root.innerHTML = '<span class="hint">No activity yet. Finds your group shares will appear here.</span>'; return; }
+
     feed.forEach(function (entry) {
-      var card = el('div'); card.style.cssText = 'border-top:1px solid rgba(0,0,0,.08);padding:.6rem 0';
-      // headline: primary item = culmination if present, else newest
-      var items = entry.items.slice().sort(function (a, b) { return (b.event_time_ms || 0) - (a.event_time_ms || 0); });
-      var primary = items.filter(function (it) { return it.kind === 'culmination-attempt'; })[0] || items[0];
+      var hue = memberHue(entry.member && entry.member.handle);
+      var card = el('div');
+      card.style.cssText = 'border-top:1px solid rgba(0,0,0,.08);padding:.6rem .6rem;margin-left:.1rem;' +
+        'border-left:3px solid hsl(' + hue + ',55%,60%);background:hsl(' + hue + ',60%,97%);border-radius:0 8px 8px 0';
+
       var who = el('div', null, (entry.member && entry.member.handle || 'Someone') + '  ·  ' + entry.groups.join(' · '));
       who.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#666)';
+      card.appendChild(who);
+
+      if (entry.event_kind === 'note') {
+        var noteLine = el('div', null, '“' + (entry.note || '') + '”');
+        noteLine.style.cssText = 'font-size:.95rem;font-style:italic;margin:.2rem 0';
+        card.appendChild(noteLine);
+        if (entry.about_count) {
+          var ab = el('div', null, 'shared ' + entry.about_count + ' find' + (entry.about_count === 1 ? '' : 's'));
+          ab.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#888)';
+          card.appendChild(ab);
+        }
+        var nmeta = el('div', null, timeAgo(entry.shared_at_ms));
+        nmeta.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#888);margin-top:.15rem';
+        card.appendChild(nmeta);
+        root.appendChild(card);
+        return;
+      }
+
+      // find event
+      var items = (entry.items || []).slice().sort(function (a, b) { return (b.event_time_ms || 0) - (a.event_time_ms || 0); });
+      var primary = items.filter(function (it) { return it.kind === 'culmination-attempt'; })[0] || items[0] || {};
       var line = el('div', null, kindWord(primary.kind) + ' — ' + targetLabel(primary.target));
-      line.style.cssText = 'font-weight:700;margin:.15rem 0';
-      card.appendChild(who); card.appendChild(line);
-      // event vs share time, honest about old finds
+      line.style.cssText = 'font-weight:700;margin:.15rem 0;cursor:pointer';
+      line.addEventListener('click', function () { openFeedTarget(primary.target); });
+      card.appendChild(line);
+
+      // tag chips from the baked preview tags
+      var tags = primary.tags || {};
+      var chips = el('div'); chips.style.cssText = 'display:flex;gap:.3rem;flex-wrap:wrap;margin:.15rem 0';
+      function addChip(txt, cls) { var c = el('span', 'chip' + (cls ? ' ' + cls : ''), txt); c.style.fontSize = '.7rem'; chips.appendChild(c); }
+      if (tags.rarityKey) addChip(tags.rarityKey, rarityChipClass(tags.rarityLevel));
+      if (tags.extra) addChip(tags.extra);
+      if (tags.culmination) addChip('culmination ★', 'good');
+      if (tags.driveBy) addChip('drive-by');
+      if (chips.childNodes.length) card.appendChild(chips);
+
       var evt = primary.event_time_ms;
       var when = evt ? ('Found ' + fmtDate(evt)) : 'Found';
-      var sharedAgo = 'shared ' + timeAgo(entry.shared_at_ms);
       var isOld = evt && (entry.shared_at_ms - evt > 30 * 24 * 3600 * 1000);
-      var meta = el('div', null, isOld ? (when + ' · ' + sharedAgo) : (when + ' · ' + sharedAgo));
+      var meta = el('div', null, when + ' · shared ' + timeAgo(entry.shared_at_ms) + (isOld ? ' (old find)' : ''));
       meta.style.cssText = 'font-size:.78rem;color:var(--ink-soft,#666)';
       card.appendChild(meta);
+
       if (items.length > 1) {
         var more = el('div', null, '+ ' + (items.length - 1) + ' earlier record' + (items.length - 1 === 1 ? '' : 's') + ' at this place');
         more.style.cssText = 'font-size:.75rem;color:var(--ink-soft,#888);margin-top:.15rem';
         card.appendChild(more);
       }
-      if (entry.comment) {
-        var c = el('div', null, '“' + entry.comment + '”'); c.style.cssText = 'font-size:.82rem;font-style:italic;margin-top:.2rem';
+      // per-find comment (single-share "finally!") shows on the item that carries it
+      var withComment = items.filter(function (it) { return it.comment; })[0];
+      if (withComment) {
+        var c = el('div', null, '“' + withComment.comment + '”'); c.style.cssText = 'font-size:.82rem;font-style:italic;margin-top:.2rem';
         card.appendChild(c);
       }
+
+      var actions = el('div'); actions.style.cssText = 'display:flex;gap:.4rem;margin-top:.35rem';
+      var cardBtn = el('button', null, 'card'); cardBtn.type = 'button'; cardBtn.style.fontSize = '.72rem';
+      cardBtn.addEventListener('click', function () { openFeedTarget(primary.target); });
+      var mapBtn = el('button', null, 'on map'); mapBtn.type = 'button'; mapBtn.style.fontSize = '.72rem';
+      mapBtn.addEventListener('click', function () { openFeedTarget(primary.target); });
+      actions.appendChild(cardBtn); actions.appendChild(mapBtn);
+      card.appendChild(actions);
+
       root.appendChild(card);
     });
   }
+  function feedEventTime(entry) {
+    if (entry.event_kind === 'note') return entry.shared_at_ms;
+    var t = 0; (entry.items || []).forEach(function (it) { if ((it.event_time_ms || 0) > t) t = it.event_time_ms; });
+    return t || entry.shared_at_ms;
+  }
+
 
   var activityWired = false;
+  function refreshNoteGroups() {
+    var sel = $('grp-note-group'); if (!sel) return;
+    var groups = StarpinGroups.controller().myGroups();
+    sel.textContent = '';
+    groups.forEach(function (g) { var o = document.createElement('option'); o.value = g.groupUuid; o.textContent = 'to ' + (g.label || '(unnamed)'); sel.appendChild(o); });
+    $('grp-note-row').style.display = groups.length ? 'flex' : 'none';
+    $('grp-note-group').style.display = groups.length ? 'block' : 'none';
+  }
   function wireActivity() {
     renderActivity();
+    refreshNoteGroups();
     if (activityWired) return; activityWired = true;
     var r = $('grp-activity-refresh');
     if (r) r.addEventListener('click', function () {
@@ -1728,6 +1889,26 @@ dl{margin:.7rem 0 0}
       StarpinGroups.syncAllActivity().then(function () { renderActivity(); })
         .catch(function (e) { console.warn('[starpin] activity refresh failed:', e && e.message); })
         .then(function () { r.disabled = false; r.textContent = 'Refresh'; });
+    });
+    var srt = $('grp-activity-sort');
+    if (srt) srt.addEventListener('change', function () { activitySort = srt.value; renderActivity(); });
+    var post = $('grp-note-post');
+    if (post) post.addEventListener('click', function () {
+      var gid = $('grp-note-group').value;
+      var text = ($('grp-note-text').value || '').trim();
+      var st = $('grp-note-status');
+      if (!gid) { st.textContent = 'Join or make a group first.'; return; }
+      if (!text) { st.textContent = 'Type a note first.'; return; }
+      post.disabled = true; st.textContent = 'posting…';
+      // use the group's stored display name
+      var nm = null; try { nm = StarpinGroups.getName(gid); } catch (_) {}
+      StarpinGroups.postNote(gid, text, { handle: nm || undefined })
+        .then(function (res) {
+          if (res && res.ok) { $('grp-note-text').value = ''; st.textContent = 'Posted.'; renderActivity(); }
+          else st.textContent = 'Could not post' + (res && res.reason ? ': ' + res.reason : (res && res.pending ? ' (queued, will retry)' : '.'));
+        })
+        .catch(function (e) { st.textContent = 'Could not post: ' + (e && e.message); })
+        .then(function () { post.disabled = false; });
     });
   }
 
