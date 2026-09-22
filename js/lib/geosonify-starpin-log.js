@@ -106,20 +106,22 @@ var GeosonifyStarpinLog = (function () {
   function approach(o)  { return build('closest-approach', o); }
   function observation(o) { return build('observation', o); }
 
-  // ── canonical form ────────────────────────────────────────────────────────
-  // Keys sorted by code point, no insignificant whitespace. This is a stand-in
-  // for RFC 8785 (JCS); adopt JCS proper before any hash is published or
-  // exchanged between implementations.
-  function canonical(value) {
-    if (value === null || typeof value === 'number' || typeof value === 'boolean')
-      return JSON.stringify(value);
-    if (typeof value === 'string') return JSON.stringify(value);
-    if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-    var keys = Object.keys(value).sort();
-    return '{' + keys.map(function (k) {
-      return JSON.stringify(k) + ':' + canonical(value[k]);
-    }).join(',') + '}';
-  }
+  // ── canonical form (RFC 8785 / JCS) ───────────────────────────────────────
+  // The canonicaliser lives in its own frozen module (geosonify-starpin-canonical
+  // .js) so there is ONE definition and no drift: the log, sharing and selfsync
+  // all consume it. See that file for why it is strict JCS (key order, string
+  // escaping, number form) and for the input-domain rejections. It is a frozen
+  // protocol constant — the AAD, every content hash and every export integrity
+  // hash depend on its exact bytes.
+  //
+  // The log requires/reads it; if it is somehow absent the log THROWS rather than
+  // silently using a second copy, because a divergent canonicaliser is a hashing
+  // bug, not a degraded mode.
+  var _Canon = (typeof GeosonifyStarpinCanonical !== 'undefined') ? GeosonifyStarpinCanonical
+             : (typeof require === 'function' ? require('./geosonify-starpin-canonical.js') : null);
+  if (!_Canon || typeof _Canon.canonical !== 'function')
+    throw new Error('record-v1: geosonify-starpin-canonical.js must load before this module');
+  var canonical = _Canon.canonical;
 
   // ── content hashing ───────────────────────────────────────────────────────
   //

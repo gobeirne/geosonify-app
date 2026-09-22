@@ -60,6 +60,17 @@ var GeosonifyStarpinSelfSync = (function () {
     if(typeof atob==='function'){var bin=atob(s),o=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)o[i]=bin.charCodeAt(i);return o;}
     return new Uint8Array(Buffer.from(s,'base64')); }
 
+  // canonical JSON (RFC 8785 / JCS) — ONE definition, in
+  // geosonify-starpin-canonical.js. Consume it; no local copy to drift from.
+  // If it is not loaded, throw (a divergent canonicaliser is a hashing bug).
+  var _Canon = (typeof GeosonifyStarpinCanonical !== 'undefined') ? GeosonifyStarpinCanonical
+             : (typeof require === 'function' ? (function () {
+                 try { return require('./geosonify-starpin-canonical.js'); } catch (e) { return null; }
+               })() : null);
+  if (!_Canon || typeof _Canon.canonical !== 'function')
+    throw new Error('selfsync: geosonify-starpin-canonical.js must load before this module');
+  var canonical = _Canon.canonical;
+
   function create(deps) {
     deps = deps || {};
     var G = deps.group, store = deps.store, log = deps.log;
@@ -201,13 +212,8 @@ var GeosonifyStarpinSelfSync = (function () {
       return { pulled: pl.pulled, pushed: ph.pushed, handle: ph.handle };
     }
 
-    // canonical JSON — same stand-in as elsewhere (pin to RFC 8785 before freeze).
-    function canonical(v) {
-      if (v === null || typeof v === 'number' || typeof v === 'boolean') return JSON.stringify(v);
-      if (typeof v === 'string') return JSON.stringify(v);
-      if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
-      return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + canonical(v[k]); }).join(',') + '}';
-    }
+    // (canonical JSON now delegates to the log module's single JCS definition —
+    //  see the module-scope `canonical` above; no per-instance copy.)
 
     // expose the self-key store so the portable snapshot can carry it
     function exportState() { return readSelf(); }
@@ -222,7 +228,10 @@ var GeosonifyStarpinSelfSync = (function () {
     };
   }
 
-  return { create: create, SELF_STORE: SELF_STORE, SELF_TARGET: SELF_TARGET };
+  return { create: create, SELF_STORE: SELF_STORE, SELF_TARGET: SELF_TARGET,
+           // exposed only so the log self-test can prove this module's canonical
+           // is byte-identical to the log's single JCS definition (no drift).
+           canonical: canonical };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

@@ -70,18 +70,18 @@ var GeosonifyStarpinSharing = (function () {
     throw new Error('sharing: target names neither a starpin nor a cornerstone');
   }
 
-  // ---- canonical JSON (sorted keys, no whitespace) — same shape as the log ---
-  // NOTE: like the log module's canonical(), this is a stand-in for RFC 8785
-  // (JCS). It MUST be pinned to JCS before any cross-implementation exchange is
-  // frozen; for a single-app beta it is self-consistent.
-  function canonical(v) {
-    if (v === null || typeof v === 'number' || typeof v === 'boolean') return JSON.stringify(v);
-    if (typeof v === 'string') return JSON.stringify(v);
-    if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
-    return '{' + Object.keys(v).sort().map(function (k) {
-      return JSON.stringify(k) + ':' + canonical(v[k]);
-    }).join(',') + '}';
-  }
+  // ---- canonical JSON (RFC 8785 / JCS) -------------------------------------
+  // ONE definition, in geosonify-starpin-canonical.js. This module consumes it —
+  // there is no local copy to drift from. If it is not loaded, throw: a divergent
+  // canonicaliser is a hashing bug, not a degraded mode. (Load order in the page:
+  // canonical.js before this file.)
+  var _Canon = (typeof GeosonifyStarpinCanonical !== 'undefined') ? GeosonifyStarpinCanonical
+             : (typeof require === 'function' ? (function () {
+                 try { return require('./geosonify-starpin-canonical.js'); } catch (e) { return null; }
+               })() : null);
+  if (!_Canon || typeof _Canon.canonical !== 'function')
+    throw new Error('sharing: geosonify-starpin-canonical.js must load before this module');
+  var canonical = _Canon.canonical;
 
   // ---- small utils ---------------------------------------------------------
   var te = new TextEncoder(), td = new TextDecoder();
@@ -983,7 +983,10 @@ var GeosonifyStarpinSharing = (function () {
 
   return { create: create, SHARE_SCHEMA: SHARE_SCHEMA,
            GROUPS_STORE: GROUPS_STORE, SYNC_STORE: SYNC_STORE,
-           canonicalTarget: canonicalTarget };
+           canonicalTarget: canonicalTarget,
+           // exposed only so the log self-test can prove this module's canonical
+           // is byte-identical to the log's single JCS definition (no drift).
+           canonical: canonical };
 })();
 
 if (typeof module !== 'undefined' && module.exports) {

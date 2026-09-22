@@ -287,5 +287,82 @@ ok('an edit WITH a recomputed hash is undetectable \u2014 by design', (function 
   return r.damaged === false;
 }), 'a self-hash proves a record undamaged, never true');
 
+head('13: canonical() is real RFC 8785 (JCS), not the old "-ish" stand-in');
+// The canonicaliser now lives in its own module; the log consumes it. Test it
+// through the log's exported canonical (identical reference — proven in §14).
+// -- structural (JCS §3.2.3): keys ascending by UTF-16 code unit, no whitespace
+ok('keys sorted by UTF-16 code unit',
+   L.canonical({ b: 1, a: 2, C: 3 }) === '{"C":3,"a":2,"b":1}');
+ok('sort is stable across insertion order',
+   L.canonical({ x: { q: 1, p: 2 } }) === L.canonical({ x: { p: 2, q: 1 } }));
+ok('no insignificant whitespace',
+   !/\s/.test(L.canonical({ a: 1, b: [1, 2] }).replace(/"[^"]*"/g, '')));
+ok('nested arrays and objects', L.canonical({ a: [1, { z: 2, y: 3 }] }) === '{"a":[1,{"y":3,"z":2}]}');
+// -- literals
+ok('null / true / false as literals',
+   L.canonical(null) === 'null' && L.canonical(true) === 'true' && L.canonical(false) === 'false');
+ok('nested null preserved, not dropped', /"supersedes":null/.test(L.canonical(r)));
+// -- numbers (JCS §3.2.2.3 = ECMAScript Number::toString shortest round-trip)
+[-900000000, 900000000, -1800000000, 1800000000, 1786000000000,
+ 0, -0, 12.3, -45.6, 1e21, 1e-7, 9007199254740991].forEach(function (n) {
+  ok('number ' + String(n) + ' in JCS form', L.canonical(n) === String(n));
+});
+ok('-0 folds to "0" (JCS)', L.canonical(-0) === '0');
+// -- strings (JCS §3.2.2.2 = JSON.stringify escaping: only " \ and U+0000..001F)
+ok('control chars below 0x20 are \\u-escaped', L.canonical('a\u0001b') === '"a\\u0001b"');
+ok('U+007F is emitted RAW, not escaped (the classic JCS trap)', L.canonical('x\u007fy') === '"x\u007fy"');
+ok('quote and backslash escaped', L.canonical('a"\\b') === '"a\\"\\\\b"');
+ok('non-ASCII letters emitted literally (no \\u)', L.canonical('café') === '"café"');
+ok('valid surrogate pair (😀) serialises', L.canonical('\uD83D\uDE00') === '"\uD83D\uDE00"');
+ok('a real record canonicalises identically regardless of key order', (function () {
+  var a = L.canonical(r);
+  var shuffled = {}; Object.keys(r).reverse().forEach(function (k) { shuffled[k] = r[k]; });
+  return L.canonical(shuffled) === a;
+})());
+
+head('14: canonical() is STRICT about the RFC 8785 input domain (rejects, not just orders)');
+// Every one of these is a way JSON.stringify would mislead; each must THROW.
+ok('NaN throws (would become null)', throws(function () { L.canonical(NaN); }));
+ok('Infinity throws', throws(function () { L.canonical(Infinity); }));
+ok('-Infinity throws', throws(function () { L.canonical(-Infinity); }));
+ok('undefined throws (no JSON representation)', throws(function () { L.canonical(undefined); }));
+ok('function throws', throws(function () { L.canonical(function () {}); }));
+ok('symbol throws', throws(function () { L.canonical(Symbol('x')); }));
+ok('BigInt throws (not an IEEE-754 JSON number)', throws(function () { L.canonical(5n); }));
+ok('Date throws (would silently become "{}")', throws(function () { L.canonical(new Date(0)); }));
+ok('RegExp throws', throws(function () { L.canonical(/x/); }));
+ok('Map throws', throws(function () { L.canonical(new Map()); }));
+ok('class instance throws (loses its type)', throws(function () {
+  function C() { this.a = 1; } return L.canonical(new C()); }));
+ok('object with a toJSON throws (would substitute content)', throws(function () {
+  return L.canonical({ toJSON: function () { return 'x'; }, a: 1 }); }));
+ok('sparse array throws (hole is not a JSON value)', throws(function () {
+  var a = []; a[2] = 3; return L.canonical(a); }));
+ok('lone high surrogate throws (invalid Unicode, JCS §3.2.2.2)', throws(function () {
+  return L.canonical('\uD800'); }));
+ok('lone low surrogate throws', throws(function () { return L.canonical('\uDC00'); }));
+ok('high surrogate followed by non-low throws', throws(function () { return L.canonical('\uD800x'); }));
+// a null-prototype object is still ordinary data and must be ACCEPTED
+ok('null-prototype object is accepted as ordinary data', (function () {
+  var o = Object.create(null); o.b = 2; o.a = 1; return L.canonical(o) === '{"a":1,"b":2}';
+})());
+
+head('15: all consumers share the ONE canonical module (no drift, no fallback)');
+var Canon = require('./geosonify-starpin-canonical.js');
+var S = require('./geosonify-starpin-sharing.js');
+var SS = require('./geosonify-starpin-selfsync.js');
+ok('log.canonical IS the canonical module\'s function', L.canonical === Canon.canonical);
+ok('sharing.canonical IS the same reference', S.canonical === Canon.canonical);
+ok('selfsync.canonical IS the same reference', SS.canonical === Canon.canonical);
+// Reference identity makes drift impossible in Node; assert behaviour too, so a
+// future refactor that copies instead of shares still gets caught on the battery.
+var battery = [
+  r, { b: 1, a: 2, C: 3 }, { a: [1, { z: 2, y: 3 }] }, null, true, 0, -0,
+  12.3, 1e21, 'café', 'x\u007fy', '\uD83D\uDE00', { nested: { deep: [null, false, 'x'] } }
+];
+ok('all three produce byte-identical output on the battery', battery.every(function (v) {
+  return S.canonical(v) === Canon.canonical(v) && SS.canonical(v) === Canon.canonical(v);
+}));
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
