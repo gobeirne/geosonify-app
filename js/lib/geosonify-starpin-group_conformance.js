@@ -60,7 +60,11 @@ var Gwc = Group.create({ allowProvisional:true,
 var GROUP_UUID = Uint8Array.from('0123456789abcdef0123456789abcdef'.match(/../g).map(function (h) { return parseInt(h, 16); }));
 var EPOCH = 1;
 var CODE = 'MRSK-7QF2';
-var TARGET = 'starpin:gdr3:5382128182680588160';
+// Regression guard for the colon-vs-pipe bug: derive the routing string from a
+// target OBJECT via canonicalTarget-v1 (pipe form), exactly as the app does —
+// never a bare "starpin:gdr3:…". targetHandle is fed THIS.
+var RECORD_TARGET = { starpin: 'starpin:gdr3:5382128182680588160' };
+var TARGET = oracle.canonicalTargetV1(RECORD_TARGET);   // 'starpin|starpin:gdr3:…'
 
 (async function () {
   head('1: code_normalised is byte-identical across impls');

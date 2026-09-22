@@ -137,8 +137,11 @@ function groupKey(code, groupUuidBytes, epoch) {
   return argon2id(codeNormalised(code), salt, { t, m, p, dkLen });
 }
 
-// canonical_target: the exact target string as it appears sealed in the record,
-// e.g. "starpin:gdr3:5382128182680588160" or "cornerstone:V:f9...c3".
+// canonical_target: canonicalTarget-v1's OUTPUT — the routing string, e.g.
+// "starpin|starpin:gdr3:5382128182680588160" or "cornerstone|V:f9...c3". NOTE the
+// leading "starpin|"/"cornerstone|" kind prefix (pipe): the handle is derived from
+// this exact string, so feeding a bare id ("starpin:gdr3:…") derives the WRONG
+// handle. Always pass canonicalTarget-v1(record.target), never a raw id.
 function targetHandle(gk, canonicalTarget) {
   const info = utf8(FROZEN.HANDLE_INFO_PREFIX + canonicalTarget);
   const salt = new Uint8Array(0);        // HKDF zero-length salt (RFC 5869, valid)
@@ -224,7 +227,28 @@ const GROUP_UUID = Uint8Array.from(
   '0123456789abcdef0123456789abcdef'.match(/../g).map(h => parseInt(h, 16)));  // 16 bytes
 const EPOCH = 1;
 const CODE = 'MRSK-7QF2';
-const TARGET = 'starpin:gdr3:5382128182680588160';
+
+// canonicalTarget-v1 — the frozen map from a record's target OBJECT to the routing
+// STRING. This is the oracle's twin of the app's canonicalTarget() (sharing.js).
+// It MUST match byte-for-byte: targetHandle() is fed this function's OUTPUT, never
+// a bare id. (Regression guard for the colon-vs-pipe bug: the handle is derived
+// from "starpin|starpin:gdr3:…", NOT "starpin:gdr3:…".)
+function canonicalTargetV1(target) {
+  if (target === null || typeof target !== 'object' || Array.isArray(target))
+    throw new Error('canonicalTarget-v1: target must be a plain object');
+  const keys = Object.keys(target);
+  if (keys.length !== 1 || (keys[0] !== 'starpin' && keys[0] !== 'cornerstone'))
+    throw new Error('canonicalTarget-v1: exactly one of starpin|cornerstone required');
+  const k = keys[0], v = target[k];
+  if (typeof v !== 'string' || v.length === 0)
+    throw new Error('canonicalTarget-v1: id must be a non-empty string');
+  return k + '|' + v;                              // SEPARATOR IS PIPE
+}
+
+// The record's target OBJECT, and the canonical routing STRING derived from it.
+// The vector chain begins here: target object -> canonicalTarget-v1 -> handle.
+const RECORD_TARGET = { starpin: 'starpin:gdr3:5382128182680588160' };
+const TARGET = canonicalTargetV1(RECORD_TARGET);   // 'starpin|starpin:gdr3:5382128182680588160'
 
 function selfTest() {
   let ok = true;
@@ -307,6 +331,7 @@ function selfTest() {
 module.exports = {
   PROFILE, FROZEN,
   codeNormalised, groupKey, targetHandle, activityHandle, activityKey, recordKey,
+  canonicalTargetV1,
   canonicalAAD, pad, unpad, seal, open, b64url,
 };
 
