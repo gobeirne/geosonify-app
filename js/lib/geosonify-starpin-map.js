@@ -38,6 +38,67 @@ var GeosonifyStarpinMap = (function () {
             try { return require('./geosonify-healpix.js'); } catch (e) { return null; } })() : null);
 
   var D2R = Math.PI / 180;
+
+  // ── longitude continuity ──────────────────────────────────────────────────
+  // atan2 hands back longitudes in (-180, 180]. A cell edge that crosses the
+  // antimeridian therefore steps from +179.9 to -179.9 between two adjacent
+  // points, and Leaflet — which does not wrap — draws that step as a line the
+  // whole way across the world. At Christchurch (172.6 E) every coarse cell
+  // east of the city straddles 180, so the regional and world views were
+  // striped with them. These two helpers are the fix, and they are pure so
+  // the self-test can hold them to it without a map.
+
+  // lon moved by whole turns to lie within 180 of ref.
+  function wrapNear(lon, ref) { return lon - 360 * Math.round((lon - ref) / 360); }
+
+  // ring: one cell boundary as [[lat, lon], ...], implicitly closed, with
+  // lon === null where a point sits exactly on a pole (it has no longitude).
+  // Returns the ring as zero or more continuous copies, each shifted by a
+  // whole turn, covering every copy of the world between west and east.
+  //   1. A pole point becomes two: the pole at the longitude it was reached
+  //      along, then at the longitude it is left along. In Mercator the pole
+  //      is the top (or bottom) edge, so the boundary runs along that edge.
+  //   2. Each longitude is unwrapped against the one before it, so no step
+  //      is ever longer than half a turn.
+  //   3. The ring is moved whole so its middle is nearest refLon, then copied
+  //      at each further turn that still overlaps [west, east].
+  function ringCopies(ring, refLon, west, east) {
+    var n = ring.length, i, known = [];
+    for (i = 0; i < n; i++) if (ring[i][1] != null) known.push(i);
+    if (!known.length) return [];
+    function lonAt(start, step) {                    // nearest known, cyclically
+      for (var k = 1; k <= n; k++) {
+        var q = ring[((start + step * k) % n + n) % n];
+        if (q[1] != null) return q[1];
+      }
+      return 0;
+    }
+    var pts = [];
+    for (i = 0; i < n; i++) {
+      if (ring[i][1] != null) { pts.push([ring[i][0], ring[i][1]]); continue; }
+      pts.push([ring[i][0], lonAt(i, -1)], [ring[i][0], lonAt(i, 1)]);
+    }
+    var lo = Infinity, hi = -Infinity;
+    for (i = 0; i < pts.length; i++) {
+      if (i) pts[i][1] = wrapNear(pts[i][1], pts[i - 1][1]);
+      if (pts[i][1] < lo) lo = pts[i][1];
+      if (pts[i][1] > hi) hi = pts[i][1];
+    }
+    var mid = (lo + hi) / 2, shift = wrapNear(mid, refLon) - mid;
+    lo += shift; hi += shift;
+    var k0 = 0, k1 = 0;
+    if (west != null && east != null && isFinite(west) && isFinite(east)) {
+      k0 = Math.ceil((west - hi) / 360); k1 = Math.floor((east - lo) / 360);
+      if (k1 < k0) return [];                        // no copy is on screen
+      if (k1 - k0 > 4) { k0 = 0; k1 = 0; }           // absurd view: draw one
+    }
+    var out = [];
+    for (var k = k0; k <= k1; k++) {
+      var off = shift + 360 * k;
+      out.push(pts.map(function (p) { return [p[0], p[1] + off]; }));
+    }
+    return out;
+  }
   var CSS_ID = 'starpin-map-css';
 
   // Lifted from map-manager.js so a Starpin map and a Geosonify map match.
@@ -266,7 +327,13 @@ var GeosonifyStarpinMap = (function () {
       var mpp = spanM / size.x;
       var drawn = [];
 
-      function pt(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
+      // Leaflet does not wrap longitude, so once the view is panned past 180
+      // a find at -170 would be drawn a whole world away. Markers are moved to
+      // the copy nearest the view centre; grid rings bring their own copies.
+      var refLon = map.getCenter().lng;
+      var westLon = b.getNorthWest().lng, eastLon = b.getNorthEast().lng;
+      function ptRaw(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
+      function pt(lat, lon) { return ptRaw(lat, wrapNear(lon, refLon)); }
 
       for (var order = 0; order <= 20; order++) {
         var cw = cellWidthM(order);
@@ -283,34 +350,46 @@ var GeosonifyStarpinMap = (function () {
         drawn.push(order);
         var nside = Math.pow(2, order);
 
+        // Edges are subdivided, not drawn corner to corner. A HEALPix edge
+        // bows by about 3 m over a 25 km order-8 cell — invisible when the
+        // whole cell is on screen, but at street zoom that same edge is the
+        // only line in view and 3 m is metres of pavement.
+        // Rings are built and projected ONCE per order, then stroked twice
+        // (halo, line); they used to be recomputed for each pass.
+        var segs = Math.max(1, Math.min(24, Math.round(4 * Math.min(8, cw / spanM) + 1)));
+        var screenRings = [];
+        for (var i = 0; i < cells.length; i++) {
+          var ip = BigInt(cells[i]), ring = [];
+          for (var e = 0; e < 4; e++) {
+            for (var t = 0; t < segs; t++) {
+              var f = t / segs;
+              var uv = e === 0 ? [f, 0] : e === 1 ? [1, f]
+                     : e === 2 ? [1 - f, 1] : [0, 1 - f];
+              var v = HP._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
+              var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
+                  z = v.z != null ? v.z : v[2];
+              var r3 = Math.hypot(x, y, z);
+              // A corner exactly on a pole has no longitude; atan2(0, 0) = 0
+              // is not an answer, it is a default. ringCopies fills it in.
+              ring.push([Math.asin(z / r3) / D2R,
+                         Math.hypot(x, y) < 1e-12 * r3 ? null : Math.atan2(y, x) / D2R]);
+            }
+          }
+          ringCopies(ring, refLon, westLon, eastLon).forEach(function (rg) {
+            screenRings.push(rg.map(function (p) { return ptRaw(p[0], p[1]); }));
+          });
+        }
+
         // Halo first, then the line, so the grid holds on any basemap.
         [[pal.under, st.width + 1.8, st.alpha * 0.85], [pal.grid, st.width, st.alpha]]
         .forEach(function (layer) {
           g.strokeStyle = layer[0]; g.lineWidth = layer[1]; g.globalAlpha = layer[2];
           g.beginPath();
-          // Edges are subdivided, not drawn corner to corner. A HEALPix edge
-          // bows by about 3 m over a 25 km order-8 cell — invisible when the
-          // whole cell is on screen, but at street zoom that same edge is the
-          // only line in view and 3 m is metres of pavement.
-          var segs = Math.max(1, Math.min(24, Math.round(4 * Math.min(8, cw / spanM) + 1)));
-          for (var i = 0; i < cells.length; i++) {
-            var ip = BigInt(cells[i]);
-            var first = null, started = false;
-            for (var e = 0; e < 4; e++) {
-              for (var t = 0; t < segs; t++) {
-                var f = t / segs;
-                var uv = e === 0 ? [f, 0] : e === 1 ? [1, f]
-                       : e === 2 ? [1 - f, 1] : [0, 1 - f];
-                var v = HP._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
-                var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1],
-                    z = v.z != null ? v.z : v[2];
-                var q = pt(Math.asin(z / Math.hypot(x, y, z)) / D2R, Math.atan2(y, x) / D2R);
-                if (!started) { g.moveTo(q[0], q[1]); first = q; started = true; }
-                else g.lineTo(q[0], q[1]);
-              }
-            }
-            if (first) g.lineTo(first[0], first[1]);
-          }
+          screenRings.forEach(function (sr) {
+            g.moveTo(sr[0][0], sr[0][1]);
+            for (var j = 1; j < sr.length; j++) g.lineTo(sr[j][0], sr[j][1]);
+            g.lineTo(sr[0][0], sr[0][1]);
+          });
           g.stroke();
         });
       }
@@ -571,9 +650,10 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.3', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.4', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
-           orderOfName: orderOfName, setWeight: setWeight, weight: weight,
+           orderOfName: orderOfName,
+           wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,
            setFalloff: setFalloff, falloff: falloff,
            setPersist: setPersist, persist: persist };
 })();
