@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#070A14">
+<title>Starpin — look up, look down</title>
+<!--
+  starpin-flip.html — the Earth/Sky flip on its own, full screen.
+
+  Place at the REPO ROOT beside starpin-demo.html, with
+  geosonify-starpin-flip.js in js/lib/. It uses the same library files the demo
+  and Geosonify's sky mode do, at the same paths. Aladin Lite is loaded on
+  demand by geosonify-sky-aladin.js, exactly as sky mode loads it.
+
+  URL options:  ?at=-43.5309,172.6365   start here instead of the stand-in place
+                &z=17                   Earth zoom that the first view matches
+                &face=earth             open on the ground instead of the sky
+-->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@500;600&display=swap">
+<style>
+  html,body{margin:0;height:100%;background:#070A14;color:#E9E4D6;overscroll-behavior:none}
+  body{font-family:-apple-system,BlinkMacSystemFont,'SF Pro Rounded','SF Pro Display',
+    'Segoe UI Variable','Segoe UI',Roboto,sans-serif;-webkit-text-size-adjust:100%}
+  #stage{position:fixed;inset:0;height:100dvh}
+
+  /* The opening words. They sit over the sky for a moment and then leave;
+     nothing to dismiss. */
+  #intro{position:fixed;left:0;right:0;z-index:900;pointer-events:none;
+    top:calc(3.4rem + env(safe-area-inset-top,0px));text-align:center;padding:0 1.4rem;
+    transition:opacity 1.4s ease}
+  #intro.gone{opacity:0}
+  #intro .mark{font-family:'Source Code Pro',ui-monospace,monospace;font-weight:600;
+    font-size:1.05rem;letter-spacing:.02em;color:#CED38C}
+  #intro .mark b{color:#F2DE5C;font-weight:600}
+  #intro h1{margin:.35rem auto 0;max-width:20ch;font-size:clamp(1.45rem,6.4vw,2.1rem);
+    line-height:1.12;font-weight:700;letter-spacing:-.01em;color:#fff;
+    text-shadow:0 2px 18px rgba(7,10,20,.95),0 0 2px rgba(7,10,20,.9)}
+  #intro p{margin:.6rem auto 0;max-width:30ch;font-size:.95rem;line-height:1.4;
+    color:rgba(233,228,214,.9);text-shadow:0 1px 10px rgba(7,10,20,.95)}
+  @media (prefers-reduced-motion:reduce){#intro{transition:none}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="intro" aria-live="polite">
+  <div class="mark">starpin<b>!</b></div>
+  <h1>Every star already has a place on Earth</h1>
+  <p>These are the stars above these streets, drawn at one scale.</p>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="js/lib/geosonify-healpix.js?v=20260808"></script>
+<script src="js/lib/gis-grids.js?v=20260808"></script>
+<!-- The sky face is Geosonify's own sky renderer, with Aladin imagery swapped in
+     behind it: the same two modules, and the same Aladin set-up, as sky mode. -->
+<script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
+<script src="js/lib/geosonify-starpin.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260926"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20260926"></script>
+<script>
+(function () {
+  'use strict';
+  var qs = new URLSearchParams(location.search);
+  var at = (qs.get('at') || '').split(',').map(Number);
+  var hasAt = at.length === 2 && isFinite(at[0]) && isFinite(at[1]);
+
+  // A stand-in place until the person shares theirs: Cathedral Square,
+  // Christchurch, where the first starpins were bagged.
+  var flip = GeosonifyStarpinFlip.mount(document.getElementById('stage'), {
+    lat: hasAt ? at[0] : -43.5309, lon: hasAt ? at[1] : 172.6365,
+    zoom: +qs.get('z') || 16,
+    face: qs.get('face') === 'earth' ? 'earth' : 'sky'
+  });
+  window.starpinFlip = flip;                     // for the console
+
+  // The opening words leave after a while, or at the first touch.
+  var intro = document.getElementById('intro');
+  function dismiss() { intro.classList.add('gone'); }
+  setTimeout(dismiss, 6500);
+  ['pointerdown', 'keydown', 'wheel'].forEach(function (ev) {
+    window.addEventListener(ev, dismiss, { once: true, passive: true });
+  });
+})();
+</script>
+</body>
+</html>

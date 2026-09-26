@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<!--
+  starpin-flip_testpage.html -- driven by starpin-flip_browsertest.py; not for people.
+  Streets and stars are synthetic (the harness answers Overpass itself), so the
+  results never depend on the network. ?noal=1 forces the built-in renderer.
+-->
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="stylesheet" href="node_modules/leaflet/dist/leaflet.css">
+<style>html,body{margin:0;height:100%;background:#070A14}#stage{position:fixed;inset:0}</style>
+</head><body><div id="stage"></div>
+<script src="node_modules/leaflet/dist/leaflet.js"></script>
+<script src="js/lib/geosonify-healpix.js"></script>
+<script src="js/lib/geosonify-sky-renderer.js"></script>
+<script src="js/lib/geosonify-sky-aladin.js"></script>
+<script src="js/lib/geosonify-starpin.js"></script>
+<script src="js/lib/geosonify-starpin-map.js"></script>
+<script src="js/lib/geosonify-starpin-flip.js"></script>
+<script>
+  var qs = new URLSearchParams(location.search);
+  // Deterministic stars scattered through the cone, as ra/dec.
+  function lookupStars(lat, lon, rArcmin) {
+    var out = [], seed = 7;
+    function rnd() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    for (var i = 0; i < 40; i++) {
+      var dx = (rnd() * 2 - 1) * rArcmin / 60, dy = (rnd() * 2 - 1) * rArcmin / 60;
+      var dec = lat + dy, ra = ((lon + dx / Math.cos(lat * Math.PI / 180)) % 360 + 360) % 360;
+      out.push({ name: 'Gaia DR3 ' + (5382000000000000000n + BigInt(i * 7919)).toString(),
+                 ra: ra, dec: dec, mag: 11 + rnd() * 8 });
+    }
+    return Promise.resolve(out);
+  }
+  window.flip = GeosonifyStarpinFlip.mount(document.getElementById('stage'), {
+    lat: +(qs.get('lat') || -43.5309), lon: +(qs.get('lon') || 172.6365), zoom: +(qs.get('z') || 16),
+    face: qs.get('face') || 'sky', aladinSrc: qs.get('noal') ? '/nope.js' : './node_modules/aladin-lite/dist/aladin.js',
+    lookupStars: lookupStars, storage: null, onSelect: function (s) { window.lastSelect = s; }
+  });
+</script></body></html>
