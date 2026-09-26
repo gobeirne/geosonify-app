@@ -10,9 +10,9 @@
     1  one scale, both ways: zoom <-> arcsec per px, and 30.92 m per arcsec
     2  the tangent plane: forward and inverse are true inverses; east is LEFT
     3  the affine read from a live renderer reproduces renderer.project()
-    4  scale bar, tiers and the survey floor say what they should
-    5  Overpass parsing keeps what it should and drops what it should
-    6  reachability: near / none / unknown, and never "none" from coarse data
+    4  the survey floor
+    5  cornerstone halos scale with rarity; the catch ring does not
+    6  reachability: near / none / unknown, and never "none" from partial data
 */
 'use strict';
 var F = require('./geosonify-starpin-flip.js');
@@ -80,53 +80,36 @@ if (R) {
   r.destroy();
 }
 
-head('4  scale bar, tiers and the survey floor');
-ok('street view gets full detail', F.tierForView(1200).key === 'A');
-ok('suburb view drops paths', F.tierForView(4000).key === 'B' && F.tierForView(4000).classes.indexOf('footway') < 0);
-ok('city view keeps only main roads', F.tierForView(12000).key === 'C');
-ok('country view draws no streets', F.tierForView(40000) === null);
+head('4  the survey floor and the turn');
 ok('DSS2 pulls back below 0.267"/px', Math.abs(F.floorAsp(F.SURVEYS[0]) - 0.8 / 3) < 1e-12);
 ok('Pan-STARRS admits it stops at -30', F.SURVEYS[1].decMin === -30);
 
-head('5  Overpass parsing');
-var ways = F.parseOverpass({ elements: [
-  { type: 'way', tags: { highway: 'residential' }, geometry: [{ lat: 1, lon: 2 }, { lat: 1.1, lon: 2.1 }] },
-  { type: 'way', tags: { highway: 'primary_link' }, geometry: [{ lat: 1, lon: 2 }, { lat: 1.2, lon: 2 }] },
-  { type: 'way', tags: { highway: 'footway' }, geometry: [{ lat: 1, lon: 2 }, { lat: 1, lon: 2.01 }] },
-  { type: 'way', tags: { highway: 'proposed' }, geometry: [{ lat: 1, lon: 2 }, { lat: 1, lon: 3 }] },
-  { type: 'way', tags: { highway: 'residential' }, geometry: [{ lat: 1, lon: 2 }] },
-  { type: 'node', lat: 1, lon: 2 }
-] });
-ok('keeps three drawable ways', ways.length === 3, String(ways.length));
-ok('a _link is its road\'s class', ways[1].cls === 'major');
-ok('footways are paths', ways[2].cls === 'path');
-ok('bounding boxes are right', ways[0].bb.join() === '1,2,1.1,2.1', ways[0].bb.join());
-var q = F.overpassQuery(F.TIERS[1], { s: -43.6, w: 172.5, n: -43.5, e: 172.7 });
-ok('the query names the tier\'s classes and the box', /residential/.test(q) && !/footway/.test(q) &&
-   q.indexOf('(-43.600000,172.500000,-43.500000,172.700000)') > 0, q);
+head('5  cornerstone halos: rarer owns more ground');
+ok('an order-12 halo is about 100 m', Math.abs(F.haloM(12) - 99.5) < 1, F.haloM(12).toFixed(1));
+ok('order 10, about 400 m', Math.abs(F.haloM(10) - 398) < 3, F.haloM(10).toFixed(1));
+ok('order 8, about 1.6 km', Math.abs(F.haloM(8) - 1592) < 10, F.haloM(8).toFixed(0));
+ok('each order rarer doubles it', Math.abs(F.haloM(9) / F.haloM(10) - 2) < 1e-12);
+ok('the catch ring stays the 15 m arrival rule, whatever the rarity', F.CORNER_BAG_M === 15);
 
 head('6  reachability says only what the data supports');
 var R_M = F.VISIT_R_ARCSEC * S.M_PER_ARCSEC;                 // 92.8 m
 var dLat = function (m) { return m / (S.M_PER_ARCSEC * 3600); };
-var road = { cls: 'minor', pts: [[LAT + dLat(50), LON - 0.01], [LAT + dLat(50), LON + 0.01]],
-             bb: [LAT + dLat(50), LON - 0.01, LAT + dLat(50), LON + 0.01] };
-var star = { lat: LAT, lon: LON };
-ok('nearestLineM finds the road 50 m north', Math.abs(F.nearestLineM(LAT, LON, [road], 200) - 50) < 0.01,
-   String(F.nearestLineM(LAT, LON, [road], 200)));
-var boxFull = { tier: F.TIERS[0], s: LAT - 0.05, n: LAT + 0.05, w: LON - 0.05, e: LON + 0.05, ways: [road] };
-ok('a road inside the circle -> near', F.reachOf(star, [boxFull]) === 'near');
-var farRoad = JSON.parse(JSON.stringify(road));
-farRoad.pts.forEach(function (p) { p[0] = LAT + dLat(R_M + 20); });
-farRoad.bb[0] = farRoad.bb[2] = LAT + dLat(R_M + 20);
-ok('only a road 113 m away, with full detail -> none',
-   F.reachOf(star, [{ tier: F.TIERS[0], s: boxFull.s, n: boxFull.n, w: boxFull.w, e: boxFull.e, ways: [farRoad] }]) === 'none');
-ok('the same, but only main-road data -> unknown, not none',
-   F.reachOf(star, [{ tier: F.TIERS[2], s: boxFull.s, n: boxFull.n, w: boxFull.w, e: boxFull.e, ways: [farRoad] }]) === 'unknown');
-ok('coarse data CAN still prove near', F.reachOf(star, [{ tier: F.TIERS[2], s: boxFull.s, n: boxFull.n,
-   w: boxFull.w, e: boxFull.e, ways: [road] }]) === 'near');
-ok('no data at all -> unknown', F.reachOf(star, []) === 'unknown');
+function road(mNorth, cls) {
+  var la = LAT + dLat(mNorth);
+  return { cls: cls || 'minor', pts: [[la, LON - 0.01], [la, LON + 0.01]], bb: [la, LON - 0.01, la, LON + 0.01] };
+}
+ok('nearestLineM finds a road 50 m north', Math.abs(F.nearestLineM(LAT, LON, [road(50)], 200) - 50) < 0.01,
+   String(F.nearestLineM(LAT, LON, [road(50)], 200)));
+ok('a road inside the circle -> near', F.reachFromGeos(LAT, LON, [{ roads: [road(50)] }], true) === 'near');
+ok('a path counts: you can walk it', F.reachFromGeos(LAT, LON, [{ roads: [road(80, 'path')] }], true) === 'near');
+ok('only a road 113 m away, all tiles loaded -> none',
+   F.reachFromGeos(LAT, LON, [{ roads: [road(R_M + 20)] }], true) === 'none');
+ok('the same with a tile still missing -> unknown, not none',
+   F.reachFromGeos(LAT, LON, [{ roads: [road(R_M + 20)] }], false) === 'unknown');
+ok('a partial set can still prove near', F.reachFromGeos(LAT, LON, [{ roads: [road(40)] }], false) === 'near');
+ok('no data at all -> unknown', F.reachFromGeos(LAT, LON, [], false) === 'unknown');
 var dateline = { cls: 'minor', pts: [[-17.8, 179.9995], [-17.8, -179.9995]], bb: [-17.8, -179.9995, -17.8, 179.9995] };
-ok('a road across the date line is still found', F.nearestLineM(-17.8, 180, [dateline], 200) < 1, 
+ok('a road across the date line is still found', F.nearestLineM(-17.8, 180, [dateline], 200) < 1,
    String(F.nearestLineM(-17.8, 180, [dateline], 200)));
 
 console.log('\n' + (fail === 0 ? 'ALL PASS' : fail + ' FAILED') + '  (' + pass + ' passed)');

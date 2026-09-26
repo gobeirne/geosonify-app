@@ -72,7 +72,6 @@ var GeosonifyStarpinFlip = (function () {
   // visit-geometry-v1. The engine does not export R yet; when it does, it wins.
   var VISIT_R_ARCSEC = (S && S.VISIT_R_ARCSEC) || 3;
 
-  var OVERPASS_URL = 'https://overpass-api.de/api/interpreter';
 
   // How far past a survey's native pixel the sky may be magnified before it
   // pulls back. Three times is soft but still reads as a photograph of stars.
@@ -87,17 +86,12 @@ var GeosonifyStarpinFlip = (function () {
   ];
   function floorAsp(sv) { return sv.nativeAsp / UPSAMPLE_LIMIT; }
 
-  // Street detail by view width. Each tier's classes contain the next one's, so
-  // a finer box can always stand in for a coarser one.
-  var MAJOR = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'];
-  var MINOR = ['unclassified', 'residential', 'living_street', 'pedestrian', 'road'];
-  var PATH  = ['footway', 'path', 'cycleway', 'steps', 'track', 'bridleway'];
-  var TIERS = [
-    { key: 'A', maxViewM: 1800,  classes: MAJOR.concat(MINOR, ['service'], PATH), full: true },
-    { key: 'B', maxViewM: 6000,  classes: MAJOR.concat(MINOR), full: false },
-    { key: 'C', maxViewM: 16000, classes: MAJOR, full: false }
-  ];
-  var STREET_MAX_VIEW_M = TIERS[TIERS.length - 1].maxViewM;
+  // The turn needs the streets canvas and the sky to agree after it lands,
+  // which holds to ~60 km across (see alignment() below); wider, it crossfades.
+  var TURN_MAX_VIEW_M = 60000;
+  // Arrival distance for a cornerstone (the app's 15 m rule): the point is
+  // exact, so the only slack is the GPS fix, and the ring shows exactly that.
+  var CORNER_BAG_M = 15;
   var STAR_MAX_VIEW_M = 8000;                        // matches the map's star lookup
 
   // ── pure maths (exported, and held by the self-test) ──────────────────────
@@ -168,45 +162,14 @@ var GeosonifyStarpinFlip = (function () {
     return { px: nice / mpp, metres: nice, arcsec: arc, mLabel: mLabel, arcLabel: arcLabel };
   }
 
-  function tierForView(viewM) {
-    for (var i = 0; i < TIERS.length; i++) if (viewM <= TIERS[i].maxViewM) return TIERS[i];
-    return null;
-  }
-
-  function classOf(hw) {
-    var base = String(hw || '').replace(/_link$/, '');
-    if (MAJOR.indexOf(base) >= 0) return 'major';
-    if (MINOR.indexOf(base) >= 0) return 'minor';
-    if (base === 'service') return 'service';
-    if (PATH.indexOf(base) >= 0) return 'path';
-    return null;
-  }
-
-  function overpassQuery(tier, box) {
-    var re = '^(' + tier.classes.join('|') + ')(_link)?$';
-    return '[out:json][timeout:25];way["highway"~"' + re + '"](' +
-      [box.s, box.w, box.n, box.e].map(function (v) { return v.toFixed(6); }).join(',') +
-      ');out geom qt;';
-  }
-
-  // Overpass JSON -> [{ cls, pts: [[lat, lon], ...], bb: [s, w, n, e] }]
-  function parseOverpass(json) {
-    var out = [];
-    ((json && json.elements) || []).forEach(function (el) {
-      if (el.type !== 'way' || !el.geometry || el.geometry.length < 2) return;
-      var cls = classOf(el.tags && el.tags.highway);
-      if (!cls) return;
-      var s = 90, w = 400, n = -90, e = -400, pts = [];
-      el.geometry.forEach(function (g) {
-        if (g == null || g.lat == null) return;
-        pts.push([g.lat, g.lon]);
-        if (g.lat < s) s = g.lat; if (g.lat > n) n = g.lat;
-        if (g.lon < w) w = g.lon; if (g.lon > e) e = g.lon;
-      });
-      if (pts.length >= 2) out.push({ cls: cls, pts: pts, bb: [s, w, n, e] });
-    });
-    return out;
-  }
+  // Mean spacing of cornerstones of a given rarity: the side of a HEALPix
+  // cell of that order, which is how far apart vertices of that population
+  // sit. A cornerstone's halo is a sixteenth of it -- a first guess, to iterate:
+  // order 12 -> ~100 m, order 10 -> ~400 m, order 8 -> ~1.6 km. Rarer finds are
+  // further apart, so they own more ground, and the halo says so at map scale.
+  var HALO_FRACTION = 1 / 16;
+  function cellSideM(order) { return Math.sqrt(4 * Math.PI / (12 * Math.pow(4, order))) * 6371008.8; }
+  function haloM(rarity) { return cellSideM(rarity) * HALO_FRACTION; }
 
   // Nearest approach, in metres, from a ground point to any way. Local flat
   // metres about the point: fine at the 100 m scale this answers.
@@ -234,20 +197,15 @@ var GeosonifyStarpinFlip = (function () {
     return best;
   }
 
-  // What the sky may honestly say about a starpin's circle.
-  //   'near'    a mapped line passes inside it (any tier can prove this)
-  //   'none'    full-detail data covers it and nothing passes inside
-  //   'unknown' only coarse data covers it, so absence means nothing
-  function reachOf(star, boxes) {
-    var R = VISIT_R_ARCSEC * M_PER_ARCSEC, fullCover = false;
-    for (var i = 0; i < boxes.length; i++) {
-      var b = boxes[i];
-      if (!b || !b.ways) continue;
-      if (nearestLineM(star.lat, star.lon, b.ways, R) <= R) return 'near';
-      if (b.tier.full && star.lat >= b.s && star.lat <= b.n &&
-          wrapNear(star.lon, (b.w + b.e) / 2) >= b.w && wrapNear(star.lon, (b.w + b.e) / 2) <= b.e) fullCover = true;
-    }
-    return fullCover ? 'none' : 'unknown';
+  // Reachability from vector tiles. geos14: the z14 tiles (full detail: every
+  // street, service lane, track and path) touching the star's circle; complete:
+  // whether ALL of them are loaded. Only complete full-detail data may say
+  // 'none'; a partial set can still prove 'near'.
+  function reachFromGeos(lat, lon, geos14, complete) {
+    var R = VISIT_R_ARCSEC * M_PER_ARCSEC, ways = [];
+    for (var i = 0; i < geos14.length; i++) if (geos14[i] && geos14[i].roads) ways = ways.concat(geos14[i].roads);
+    if (nearestLineM(lat, lon, ways, R) <= R) return 'near';
+    return complete ? 'none' : 'unknown';
   }
 
   function easeInOut(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
@@ -261,6 +219,12 @@ var GeosonifyStarpinFlip = (function () {
     '  "Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;',
     '  --spf-chalk:228,233,174;--spf-sun:#F2DE5C;--spf-lichen:#CED38C;--spf-rust:#E79E72;',
     '  --spf-moss:#7D9D33;--spf-ink:#070A14}',
+    // A host page's global button styles (width:100%, drop shadows) must not
+    // reach in here; every control below sets its own look.
+    // :where() keeps this reset at the specificity of a single class, so every
+    // control's own rule below still wins over it, while it beats a bare button{}.
+    '.spf :where(button){width:auto;margin:0;border:0;box-shadow:none;transform:none}',
+    '.spf :where(button):active{transform:none;box-shadow:none}',
     '.spf-layer{position:absolute;inset:0;transition:opacity .32s ease}',
     '.spf .spm{height:100%;border-radius:0;border:0;background:transparent}',
     '.spf .leaflet-container{background:transparent}',
@@ -269,7 +233,11 @@ var GeosonifyStarpinFlip = (function () {
     '.spf[data-imagery=sky] .spm-bm{display:none}',
     '.spf .leaflet-control-zoom{display:none}',
     '.spf .spm-bm{top:calc(.6rem + env(safe-area-inset-top,0px));right:.6rem}',
-    '.spf .spm-orders{bottom:calc(5.4rem + env(safe-area-inset-bottom,0px));left:.6rem}',
+    // --spf-bottom: a host with its own bottom sheet sets this to the sheet's
+    // resting height, and everything that lives at the bottom rides above it.
+    '.spf{--spf-b:var(--spf-bottom,env(safe-area-inset-bottom,0px))}',
+    '.spf .spm-orders{bottom:calc(5.4rem + var(--spf-b));left:.6rem}',
+    '.spf .leaflet-bottom{bottom:var(--spf-bottom,0px)}',
     '.spf-streets{position:absolute;inset:0;pointer-events:none;transform-origin:50% 50%;',
     '  backface-visibility:visible;-webkit-backface-visibility:visible;z-index:500}',
     '.spf-ui{position:absolute;inset:0;pointer-events:none;z-index:700}',
@@ -295,12 +263,12 @@ var GeosonifyStarpinFlip = (function () {
     '.spf-seg button{font:inherit;font-size:.98rem;font-weight:650;border:0;cursor:pointer;',
     '  height:2.9rem;min-width:5.2rem;padding:0 1.1rem;border-radius:999px;background:transparent;',
     '  color:rgba(233,228,214,.8);transition:background .3s ease,color .3s ease}',
-    '.spf-seg button[aria-pressed=true]{background:#E9E4D6;color:#070A14}',
+    '.spf-seg button[aria-pressed=true]{background:#E9E4D6;color:#070A14;box-shadow:none}',
     '.spf-seg button[data-imagery=sky][aria-pressed=true]{background:var(--spf-moss);color:#fff}',
     '.spf-seg button:focus-visible{outline:3px solid var(--spf-sun);outline-offset:2px}',
     '.spf[data-face=sky] .spf-seg,.spf[data-face=sky] .spf-lookup{display:none}',
     '.spf[data-face=earth] .spf-flip{display:none}',
-    '.spf-dock{position:absolute;left:0;right:0;bottom:calc(1rem + env(safe-area-inset-bottom,0px));',
+    '.spf-dock{position:absolute;left:0;right:0;bottom:calc(1rem + var(--spf-b));',
     '  display:flex;align-items:center;justify-content:center;gap:1.1rem;pointer-events:none}',
     '.spf-dock>*{pointer-events:auto}',
     '.spf-flip{font:inherit;font-size:1.02rem;font-weight:650;letter-spacing:.01em;cursor:pointer;',
@@ -326,14 +294,14 @@ var GeosonifyStarpinFlip = (function () {
     '  font-size:.95rem;text-align:center;line-height:1.35;padding:.6rem 1rem;border-radius:14px;',
     '  background:rgba(7,10,20,.62);color:#E9E4D6;opacity:0;transition:opacity .6s ease;max-width:80%}',
     '.spf-hint.on{opacity:1}',
-    '.spf-credit{position:absolute;left:.6rem;right:.6rem;bottom:calc(.25rem + env(safe-area-inset-bottom,0px));',
+    '.spf-credit{position:absolute;left:.6rem;right:.6rem;bottom:calc(.25rem + var(--spf-b));',
     '  font-size:.58rem;opacity:.75;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9);color:#fff;',
     '  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.spf-credit a{color:inherit;pointer-events:auto}',
     // With the sky under the map, the ground tiles' credit would name imagery that
     // is not on screen; ours replaces it and credits what is.
     '.spf[data-face=earth][data-imagery=sky] .leaflet-control-attribution{display:none}',
-    '.spf-sheet{position:absolute;left:.6rem;right:.6rem;bottom:calc(5.4rem + env(safe-area-inset-bottom,0px));',
+    '.spf-sheet{position:absolute;left:.6rem;right:.6rem;bottom:calc(5.4rem + var(--spf-b));',
     '  max-width:26rem;margin:0 auto;padding:1rem 1.1rem .9rem;border-radius:20px;',
     '  background:rgba(12,16,28,.94);color:#E9E4D6;box-shadow:0 0 0 1px rgba(233,228,214,.14),',
     '  0 18px 40px -16px rgba(0,0,0,.9);font-size:.88rem;line-height:1.45}',
@@ -437,7 +405,7 @@ var GeosonifyStarpinFlip = (function () {
     var sky = { ra: 0, dec: 0, asp: 1 };             // used when Aladin is absent
     var renderer = null, rendererKind = null, imageryTried = false, userZoomed = false;
     var anchor = null;                               // { earthAsp, skyAsp } for this visit to the sky
-    var fix = null, stars = [], finds = [], boxes = {}, fetching = null, streetsOn = true;
+    var fix = null, stars = [], finds = [], corners = [], bagged = {}, streetsOn = true;
     var surveyIdx = 0, hintShown = false, selectedStar = null;
     try { var sv = store && store.getItem('starpin.flip.survey'); if (sv) surveyIdx = +sv || 0; } catch (e) {}
     try { var im = store && store.getItem('starpin.flip.imagery'); if (!opts.imagery && (im === 'ground' || im === 'sky')) imagery = im; } catch (e) {}
@@ -454,7 +422,7 @@ var GeosonifyStarpinFlip = (function () {
         if (!sel) closeSheet();
         if (opts.onSelect) opts.onSelect(sel);
       },
-      onMove: function () { settle(); }
+      onMove: function (la, lo, span) { settle(); if (opts.onMove) opts.onMove(la, lo, span); }
     });
     var lm = earth.leaflet;
     // On the ground, the streets are credited where Leaflet credits the imagery,
@@ -628,67 +596,39 @@ var GeosonifyStarpinFlip = (function () {
       return vb.s >= b.s && vb.n <= b.n && w >= b.w && e <= b.e;
     }
 
-    // ── streets: fetch ──
-    function ensureStreets(v) {
-      if (!streetsOn) return;
-      var need = tierForView(viewWidthM(v));
-      if (!need) return;
-      var vb = viewBox(v, 0.05);
-      // Anything at least this detailed that already covers the view will do.
-      for (var i = 0; i < TIERS.length; i++) {
-        var b = boxes[TIERS[i].key];
-        if (i <= TIERS.indexOf(need) && covers(b, vb)) return;
-      }
-      if (fetching && fetching.tier === need && covers(fetching.box, vb)) return;
-      if (fetching && fetching.ctl) fetching.ctl.abort();
-      var box = viewBox(v, 1.0);                      // twice the view each way: room to pan
-      var ctl = win.AbortController ? new win.AbortController() : null;
-      fetching = { tier: need, box: box, ctl: ctl };
-      status('Fetching streets\u2026');
-      var body = 'data=' + encodeURIComponent(overpassQuery(need, box));
-      win.fetch(opts.overpassUrl || OVERPASS_URL, {
-        method: 'POST', body: body, signal: ctl ? ctl.signal : undefined,
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      }).then(function (r) {
-        if (r.status === 429 || r.status === 504) throw new Error('busy');
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        return r.json();
-      }).then(function (json) {
-        if (destroyed) return;
-        boxes[need.key] = { tier: need, s: box.s, n: box.n, w: box.w, e: box.e, ways: parseOverpass(json) };
-        fetching = null;
-        status('');
-        restar(); drawNow();
-      }).catch(function (e) {
-        if (e && e.name === 'AbortError') return;
-        fetching = null;
-        status(e && e.message === 'busy' ? 'The street server is busy. Try again in a moment.'
-                                         : 'Could not fetch streets just now.', 5000);
-      });
+    // ── the ground's map: vector tiles ──
+    //
+    // One source for everything under the lattice: coasts, lakes, rivers and
+    // borders at country scale, main roads at region scale, every street and
+    // path close in. geosonify-starpin-vtiles.js fetches, caches and decodes;
+    // this only asks for what is on screen and draws what has arrived.
+    var VT = opts.tiles !== undefined ? opts.tiles : (root.GeosonifyStarpinTiles || null);
+    var tiles = VT ? VT.createStore({
+      window: win, tilejson: opts.tilejson,
+      onTile: function () { restar(); schedule(); }
+    }) : null;
+    function mapZoomOf(v) { return face === 'earth' ? lm.getZoom() : zoomForAsp(v.asp, v.lat); }
+    function viewTiles(v, margin) {
+      if (!VT) return [];
+      return VT.tilesFor(viewBox(v, 0.02), VT.tileZoomFor(mapZoomOf(v)), margin || 0);
     }
-    function streetWays(v) {
-      // The most detailed box covering the view; else any box at all, partial.
-      var need = tierForView(viewWidthM(v));
-      if (!need) return null;
-      var vb = viewBox(v, 0.05), best = null, any = null;
-      for (var i = 0; i < TIERS.length; i++) {
-        var b = boxes[TIERS[i].key];
-        if (!b) continue;
-        if (!any) any = b;
-        if (covers(b, vb)) { best = b; break; }
-      }
-      var use = best || any;
-      if (!use) return null;
-      // Never draw finer classes than this width can hold.
-      var allow = {};
-      need.classes.forEach(function (c) { allow[classOf(c)] = 1; });
-      return { box: use, allow: allow };
+    // Ask for the view plus a one-tile margin, so a short pan is already there.
+    function ensureTiles(v) {
+      if (!tiles || !streetsOn) return;
+      viewTiles(v, 1).forEach(function (t) { tiles.request(t.z, t.x, t.y); });
+    }
+    function anyTileInView(v) {
+      if (!tiles) return false;
+      return viewTiles(v, 0).some(function (t) { return !!tiles.peek(t.z, t.x, t.y); });
     }
 
     // ── stars ──
     var starKey = '', starTimer = null;
     function ensureStars(v) {
       var widthM = viewWidthM(v);
+      // lookupStars: false means the host looks stars up itself and hands them
+      // over with setStars(); nothing is fetched twice.
+      if (opts.lookupStars === false) return;
       var lookup = opts.lookupStars || (SN && SN.lookupRemote ? function (lat, lon, rArcmin) {
         return Promise.resolve(SN.lookupRemote(lat, lon, { radiusArcmin: rArcmin, limit: 40 }))
           .then(function (list) {
@@ -730,9 +670,81 @@ var GeosonifyStarpinFlip = (function () {
       }));
       drawNow();
     }
+    // Each star's circle, against the full-detail (z14) tiles it touches.
+    function reachTiles(s) {
+      var R = VISIT_R_ARCSEC * M_PER_ARCSEC, dLat = R / M_PER_DEG,
+          dLon = dLat / Math.max(0.05, Math.cos(s.lat * D2R));
+      return VT.tilesFor({ s: s.lat - dLat, n: s.lat + dLat, w: s.lon - dLon, e: s.lon + dLon }, 14, 0);
+    }
     function restar() {
-      var bs = TIERS.map(function (t) { return boxes[t.key]; }).filter(Boolean);
-      stars.forEach(function (s) { s.reach = reachOf(s, bs); });
+      if (!tiles) return;
+      stars.forEach(function (s) {
+        var ts = reachTiles(s), geos = [], complete = true;
+        ts.forEach(function (t) {
+          var g = tiles.has(14, t.x, t.y) ? tiles.peek(14, t.x, t.y) : null;
+          if (g) geos.push(g); else complete = false;
+        });
+        s.reach = reachFromGeos(s.lat, s.lon, geos, complete);
+      });
+    }
+    // Close in, fetch the full-detail tiles under each star so its ring can say
+    // whether a street reaches it. Further out the rings ask you to zoom in.
+    function ensureReach(v) {
+      if (!tiles || viewWidthM(v) > 3000) return;
+      stars.forEach(function (s) { reachTiles(s).forEach(function (t) { tiles.request(14, t.x, t.y); }); });
+    }
+
+    // ── cornerstones in view, with their rarity ──
+    //
+    // Every collectible cornerstone (rarity order <= 12) in view, found by
+    // enumerating cell corners at a probe order suited to the view and
+    // classifying each with the engine's own nearestCornerstone(), so the
+    // rarity here is the rarity the log will record. Classification is cached
+    // per vertex; enumeration runs when the view settles, never per frame.
+    var cornerCache = {};
+    function HPg() {
+      try { if (typeof HealpixGrids !== 'undefined' && HealpixGrids) return HealpixGrids; } catch (e) {}
+      return root.HealpixGrids || null;
+    }
+    function FB() { return root.GeosonifyStarpinFeedback || null; }
+    function findCorners(v) {
+      var H = HPg(), width = viewWidthM(v);
+      if (!H || !S || !S.nearestCornerstone || width > 120000) { corners = []; return; }
+      // The finest probe whose cells are still at least an eighth of the view.
+      var k = Math.max(3, Math.min(14, Math.floor(Math.log(cellSideM(0) / (width / 8)) / Math.LN2)));
+      var box = viewBox(v, 0.15), stepDeg = cellSideM(k) / 2 / M_PER_DEG;
+      var cl = Math.max(0.05, Math.cos(v.lat * D2R)), seen = {}, cells = [], guard = 0;
+      for (var la = box.s; la <= box.n + stepDeg && guard < 4000; la += stepDeg) {
+        for (var lo = box.w; lo <= box.e + stepDeg / cl && guard < 4000; lo += stepDeg / cl) {
+          guard++;
+          var ip = H.nestIndex(Math.max(-89.99, Math.min(89.99, la)), lo, k).toString();
+          if (!seen[ip]) { seen[ip] = 1; cells.push(BigInt(ip)); }
+        }
+      }
+      var nside = Math.pow(2, k), vs = {}, out = [], F = FB();
+      cells.forEach(function (ip) {
+        [[0, 0], [1, 0], [0, 1], [1, 1]].forEach(function (uv) {
+          var q = H._core.pixcoord2vec_nest(nside, ip, uv[0], uv[1]);
+          var x = q.x != null ? q.x : q[0], y = q.y != null ? q.y : q[1], zq = q.z != null ? q.z : q[2];
+          var r3 = Math.hypot(x, y, zq);
+          var lat = Math.asin(zq / r3) / D2R, lon = Math.atan2(y, x) / D2R;
+          var key = lat.toFixed(7) + ',' + wrapNear(lon, 0).toFixed(7);
+          if (vs[key]) return;
+          vs[key] = 1;
+          var c = cornerCache[key];
+          if (!c) {
+            try {
+              var n = S.nearestCornerstone(lat, lon, k);
+              var rar = F && F.rarityOrder ? F.rarityOrder(n.crossOrder, n.intrinsicOrder)
+                                           : (n.crossOrder + n.intrinsicOrder) / 2;
+              c = cornerCache[key] = { lat: n.lat, lon: n.lon, rarity: rar, degree: n.degree,
+                                       cross: n.crossOrder, intrinsic: n.intrinsicOrder, name: n.name };
+            } catch (e) { return; }
+          }
+          if (c.rarity <= 12) out.push(c);
+        });
+      });
+      corners = out;
     }
 
     // ── drawing ──
@@ -758,12 +770,25 @@ var GeosonifyStarpinFlip = (function () {
         var p = lm.latLngToContainerPoint([lat, wrapNear(lon, ref)]); return [p.x, p.y];
       };
     }
-    var STYLE = {
-      major:   { w: 2.1, a: 0.92, dash: null },
-      minor:   { w: 1.25, a: 0.72, dash: null },
-      service: { w: 0.8, a: 0.5, dash: null },
-      path:    { w: 1.0, a: 0.62, dash: [2.5, 3] }
+    // ── the look ──
+    // Three families, kept apart so the screen reads by meaning:
+    //   the ground's own map  cool and quiet: moonlight roads, blue water, pale borders
+    //   the lattice           warm amber (the map module's 'night' palette), and
+    //                         cornerstones in the same amber: they are its points
+    //   stars                 sun-yellow rings and reticles
+    // Yours stays green; you are the blue dot.
+    var LOOK = {
+      night: { road: '205,214,228', water: '118,170,226', border: '232,226,246', under: '7,10,20' },
+      light: { road: '44,52,66',   water: '52,110,178',  border: '96,84,120',   under: '255,255,255' }
     };
+    var ROADS = {
+      major:   { w: 1.9, a: 0.85, dash: null },
+      minor:   { w: 1.05, a: 0.6, dash: null },
+      service: { w: 0.7, a: 0.42, dash: null },
+      path:    { w: 0.9, a: 0.55, dash: [2.5, 3] }
+    };
+    var AMBER = '240,163,58', GOLD = '255,214,106', MINE = '159,211,106';
+
     function drawNow() {
       if (!ctx || destroyed || zoomAnimating) return;
       var z = size(), dpr = win.devicePixelRatio || 1;
@@ -774,46 +799,116 @@ var GeosonifyStarpinFlip = (function () {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, z.w, z.h);
       var v = viewState(), P = projector(v);
-      var onImagery = face === 'sky' || (M.BASEMAPS[earth.basemap()] || {}).imagery;
-      var ink = onImagery ? 'rgba(228,233,174,' : 'rgba(27,32,19,';
-      var faceAlpha = face === 'sky' ? 0.78 : 0.5;
+      var dark = face === 'sky' || imagery === 'sky' || (M.BASEMAPS[earth.basemap()] || {}).imagery;
+      var L = dark ? LOOK.night : LOOK.light;
+      var faceAlpha = face === 'sky' ? 0.9 : (imagery === 'sky' ? 0.85 : 0.6);
 
-      var sw = streetWays(v);
-      if (sw && streetsOn) {
-        var vb = viewBox(v, 0.1), mid = (vb.w + vb.e) / 2;
-        ['service', 'path', 'minor', 'major'].forEach(function (cls) {
-          if (!sw.allow[cls]) return;
-          var stl = STYLE[cls];
-          ctx.beginPath();
-          var ways = sw.box.ways;
-          for (var i = 0; i < ways.length; i++) {
-            var wy = ways[i];
-            if (wy.cls !== cls) continue;
-            var bb = wy.bb;
-            if (bb[0] > vb.n || bb[2] < vb.s) continue;
-            var bw = wrapNear(bb[1], mid);
-            if (bw > vb.e || bw + (bb[3] - bb[1]) < vb.w) continue;
-            var started = false;
-            for (var j = 0; j < wy.pts.length; j++) {
-              var p = P(wy.pts[j][0], wy.pts[j][1]);
-              if (!p) { started = false; continue; }
-              if (!started) { ctx.moveTo(p[0], p[1]); started = true; } else ctx.lineTo(p[0], p[1]);
-            }
-          }
-          ctx.setLineDash(stl.dash || []);
-          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-          if (onImagery) {                            // a dark underlay holds the line on bright ground
-            ctx.strokeStyle = 'rgba(7,10,20,' + (0.35 * faceAlpha) + ')';
-            ctx.lineWidth = stl.w + 1.6; ctx.stroke();
-          }
-          ctx.strokeStyle = ink + (stl.a * faceAlpha) + ')';
-          ctx.lineWidth = stl.w; ctx.stroke();
-        });
-        ctx.setLineDash([]);
-      }
-
+      drawHalos(v, P, 'fill');
+      if (streetsOn) drawTiles(v, P, L, faceAlpha, dark);
+      drawHalos(v, P, 'marks');
       drawSkyMarks(v, P);
       updateScale(v);
+    }
+
+    // One tile's worth of the map, clipped to that tile so neighbours' buffers
+    // never double up. A missing tile is stood in for by its nearest cached
+    // ancestor, drawn once however many missing children it covers.
+    function drawTiles(v, P, L, fa, dark) {
+      if (!tiles) return;
+      var drawn = {}, ref = face === 'earth' ? lm.getCenter().lng : v.lon;
+      viewTiles(v, 0).forEach(function (t) {
+        var g = tiles.peek(t.z, t.x, t.y);
+        if (!g) return;
+        var k = g.z + '/' + g.x + '/' + g.y;
+        if (drawn[k]) return;
+        drawn[k] = 1;
+        var b = g.bounds, shift = wrapNear((b.w + b.e) / 2, ref) - (b.w + b.e) / 2;
+        var corners4 = [[b.n, b.w], [b.n, b.e], [b.s, b.e], [b.s, b.w]].map(function (c) { return P(c[0], c[1] + shift); });
+        if (corners4.some(function (c) { return !c; })) return;
+        ctx.save();
+        ctx.beginPath();
+        corners4.forEach(function (c, i) { if (i) ctx.lineTo(c[0], c[1]); else ctx.moveTo(c[0], c[1]); });
+        ctx.closePath(); ctx.clip();
+        ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+        function path(pts, skip) {
+          var on = false;
+          for (var j = 0; j < pts.length; j++) {
+            var p = P(pts[j][0], pts[j][1] + shift);
+            if (!p) { on = false; continue; }
+            if (!on || (skip && skip[j - 1])) { ctx.moveTo(p[0], p[1]); on = true; } else ctx.lineTo(p[0], p[1]);
+          }
+        }
+        // Water: a faint fill, and the shoreline -- never the tile's own cut edges.
+        if (g.water.length) {
+          ctx.beginPath(); g.water.forEach(function (w) { path(w.pts); });
+          ctx.fillStyle = 'rgba(' + L.water + ',' + (0.1 * fa) + ')'; ctx.fill('evenodd');
+          ctx.beginPath(); g.water.forEach(function (w) { path(w.pts, w.edge); });
+          ctx.strokeStyle = 'rgba(' + L.water + ',' + (0.7 * fa) + ')'; ctx.lineWidth = 1.1; ctx.setLineDash([]); ctx.stroke();
+        }
+        if (g.waterways.length) {
+          [true, false].forEach(function (big) {
+            ctx.beginPath(); g.waterways.forEach(function (w) { if (w.big === big) path(w.pts); });
+            ctx.strokeStyle = 'rgba(' + L.water + ',' + ((big ? 0.7 : 0.45) * fa) + ')';
+            ctx.lineWidth = big ? 1.5 : 0.8; ctx.stroke();
+          });
+        }
+        if (g.borders.length) {
+          ctx.beginPath(); g.borders.forEach(function (w) { path(w.pts); });
+          ctx.setLineDash([6, 4]);
+          ctx.strokeStyle = 'rgba(' + L.border + ',' + (0.5 * fa) + ')'; ctx.lineWidth = 1.1; ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ['service', 'path', 'minor', 'major'].forEach(function (cls) {
+          var st = ROADS[cls];
+          ctx.beginPath();
+          g.roads.forEach(function (r) { if (r.cls === cls) path(r.pts); });
+          ctx.setLineDash(st.dash || []);
+          if (dark) {                                  // a dark underlay holds a line over bright stars and ground
+            ctx.strokeStyle = 'rgba(' + L.under + ',' + (0.35 * fa) + ')'; ctx.lineWidth = st.w + 1.4; ctx.stroke();
+          }
+          ctx.strokeStyle = 'rgba(' + L.road + ',' + (st.a * fa) + ')'; ctx.lineWidth = st.w; ctx.stroke();
+        });
+        ctx.setLineDash([]);
+        ctx.restore();
+      });
+    }
+
+    // Cornerstones: a soft amber halo sized by rarity (rarer = further apart =
+    // more ground of its own), and a crisp ring at the real 15 m arrival
+    // distance, so a rare one shows from far off and you still have to walk
+    // right onto it. The halo is never the catch zone and never looks like one.
+    function drawHalos(v, P, pass) {
+      if (!corners.length) return;
+      var mpp = v.asp * M_PER_ARCSEC, bagPx = CORNER_BAG_M / mpp;
+      corners.forEach(function (c) {
+        var p = P(c.lat, c.lon);
+        if (!p || p[0] < -200 || p[1] < -200 || p[0] > v.w + 200 || p[1] > v.h + 200) return;
+        var mine = !!(c.name && bagged[c.name]);
+        var col = mine ? MINE : (c.degree === 3 || c.rarity <= 6 ? GOLD : AMBER);
+        var hPx = haloM(c.rarity) / mpp;
+        // Rarer shows stronger, so a glance ranks them.
+        var strength = Math.max(0.55, Math.min(1, (14 - c.rarity) / 6));
+        if (pass === 'fill') {
+          if (hPx < 5) return;
+          var g = ctx.createRadialGradient(p[0], p[1], 0, p[0], p[1], hPx);
+          g.addColorStop(0, 'rgba(' + col + ',' + (0.38 * strength) + ')');
+          g.addColorStop(0.7, 'rgba(' + col + ',' + (0.12 * strength) + ')');
+          g.addColorStop(1, 'rgba(' + col + ',0)');
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.arc(p[0], p[1], hPx, 0, 6.2832); ctx.fill();
+          ctx.strokeStyle = 'rgba(' + col + ',' + (0.35 * strength) + ')'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(p[0], p[1], hPx, 0, 6.2832); ctx.stroke();
+          return;
+        }
+        if (hPx < 5 && c.rarity > 10) return;          // far out, only the rare ones keep a mark
+        if (bagPx >= 3) {
+          ctx.beginPath(); ctx.arc(p[0], p[1], bagPx, 0, 6.2832);
+          ctx.strokeStyle = 'rgba(7,10,20,.55)'; ctx.lineWidth = 3; ctx.stroke();
+          ctx.strokeStyle = 'rgba(' + col + ',.95)'; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(2, Math.min(3.5, bagPx * 0.25)), 0, 6.2832);
+        ctx.fillStyle = 'rgba(' + col + ',1)'; ctx.fill();
+      });
     }
 
     function drawSkyMarks(v, P) {
@@ -861,11 +956,11 @@ var GeosonifyStarpinFlip = (function () {
         if (fp) {
           if (fix.accuracy_m) {
             ctx.beginPath(); ctx.arc(fp[0], fp[1], Math.max(4, fix.accuracy_m / M_PER_ARCSEC / v.asp), 0, 6.2832);
-            ctx.fillStyle = 'rgba(231,158,114,.16)'; ctx.fill();
-            ctx.strokeStyle = 'rgba(231,158,114,.6)'; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = 'rgba(77,163,255,.16)'; ctx.fill();
+            ctx.strokeStyle = 'rgba(77,163,255,.6)'; ctx.lineWidth = 1; ctx.stroke();
           }
           ctx.beginPath(); ctx.arc(fp[0], fp[1], 5.5, 0, 6.2832);
-          ctx.fillStyle = '#E79E72'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.fillStyle = '#4DA3FF'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
         }
       }
     }
@@ -925,8 +1020,8 @@ var GeosonifyStarpinFlip = (function () {
     // The turn is only honest when there is something at matched scale to turn.
     function canTurn(v) {
       if (reducedMotion || !streetsOn) return false;
-      if (viewWidthM(v) > STREET_MAX_VIEW_M) return false;
-      return !!streetWays(v);
+      if (viewWidthM(v) > TURN_MAX_VIEW_M) return false;
+      return anyTileInView(v);
     }
     // ── the sky under the map ──
     //
@@ -982,7 +1077,7 @@ var GeosonifyStarpinFlip = (function () {
     function setImagery(k, quiet) {
       imagery = k === 'ground' ? 'ground' : 'sky';
       try { if (store) store.setItem('starpin.flip.imagery', imagery); } catch (e) {}
-      earth.setPalette(imagery === 'sky' ? 'imagery' : null);
+      earth.setPalette(imagery === 'sky' ? 'night' : null);
       applyFace();
       if (face !== 'earth') return;
       if (imagery === 'sky') {
@@ -1134,7 +1229,7 @@ var GeosonifyStarpinFlip = (function () {
     function settle() {
       if (destroyed) return;
       var v = viewState();
-      ensureStreets(v); ensureStars(v); schedule();
+      ensureTiles(v); ensureStars(v); ensureReach(v); findCorners(v); restar(); schedule();
     }
     lm.on('move', function () { if (face === 'earth' && !busy) { syncSkyToMap(false); schedule(); } });
     lm.on('moveend', function () { if (face === 'earth' && !busy && !zoomAnimating) syncSkyToMap(true); });
@@ -1291,6 +1386,7 @@ var GeosonifyStarpinFlip = (function () {
     // ── start ──
     earthEl.style.opacity = face === 'earth' ? '1' : '0';
     skyEl.style.opacity = face === 'sky' ? '1' : '0';
+    if (opts.locate === false) locBtn.style.display = 'none';   // the host owns geolocation
     applyFace();
     if (face === 'sky') {
       // Opening on the sky: the matched scale, pulled back if the survey needs
@@ -1316,27 +1412,30 @@ var GeosonifyStarpinFlip = (function () {
       setFix: setFix, recentre: recentre,
       setStars: setStars, stars: function () { return stars.slice(); },
       setFinds: function (list) { finds = (list || []).slice(); earth.setFinds(finds); schedule(); },
+      // Bagged cornerstones by name: the map ticks them, the halos turn green.
+      setBagged: function (names) {
+        bagged = {}; (names || []).forEach(function (n) { bagged[n] = 1; });
+        earth.setBagged(names); schedule();
+      },
       setStreets: function (on) { streetsOn = !!on; if (on) settle(); schedule(); },
       view: viewState, redraw: schedule,
       destroy: function () {
         destroyed = true;
         if (ro) ro.disconnect();
-        if (fetching && fetching.ctl) fetching.ctl.abort();
         earth.destroy();
         if (el.parentNode) el.parentNode.removeChild(el);
       },
-      _test: { boxes: boxes, readSky: readSky, anchor: function () { return anchor; },
+      _test: { tiles: function () { return tiles; }, corners: function () { return corners; }, readSky: readSky, anchor: function () { return anchor; },
                project: function (lat, lon) { return projector(viewState())(lat, lon); },
                userZoomed: function (v) { if (v !== undefined) userZoomed = v; return userZoomed; } }
     };
   }
 
   return {
-    VERSION: '0.2', mount: mount, SURVEYS: SURVEYS, TIERS: TIERS, VISIT_R_ARCSEC: VISIT_R_ARCSEC,
+    VERSION: '0.4', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
     wrap360: wrap360, wrapNear: wrapNear, aspForZoom: aspForZoom, zoomForAsp: zoomForAsp,
-    skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, tierForView: tierForView,
-    classOf: classOf, overpassQuery: overpassQuery, parseOverpass: parseOverpass,
-    nearestLineM: nearestLineM, reachOf: reachOf, floorAsp: floorAsp
+    skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, cellSideM: cellSideM, haloM: haloM, reachFromGeos: reachFromGeos,
+    nearestLineM: nearestLineM, floorAsp: floorAsp
   };
 })();
 

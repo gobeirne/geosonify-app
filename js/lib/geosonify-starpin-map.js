@@ -124,7 +124,14 @@ var GeosonifyStarpinMap = (function () {
     imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
                baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
-               under: 'rgba(0,0,0,.6)' }
+               under: 'rgba(0,0,0,.6)' },
+    // Over the night sky, with the streets drawn cool: the lattice goes warm
+    // amber so the two never read as one, your finds stay green, and you are
+    // the blue dot every map has taught people to look for.
+    night:   { grid: '#F0A33A', highlight: '#FFFFFF', bagged: '#9FD36A',
+               baggedRing: '#10200a', you: '#4DA3FF', halo: '77,163,255',
+               star: '#FFF6D0', starRing: '#1b1b1b',
+               under: 'rgba(0,0,0,.55)' }
   };
 
   var CSS = [
@@ -653,7 +660,7 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.5', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.6', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName,
            wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,
