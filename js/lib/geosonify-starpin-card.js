@@ -93,6 +93,13 @@ var GeosonifyStarpinCard = (function () {
     '.spc-title .id{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:19px;',
     '  line-height:1.25;margin-top:3px;word-break:break-word}',
     '.spc-med{display:flex;justify-content:center;margin:2px 0 10px}',
+    '.spc-ground{position:relative;width:200px;height:200px;border-radius:18px;overflow:hidden;',
+    '  background:#070A14;box-shadow:0 0 0 1px rgba(220,201,73,.4),0 12px 30px -12px rgba(0,0,0,.8)}',
+    '.spc-ground img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}',
+    '.spc-ground .spc-overlay{position:absolute;inset:0;width:100%;height:100%}',
+    '.spc-ground-cap{font-size:10px;line-height:1.3;color:var(--muted);text-align:center;margin-top:6px;letter-spacing:.02em}',
+    '.spc-card.light .spc-ground-cap{color:#5C6349}',
+    '.spc-card.mini .spc-ground{width:150px;height:150px}',
     '.spc-sky{position:relative;width:112px;height:112px}',
     '.spc-sky img{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#070A14;',
     '  display:block}',
@@ -242,18 +249,19 @@ var GeosonifyStarpinCard = (function () {
   // The real lattice at that point, at the real angle. HEALPix cells sit at a
   // rotation that varies with position, so a stylised diamond would be a lie
   // about the one thing this card is documenting.
+  function cornerSpanM(order) { return Math.sqrt(510.1e12 / (12 * Math.pow(4, Math.round(order || 12)))) * 2.6; }
   function gridSVG(lat, lon, order, w, h) {
     var H = HP();
     if (!H) return '';
     w = w || 340; h = h || 300;
-    var spanM = Math.sqrt(510.1e12 / (12 * Math.pow(4, order))) * 2.6;   // ~2.6 cells across
+    var spanM = cornerSpanM(order);                                       // ~2.6 cells across
     var mPerDeg = 111319.9, cosLat = Math.cos(lat * D2R);
     function pt(la, lo) {
       return [w / 2 + (lo - lon) * mPerDeg * cosLat / (spanM / w),
               h / 2 - (la - lat) * mPerDeg / (spanM / w)];
     }
     var out = ['<svg viewBox="0 0 ' + w + ' ' + h + '" width="100%" height="100%" ' +
-               'preserveAspectRatio="xMidYMid slice" aria-hidden="true">'];
+               'preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g class="st-g"></g>'];
     [order + 1, order].forEach(function (k, idx) {
       var seen = {}, cells = [];
       var stepDeg = (spanM / 6) / mPerDeg;
@@ -276,7 +284,7 @@ var GeosonifyStarpinCard = (function () {
         });
         d.push('M' + p.map(function (q) { return q[0].toFixed(1) + ',' + q[1].toFixed(1); }).join('L') + 'Z');
       });
-      out.push('<path d="' + d.join(' ') + '" fill="none" stroke="#7D9D33" stroke-opacity="' +
+      out.push('<path class="grid" d="' + d.join(' ') + '" fill="none" stroke="#7D9D33" stroke-opacity="' +
                (idx ? 0.55 : 0.2) + '" stroke-width="' + (idx ? 1.6 : 0.7) + '"/>');
     });
     // the vertex itself
@@ -288,6 +296,187 @@ var GeosonifyStarpinCard = (function () {
   }
 
   // ── rendering ─────────────────────────────────────────────────────────────
+  // ── the ground under the find ────────────────────────────────────────────────
+  //
+  // Both cards now carry the streets, drawn from the same vector tiles as the
+  // map (geosonify-starpin-vtiles.js, shared device cache, so a card for a find
+  // near home costs no network at all). The streets are what give a card its
+  // scale: a star's 3" circle next to real blocks, a cornerstone's cells over
+  // real suburbs. Without the tile module the cards degrade to what they were.
+  var M_PER_DEG = 111319.9;
+  var M_PER_ARCSEC = (S && S.M_PER_ARCSEC) || M_PER_DEG / 3600;
+  var R_ARCSEC = (S && S.VISIT_R_ARCSEC) || 3;          // visit-geometry-v1
+  var STAR_FOV_ARCSEC = 40;                              // ~1.2 km of ground
+
+  function TL() {
+    try { if (typeof GeosonifyStarpinTiles !== 'undefined') return GeosonifyStarpinTiles; } catch (e) {}
+    try { if (typeof window !== 'undefined' && window.GeosonifyStarpinTiles) return window.GeosonifyStarpinTiles; }
+    catch (e) {}
+    return null;
+  }
+  var _tileStore = null;
+  function tileStore() {
+    var T = TL();
+    if (!T) return null;
+    if (!_tileStore) _tileStore = T.createStore({ onTile: function () {} });
+    return _tileStore;
+  }
+  // Roads around a point, as lat/lon polylines. Resolves when every tile is in,
+  // or after `ms` with whatever arrived -- a card never waits on the network
+  // for long, and a card with fewer streets beats no card.
+  function roadsAround(lat, lon, spanM, ms) {
+    var T = TL(), st = tileStore();
+    if (!T || !st || lat == null || lon == null) return Promise.resolve([]);
+    var dLat = spanM / 2 / M_PER_DEG, dLon = dLat / Math.max(0.05, Math.cos(lat * D2R));
+    var z = spanM > 2500 ? 13 : 14;
+    var list = T.tilesFor({ s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }, z, 0);
+    list.forEach(function (t) { st.request(t.z, t.x, t.y); });
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function poll() {
+        var all = list.every(function (t) { return st.has(t.z, t.x, t.y); });
+        if (!all && Date.now() - t0 < (ms || 5000)) { setTimeout(poll, 150); return; }
+        var out = [], seen = {};
+        list.forEach(function (t) {
+          var g = st.peek(t.z, t.x, t.y), k = g && (g.z + '/' + g.x + '/' + g.y);
+          if (!g || seen[k]) return;
+          seen[k] = 1;
+          out = out.concat(g.roads);
+        });
+        resolve(out);
+      })();
+    });
+  }
+  // A local flat projection about (lat, lon), north up, EAST RIGHT: the ground.
+  function groundProj(lat, lon, spanM, size, cx, cy) {
+    var k = size / spanM, cl = Math.cos(lat * D2R);
+    cx = cx == null ? size / 2 : cx; cy = cy == null ? size / 2 : cy;
+    return function (la, lo) {
+      var d = lo - lon; d -= 360 * Math.round(d / 360);
+      return [cx + d * M_PER_DEG * cl * k, cy - (la - lat) * M_PER_DEG * k];
+    };
+  }
+  var ROAD_W = { major: 1.8, minor: 1.05, service: 0.7, path: 0.9 };
+  function roadsSVG(roads, P, colour, alpha, scale) {
+    scale = scale || 1;
+    return ['service', 'path', 'minor', 'major'].map(function (cls) {
+      var d = [];
+      roads.forEach(function (r) {
+        if (r.cls !== cls) return;
+        d.push('M' + r.pts.map(function (q) { var p = P(q[0], q[1]); return p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join('L'));
+      });
+      if (!d.length) return '';
+      return '<path class="st" d="' + d.join(' ') + '" fill="none" stroke="' + colour + '" stroke-opacity="' + alpha +
+        '" stroke-width="' + (ROAD_W[cls] * scale) + '" stroke-linecap="round" stroke-linejoin="round"' +
+        (cls === 'path' ? ' stroke-dasharray="' + (2.5 * scale) + ' ' + (3 * scale) + '"' : '') + '/>';
+    }).join('');
+  }
+  function roadsCanvas(g, roads, P, colour, alpha, scale) {
+    g.save();
+    g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = colour; g.globalAlpha = alpha;
+    ['service', 'path', 'minor', 'major'].forEach(function (cls) {
+      g.lineWidth = ROAD_W[cls] * scale;
+      g.setLineDash(cls === 'path' ? [2.5 * scale, 3 * scale] : []);
+      g.beginPath();
+      roads.forEach(function (r) {
+        if (r.cls !== cls) return;
+        r.pts.forEach(function (q, i) { var p = P(q[0], q[1]); if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); });
+      });
+      g.stroke();
+    });
+    g.setLineDash([]); g.restore();
+  }
+  // A two-unit scale bar, as on the map: metres and the arcseconds they are.
+  function niceBar(mPerPx, targetPx) {
+    var raw = mPerPx * targetPx, e = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), f = raw / e;
+    var m = (f >= 5 ? 5 : f >= 2 ? 2 : 1) * e, arc = m / M_PER_ARCSEC;
+    return { px: m / mPerPx, label: (m >= 1000 ? (m / 1000) + ' km' : m + ' m') + ' \u00B7 ' +
+             (arc < 10 ? arc.toFixed(1) : Math.round(arc)) + '\u2033' };
+  }
+
+  // THE SKY IMAGE IS MIRRORED. hips2fits returns the sky the standard way,
+  // as seen from below: north up, east LEFT. The card's window is the ground,
+  // east RIGHT, like the map -- so the image is flipped east-west, exactly as
+  // the app's Sky view lays the sky under the streets, and every star in it
+  // sits over its own starpin.
+  function dssUrl(ra, dec, fovArcsec, px) {
+    return 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
+      '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
+      '&width=' + px + '&height=' + px + '&fov=' + (fovArcsec / 3600) +
+      '&projection=TAN&coordsys=icrs&format=jpg' +
+      '&ra=' + Number(ra).toFixed(6) + '&dec=' + Number(dec).toFixed(6);
+  }
+
+  // The starpin card's window: the star's own patch of sky, laid on the ground
+  // beneath it, with the streets over it, the 3" circle, and the reticle.
+  function groundWindow(doc, d) {
+    var box = doc.createElement('div');
+    box.className = 'spc-ground';
+    var fov = d.fovArcsec || STAR_FOV_ARCSEC, spanM = fov * M_PER_ARCSEC, SZ = 200;
+    if (d.ra != null && d.dec != null) {
+      var img = doc.createElement('img');
+      img.alt = 'DSS image of the sky around this star, mirrored to lie on the ground beneath it';
+      img.crossOrigin = 'anonymous';
+      img.referrerPolicy = 'no-referrer';
+      img.src = dssUrl(d.ra, d.dec, fov, 400);
+      box.appendChild(img);
+    }
+    var rPx = R_ARCSEC / fov * SZ, gap = Math.max(4, rPx * 0.3), arm = Math.max(6, rPx * 0.45);
+    var bar = niceBar(spanM / SZ, 48);
+    var svg = ['<svg viewBox="0 0 ' + SZ + ' ' + SZ + '" class="spc-overlay" aria-hidden="true">',
+      '<g class="st-g"></g>',
+      '<circle cx="100" cy="100" r="' + rPx.toFixed(1) + '" fill="none" stroke="rgba(7,10,20,.6)" stroke-width="3.5"/>',
+      '<circle cx="100" cy="100" r="' + rPx.toFixed(1) + '" fill="none" stroke="#F2DE5C" stroke-width="1.8"/>',
+      '<path d="M' + (100 - gap - arm) + ',100H' + (100 - gap) + 'M' + (100 + gap) + ',100H' + (100 + gap + arm) +
+        'M100,' + (100 - gap - arm) + 'V' + (100 - gap) + 'M100,' + (100 + gap) + 'V' + (100 + gap + arm) +
+        '" stroke="#F2DE5C" stroke-width="1.6" stroke-linecap="round"/>',
+      '<g class="bar"><path d="M10,' + (SZ - 14) + 'v4h' + bar.px.toFixed(1) + 'v-4" fill="none" stroke="#fff" stroke-width="1.4"/>',
+      '<text x="10" y="' + (SZ - 18) + '" fill="#fff" font-size="9" font-family="system-ui,sans-serif">' + bar.label + '</text></g>'];
+    if (d.bearingDeg != null) {
+      var t = (d.bearingDeg - 90) * D2R;
+      svg.push('<line x1="' + (100 + Math.cos(t) * 88).toFixed(1) + '" y1="' + (100 + Math.sin(t) * 88).toFixed(1) +
+               '" x2="' + (100 + Math.cos(t) * 99).toFixed(1) + '" y2="' + (100 + Math.sin(t) * 99).toFixed(1) +
+               '" stroke="#DCC949" stroke-width="3" stroke-linecap="round"/>');
+    }
+    svg.push('</svg>');
+    var wrap = doc.createElement('div');
+    wrap.innerHTML = svg.join('');
+    box.appendChild(wrap.firstChild);
+    var cap = doc.createElement('div');
+    cap.className = 'spc-ground-cap';
+    cap.textContent = 'its own sky, laid on the ground below';
+    var outer = doc.createElement('div');
+    outer.style.cssText = 'display:flex;flex-direction:column;align-items:center';
+    outer.appendChild(box); outer.appendChild(cap);
+    if (d.lat != null) {
+      roadsAround(d.lat, d.lon, spanM * 1.1).then(function (roads) {
+        var g = box.querySelector('.st-g');
+        if (g) g.innerHTML = roadsSVG(roads, groundProj(d.lat, d.lon, spanM, SZ), '#CDD6E4', 0.8, 1);
+      });
+    }
+    return outer;
+  }
+
+  // The star's own "sunrise", made so it cannot be mistaken for a cornerstone's:
+  // light radiating OUT from the star's window, not a dawn rising up the card.
+  // How far and how bright it spreads follows the star's rarity.
+  //
+  // PROVISIONAL: rarity here is a straight ramp in Gaia G (G <= 6.5 full,
+  // G >= 18 none) until it is calibrated from Gaia's counts of stars brighter
+  // than each magnitude -- the population measure the cornerstones already use.
+  function starGlowValue(mag) {
+    if (mag == null || !isFinite(mag)) return 0;
+    return clamp01((18 - mag) / 11.5);
+  }
+  var CARD_BASE = 'linear-gradient(168deg,#141A2E 0%,#0C1120 60%,#0A0E1C 100%)';
+  function starGlowCss(v) {
+    if (!(v > 0)) return null;
+    var a = (0.18 + 0.5 * v).toFixed(3), a2 = (0.06 + 0.22 * v).toFixed(3);
+    var r1 = Math.round(22 + 40 * v), r2 = Math.round(48 + 70 * v);
+    return 'radial-gradient(circle at 50% 33%, rgba(255,238,200,' + a + ') 0%, rgba(242,190,120,' + a2 + ') ' +
+           r1 + '%, rgba(20,26,46,0) ' + r2 + '%), ' + CARD_BASE;
+  }
+
   function row(k, v, cls) {
     return '<div class="row"><span class="k">' + k + '</span><span class="v' +
            (cls ? ' ' + cls : '') + '">' + v + '</span></div>';
@@ -433,6 +622,8 @@ var GeosonifyStarpinCard = (function () {
     } else {
       var d = opts.star || {};
       var tierS = F ? F.starTier(d.mag) : null;
+      opts._sunbg = starGlowCss(starGlowValue(d.mag));   // stripped for print, like the sunrise
+      opts._sunFlips = null;
       body =
         '<div class="spc-brand">starpin<i>!</i></div>' +
         '<div class="spc-kicker" style="margin-top:5px">Starpin Record</div>' +
@@ -494,7 +685,11 @@ var GeosonifyStarpinCard = (function () {
   // variant has to restate them rather than inherit.
   function recolourGrid(card) {
     var light = card.classList.contains('light');
-    [].forEach.call(card.querySelectorAll('.bg svg path'), function (p, i) {
+    [].forEach.call(card.querySelectorAll('.bg svg path.st'), function (p) {
+      p.setAttribute('stroke', light ? '#2C3442' : '#CDD6E4');
+      p.setAttribute('stroke-opacity', light ? 0.34 : 0.28);
+    });
+    [].forEach.call(card.querySelectorAll('.bg svg path.grid'), function (p, i) {
       p.setAttribute('stroke', light ? '#4F6620' : '#7D9D33');
       p.setAttribute('stroke-opacity', (light ? [0.28, 0.75] : [0.2, 0.55])[i] || 0.4);
     });
@@ -534,11 +729,23 @@ var GeosonifyStarpinCard = (function () {
       recolourGrid(card);
     });
     var slot = card.querySelector('.spc-med[data-sky]');
-    if (slot) slot.appendChild(skyWindow(doc, {
+    if (slot) slot.appendChild(groundWindow(doc, {
       ra: (opts.star || {}).ra, dec: (opts.star || {}).dec,
+      lat: (opts.star || {}).lat, lon: (opts.star || {}).lon,
       bearingDeg: (opts.visit || {}).bearingDeg,
       fovArcsec: (opts.star || {}).fovArcsec
     }));
+    // The cornerstone's lattice now sits over real streets.
+    var cs = opts.cornerstone || {};
+    var stg = opts.kind === 'cornerstone' && card.querySelector('.bg svg .st-g');
+    if (stg && cs.lat != null) {
+      var sp = cornerSpanM(cs.order);
+      roadsAround(cs.lat, cs.lon, sp * 1.3).then(function (roads) {
+        var light = card.classList.contains('light');
+        stg.innerHTML = roadsSVG(roads, groundProj(cs.lat, cs.lon, sp, 340, 170, 150),
+                                 light ? '#2C3442' : '#CDD6E4', light ? 0.34 : 0.28, 1);
+      });
+    }
     return card;
   }
 
@@ -578,9 +785,19 @@ var GeosonifyStarpinCard = (function () {
   // requesting the image with crossOrigin so it can be composited legally.
   // If CDS declines CORS the image is simply omitted and everything else still
   // exports; a card with a blank window beats no card at all.
+  // The streets are fetched first (from the device cache, usually), then the
+  // card is drawn in one pass so they sit UNDER the lattice and the window.
   function toBlob(opts, doc) {
     doc = doc || document;
-    var W = 680, H = 1000, pad = 46;
+    var isStar = opts.kind !== 'cornerstone', d = opts.star || {}, c = opts.cornerstone || {};
+    var lat = isStar ? d.lat : c.lat, lon = isStar ? d.lon : c.lon;
+    var span = isStar ? (d.fovArcsec || STAR_FOV_ARCSEC) * M_PER_ARCSEC * 1.1
+                      : Math.sqrt(510.1e12 / (12 * Math.pow(4, Math.round(c.order || 12)))) * 2.9 * 1.3;
+    return roadsAround(lat, lon, span, 5000).then(function (roads) { return drawCard(opts, doc, roads || []); });
+  }
+  function drawCard(opts, doc, roads) {
+    // Star cards are taller now: the window is bigger and has a caption.
+    var W = 680, H = opts.kind !== 'cornerstone' ? 1060 : 1000, pad = 46;
     var cv = doc.createElement('canvas');
     cv.width = W; cv.height = H;
     var g = cv.getContext('2d');
@@ -606,6 +823,15 @@ var GeosonifyStarpinCard = (function () {
       grad.addColorStop(0, '#141A2E'); grad.addColorStop(0.6, '#0C1120');
       grad.addColorStop(1, '#0A0E1C');
       g.fillStyle = grad; g.fillRect(0, 0, W, H);
+      // The star's glow, as on screen: radiating from the window, by rarity.
+      var gv = starGlowValue(d.mag);
+      if (gv > 0) {
+        var rg0 = g.createRadialGradient(W / 2, 340, 0, W / 2, 340, (0.48 + 0.7 * gv) * W);
+        rg0.addColorStop(0, 'rgba(255,238,200,' + (0.18 + 0.5 * gv) + ')');
+        rg0.addColorStop((22 + 40 * gv) / (48 + 70 * gv), 'rgba(242,190,120,' + (0.06 + 0.22 * gv) + ')');
+        rg0.addColorStop(1, 'rgba(20,26,46,0)');
+        g.fillStyle = rg0; g.fillRect(0, 0, W, H);
+      }
     }
     var INK   = light ? '#22270F' : '#E9E4D6';
     var MUTED = light ? '#5C6349' : '#8891A8';
@@ -622,6 +848,10 @@ var GeosonifyStarpinCard = (function () {
       var mPerDeg = 111319.9, cosLat = Math.cos(c.lat * D2R), ppm = W / spanM;
       var projX = function (lo) { return W / 2 + (lo - c.lon) * mPerDeg * cosLat * ppm; };
       var projY = function (la) { return H * 0.33 - (la - c.lat) * mPerDeg * ppm; };
+      roadsCanvas(g, roads, function (la, lo) {
+        var dl = lo - c.lon; dl -= 360 * Math.round(dl / 360);
+        return [projX(c.lon + dl), projY(la)];
+      }, light ? '#2C3442' : '#CDD6E4', light ? 0.34 : 0.28, 2);
       [[ord0 + 1, 1.2, light ? 0.22 : 0.16], [ord0, 2.6, light ? 0.55 : 0.4]]
       .forEach(function (spec) {
         var k = spec[0], seen = {}, cells = [];
@@ -774,7 +1004,7 @@ var GeosonifyStarpinCard = (function () {
 
     return new Promise(function (resolve) {
       function finish() {
-        paintRows(isStar ? 490 : 470);
+        paintRows(isStar ? 520 : 470);
         cv.toBlob(function (b) { resolve(b); }, 'image/png');
       }
       if (!isStar || d.ra == null) { finish(); return; }
@@ -784,40 +1014,59 @@ var GeosonifyStarpinCard = (function () {
       var done = false;
       function drawSky(ok) {
         if (done) return; done = true;
-        var R = 116, cx = W / 2, cy = 340;
-        if (ok) {
-          g.save(); g.beginPath(); g.arc(cx, cy, R, 0, 6.2832); g.clip();
-          g.drawImage(img, cx - R, cy - R, R * 2, R * 2); g.restore();
-        }
-        g.strokeStyle = BRASS; g.globalAlpha = .7; g.lineWidth = 2;
-        g.beginPath(); g.arc(cx, cy, R + 6, 0, 6.2832); g.stroke(); g.globalAlpha = 1;
-        if (v.bearingDeg != null) {
-          var t = (v.bearingDeg - 90) * D2R;
-          g.strokeStyle = BRASS; g.lineWidth = 5; g.lineCap = 'round';
+        // The window: the star's sky, mirrored onto the ground, streets over it.
+        var R = 116, cx = W / 2, cy = 340, fov = d.fovArcsec || STAR_FOV_ARCSEC, spanM = fov * M_PER_ARCSEC;
+        function box() {
+          var r = 26, x0 = cx - R, y0 = cy - R, s2 = 2 * R;
           g.beginPath();
-          g.moveTo(cx + Math.cos(t) * (R + 1), cy + Math.sin(t) * (R + 1));
-          g.lineTo(cx + Math.cos(t) * (R + 15), cy + Math.sin(t) * (R + 15));
-          g.stroke();
+          g.moveTo(x0 + r, y0); g.lineTo(x0 + s2 - r, y0); g.quadraticCurveTo(x0 + s2, y0, x0 + s2, y0 + r);
+          g.lineTo(x0 + s2, y0 + s2 - r); g.quadraticCurveTo(x0 + s2, y0 + s2, x0 + s2 - r, y0 + s2);
+          g.lineTo(x0 + r, y0 + s2); g.quadraticCurveTo(x0, y0 + s2, x0, y0 + s2 - r);
+          g.lineTo(x0, y0 + r); g.quadraticCurveTo(x0, y0, x0 + r, y0); g.closePath();
         }
-        // Open crosshair, gap in the middle, so a faint target is not covered.
-        g.strokeStyle = GOOD; g.lineWidth = 3; g.lineCap = 'round';
-        var gap = 7, arm = 20;
-        g.beginPath();
+        g.save(); box(); g.clip();
+        g.fillStyle = '#070A14'; g.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+        if (ok) {                                        // east-west mirrored: the ground's way round
+          g.save(); g.translate(cx + R, cy - R); g.scale(-1, 1);
+          g.drawImage(img, 0, 0, 2 * R, 2 * R); g.restore();
+        }
+        if (d.lat != null) roadsCanvas(g, roads, groundProj(d.lat, d.lon, spanM, 2 * R, cx, cy), '#CDD6E4', 0.8, 2);
+        var rPx = R_ARCSEC / fov * 2 * R;
+        g.strokeStyle = 'rgba(7,10,20,.6)'; g.lineWidth = 7;
+        g.beginPath(); g.arc(cx, cy, rPx, 0, 6.2832); g.stroke();
+        g.strokeStyle = '#F2DE5C'; g.lineWidth = 3.6;
+        g.beginPath(); g.arc(cx, cy, rPx, 0, 6.2832); g.stroke();
+        var gap = Math.max(8, rPx * 0.3), arm = Math.max(12, rPx * 0.45);
+        g.lineWidth = 3.2; g.lineCap = 'round'; g.beginPath();
         g.moveTo(cx, cy - gap - arm); g.lineTo(cx, cy - gap);
         g.moveTo(cx, cy + gap); g.lineTo(cx, cy + gap + arm);
         g.moveTo(cx - gap - arm, cy); g.lineTo(cx - gap, cy);
         g.moveTo(cx + gap, cy); g.lineTo(cx + gap + arm, cy);
         g.stroke();
+        var bar = niceBar(spanM / (2 * R), 96), bx = cx - R + 18, by = cy + R - 22;
+        g.strokeStyle = '#fff'; g.lineWidth = 2.4; g.lineCap = 'butt'; g.beginPath();
+        g.moveTo(bx, by - 7); g.lineTo(bx, by); g.lineTo(bx + bar.px, by); g.lineTo(bx + bar.px, by - 7); g.stroke();
+        g.font = '15px system-ui,-apple-system,sans-serif'; g.fillStyle = '#fff'; g.textAlign = 'left';
+        g.fillText(bar.label, bx, by - 12);
+        g.restore();
+        g.strokeStyle = BRASS; g.globalAlpha = .75; g.lineWidth = 2;
+        box(); g.stroke(); g.globalAlpha = 1;
+        if (v.bearingDeg != null) {
+          var t = (v.bearingDeg - 90) * D2R, rr = R * 1.18;
+          g.strokeStyle = BRASS; g.lineWidth = 5; g.lineCap = 'round';
+          g.beginPath();
+          g.moveTo(cx + Math.cos(t) * rr, cy + Math.sin(t) * rr);
+          g.lineTo(cx + Math.cos(t) * (rr + 14), cy + Math.sin(t) * (rr + 14));
+          g.stroke();
+        }
+        text('its own sky, laid on the ground below',
+             cx, cy + R + 34, '15px ' + SANS, MUTED, 'center');
         finish();
       }
       img.onload = function () { drawSky(true); };
       img.onerror = function () { drawSky(false); };
       setTimeout(function () { drawSky(false); }, 6000);
-      img.src = 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
-        '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
-        '&width=480&height=480&fov=' + ((d.fovArcsec || 48) / 3600) +
-        '&projection=TAN&coordsys=icrs&format=jpg' +
-        '&ra=' + Number(d.ra).toFixed(6) + '&dec=' + Number(d.dec).toFixed(6);
+      img.src = dssUrl(d.ra, d.dec, d.fovArcsec || STAR_FOV_ARCSEC, 480);
     });
   }
 
@@ -843,9 +1092,10 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.3', render: render, show: show, html: html,
+  return { VERSION: '0.4', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
-           skyWindow: skyWindow, gridSVG: gridSVG };
+           skyWindow: skyWindow, groundWindow: groundWindow, gridSVG: gridSVG,
+           starGlowValue: starGlowValue, niceBar: niceBar };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = GeosonifyStarpinCard;

@@ -49,10 +49,9 @@
   exactly as you left it.
 
   Starpins on the sky are drawn as their visit-geometry-v1 acceptance circle
-  (3", 92.8 m). Solid: a mapped street or path passes through it. Dashed: the
-  full-detail street data covers it and nothing passes through. Faint: we only
-  hold coarse street data there, so we do not say. "A line passes within reach"
-  is a hint from OpenStreetMap, never a rule of the game.
+  (3", 92.8 m), every one drawn the same, solid. Whether a mapped street or path
+  passes through it (near / none / unknown) is worked out as before and said in
+  the star's sheet -- a hint from OpenStreetMap, never a rule of the game.
 */
 'use strict';
 
@@ -329,13 +328,9 @@ var GeosonifyStarpinFlip = (function () {
   var ICON_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v6"/>' +
     '<circle cx="12" cy="7.6" r=".6" fill="currentColor"/></svg>';
-  function reachIcon(kind) {
-    if (kind === 'near') return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" ' +
-      'fill="none" stroke="#F2DE5C" stroke-width="2"/><path d="M2 13 18 6" stroke="rgb(228,233,174)" stroke-width="2"/></svg>';
-    if (kind === 'none') return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" ' +
-      'fill="none" stroke="#F2DE5C" stroke-width="2" stroke-dasharray="3 3"/></svg>';
-    return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" fill="none" ' +
-      'stroke="#F2DE5C" stroke-opacity=".45" stroke-width="2"/></svg>';
+  function reachIcon() {
+    return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" ' +
+      'fill="none" stroke="#F2DE5C" stroke-width="2"/></svg>';
   }
   function reachText(kind) {
     var r = VISIT_R_ARCSEC + '\u2033 (' + Math.round(VISIT_R_ARCSEC * M_PER_ARCSEC) + ' m)';
@@ -924,9 +919,10 @@ var GeosonifyStarpinFlip = (function () {
         ctx.save();
         if (rPx >= 4) {
           ctx.beginPath(); ctx.arc(p[0], p[1], rPx, 0, 6.2832);
-          ctx.setLineDash(s.reach === 'none' ? [4, 4] : []);
+          // Every ring is drawn the same, solid: whether a street reaches it is
+          // said in the star's sheet, not in the ring.
           ctx.strokeStyle = 'rgba(7,10,20,.55)'; ctx.lineWidth = sel ? 4.5 : 3.2; ctx.stroke();
-          ctx.strokeStyle = s.reach === 'unknown' ? 'rgba(242,222,92,.5)' : '#F2DE5C';
+          ctx.strokeStyle = '#F2DE5C';
           ctx.lineWidth = sel ? 2.6 : 1.6; ctx.stroke();
           ctx.setLineDash([]);
         }
@@ -1350,9 +1346,8 @@ var GeosonifyStarpinFlip = (function () {
         '<p>On the sky the streets are seen from below, the way you would see a map painted on glass ' +
         'overhead, so east is on the left.</p>' +
         '<p>Each ring is a starpin\u2019s ' + VISIT_R_ARCSEC + '\u2033 (' + Math.round(VISIT_R_ARCSEC * M_PER_ARCSEC) +
-        ' m) circle. Solid: a mapped street or path passes through it. Dashed: nothing mapped does, so it ' +
-        'may be behind a fence or in water. Faint: zoom in for street detail. This comes from OpenStreetMap ' +
-        'and is a hint, not a rule.</p>' +
+        ' m) circle. Tap one to see whether a mapped street or path reaches it. That comes from ' +
+        'OpenStreetMap and is a hint, not a rule.</p>' +
         '<p>Sky surveys run out of detail close in. When the ground is closer than ' + sv3.label +
         ' can show, the sky pulls back, and looking down puts you back where you were.</p>' +
         '<p>What this view sends: the area you are looking at goes to OpenStreetMap\u2019s Overpass server ' +
@@ -1432,7 +1427,7 @@ var GeosonifyStarpinFlip = (function () {
   }
 
   return {
-    VERSION: '0.4', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
+    VERSION: '0.5', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
     wrap360: wrap360, wrapNear: wrapNear, aspForZoom: aspForZoom, zoomForAsp: zoomForAsp,
     skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, cellSideM: cellSideM, haloM: haloM, reachFromGeos: reachFromGeos,
     nearestLineM: nearestLineM, floorAsp: floorAsp
