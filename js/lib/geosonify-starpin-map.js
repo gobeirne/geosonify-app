@@ -244,7 +244,7 @@ var GeosonifyStarpinMap = (function () {
     try { remembered = bmStore && bmStore.getItem(BM_KEY); } catch (e) {}
     var key = (opts.basemap && BASEMAPS[opts.basemap]) ? opts.basemap
             : (remembered && BASEMAPS[remembered]) ? remembered : 'aerial';
-    var tiles = null, btns = {};
+    var tiles = null, btns = {}, paletteOverride = null;
 
     function applyBasemap(k) {
       key = BASEMAPS[k] ? k : 'aerial';
@@ -321,7 +321,9 @@ var GeosonifyStarpinMap = (function () {
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       g.clearRect(0, 0, size.x, size.y);
 
-      var pal = PALETTE[BASEMAPS[key].imagery ? 'imagery' : 'light'];
+      // A host that shows something else beneath the map (the flip's sky
+      // imagery) says which palette holds against it; otherwise the basemap does.
+      var pal = PALETTE[paletteOverride || (BASEMAPS[key].imagery ? 'imagery' : 'light')];
       var b = map.getBounds();
       var spanM = map.distance(b.getNorthWest(), b.getNorthEast()) || 1000;
       var mpp = spanM / size.x;
@@ -640,6 +642,7 @@ var GeosonifyStarpinMap = (function () {
       },
       setHighlight: function (n) { highlight = n || null; redraw(); },
       setBasemap: applyBasemap,
+      setPalette: function (name) { paletteOverride = PALETTE[name] ? name : null; redraw(); },
       basemap: function () { return key; },
       invalidate: function () { map.invalidateSize(); redraw(); },
       redraw: redraw,
@@ -650,7 +653,7 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.4', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.5', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName,
            wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,

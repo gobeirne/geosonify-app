@@ -1,5 +1,17 @@
 /*
-  geosonify-starpin-flip.js v0.1 — one place, two faces
+  geosonify-starpin-flip.js v0.2 — one place, two faces
+
+  v0.2: THE MAP STAYS PUT. The default view is now the map, with a Ground/Sky
+  switch for what lies beneath it. On Sky, the ground tiles fade and the sky
+  imagery shows through UNDER the map's own lattice, dots and pins, mirrored
+  east-west: that is the sky as it falls on the ground, so every star sits on
+  its starpin and every 3" ring circles its own star. North stays up and east
+  stays right, so nobody's mental geography has to turn over. The map drives,
+  the sky follows every pan and pinch, and it bows out where Web Mercator and
+  the sky's projection stop agreeing (sub-pixel to ~20 km across, measured).
+  "Look up" still turns the view over for the sky as it is overhead; when the
+  sky is already under the map it turns WITH the streets, arriving the right
+  way round without ever being swapped.
 
   Browser: window.GeosonifyStarpinFlip.   Node: require('./geosonify-starpin-flip.js')
   (Node gets the pure maths only; mount() needs a DOM, Leaflet and, for the sky
@@ -250,7 +262,11 @@ var GeosonifyStarpinFlip = (function () {
     '  --spf-chalk:228,233,174;--spf-sun:#F2DE5C;--spf-lichen:#CED38C;--spf-rust:#E79E72;',
     '  --spf-moss:#7D9D33;--spf-ink:#070A14}',
     '.spf-layer{position:absolute;inset:0;transition:opacity .32s ease}',
-    '.spf .spm{height:100%;border-radius:0;border:0;background:#1a1f14}',
+    '.spf .spm{height:100%;border-radius:0;border:0;background:transparent}',
+    '.spf .leaflet-container{background:transparent}',
+    '.spf .leaflet-tile-pane{transition:opacity .45s ease}',
+    '.spf[data-imagery=sky] .leaflet-tile-pane{opacity:0}',
+    '.spf[data-imagery=sky] .spm-bm{display:none}',
     '.spf .leaflet-control-zoom{display:none}',
     '.spf .spm-bm{top:calc(.6rem + env(safe-area-inset-top,0px));right:.6rem}',
     '.spf .spm-orders{bottom:calc(5.4rem + env(safe-area-inset-bottom,0px));left:.6rem}',
@@ -273,7 +289,17 @@ var GeosonifyStarpinFlip = (function () {
     '.spf-survey{position:absolute;right:.6rem;top:calc(.6rem + env(safe-area-inset-top,0px));',
     '  font:inherit;font-size:.72rem;padding:.4rem .7rem;border-radius:999px;cursor:pointer;',
     '  border:1px solid rgba(233,228,214,.28);background:rgba(7,10,20,.6);color:#E9E4D6}',
-    '.spf[data-face=earth] .spf-survey{display:none}',
+    '.spf[data-face=earth][data-imagery=ground] .spf-survey{display:none}',
+    '.spf-seg{display:flex;padding:3px;border-radius:999px;background:rgba(7,10,20,.72);',
+    '  box-shadow:0 0 0 1px rgba(233,228,214,.22),0 10px 28px -10px rgba(0,0,0,.8)}',
+    '.spf-seg button{font:inherit;font-size:.98rem;font-weight:650;border:0;cursor:pointer;',
+    '  height:2.9rem;min-width:5.2rem;padding:0 1.1rem;border-radius:999px;background:transparent;',
+    '  color:rgba(233,228,214,.8);transition:background .3s ease,color .3s ease}',
+    '.spf-seg button[aria-pressed=true]{background:#E9E4D6;color:#070A14}',
+    '.spf-seg button[data-imagery=sky][aria-pressed=true]{background:var(--spf-moss);color:#fff}',
+    '.spf-seg button:focus-visible{outline:3px solid var(--spf-sun);outline-offset:2px}',
+    '.spf[data-face=sky] .spf-seg,.spf[data-face=sky] .spf-lookup{display:none}',
+    '.spf[data-face=earth] .spf-flip{display:none}',
     '.spf-dock{position:absolute;left:0;right:0;bottom:calc(1rem + env(safe-area-inset-bottom,0px));',
     '  display:flex;align-items:center;justify-content:center;gap:1.1rem;pointer-events:none}',
     '.spf-dock>*{pointer-events:auto}',
@@ -304,6 +330,9 @@ var GeosonifyStarpinFlip = (function () {
     '  font-size:.58rem;opacity:.75;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.9);color:#fff;',
     '  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
     '.spf-credit a{color:inherit;pointer-events:auto}',
+    // With the sky under the map, the ground tiles' credit would name imagery that
+    // is not on screen; ours replaces it and credits what is.
+    '.spf[data-face=earth][data-imagery=sky] .leaflet-control-attribution{display:none}',
     '.spf-sheet{position:absolute;left:.6rem;right:.6rem;bottom:calc(5.4rem + env(safe-area-inset-bottom,0px));',
     '  max-width:26rem;margin:0 auto;padding:1rem 1.1rem .9rem;border-radius:20px;',
     '  background:rgba(12,16,28,.94);color:#E9E4D6;box-shadow:0 0 0 1px rgba(233,228,214,.14),',
@@ -379,19 +408,31 @@ var GeosonifyStarpinFlip = (function () {
       '<div class="spf-sheet" hidden></div>' +
       '<div class="spf-dock">' +
         '<button class="spf-round spf-locate" type="button" aria-label="Show where I am" aria-pressed="false">' + ICON_LOCATE + '</button>' +
+        '<div class="spf-seg" role="group" aria-label="What lies under the map">' +
+          '<button type="button" data-imagery="ground" aria-pressed="false">Ground</button>' +
+          '<button type="button" data-imagery="sky" aria-pressed="false">Sky</button>' +
+        '</div>' +
+        '<button class="spf-round spf-lookup" type="button" aria-label="Look up: turn the map over to see the sky as it is overhead">' + ICON_FLIP + '</button>' +
         '<button class="spf-flip" type="button">' + ICON_FLIP + '<span></span></button>' +
         '<button class="spf-round spf-info" type="button" aria-label="About this view">' + ICON_INFO + '</button>' +
       '</div>';
-    el.appendChild(earthEl); el.appendChild(skyEl); el.appendChild(cv); el.appendChild(ui);
+    // The sky sits UNDER the map: with the ground tiles faded out, the map's own
+    // lattice, dots and pins are drawn straight over the stars.
+    el.appendChild(skyEl); el.appendChild(earthEl); el.appendChild(cv); el.appendChild(ui);
     container.appendChild(el);
     function q(sel) { return ui.querySelector(sel); }
     var flipBtn = q('.spf-flip'), flipLabel = q('.spf-flip span'), surveyBtn = q('.spf-survey'),
         statusEl = q('.spf-status'), hintEl = q('.spf-hint'), sheet = q('.spf-sheet'),
         creditEl = q('.spf-credit'), locBtn = q('.spf-locate'), infoBtn = q('.spf-info'),
-        scaleBarEl = q('.spf-scale .bar'), u1 = q('.spf-scale .u1'), u2 = q('.spf-scale .u2');
+        scaleBarEl = q('.spf-scale .bar'), u1 = q('.spf-scale .u1'), u2 = q('.spf-scale .u2'),
+        segBtns = ui.querySelectorAll('.spf-seg button'), lookBtn = q('.spf-lookup');
 
     // ── state ──
-    var face = opts.face === 'earth' ? 'earth' : 'sky';
+    // face: 'earth' is the map, 'sky' is the turned-over view looking up.
+    // imagery: what lies under the map on the earth face, 'ground' or 'sky'.
+    var face = opts.face === 'sky' ? 'sky' : 'earth';
+    var imagery = opts.imagery === 'ground' ? 'ground' : 'sky';
+    var softNoted = false, mirrorNoted = false;
     var busy = false, zoomAnimating = false, destroyed = false;
     var sky = { ra: 0, dec: 0, asp: 1 };             // used when Aladin is absent
     var renderer = null, rendererKind = null, imageryTried = false, userZoomed = false;
@@ -399,12 +440,20 @@ var GeosonifyStarpinFlip = (function () {
     var fix = null, stars = [], finds = [], boxes = {}, fetching = null, streetsOn = true;
     var surveyIdx = 0, hintShown = false, selectedStar = null;
     try { var sv = store && store.getItem('starpin.flip.survey'); if (sv) surveyIdx = +sv || 0; } catch (e) {}
+    try { var im = store && store.getItem('starpin.flip.imagery'); if (!opts.imagery && (im === 'ground' || im === 'sky')) imagery = im; } catch (e) {}
 
     // ── Earth face ──
     var lat0 = opts.lat != null ? opts.lat : -43.5309, lon0 = opts.lon != null ? opts.lon : 172.6365;
     var earth = M.mount(earthEl, {
       lat: lat0, lon: lon0, zoom: opts.zoom || 16, storage: opts.storage,
-      onSelect: function (sel) { if (opts.onSelect) opts.onSelect(sel); },
+      onSelect: function (sel) {
+        if (sel && sel.kind === 'star' && sel.data) {
+          var mine = stars.filter(function (x) { return x.name === sel.data.name; })[0];
+          if (mine) { showStar(mine); return; }
+        }
+        if (!sel) closeSheet();
+        if (opts.onSelect) opts.onSelect(sel);
+      },
       onMove: function () { settle(); }
     });
     var lm = earth.leaflet;
@@ -448,7 +497,7 @@ var GeosonifyStarpinFlip = (function () {
       var c0 = renderer.getCenter();
       var cand = SA.createAladinRenderer(skyEl, {
         ra: c0[0], dec: c0[1], fovDeg: renderer.getFovDeg(), background: '#070A14',
-        survey: survey().id, src: absoluteUrl(opts.aladinSrc)
+        survey: survey().id, src: absoluteUrl(opts.aladinSrc), aladinOptions: opts.aladinOptions
       });
       cand.init().then(function (ok) {
         if (!ok || destroyed) { try { cand.destroy(); } catch (e) {} return; }
@@ -461,6 +510,7 @@ var GeosonifyStarpinFlip = (function () {
         renderer.setCenter(live.ra, live.dec);
         setSkyAsp(live.asp);                       // measured, not requested
         if (anchor && !userZoomed) anchor.skyAsp = live.asp;
+        if (face === 'earth' && imagery === 'sky') syncSkyToMap(true);
         applyFace(); drawNow();
       }).catch(function (err) {
         try { cand.destroy(); } catch (e) {}
@@ -514,10 +564,11 @@ var GeosonifyStarpinFlip = (function () {
     }
     // Ask for a scale, then MEASURE it and correct -- the same discipline as
     // geosonify-sky-zoom.js: trust the result, not the request.
+    var fovCorrection = 1;                           // what the last full match learned
     function setSkyAsp(asp) {
       sky.asp = asp;
       if (!renderer) return;
-      var fov = fovForAsp(asp, size());
+      var base = fovForAsp(asp, size()), fov = base * fovCorrection;
       renderer.setFovDeg(fov);
       for (var i = 0; i < 4; i++) {
         var got = affineAsp(skyAffine());
@@ -525,6 +576,13 @@ var GeosonifyStarpinFlip = (function () {
         fov *= asp / got;
         renderer.setFovDeg(fov);
       }
+      fovCorrection = fov / base;
+    }
+    // Every frame of a pan or pinch: reuse the learned correction, no measuring.
+    // The full match runs again when the map settles.
+    function setSkyAspQuick(asp) {
+      sky.asp = asp;
+      if (renderer) renderer.setFovDeg(fovForAsp(asp, size()) * fovCorrection);
     }
     function positionSky(ra, dec, asp) {
       sky = { ra: wrap360(ra), dec: dec, asp: asp };
@@ -754,12 +812,16 @@ var GeosonifyStarpinFlip = (function () {
         ctx.setLineDash([]);
       }
 
-      if (face === 'sky') drawSkyMarks(v, P);
+      drawSkyMarks(v, P);
       updateScale(v);
     }
 
     function drawSkyMarks(v, P) {
       var rPx = VISIT_R_ARCSEC / v.asp;
+      // On the ground the map draws dots, finds and your position itself; the
+      // rings are added only once they are big enough to say something about size.
+      var onGround = face === 'earth';
+      if (onGround && rPx < 4) return;
       stars.forEach(function (s) {
         var p = P(s.lat, s.lon);
         if (!p || p[0] < -60 || p[1] < -60 || p[0] > v.w + 60 || p[1] > v.h + 60) return;
@@ -785,6 +847,7 @@ var GeosonifyStarpinFlip = (function () {
         ctx.strokeStyle = '#F2DE5C'; ctx.lineWidth = 1.4; ctx.stroke();
         ctx.restore();
       });
+      if (onGround) return;
       finds.forEach(function (f) {
         var p = P(f.lat, f.lon);
         if (!p || p[0] < -20 || p[1] < -20 || p[0] > v.w + 20 || p[1] > v.h + 20) return;
@@ -829,6 +892,10 @@ var GeosonifyStarpinFlip = (function () {
     }
     function applyFace() {
       el.setAttribute('data-face', face);
+      el.setAttribute('data-imagery', imagery);
+      Array.prototype.forEach.call(segBtns, function (b) {
+        b.setAttribute('aria-pressed', b.getAttribute('data-imagery') === imagery ? 'true' : 'false');
+      });
       flipLabel.textContent = face === 'earth' ? 'Look up' : 'Look down';
       flipBtn.setAttribute('aria-label', face === 'earth'
         ? 'Look up: turn the map over to see the sky above these streets'
@@ -840,10 +907,12 @@ var GeosonifyStarpinFlip = (function () {
       surveyBtn.textContent = 'Sky: ' + survey().label;
       // Credit what is on screen, and only that. The renderer says what it owes:
       // the built-in one owes nothing, Aladin names CDS.
-      creditEl.style.display = face === 'earth' ? 'none' : '';
-      var att = (face === 'sky' && renderer && renderer.attribution) ? renderer.attribution() : null;
-      creditEl.innerHTML = 'Streets \u00A9 <a href="https://www.openstreetmap.org/copyright" target="_blank" ' +
-        'rel="noopener">OpenStreetMap</a> contributors' +
+      var skyShownHere = face === 'sky' || imagery === 'sky';
+      creditEl.style.display = skyShownHere ? '' : 'none';
+      var skyShown = face === 'sky' || imagery === 'sky';
+      var att = (skyShown && renderer && renderer.attribution) ? renderer.attribution() : null;
+      creditEl.innerHTML = 'Streets \u00A9 <a href="https://www.openstreetmap.org/copyright" ' +
+        'target="_blank" rel="noopener">OpenStreetMap</a> contributors' +
         (att ? ' \u00B7 <a href="' + esc(att.href) + '" target="_blank" rel="noopener">' + esc(att.text) +
                '</a> \u00B7 ' + esc(survey().credit) : '');
       if (opts.onFace) opts.onFace(face);
@@ -859,6 +928,98 @@ var GeosonifyStarpinFlip = (function () {
       if (viewWidthM(v) > STREET_MAX_VIEW_M) return false;
       return !!streetWays(v);
     }
+    // ── the sky under the map ──
+    //
+    // On the earth face the sky is the ground's own shadow: centred on the map's
+    // centre, at the map's exact scale, and MIRRORED east-west so that every star
+    // lies on its starpin and every ring circles its own star. The map drives;
+    // the sky follows, and never takes a touch.
+    function mirrorTransform() { return 'translateX(' + size().w + 'px) scaleX(-1)'; }
+    function mirrorStatic() {
+      skyEl.style.transition = 'opacity .45s ease';
+      skyEl.style.transformOrigin = '0 0';
+      skyEl.style.transform = mirrorTransform();
+    }
+    function unmirror() { skyEl.style.transformOrigin = '50% 50%'; skyEl.style.transform = 'none'; }
+    var skyOpacity = 1;
+    // MEASURED, not assumed: the map is Web Mercator and every Aladin projection
+    // is centred on the view, so they agree at the centre and drift apart with
+    // distance from it. Across the screen: 0.02 px at 700 m wide, 0.7 px at
+    // 22 km, 2.5 px at 86 km, 9 px at 345 km, 40 px at 1400 km (Aladin's own
+    // MER is no better; it is an oblique Mercator about the view centre). So the
+    // sky lies under the map only while it lines up, and bows out beyond that.
+    var ALIGN_FULL_M = 60000, ALIGN_GONE_M = 400000;
+    var wideNoted = false;
+    function alignment(asp) {
+      var w = asp * size().w * M_PER_ARCSEC;
+      if (w <= ALIGN_FULL_M) return 1;
+      if (w >= ALIGN_GONE_M) return 0;
+      return 1 - Math.log(w / ALIGN_FULL_M) / Math.log(ALIGN_GONE_M / ALIGN_FULL_M);
+    }
+    function softness(asp) {
+      // Past what the survey can resolve the sky goes soft, and says so once.
+      var fl = floorAsp(survey());
+      skyOpacity = asp >= fl ? 1 : Math.max(0.45, Math.sqrt(asp / fl));
+      var al = alignment(asp);
+      if (al < 1 && !wideNoted && imagery === 'sky' && face === 'earth') {
+        wideNoted = true;
+        status('The sky fades out this far out: map and sky stop lining up', 4000);
+      }
+      skyOpacity *= al;
+      if (skyOpacity < 1 && !softNoted && imagery === 'sky' && face === 'earth') {
+        softNoted = true;
+        status('The sky is softer than the ground this close in', 3500);
+      }
+      return skyOpacity;
+    }
+    function syncSkyToMap(full) {
+      if (face !== 'earth' || imagery !== 'sky' || !renderer) return;
+      var c = lm.getCenter(), asp = earthAsp();
+      renderer.setCenter(wrap360(c.lng), c.lat);
+      if (full) setSkyAsp(asp); else setSkyAspQuick(asp);
+      if (!busy && !zoomAnimating) skyEl.style.opacity = String(softness(asp));
+    }
+    function setImagery(k, quiet) {
+      imagery = k === 'ground' ? 'ground' : 'sky';
+      try { if (store) store.setItem('starpin.flip.imagery', imagery); } catch (e) {}
+      earth.setPalette(imagery === 'sky' ? 'imagery' : null);
+      applyFace();
+      if (face !== 'earth') return;
+      if (imagery === 'sky') {
+        startSky();
+        mirrorStatic();
+        syncSkyToMap(true);
+        setOpacity(skyEl, softness(earthAsp()), 450);
+        if (!mirrorNoted && !quiet) {
+          mirrorNoted = true;
+          hint('The sky as it falls on the ground: mirrored east\u2013west, so every star sits on its starpin.', 5200);
+        }
+      } else {
+        setOpacity(skyEl, 0, 450);
+      }
+      schedule(); settle();
+    }
+
+    // The turn. The streets always turn over. When the sky is already lying under
+    // the map it turns WITH them: a mirrored layer turned half a revolution about
+    // the north-south axis is the sky as seen from below, so the imagery arrives
+    // the right way round without ever being swapped.
+    function turnLayers(ms, withSky, skyEndsMirrored) {
+      if (withSky) {
+        skyEl.style.transition = 'none';
+        skyEl.style.transformOrigin = '50% 50%';
+        skyEl.style.transform = 'perspective(1600px) rotateY(' + (skyEndsMirrored ? 0 : 180) + 'deg)';
+        void skyEl.offsetWidth;
+        skyEl.style.transition = 'transform ' + ms + 'ms cubic-bezier(.65,0,.35,1), opacity .45s ease';
+        skyEl.style.transform = 'perspective(1600px) rotateY(' + (skyEndsMirrored ? 180 : 360) + 'deg)';
+      }
+      return turnStreets(ms).then(function () {
+        if (!withSky) return;
+        skyEl.style.transition = 'none';
+        if (skyEndsMirrored) mirrorStatic(); else unmirror();
+      });
+    }
+
     function turnStreets(ms) {
       cv.style.transformOrigin = '50% 50%';
       cv.style.transition = 'transform ' + ms + 'ms cubic-bezier(.65,0,.35,1)';
@@ -884,20 +1045,30 @@ var GeosonifyStarpinFlip = (function () {
       if (busy || face === 'sky') return Promise.resolve(face);
       busy = true; el.setAttribute('data-busy', '');
       closeSheet();
+      if (o.center) { lm.setView([o.center.lat, o.center.lon], lm.getZoom(), { animate: false }); drawNow(); }
       var v = viewState();                            // the ground, matched
       var turn = canTurn(v);
-      sky = { ra: wrap360(v.lon), dec: v.lat, asp: v.asp };
+      var skyUnder = imagery === 'sky';               // already lying under the map, mirrored
       startSky();
       positionSky(v.lon, v.lat, v.asp);
       anchor = { earthAsp: v.asp, skyAsp: v.asp };
       userZoomed = false;
-      setOpacity(earthEl, 0, turn ? 320 : 450);
-      if (!turn) setOpacity(skyEl, 1, 450);
-      return wait(turn ? 330 : 460).then(function () {
-        if (turn) return turnStreets(560);
-      }).then(function () {
+      var ready;
+      if (turn) {
+        setOpacity(earthEl, 0, 320);
+        if (skyUnder) setOpacity(skyEl, 1, 320);      // soft or not, it arrives whole
+        ready = wait(330).then(function () { return turnLayers(560, skyUnder, false); });
+      } else {
+        // Nothing to turn: a plain crossfade, and the sky unmirrored while hidden.
+        ready = (skyUnder ? (setOpacity(skyEl, 0, 200), wait(210)) : Promise.resolve()).then(function () {
+          unmirror();
+          setOpacity(earthEl, 0, 450); setOpacity(skyEl, 1, 450);
+          return wait(460);
+        });
+      }
+      return ready.then(function () {
         face = 'sky'; applyFace(); drawNow();         // same pixels, now in the sky's projection
-        if (turn) { setOpacity(skyEl, 1, 650); return wait(660); }
+        if (turn && !skyUnder) { unmirror(); setOpacity(skyEl, 1, 650); return wait(660); }
       }).then(function () {
         var fl = floorAsp(survey());
         if (v.asp < fl) {
@@ -923,6 +1094,7 @@ var GeosonifyStarpinFlip = (function () {
       if (anchor && anchor.skyAsp > 0) target = anchor.earthAsp * (userZoomed ? s0.asp / anchor.skyAsp : 1);
       // Retrace in the sky first, so the turn lands on exactly that scale.
       var pre = Math.abs(target / s0.asp - 1) > 0.002 ? animateSkyAsp(s0.asp, target, 750) : Promise.resolve();
+      var skyUnder = imagery === 'sky';               // the sky stays, mirrored, under the map
       var v, zoom, turn;
       return pre.then(function () {
         v = viewState();
@@ -933,13 +1105,18 @@ var GeosonifyStarpinFlip = (function () {
         lm.options.zoomSnap = 0;                      // an exact, fractional zoom
         lm.setView([v.lat, v.lon], zoom, { animate: false });
         lm.options.zoomSnap = snap;
-        setOpacity(skyEl, 0, turn ? 320 : 450);
-        if (!turn) setOpacity(earthEl, 1, 450);
-        return wait(turn ? 330 : 460);
-      }).then(function () {
-        if (turn) return turnStreets(560);
+        if (turn) {
+          if (!skyUnder) setOpacity(skyEl, 0, 320);
+          return wait(330).then(function () { return turnLayers(560, skyUnder, true); });
+        }
+        setOpacity(skyEl, 0, 450); setOpacity(earthEl, 1, 450);
+        return wait(460);
       }).then(function () {
         face = 'earth'; applyFace(); drawNow();
+        if (skyUnder) {
+          mirrorStatic(); syncSkyToMap(true);
+          setOpacity(skyEl, softness(earthAsp()), 500);
+        }
         if (turn) { setOpacity(earthEl, 1, 500); return wait(510); }
       }).then(function () {
         if (o.center && earth.dropPin) earth.dropPin(o.center.lat, o.center.lon);
@@ -959,7 +1136,8 @@ var GeosonifyStarpinFlip = (function () {
       var v = viewState();
       ensureStreets(v); ensureStars(v); schedule();
     }
-    lm.on('move', function () { if (face === 'earth' && !busy) schedule(); });
+    lm.on('move', function () { if (face === 'earth' && !busy) { syncSkyToMap(false); schedule(); } });
+    lm.on('moveend', function () { if (face === 'earth' && !busy && !zoomAnimating) syncSkyToMap(true); });
     lm.on('zoomanim', function (e) {
       if (face !== 'earth' || busy) return;
       // Ride Leaflet's own zoom animation instead of jumping at the end of it.
@@ -970,15 +1148,26 @@ var GeosonifyStarpinFlip = (function () {
       cv.style.transformOrigin = '0 0';
       cv.style.transition = 'transform .25s cubic-bezier(0,0,.25,1)';
       cv.style.transform = 'translate(' + tl.x + 'px,' + tl.y + 'px) scale(' + s + ')';
+      if (imagery === 'sky') {
+        // The mirrored sky rides the same animation: zoom applied OUTSIDE the mirror.
+        skyEl.style.transformOrigin = '0 0';
+        skyEl.style.transition = 'transform .25s cubic-bezier(0,0,.25,1), opacity .45s ease';
+        skyEl.style.transform = 'translate(' + tl.x + 'px,' + tl.y + 'px) scale(' + s + ') ' + mirrorTransform();
+      }
     });
     lm.on('zoomend', function () {
       if (!zoomAnimating) return;
       zoomAnimating = false;
       cv.style.transition = 'none'; cv.style.transform = 'none'; cv.style.transformOrigin = '50% 50%';
+      if (imagery === 'sky') { skyEl.style.transition = 'none'; mirrorStatic(); syncSkyToMap(true); }
       drawNow();
     });
 
     flipBtn.addEventListener('click', function () { flip(); });
+    lookBtn.addEventListener('click', function () { toSky(); });
+    Array.prototype.forEach.call(segBtns, function (b) {
+      b.addEventListener('click', function () { if (!busy) setImagery(b.getAttribute('data-imagery')); });
+    });
     surveyBtn.addEventListener('click', function () {
       surveyIdx = (surveyIdx + 1) % SURVEYS.length;
       var sv2 = survey();
@@ -1045,12 +1234,13 @@ var GeosonifyStarpinFlip = (function () {
       sheet.innerHTML = '<h3>' + esc(s.name || 'Starpin') + '</h3>' +
         '<div class="sub">' + esc(mag) + ' \u00B7 on the ground at ' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
         '<div class="reach">' + reachIcon(s.reach) + '<p>' + reachText(s.reach) + '</p></div>' + dist +
-        '<div class="row"><button type="button" data-a="down">Look down here</button>' +
+        '<div class="row"><button type="button" data-a="down">' + (face === 'sky' ? 'Look down here' : 'Look up here') + '</button>' +
         (opts.onSelect ? '<button type="button" class="quiet" data-a="pick">Choose this starpin</button>' : '') +
         '<button type="button" class="quiet" data-a="close">Close</button></div>';
       sheet.dataset.kind = 'star'; sheet.hidden = false;
       sheet.querySelector('[data-a=down]').onclick = function () {
-        toEarth({ center: { lat: s.lat, lon: s.lon } });
+        var ctr = { center: { lat: s.lat, lon: s.lon } };
+        if (face === 'sky') toEarth(ctr); else toSky(ctr);
       };
       var pk = sheet.querySelector('[data-a=pick]');
       if (pk) pk.onclick = function () { opts.onSelect({ kind: 'star', data: s }); closeSheet(); };
@@ -1094,7 +1284,7 @@ var GeosonifyStarpinFlip = (function () {
 
     var ro = null;
     if (win.ResizeObserver) {
-      ro = new win.ResizeObserver(function () { earth.invalidate(); schedule(); });
+      ro = new win.ResizeObserver(function () { earth.invalidate(); if (face === 'earth' && imagery === 'sky') { mirrorStatic(); syncSkyToMap(true); } schedule(); });
       ro.observe(el);
     }
 
@@ -1110,6 +1300,10 @@ var GeosonifyStarpinFlip = (function () {
       positionSky(sky.ra, sky.dec, Math.max(a0, fl0));
       anchor = { earthAsp: a0, skyAsp: readSky().asp };
       drawNow();
+    } else {
+      // The default: the map, with whatever lies under it -- the sky, unless the
+      // person last chose the ground.
+      setImagery(imagery, true);
     }
     setTimeout(function () { earth.invalidate(); settle(); }, 60);
 
@@ -1117,6 +1311,7 @@ var GeosonifyStarpinFlip = (function () {
       el: el, earth: earth, leaflet: lm,
       face: function () { return face; },
       flip: flip, toSky: toSky, toEarth: toEarth,
+      imagery: function () { return imagery; }, setImagery: function (k) { setImagery(k, true); },
       renderer: function () { return renderer; }, rendererKind: function () { return rendererKind; },
       setFix: setFix, recentre: recentre,
       setStars: setStars, stars: function () { return stars.slice(); },
@@ -1137,7 +1332,7 @@ var GeosonifyStarpinFlip = (function () {
   }
 
   return {
-    VERSION: '0.1', mount: mount, SURVEYS: SURVEYS, TIERS: TIERS, VISIT_R_ARCSEC: VISIT_R_ARCSEC,
+    VERSION: '0.2', mount: mount, SURVEYS: SURVEYS, TIERS: TIERS, VISIT_R_ARCSEC: VISIT_R_ARCSEC,
     wrap360: wrap360, wrapNear: wrapNear, aspForZoom: aspForZoom, zoomForAsp: zoomForAsp,
     skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, tierForView: tierForView,
     classOf: classOf, overpassQuery: overpassQuery, parseOverpass: parseOverpass,

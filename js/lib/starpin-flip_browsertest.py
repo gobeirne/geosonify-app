@@ -88,45 +88,94 @@ CMP = '''() => { var r = flip.renderer(), v = flip.view(), out = 0;
   });
   return { worst: out, kind: flip.rendererKind() }; }'''
 
+ALIGN = """(function () { var r = flip.renderer(), lm = flip.leaflet, v = flip.view(), W = v.w, H = v.h, worst = 0;
+  for (var fx = 0.05; fx < 1; fx += 0.15) for (var fy = 0.05; fy < 1; fy += 0.15) {
+    var ll = lm.containerPointToLatLng([W * fx, H * fy]);
+    var p = r.project(((ll.lng % 360) + 360) % 360, ll.lat);    // the sky's own pixel...
+    if (p) worst = Math.max(worst, Math.abs((W - p[0]) - W * fx), Math.abs(p[1] - H * fy));  // ...mirrored
+  }
+  return worst; })()"""
+
 with sync_playwright() as p:
     print('\nA  opening on the sky, imagery swaps in behind the built-in renderer')
-    b, pg = page(p, 'z=16')
+    b, pg = page(p, 'z=16&face=sky')
     st = pg.evaluate('({kind: flip.rendererKind(), face: flip.face(), anchor: flip._test.anchor(), v: flip.view()})')
     ok('face is sky', st['face'] == 'sky')
     ok('Aladin renderer is live', st['kind'] == 'aladin', st['kind'])
     ok('pulled back to the DSS2 floor (0.2667"/px)', abs(st['v']['asp'] - 0.8/3) / (0.8/3) < 0.002, st['v']['asp'])
     ok('anchor remembers the ground scale for zoom 16', abs(st['anchor']['earthAsp'] - 1296000*0.72532/(256*65536)) < 1e-4, st['anchor'])
-    pg.screenshot(path='test-out/v2-sky-open.png')
+    pg.screenshot(path='test-out/a-sky-open.png')
     b.close()
 
-    for q, label in (('z=13&face=earth', 'Aladin'), ('z=13&face=earth&noal=1', 'built-in')):
-        print('\nB/C  the turn lands pixel for pixel (' + label + ' renderer)')
+    print('\nF  the sky under the map (the default view)')
+    b, pg = page(p, 'z=16')
+    st = pg.evaluate("({face: flip.face(), imagery: flip.imagery(), t: flip.el.querySelector('.spf-sky').style.transform})")
+    ok('opens on the map with the sky beneath', st['face'] == 'earth' and st['imagery'] == 'sky', st)
+    ok('the sky layer is mirrored', 'scaleX(-1)' in st['t'], st['t'])
+    ok('the ground tiles are hidden', pg.evaluate("getComputedStyle(document.querySelector('.leaflet-tile-pane')).opacity") == '0')
+    pg.screenshot(path='test-out/f-ground-sky-z16.png')
+    for z in (19, 16, 13, 11):
+        pg.evaluate('flip.leaflet.setView(flip.leaflet.getCenter(), %d, {animate:false})' % z); pg.wait_for_timeout(250)
+        w = pg.evaluate(ALIGN)
+        ok('zoom %d: every sky pixel lies under its map pixel, worst %.3f px' % (z, w), w < 1.0)
+    pg.evaluate('flip.leaflet.setView(flip.leaflet.getCenter(), 7, {animate:false})'); pg.wait_for_timeout(700)
+    op = float(pg.evaluate("flip.el.querySelector('.spf-sky').style.opacity"))
+    ok('345 km across: the sky has bowed out as the projections part (opacity %.2f)' % op, op < 0.5)
+    pg.evaluate('flip.leaflet.setView([-43.5309, 172.6365], 15, {animate:false})'); pg.wait_for_timeout(300)
+    pg.evaluate('flip.leaflet.panBy([120, -80], {animate:false})'); pg.wait_for_timeout(300)
+    ok('after a pan: worst %.3f px' % pg.evaluate(ALIGN), pg.evaluate(ALIGN) < 1.0)
+    # Wait for Leaflet to say the zoom is over, not for a guessed interval: under a
+    # software renderer the animation can start several hundred ms late.
+    pg.evaluate("window.__zend = false; flip.leaflet.once('zoomend', function () { setTimeout(function () { window.__zend = true; }, 50); }); flip.leaflet.zoomIn(1, {animate:true})")
+    pg.wait_for_function('window.__zend', timeout=15000)
+    ok('after an animated zoom: worst %.3f px' % pg.evaluate(ALIGN), pg.evaluate(ALIGN) < 1.0)
+    ok('...and the layer is back to a plain mirror', 'scaleX(-1)' in pg.evaluate("flip.el.querySelector('.spf-sky').style.transform")
+       and 'scale(' not in pg.evaluate("flip.el.querySelector('.spf-sky').style.transform").replace('scaleX', ''))
+
+    print('\nG  the Ground/Sky switch')
+    pg.click('.spf-seg button[data-imagery=ground]'); pg.wait_for_timeout(2000)   # let the crossfade finish
+    ok('Ground: the tiles come back', pg.evaluate("getComputedStyle(document.querySelector('.leaflet-tile-pane')).opacity") == '1',
+       pg.evaluate("getComputedStyle(document.querySelector('.leaflet-tile-pane')).opacity"))
+    ok('Ground: the sky is gone', float(pg.evaluate("getComputedStyle(flip.el.querySelector('.spf-sky')).opacity")) < 0.01)
+    pg.click('.spf-seg button[data-imagery=sky]'); pg.wait_for_timeout(2000)
+    ok('Sky again: aligned, worst %.3f px' % pg.evaluate(ALIGN), pg.evaluate(ALIGN) < 1.0)
+    b.close()
+
+    for q, label in (('z=13&imagery=ground', 'ground under, Aladin'), ('z=13', 'sky under, Aladin'),
+                     ('z=13&noal=1', 'sky under, built-in')):
+        print('\nB/C  the turn lands pixel for pixel (' + label + ')')
         b, pg = page(p, q)
         pts = [[-43.5309 + dy, 172.6365 + dx] for dy in (-0.01, 0, 0.012) for dx in (-0.015, 0, 0.02)]
         before = pg.evaluate('(pts) => pts.map(q => { var e = flip.leaflet.latLngToContainerPoint(q); return [e.x, e.y]; })', pts)
         W = pg.evaluate('flip.view().w')
-        pg.evaluate('flip.toSky()')
-        if label == 'Aladin':
-            pg.wait_for_timeout(330 + 290); pg.screenshot(path='test-out/v2-midturn.png')
-        pg.wait_for_timeout(2600)
-        info = pg.evaluate('({kind: flip.rendererKind(), asp: flip.view().asp})')
+        if label == 'sky under, Aladin':
+            pg.evaluate('void flip.toSky()')
+            for i, t in enumerate((250, 330, 200)):
+                pg.wait_for_timeout(t); pg.screenshot(path='test-out/turn-%d.png' % i)
+            pg.wait_for_timeout(2400)
+        else:
+            pg.evaluate('flip.toSky()'); pg.wait_for_timeout(600)
+        info = pg.evaluate("({kind: flip.rendererKind(), asp: flip.view().asp, t: flip.el.querySelector('.spf-sky').style.transform})")
         after = pg.evaluate('(pts) => pts.map(q => flip._test.project(q[0], q[1]))', pts)
         seam = max(max(abs((W - e[0]) - s[0]), abs(e[1] - s[1])) for e, s in zip(before, after))
-        ok(label + ': the expected renderer is live', info['kind'] == ('aladin' if label == 'Aladin' else 'builtin'), info)
-        ok(label + ': no pull-back needed at zoom 13', info['asp'] > 0.8/3, info)
+        ok(label + ': the expected renderer is live', info['kind'] == ('builtin' if 'built-in' in label else 'aladin'), info)
+        ok(label + ': looking up, the sky is the right way round', info['t'] in ('', 'none'), info['t'])
         ok(label + ': mirrored ground and sky drawing agree to %.3f px' % seam, seam < 1.0)
         cmp = pg.evaluate(CMP)
         ok(label + ': our street projection matches renderer.project to %.2g px' % cmp['worst'], cmp['worst'] < 0.05, cmp)
-        if label == 'Aladin': pg.screenshot(path='test-out/v2-sky-z13.png')
+        pg.evaluate('flip.toEarth()'); pg.wait_for_timeout(600)
+        if 'sky under' in label:
+            ok(label + ': back on the ground, the sky is mirrored and aligned (worst %.3f px)' % pg.evaluate(ALIGN),
+               pg.evaluate(ALIGN) < 1.0 and 'scaleX(-1)' in pg.evaluate("flip.el.querySelector('.spf-sky').style.transform"))
+        ok(label + ': back to zoom 13 exactly', abs(pg.evaluate('flip.leaflet.getZoom()') - 13) < 1e-6)
         b.close()
 
     print('\nD  round trips')
-    b, pg = page(p, 'z=17')
+    b, pg = page(p, 'z=17&face=sky')
     pg.evaluate('flip.toEarth()'); pg.wait_for_timeout(3000)
     ok('sky (pulled back) -> look down returns to zoom 17 exactly', abs(pg.evaluate('flip.leaflet.getZoom()') - 17) < 1e-6, pg.evaluate('flip.leaflet.getZoom()'))
-    pg.screenshot(path='test-out/v2-earth-z17.png')
+    pg.screenshot(path='test-out/d-earth-z17.png')
     pg.evaluate('flip.toSky()'); pg.wait_for_timeout(3200)
-    # Aladin wanders by itself (the 1.77x Geosonify saw). No person zoomed.
     pg.evaluate('(function(){ var r = flip.renderer(); r.setFovDeg(r.getFovDeg() * 1.77); })()')
     pg.evaluate('flip.toEarth()'); pg.wait_for_timeout(3000)
     ok('a renderer drifting on its own does NOT move the ground', abs(pg.evaluate('flip.leaflet.getZoom()') - 17) < 1e-6, pg.evaluate('flip.leaflet.getZoom()'))
@@ -141,15 +190,17 @@ with sync_playwright() as p:
     ok('three more round trips do not drift (%.6f)' % z2, abs(z2 - z) < 1e-6)
     b.close()
 
-    print('\nE  tapping a starpin on the sky')
-    b, pg = page(p, 'z=16')
-    xy = pg.evaluate('(function(){ var v = flip.view(); var c = flip.stars().map(function (s) { return flip._test.project(s.lat, s.lon); }).filter(function (q) { return q && q[0] > 60 && q[0] < v.w - 60 && q[1] > 120 && q[1] < v.h - 200; }); return c[0]; })()')
-    print('   tapping at', xy)
-    box = pg.evaluate('(function(){ var r = flip.el.getBoundingClientRect(); return [r.left, r.top]; })()')
-    pg.mouse.click(box[0] + xy[0], box[1] + xy[1]); pg.wait_for_timeout(400)
-    ok('sheet opened for that star', pg.evaluate("!document.querySelector('.spf-sheet').hidden"))
-    pg.screenshot(path='test-out/v2-star-sheet.png')
-    b.close()
+    print('\nE  tapping a starpin')
+    for q, where, label in (('z=16&face=sky', 'sky', 'Look down here'), ('z=17', 'ground', 'Look up here')):
+        b, pg = page(p, q)
+        xy = pg.evaluate('(function(){ var v = flip.view(); var c = flip.stars().map(function (s) { return flip._test.project(s.lat, s.lon); }).filter(function (q) { return q && q[0] > 60 && q[0] < v.w - 60 && q[1] > 120 && q[1] < v.h - 200; }); return c[0]; })()')
+        box = pg.evaluate('(function(){ var r = flip.el.getBoundingClientRect(); return [r.left, r.top]; })()')
+        pg.mouse.click(box[0] + xy[0], box[1] + xy[1]); pg.wait_for_timeout(400)
+        shown = pg.evaluate("!document.querySelector('.spf-sheet').hidden")
+        ok('on the %s: the sheet opened, offering "%s"' % (where, label),
+           shown and label in pg.evaluate("document.querySelector('.spf-sheet').textContent"))
+        pg.screenshot(path='test-out/e-sheet-%s.png' % where)
+        b.close()
 
 print('\npage errors:', errs or 'none')
 print('%d passed, %d failed' % (pass_[0], fail_[0]))
