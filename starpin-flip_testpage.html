@@ -32,7 +32,8 @@
   }
   window.flip = GeosonifyStarpinFlip.mount(document.getElementById('stage'), {
     lat: +(qs.get('lat') || -43.5309), lon: +(qs.get('lon') || 172.6365), zoom: +(qs.get('z') || 16),
-    face: qs.get('face') || 'sky', aladinSrc: qs.get('noal') ? '/nope.js' : './node_modules/aladin-lite/dist/aladin.js',
+    face: qs.get('face') || undefined, imagery: qs.get('imagery') || undefined,
+    aladinOptions: qs.get('proj') ? { projection: qs.get('proj') } : undefined, aladinSrc: qs.get('noal') ? '/nope.js' : './node_modules/aladin-lite/dist/aladin.js',
     lookupStars: lookupStars, storage: null, onSelect: function (s) { window.lastSelect = s; }
   });
 </script></body></html>

@@ -15,7 +15,8 @@
 
   URL options:  ?at=-43.5309,172.6365   start here instead of the stand-in place
                 &z=17                   Earth zoom that the first view matches
-                &face=earth             open on the ground instead of the sky
+                &imagery=ground         the ground's own imagery under the map, not the sky
+                &face=sky               open looking up, turned over
 -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -48,7 +49,7 @@
 <div id="intro" aria-live="polite">
   <div class="mark">starpin<b>!</b></div>
   <h1>Every star already has a place on Earth</h1>
-  <p>These are the stars above these streets, drawn at one scale.</p>
+  <p>The sky above these streets, laid on the ground beneath them, at one scale.</p>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -75,7 +76,8 @@
   var flip = GeosonifyStarpinFlip.mount(document.getElementById('stage'), {
     lat: hasAt ? at[0] : -43.5309, lon: hasAt ? at[1] : 172.6365,
     zoom: +qs.get('z') || 16,
-    face: qs.get('face') === 'earth' ? 'earth' : 'sky'
+    face: qs.get('face') === 'sky' ? 'sky' : 'earth',
+    imagery: qs.get('imagery') === 'ground' ? 'ground' : undefined
   });
   window.starpinFlip = flip;                     // for the console
 
