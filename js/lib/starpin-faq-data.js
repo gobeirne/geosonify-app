@@ -5,7 +5,9 @@
   To translate: copy this file, change STARPIN_FAQ.lang, replace the 'q' and 'a'
   strings, keep the structure identical, and load your translated file instead.
 
-  Tone: lead with the wonder, then how to play, then plain-language privacy.
+  Tone: clear, conversational, and lightly curious. Let the idea supply the
+  interest rather than overselling it. Explain how to play, then describe
+  privacy in plain language.
   The privacy answers are held to a "literally true" standard - they must stay
   accurate for the current provisional trial. Deep technical detail belongs in a
   separate "under the hood" page, not here. If the code changes in a way that
@@ -21,111 +23,164 @@
 
       {
         id: 'the-strange-idea',
-        title: 'The strange idea',
+        title: 'How Starpin works',
         items: [
           {
             id: 'what-is-starpin',
             q: 'What is Starpin?',
-            a: `<p>Starpin is a way of turning the sky into places you can actually visit.</p>
-<p>Every star can be matched to a point on Earth. As the planet turns, there's a moment each day when that star stands directly overhead at its place. Starpin puts those places on the map, so you can go and find them.</p>
-<p>Some are in parks. Some are beside roads. Some are on mountaintops, farms, beaches, or in the middle of nowhere. Some will be wonderfully inconvenient. When you reach one, you can bag it and add it to your own Starpin log.</p>`
+            a: `<p>Starpin maps stars to places on Earth.</p>
+<p>Every star can be matched to a point on the ground. As the Earth turns, there is a moment each day when the star is directly overhead at that point. Starpin puts these places on a map so you can visit and collect them.</p>
+<p>A starpin might fall in a park, beside a road, on a beach, on a farm, or somewhere much harder to reach. Some will be wonderfully inconvenient. When you reach one, you can bag it and add it to your Starpin log.</p>`
           },
           {
             id: 'how-map-works',
             q: 'How does the map work?',
-            a: `<p>Underneath Starpin is a way of dividing up the whole Earth called HEALPix.</p>
-<p>Latitude and longitude drape a grid of lines over the planet, but those lines bunch up and get squashed near the poles. HEALPix does something cleverer: it covers the Earth in equal-area, diamond-shaped pieces that stay the same size wherever they are on the globe.</p>
-<p>Starpin uses that hidden grid to give the stars their places on the ground.</p>`
+            a: `<p>Starpin uses a system called HEALPix to divide the whole Earth into a grid.</p>
+<p>Lines of longitude converge towards the poles, so an ordinary latitude-longitude grid does not divide the Earth evenly. HEALPix covers it with equal-area, diamond-shaped pieces instead. Each piece has the same area, wherever it lies on the globe.</p>
+<p>This grid is what Starpin uses to match stars to places on the ground.</p>`
           },
           {
             id: 'what-is-cornerstone',
             q: 'What is a cornerstone?',
-            a: `<p>A cornerstone is one of the special points where the corners of those diamond pieces meet - the bones of the grid.</p>
-<p>Starpins come from stars. Cornerstones come straight from the geometry of the Earth-grid itself, so you can collect them too. There's something pleasing about standing on a perfectly ordinary patch of pavement and knowing that, mathematically, several pieces of the planet meet under your feet.</p>`
+            a: `<p>A cornerstone is a point where the corners of the HEALPix grid pieces meet.</p>
+<p>Starpins come from stars; cornerstones come from the geometry of the grid itself. You can collect both. A cornerstone may look like an ordinary patch of pavement or field, but it marks an exact meeting point in the grid.</p>`
           },
           {
             id: 'what-are-tiers',
             q: 'What are tiers?',
-            a: `<p>The grid comes in different levels of detail, which Starpin calls tiers.</p>
-<p>At a low tier the Earth is split into a small number of enormous pieces. Climb through the tiers and each piece divides again, so the grid gets finer and the cornerstones grow closer together. It's a bit like zooming into a map - except the grid itself gets richer the further in you go. A low-tier cornerstone belongs to a sparse, planet-wide pattern; higher-tier ones are more common and more closely spaced.</p>`
+            a: `<p>Tiers are different levels of detail in the grid.</p>
+<p>At a low tier, the Earth is divided into a small number of very large pieces. At each higher tier, every piece divides again. The grid becomes finer and its cornerstones become more closely spaced. Low-tier cornerstones are part of a sparse, planet-wide pattern; higher-tier ones are more numerous and usually easier to reach.</p>`
           }
         ]
       },
 
+
+      {
+        id: 'the-view',
+        title: 'The map and the sky',
+        items: [
+          {
+            id: 'what-am-i-seeing',
+            q: 'What am I looking at?',
+            a: `<p>A map of the ground, with the sky laid underneath it.</p>
+<p>Switch between <strong>Ground</strong> and <strong>Sky</strong> to choose what lies under the streets: aerial imagery, or a photograph of the stars whose starpins are on this patch of ground. Both are drawn at the same scale: one arcsecond of sky is about 31 metres of ground, wherever you are.</p>
+<p>At street level you are looking at a very small piece of sky. A human hair held at arm's length covers about 20 arcseconds, or roughly 600 metres of ground.</p>`
+          },
+          {
+            id: 'mirrored',
+            q: 'Why is the sky mirrored?',
+            a: `<p>Because it is lying on the ground. Looking up, east is on your left; on a map, east is on the right. To make every star sit exactly on its starpin, the sky is flipped east to west, the way a picture on a glass ceiling would look from above.</p>
+<p>This means constellations appear reversed compared with the real sky. Tap the <strong>Look up</strong> button to turn the view over and see the sky the right way round, as it would appear overhead.</p>`
+          },
+          {
+            id: 'the-circles',
+            q: 'What are the circles and glows?',
+            a: `<p><strong>Yellow rings</strong> are starpins. Each ring is the catch circle: 3 arcseconds of sky, or about 93 metres of ground. Get within it and the visit counts. Tap a star to see whether a mapped street or path passes through its circle. That comes from OpenStreetMap, so treat it as a hint rather than a promise.</p>
+<p><strong>Amber glows</strong> are cornerstones. The rarer the cornerstone, the larger and brighter its glow, because rarer ones are spread further apart.</p>
+<p>Anything you have already bagged turns <strong>green</strong>, and the <strong>blue dot</strong> is you.</p>`
+          },
+          {
+            id: 'blurry-sky',
+            q: 'Why do the stars look blurry close up?',
+            a: `<p>The sky photographs come from sky surveys, whose detail runs out long before a map's does. Each pixel of the survey covers about 25 metres of ground, so at street level the stars go soft.</p>
+<p>A bright star also looks bigger than a faint one. That is the telescope, not the star: its light spreads further across the photograph. The star itself is far too small to see as a disc.</p>`
+          },
+          {
+            id: 'four-words',
+            q: 'What are the four words?',
+            a: `<p>They are another way of writing where you are. Starpin turns a place into four words from the BIP39 wordlist, an open list originally designed for cryptocurrency wallets.</p>
+<p>It is not what3words. The list is free to use, anyone can decode the words, and they come in ten languages. Starpin uses your device's language where it can.</p>
+<p>You can paste almost anything into the address box: four words in any of those languages, ordinary coordinates, a Google or Apple Maps link, or a Geosonify code. Starpin works out what it is and takes you there.</p>`
+          },
+          {
+            id: 'compass',
+            q: 'Why does it ask about motion and orientation?',
+            a: `<p>So Starpin can point you towards a target from the way you are facing. The compass is on by default.</p>
+<p>On an iPhone, the permission can only be requested after you tap something, so Starpin asks the first time you tap. Depending on your version of iOS, it may ask again on later visits. You can turn the compass off with the <strong>Compass</strong> button in <strong>Go</strong>, and it will stay off.</p>`
+          },
+          {
+            id: 'cards',
+            q: 'What\u2019s on a find\u2019s card?',
+            a: `<p>A starpin card shows the star's own patch of sky laid on the ground beneath it, with the streets, the catch circle, and the direction you approached from. The glow behind it shows how bright the star is.</p>
+<p>A cornerstone card shows the grid lines over the surrounding streets, glowing more strongly the rarer the cornerstone is.</p>
+<p>Both cards name the place in the style used locally, such as a suburb, city and country. If a find is at sea, the card names the nearest sea and settlement instead.</p>`
+          }
+        ]
+      },
       {
         id: 'going-out',
-        title: 'Going out and finding one',
+        title: 'Finding and logging Starpins',
         items: [
           {
             id: 'how-log',
             q: 'How do I log a visit?',
-            a: `<p>Tap <strong>Use my location</strong> so Starpin knows where you are, then bag the target.</p>
-<p>If you're close enough, it counts as a visit. If you don't quite make it, Starpin can save a closest approach instead - so your log tells the real story, not just the perfect finds but the nearly-there ones too. Your visit is built from the location fix on your own device, so you don't need a signal at the exact moment you arrive.</p>`
+            a: `<p>Tap <strong>Use my location</strong> so Starpin can determine where you are, then bag the target.</p>
+<p>If you are close enough (within about 93 metres of a starpin or cornerstone), Starpin records a visit. If not, you can save your closest approach instead. The record is made from the location fix on your device, so you do not need an internet connection at the moment you arrive.</p>`
           },
           {
             id: 'culmination',
             q: 'What\u2019s a culmination?',
-            a: `<p>This is where things get properly Starpin.</p>
-<p>A star's culmination is the moment it's exactly overhead at its place on Earth. Getting to the right spot is one thing. Getting to the right spot at the right moment is another. Manage both and you've got the full alignment - you, the point on the ground, and the star directly above you - and Starpin marks it specially.</p>`
+            a: `<p>A star's culmination is the moment when it is directly overhead at its corresponding place on Earth.</p>
+<p>If you reach the place at that time, you complete the alignment between yourself, the point on the ground, and the star above you. Starpin marks this separately from an ordinary visit.</p>`
           },
           {
             id: 'drive-by',
             q: 'What is drive-by mode?',
-            a: `<p>Sometimes the universe has thoughtfully placed a starpin right beside the road.</p>
-<p>Drive-by mode is for those. If you pass through a target while travelling - car, bus, bike - Starpin can catch the visit without pretending you stopped for a ceremonial expedition. It's still a real find; it just gets marked as a drive-by so you remember how it happened.</p>`
+            a: `<p>Drive-by mode can record a visit when you pass close enough to a target while travelling by car, bus, or bike.</p>
+<p>The find still counts, but it is marked as a drive-by so your log records how it happened.</p>`
           }
         ]
       },
 
       {
         id: 'sharing',
-        title: 'Sharing with your people',
+        title: 'Groups and sharing',
         items: [
           {
             id: 'what-are-groups',
             q: 'What are groups?',
-            a: `<p>Groups let you turn Starpin into a shared little world with family or friends.</p>
-<p>Make a group, invite your people, and you can share chosen finds with each other. When someone in the group looks at a starpin or cornerstone, they can see who else in the group has been there. Your private log stays yours - sharing just adds a copy of the finds you pick to the group.</p>`
+            a: `<p>Groups let family or friends share selected finds with one another.</p>
+<p>When a group member looks at a starpin or cornerstone, they can see who else in the group has visited it. Your private log remains separate. Only the finds you choose to share are copied to the group.</p>`
           },
           {
             id: 'make-group',
             q: 'How do I make a group?',
             a: `<p>Open <strong>Groups</strong>, give the group a name, and tap <strong>Create group &amp; get link</strong>.</p>
-<p>Starpin gives you an invite to send to the people you want to join. You can also give yourself a name for that group - "Dad", "Nana", "LucyGoose", "Supreme Commander", whatever seems right. That's how you'll show up when you share a find.</p>`
+<p>Starpin creates an invitation that you can send to the people you want to join. You can also choose the name you will use within that group. This is the name other members will see beside your shared finds.</p>`
           },
           {
             id: 'join-group',
             q: 'How do I join one?',
-            a: `<p>Usually, just open the invite link.</p>
-<p>If the person who made the group sent the secret code separately, Starpin will ask you for that too. Once you're in, the group shows up in your Groups tab.</p>`
+            a: `<p>Open the invitation link. If the person who created the group sent its secret code separately, Starpin will ask you to enter that as well.</p>
+<p>Once you have joined, the group appears in your Groups tab.</p>`
           },
           {
             id: 'share-find',
             q: 'How do I share a find?',
-            a: `<p>After you bag something, Starpin can offer to share it. You can also come back much later and share an old find from your Log or from the target itself.</p>
-<p>Because one place can have a whole story attached - a distant first attempt, a better approach later, and finally a culmination - Starpin shows those related records together and lets you choose which to share. Nothing goes anywhere until you tap Share.</p>`
+            a: `<p>After you bag something, Starpin gives you the option to share it. You can also share an earlier find from your Log or from the target itself.</p>
+<p>A target may have several related records, such as a closest approach, a later visit, and a culmination. Starpin shows these together so you can choose which records to share. Nothing is shared until you tap <strong>Share</strong>.</p>`
           },
           {
             id: 'old-finds',
             q: 'Can I share something I found ages ago?',
-            a: `<p>Absolutely. Your own log is the master copy, so a find from last year is just as shareable as one from five minutes ago.</p>`
+            a: `<p>Yes. Your own log is the master copy, and you can share any find stored in it.</p>`
           },
           {
             id: 'who-in-charge',
             q: 'Who\u2019s in charge of a group?',
-            a: `<p>For now, nobody.</p>
-<p>The family-and-friends version is deliberately simple: no accounts, no admins, no approval queues, no moderators. Everyone with the group's invite and secret can take part. That makes it easy - but it also means you should treat a group invite a bit like a house key, and give it to people you trust. A more managed version for clubs, classes and organisations is planned separately.</p>`
+            a: `<p>For now, nobody. This version has no accounts, administrators, approval queues, or moderators. Anyone with the group's invitation and secret can take part.</p>
+<p>Only give the invitation and secret to people you trust. A separate version with more management controls is planned for clubs, classes, and organisations.</p>`
           },
           {
             id: 'leave-group',
             q: 'Can I leave a group?',
-            a: `<p>Yes. Tap <strong>Leave group</strong> and Starpin removes it from this device. Your own Starpin log is untouched.</p>
-<p>Anything you already shared, though, may still exist in the group and on other members' devices. Leaving isn't a time machine.</p>`
+            a: `<p>Yes. Tap <strong>Leave group</strong> to remove the group from your device. This does not affect your own Starpin log.</p>
+<p>Anything you previously shared may remain in the group and on other members' devices.</p>`
           },
           {
             id: 'duplicate-names',
             q: 'Why do two groups have the same name?',
-            a: `<p>Because group names don't have to be unique. If you've got two called "Family", Starpin shows a little identifier beside each one so you can tell them apart. That identifier is just a label - it isn't the group's secret.</p>`
+            a: `<p>Group names do not have to be unique. If you belong to two groups called "Family", Starpin shows an identifier beside each one so you can tell them apart. The identifier is only a label; it is not the group's secret.</p>`
           }
         ]
       },
@@ -137,45 +192,57 @@
           {
             id: 'where-kept',
             q: 'Where are my finds kept?',
-            a: `<p>Your own Starpin log lives on your device. That's your collection - the record of where you've been.</p>
-<p>Group sharing never replaces it. When you share something, Starpin sends an encrypted copy to the group; anything coming back from a group lives separately and can't overwrite one of your own logged finds.</p>`
+            a: `<p>Your Starpin log is stored on your device. It is your record of the places you have visited.</p>
+<p>Group sharing does not replace or modify that log. When you share something, Starpin sends an encrypted copy to the group. Records received from a group are stored separately and cannot overwrite your own finds.</p>`
           },
           {
             id: 'encrypted',
             q: 'Is group sharing encrypted?',
-            a: `<p>Yes. Shared finds are encrypted on your device before they're sent. Someone needs the group's invitation information and its secret code to work out the keys to read them. The storage service only ever receives the encrypted data, not the readable visit.</p>`
+            a: `<p>Yes. Shared finds are encrypted on your device before they are sent. The group's invitation information and secret code are needed to derive the keys that can read them. The storage service receives the encrypted data, not the readable visit.</p>`
           },
           {
             id: 'can-starpin-read',
             q: 'Can Starpin read my private group finds?',
-            a: `<p>The storage service doesn't receive your visit as readable text, coordinates, or a place name - it stores an encrypted blob it has no key for.</p>
-<p>Like any online service, though, it can see some technical information about connections - that data was read or written, and roughly when. So the promise isn't "the internet can see absolutely nothing." It's simpler and honest: your private group content is encrypted, and the storage service doesn't hold the key to read it.</p>`
+            a: `<p>The storage service does not receive your visit as readable text, coordinates, or a place name. It stores encrypted data and does not hold the key needed to read it.</p>
+<p>It can still see some technical information about connections, including whether data was read or written and approximately when. Starpin encrypts the content of private group records; it does not conceal every trace of network activity.</p>`
           },
           {
             id: 'other-groups',
             q: 'Can another group see ours?',
-            a: `<p>No. Being in one private group doesn't let someone browse others. There's no directory listing all the Starpin groups, their members and everywhere they've been. You see the groups you belong to and the things shared with them, and nothing about anyone else's.</p>`
+            a: `<p>No. Membership of one private group does not provide access to any other group. There is no public directory of Starpin groups, their members, or their finds. You can see only the groups you belong to and the records shared with them.</p>`
           },
           {
             id: 'invite-leaks',
             q: 'What if someone gets our group invite?',
-            a: `<p>Treat the invite and secret as the key to the group: someone who has them can read the group's shared finds and add to it. If they end up with someone you no longer trust, the simplest option in this trial version is to make a fresh group.</p>`
+            a: `<p>Anyone who has both the invitation information and the secret can read the group's shared finds and add new ones. If these details reach someone you do not trust, the current trial version cannot remove that person's access. Create a new group and invite the remaining members instead.</p>`
           },
           {
             id: 'can-others-delete',
             q: 'Can another member delete my finds?',
-            a: `<p>They can't delete anything from your own log, and ordinary group members can't edit or remove shared items that have already been stored.</p>
-<p>That said, your personal log is still data on a device - phones get lost, browsers get cleared, computers die. If your Starpin history matters to you, keep a backup.</p>`
+            a: `<p>No other member can delete anything from your own log. Ordinary group members also cannot edit or remove shared records once they have been stored.</p>
+<p>Your personal log is still data stored on a device and may be lost if the device is lost, damaged, or cleared. Keep a backup if you want to preserve your Starpin history.</p>`
           },
           {
             id: 'presence',
             q: 'Does sharing prove somebody really went there?',
-            a: `<p>Not yet. A Starpin record carries the location fix from that person's device, but this family version doesn't cryptographically prove to everyone else that they were standing there. So private groups still involve a little old-fashioned trust - which is probably healthy for a game played with your family.</p>`
+            a: `<p>Not yet. A Starpin record includes the location fix reported by that person's device, but this version does not provide cryptographic proof that the person was at the target. Members of a private group must therefore trust one another.</p>`
+          },
+          {
+            id: 'what-is-sent',
+            q: 'What does Starpin send over the internet?',
+            a: `<p>Your log stays on your device. To draw the map and the sky, Starpin asks these services for pictures and names of the area you are looking at:</p>
+<ul>
+<li><strong>OpenFreeMap</strong> for the streets, coasts, and borders, and <strong>OpenStreetMap</strong> or <strong>Esri</strong> for ground imagery.</li>
+<li><strong>CDS Strasbourg</strong> for the sky photographs and the star catalogue.</li>
+<li><strong>OpenStreetMap's Nominatim</strong> for the place name on a find's card. Starpin asks once, the first time you open that card, and keeps the answer on your device.</li>
+</ul>
+<p>None of these receives your log. Each receives the area it is asked about. When the map is centred on you, that area is roughly where you are. Like any website, they also see your internet address.</p>
+<p>The app's code and fonts are also downloaded from public code libraries and Google Fonts. Group sharing uses a separate storage service, described above.</p>`
           },
           {
             id: 'finished',
             q: 'Is this finished?',
-            a: `<p>Definitely not. This is still a trial, and the sharing system is deliberately kept in a separate test world while it grows. Your own Starpin log is the part that matters most - those are your finds. The social layer around them is still taking shape, and that's partly the fun: Starpin is still discovering what it wants to become.</p>`
+            a: `<p>No. Starpin is still a trial, and its sharing system is being tested separately from the main app. Your own Starpin log remains the primary record of your finds. Group sharing and its supporting features may change as they are tested and developed.</p>`
           }
         ]
       }
