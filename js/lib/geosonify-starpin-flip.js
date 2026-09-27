@@ -598,10 +598,11 @@ var GeosonifyStarpinFlip = (function () {
     // path close in. geosonify-starpin-vtiles.js fetches, caches and decodes;
     // this only asks for what is on screen and draws what has arrived.
     var VT = opts.tiles !== undefined ? opts.tiles : (root.GeosonifyStarpinTiles || null);
-    var tiles = VT ? VT.createStore({
-      window: win, tilejson: opts.tilejson,
-      onTile: function () { restar(); schedule(); }
-    }) : null;
+    // The page's one shared store (the cards draw from it too), unless a caller
+    // hands in its own or points at a different tile source.
+    var tiles = !VT ? null : (opts.tileStore || (opts.tilejson
+      ? VT.createStore({ window: win, tilejson: opts.tilejson }) : VT.shared()));
+    var unsubTiles = tiles ? tiles.subscribe(function () { restar(); schedule(); }) : null;
     function mapZoomOf(v) { return face === 'earth' ? lm.getZoom() : zoomForAsp(v.asp, v.lat); }
     function viewTiles(v, margin) {
       if (!VT) return [];
@@ -1416,6 +1417,7 @@ var GeosonifyStarpinFlip = (function () {
       view: viewState, redraw: schedule,
       destroy: function () {
         destroyed = true;
+        if (unsubTiles) unsubTiles();
         if (ro) ro.disconnect();
         earth.destroy();
         if (el.parentNode) el.parentNode.removeChild(el);
@@ -1427,7 +1429,7 @@ var GeosonifyStarpinFlip = (function () {
   }
 
   return {
-    VERSION: '0.5', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
+    VERSION: '0.6', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
     wrap360: wrap360, wrapNear: wrapNear, aspForZoom: aspForZoom, zoomForAsp: zoomForAsp,
     skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, cellSideM: cellSideM, haloM: haloM, reachFromGeos: reachFromGeos,
     nearestLineM: nearestLineM, floorAsp: floorAsp

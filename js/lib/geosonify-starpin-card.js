@@ -314,36 +314,66 @@ var GeosonifyStarpinCard = (function () {
     catch (e) {}
     return null;
   }
-  var _tileStore = null;
-  function tileStore() {
-    var T = TL();
-    if (!T) return null;
-    if (!_tileStore) _tileStore = T.createStore({ onTile: function () {} });
-    return _tileStore;
+  // The page's ONE tile store, shared with the map: a card over ground the map
+  // has already shown draws at once, from memory.
+  function tileStore() { var T = TL(); return T ? (T.shared ? T.shared() : T.createStore({})) : null; }
+
+  function cardTiles(lat, lon, spanM) {
+    var T = TL(), dLat = spanM / 2 / M_PER_DEG, dLon = dLat / Math.max(0.05, Math.cos(lat * D2R));
+    return T.tilesFor({ s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }, spanM > 2500 ? 13 : 14, 0);
   }
-  // Roads around a point, as lat/lon polylines. Resolves when every tile is in,
-  // or after `ms` with whatever arrived -- a card never waits on the network
-  // for long, and a card with fewer streets beats no card.
+  // What can be drawn NOW: each wanted tile if it is in memory, otherwise its
+  // nearest cached ancestor (coarser, fewer lanes, but the right streets in the
+  // right places) -- the same stand-in rule the map uses while it loads.
+  function roadsNow(st, list) {
+    var out = [], seen = {}, complete = true;
+    list.forEach(function (t) {
+      if (!st.has(t.z, t.x, t.y)) complete = false;
+      var g = st.peek(t.z, t.x, t.y), k = g && (g.z + '/' + g.x + '/' + g.y);
+      if (!g || seen[k]) return;
+      seen[k] = 1;
+      out = out.concat(g.roads);
+    });
+    return { roads: out, complete: complete };
+  }
+  // On screen: draw what there is immediately, then redraw as each missing tile
+  // lands, until every one is in or the card is gone. Never gives up early,
+  // never waits to start. Asked for at the FRONT of the queue.
+  function liveRoads(el, lat, lon, spanM, paint) {
+    var T = TL(), st = tileStore();
+    if (!T || !st || lat == null || lon == null) return;
+    var list = cardTiles(lat, lon, spanM), pending = null, unsub = null, t0 = Date.now();
+    function ask() { list.forEach(function (t) { st.request(t.z, t.x, t.y, { priority: true }); }); }
+    function draw() {
+      pending = null;
+      var now = roadsNow(st, list);
+      paint(now.roads);
+      if (now.complete || !el.isConnected && Date.now() - t0 > 1000 || Date.now() - t0 > 120000) {
+        if (unsub) { unsub(); unsub = null; }
+      }
+      return now.complete;
+    }
+    ask();
+    if (draw()) return;
+    unsub = st.subscribe(function () { if (!pending) pending = setTimeout(draw, 80); });
+    // A tile that failed is asked for again, rather than leaving a hole for good.
+    (function retry(n) {
+      setTimeout(function () { if (unsub && n < 6) { ask(); retry(n + 1); } }, 4000 * (n + 1));
+    })(0);
+  }
+  // For the exported image: whatever is in memory now, topped up for at most
+  // `ms`, then drawn with stand-ins for anything still missing.
   function roadsAround(lat, lon, spanM, ms) {
     var T = TL(), st = tileStore();
     if (!T || !st || lat == null || lon == null) return Promise.resolve([]);
-    var dLat = spanM / 2 / M_PER_DEG, dLon = dLat / Math.max(0.05, Math.cos(lat * D2R));
-    var z = spanM > 2500 ? 13 : 14;
-    var list = T.tilesFor({ s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }, z, 0);
-    list.forEach(function (t) { st.request(t.z, t.x, t.y); });
+    var list = cardTiles(lat, lon, spanM);
+    list.forEach(function (t) { st.request(t.z, t.x, t.y, { priority: true }); });
     return new Promise(function (resolve) {
       var t0 = Date.now();
       (function poll() {
-        var all = list.every(function (t) { return st.has(t.z, t.x, t.y); });
-        if (!all && Date.now() - t0 < (ms || 5000)) { setTimeout(poll, 150); return; }
-        var out = [], seen = {};
-        list.forEach(function (t) {
-          var g = st.peek(t.z, t.x, t.y), k = g && (g.z + '/' + g.x + '/' + g.y);
-          if (!g || seen[k]) return;
-          seen[k] = 1;
-          out = out.concat(g.roads);
-        });
-        resolve(out);
+        var now = roadsNow(st, list);
+        if (now.complete || Date.now() - t0 >= (ms || 3000)) { resolve(now.roads); return; }
+        setTimeout(poll, 120);
       })();
     });
   }
@@ -449,9 +479,10 @@ var GeosonifyStarpinCard = (function () {
     outer.style.cssText = 'display:flex;flex-direction:column;align-items:center';
     outer.appendChild(box); outer.appendChild(cap);
     if (d.lat != null) {
-      roadsAround(d.lat, d.lon, spanM * 1.1).then(function (roads) {
+      var P = groundProj(d.lat, d.lon, spanM, SZ);
+      liveRoads(box, d.lat, d.lon, spanM * 1.1, function (roads) {
         var g = box.querySelector('.st-g');
-        if (g) g.innerHTML = roadsSVG(roads, groundProj(d.lat, d.lon, spanM, SZ), '#CDD6E4', 0.8, 1);
+        if (g) g.innerHTML = roadsSVG(roads, P, '#CDD6E4', 0.8, 1);
       });
     }
     return outer;
@@ -740,10 +771,10 @@ var GeosonifyStarpinCard = (function () {
     var stg = opts.kind === 'cornerstone' && card.querySelector('.bg svg .st-g');
     if (stg && cs.lat != null) {
       var sp = cornerSpanM(cs.order);
-      roadsAround(cs.lat, cs.lon, sp * 1.3).then(function (roads) {
+      var Pc = groundProj(cs.lat, cs.lon, sp, 340, 170, 150);
+      liveRoads(card, cs.lat, cs.lon, sp * 1.3, function (roads) {
         var light = card.classList.contains('light');
-        stg.innerHTML = roadsSVG(roads, groundProj(cs.lat, cs.lon, sp, 340, 170, 150),
-                                 light ? '#2C3442' : '#CDD6E4', light ? 0.34 : 0.28, 1);
+        stg.innerHTML = roadsSVG(roads, Pc, light ? '#2C3442' : '#CDD6E4', light ? 0.34 : 0.28, 1);
       });
     }
     return card;
@@ -793,7 +824,7 @@ var GeosonifyStarpinCard = (function () {
     var lat = isStar ? d.lat : c.lat, lon = isStar ? d.lon : c.lon;
     var span = isStar ? (d.fovArcsec || STAR_FOV_ARCSEC) * M_PER_ARCSEC * 1.1
                       : Math.sqrt(510.1e12 / (12 * Math.pow(4, Math.round(c.order || 12)))) * 2.9 * 1.3;
-    return roadsAround(lat, lon, span, 5000).then(function (roads) { return drawCard(opts, doc, roads || []); });
+    return roadsAround(lat, lon, span, 3000).then(function (roads) { return drawCard(opts, doc, roads || []); });
   }
   function drawCard(opts, doc, roads) {
     // Star cards are taller now: the window is bigger and has a caption.
@@ -1092,7 +1123,7 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.4', render: render, show: show, html: html,
+  return { VERSION: '0.5', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
            skyWindow: skyWindow, groundWindow: groundWindow, gridSVG: gridSVG,
            starGlowValue: starGlowValue, niceBar: niceBar };

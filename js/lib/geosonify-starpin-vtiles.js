@@ -254,9 +254,10 @@ var GeosonifyStarpinTiles = (function () {
     var win = opts.window || root;
     var fetchFn = opts.fetch || (win.fetch ? win.fetch.bind(win) : null);
     var mem = new Map(), MEM_MAX = opts.memMax || 400;
-    var inflight = {}, queue = [], active = 0, MAX_ACTIVE = 4;
+    var inflight = {}, jobs = {}, queue = [], active = 0, MAX_ACTIVE = 4;
     var template = opts.template || null, templateP = null;
     var onTile = opts.onTile || function () {};
+    var listeners = [];                              // everyone who wants to know a tile arrived
     var stats = { network: 0, device: 0, memory: 0, failed: 0 };
     var cachesApi = (opts.caches !== undefined) ? opts.caches : (win.caches || null);
 
@@ -313,12 +314,20 @@ var GeosonifyStarpinTiles = (function () {
 
     // Ask for a tile. Returns the decoded geometry if it is in memory now,
     // otherwise null -- and it arrives later through onTile(z, x, y).
-    function request(z, x, y) {
+    // opts.priority: something is waiting on screen for this one (a card), so it
+    // goes to the FRONT of the queue, ahead of the map's prefetch margin.
+    function request(z, x, y, ropts) {
       var xw = wrapX(x, z), k = key(z, xw, y);
       if (mem.has(k)) { var v = mem.get(k); touch(k, v); return v; }
-      if (inflight[k]) return null;
+      if (inflight[k]) {
+        if (ropts && ropts.priority && jobs[k]) {          // promote a queued one
+          var qi = queue.indexOf(jobs[k]);
+          if (qi > 0) { queue.splice(qi, 1); queue.unshift(jobs[k]); }
+        }
+        return null;
+      }
       inflight[k] = true;
-      queue.push(function () {
+      var job = function () {
         return deviceGet(k).then(function (buf) {
           if (buf) { stats.device++; return buf; }
           return getTemplate().then(function (tpl) {
@@ -333,10 +342,13 @@ var GeosonifyStarpinTiles = (function () {
           var geo = u8.length ? toGeo(decode(u8, LAYERS), z, xw, y) : { roads: [], waterways: [], borders: [], water: [] };
           geo.z = z; geo.x = xw; geo.y = y; geo.bounds = tileBounds(z, xw, y);
           touch(k, geo);
-          delete inflight[k];
+          delete inflight[k]; delete jobs[k];
           onTile(z, xw, y, geo);
-        }).catch(function () { stats.failed++; delete inflight[k]; });
-      });
+          listeners.slice().forEach(function (fn) { try { fn(z, xw, y, geo); } catch (e) {} });
+        }).catch(function () { stats.failed++; delete inflight[k]; delete jobs[k]; });
+      };
+      jobs[k] = job;
+      if (ropts && ropts.priority) queue.unshift(job); else queue.push(job);
       pump();
       return null;
     }
@@ -353,15 +365,26 @@ var GeosonifyStarpinTiles = (function () {
     function has(z, x, y) { return mem.has(key(z, wrapX(x, z), y)); }
     function clearDevice() { return cachesApi ? cachesApi.delete(STORE) : Promise.resolve(false); }
 
+    function subscribe(fn) {
+      listeners.push(fn);
+      return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
+    }
+
     return { request: request, peek: peek, has: has, stats: stats, clearDevice: clearDevice,
-             _mem: mem };
+             subscribe: subscribe, _mem: mem };
   }
 
+  // ONE store per page. The map and the cards draw the same streets from the
+  // same place, so a card opened over ground the map has shown costs nothing,
+  // and nothing is ever fetched twice in two queues.
+  var _shared = null;
+  function shared() { return _shared || (_shared = createStore({})); }
+
   return {
-    VERSION: '0.1', TILEJSON_URL: TILEJSON_URL, MAX_Z: MAX_Z, LAYERS: LAYERS,
+    VERSION: '0.2', TILEJSON_URL: TILEJSON_URL, MAX_Z: MAX_Z, LAYERS: LAYERS,
     decode: decode, toGeo: toGeo, roadClass: roadClass,
     lon2x: lon2x, lat2y: lat2y, x2lon: x2lon, y2lat: y2lat, tileBounds: tileBounds,
-    tilesFor: tilesFor, wrapX: wrapX, tileZoomFor: tileZoomFor, createStore: createStore
+    tilesFor: tilesFor, wrapX: wrapX, tileZoomFor: tileZoomFor, createStore: createStore, shared: shared
   };
 })();
 
