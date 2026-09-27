@@ -724,10 +724,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-map.js?v=20260926b"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
-<script src="js/lib/geosonify-starpin-vtiles.js?v=20260926"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20260927"></script>
+<script src="js/lib/geosonify-starpin-vtiles.js?v=20260928"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20260928"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20260927"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20260928"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
      Load order matters: vendored crypto and the shared target helper first,
@@ -1048,6 +1048,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       // firing and set it straight back, so the dial could never return to
       // north-up. Detach them.
       compassOn = false; heading = null;
+      try { localStorage.setItem('starpin.perm.compass', '0'); } catch (e) {}   // off, and it stays off
       window.removeEventListener('deviceorientationabsolute', onOrient);
       window.removeEventListener('deviceorientation', onOrient);
       btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
@@ -1078,8 +1079,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (want('starpin.perm.location') || want('starpin.perm.track')) {
       acquireFix(want('starpin.perm.track') ? startTracking : null);
     }
-    if (want('starpin.perm.compass')) {
+    // The compass is ON unless the person turned it off (stored as '0').
+    // Where the platform needs no permission it simply starts. Where it does
+    // (iOS), a permission can only be asked for inside a tap -- so the first tap
+    // anywhere in the app asks, alongside location. If iOS already remembers the
+    // grant for this site the answer comes back at once with no dialog; if not,
+    // it asks, once per visit.
+    var cpref = null;
+    try { cpref = localStorage.getItem('starpin.perm.compass'); } catch (e) {}
+    if (cpref !== '0') {
       var reattach = function () {
+        if (compassOn) return;
         compassOn = true;
         $('compass').setAttribute('aria-pressed', 'true'); $('compass').textContent = 'North up';
         window.addEventListener('deviceorientationabsolute', onOrient);
@@ -1087,14 +1097,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       };
       if (typeof DeviceOrientationEvent !== 'undefined' &&
           typeof DeviceOrientationEvent.requestPermission === 'function') {
-        // iOS: only resume without a prompt if already granted.
-        if (navigator.permissions && navigator.permissions.query) {
-          navigator.permissions.query({ name: 'accelerometer' })
-            .then(function (s) { if (s.state === 'granted') reattach(); })
-            .catch(function () {});
-        }
+        var askOnFirstTap = function (e) {
+          // A tap on the Compass button itself is left to that button's own handler.
+          if (e && e.target && e.target.closest && e.target.closest('#compass')) {
+            document.removeEventListener('click', askOnFirstTap, true); return;
+          }
+          document.removeEventListener('click', askOnFirstTap, true);
+          if (compassOn) return;
+          DeviceOrientationEvent.requestPermission().then(function (r) {
+            if (r === 'granted') { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} reattach(); }
+          }).catch(function () {});
+        };
+        document.addEventListener('click', askOnFirstTap, true);
       } else {
-        reattach();                        // platforms without the gated API
+        reattach();
       }
     }
   })();
@@ -2438,7 +2454,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('pin-ll').addEventListener('blur', function () { addrEditing = false; });
 
   function fmtLabel() {
-    var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
+    var key = readout.format(), f = GeosonifyStarpinReadout.FORMATS[key];
+    if (isWords(key)) {
+      var lang = key.replace('card:bip39', '').replace('chinese', 'Chinese ');
+      return 'BIP39 words · ' + lang.charAt(0).toUpperCase() + lang.slice(1);
+    }
     return f ? f.label : 'Latitude / Longitude';
   }
   function paintMapAddr(lat, lon, label) {
@@ -2447,12 +2467,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     $('addr-src').textContent = label || '';
     var key = readout.format();
     var canRead = GeosonifyStarpinReadout.canParse(key);
-    $('pin-ll').readOnly = !canRead;
-    $('pin-ll').placeholder = canRead
-      ? 'paste or type to go there' : 'this notation cannot be read back yet';
-    $('addr-hint').textContent = canRead
-      ? 'Someone can read this to you and you can type it in.'
-      : 'Choose another notation in the Go tab if you want to paste one in.';
+    $('pin-ll').readOnly = false;
+    $('pin-ll').placeholder = 'paste or type any address to go there';
+    $('addr-hint').textContent = isWords(key)
+      ? 'Four words from the open BIP39 list — not what3words: free, and anyone can decode them. ' +
+        'Paste any address or coordinates here to go there.'
+      : 'Someone can read this to you, or paste any address or coordinates, and it goes there.';
     if (addrEditing || lat == null) return;
     var v = '';
     try {
@@ -2463,23 +2483,101 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
   function showPinLL(lat, lon) { /* superseded by paintMapAddr */ }
 
+  // ── reading ANY address pasted into the box ─────────────────────────────
+  // Coordinates, a maps link, degrees-minutes-seconds, a Geosonify or Starpin
+  // share link, or a code in ANY vocabulary the app knows -- in any BIP39
+  // language -- is read and flown to, whatever the picker happens to say.
+  // Tried in an order that keeps the unambiguous readings first, so a pair of
+  // numbers is always coordinates, never a guess at something more exotic.
+  function readAnything(text, preferKey) {
+    var RO = GeosonifyStarpinReadout;
+    var t = String(text == null ? '' : text).trim();
+    if (!t) return null;
+    function ok(la, lo) { return isFinite(la) && isFinite(lo) && la >= -90 && la <= 90 && lo >= -360 && lo <= 360; }
+    function hit(p, key, label) { return (p && ok(p[0], p[1])) ? { p: [p[0], p[1] > 180 ? p[1] - 360 : p[1]], key: key, label: label } : null; }
+    var dec = t;
+    try { dec = decodeURIComponent(t); } catch (e) {}
+    var m;
+    // geo: URIs, and the coordinates inside Google / Apple / OpenStreetMap links
+    if ((m = dec.match(/^geo:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i))) return hit([+m[1], +m[2]], null, 'a geo: link');
+    if ((m = dec.match(/[?&#](?:q|query|ll|sll|daddr|destination|center|mlat)=\s*(-?\d+(?:\.\d+)?)\s*[,+ ]\s*(-?\d+(?:\.\d+)?)/i)))
+      return hit([+m[1], +m[2]], null, 'a maps link');
+    if ((m = dec.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) return hit([+m[1], +m[2]], null, 'a maps link');
+    if ((m = dec.match(/[?&#]map=\d+(?:\.\d+)?\/(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)/))) return hit([+m[1], +m[2]], null, 'an OpenStreetMap link');
+    if ((m = dec.match(/[?&#]at=\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/))) return hit([+m[1], +m[2]], null, 'a Starpin link');
+    // Geosonify share links carry a HEALPix code in their own parameter
+    if (/^https?:\/\//i.test(t)) {
+      try {
+        var u = new URL(t);
+        var hk = ['hphex', 'hpquad', 'hp64'];
+        for (var h = 0; h < hk.length; h++) {
+          var v = u.searchParams.get(hk[h]);
+          if (v) { var r0 = hit(RO.parse(hk[h], v), hk[h], 'a Geosonify link'); if (r0) return r0; }
+        }
+      } catch (e) {}
+    }
+    // degrees, minutes, seconds: 43°31'51"S 172°38'11"E, in either order
+    var dmsRe = /(\d+(?:\.\d+)?)\s*[°º d]\s*(?:(\d+(?:\.\d+)?)\s*['′m]\s*)?(?:(\d+(?:\.\d+)?)\s*(?:"|″|''|s)\s*)?([NSEW])/gi;
+    var parts = [], dm;
+    while ((dm = dmsRe.exec(dec)) && parts.length < 2) {
+      var val = (+dm[1]) + (dm[2] ? +dm[2] / 60 : 0) + (dm[3] ? +dm[3] / 3600 : 0);
+      parts.push({ v: /[SW]/i.test(dm[4]) ? -val : val, ns: /[NS]/i.test(dm[4]) });
+    }
+    if (parts.length === 2 && parts[0].ns !== parts[1].ns) {
+      var la0 = parts[0].ns ? parts[0].v : parts[1].v, lo0 = parts[0].ns ? parts[1].v : parts[0].v;
+      return hit([la0, lo0], null, 'degrees, minutes and seconds');
+    }
+    // a plain pair of decimal numbers is always latitude, longitude
+    if ((m = dec.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*$/))) {
+      var rl = hit([+m[1], +m[2]], 'latlon', 'latitude and longitude');
+      if (rl) return rl;
+    }
+    // Then the notation on screen, then only the notations that RECOGNISE
+    // themselves: BIP39 words (every word must be on the list, in one of ten
+    // languages) and HEALPix codes (a strict grammar). The free-form
+    // vocabularies -- alphanumeric, hex-coloured and the like -- turn ANY
+    // string into SOME place, so they are only tried when they are the notation
+    // actually chosen; otherwise "the quick brown fox" would land in a paddock.
+    var keys = Object.keys(RO.FORMATS).filter(function (k) {
+      if (k === 'radec' || k === 'latlon' || !RO.available(k) || !RO.canParse(k)) return false;
+      return k === preferKey || /^card:bip39/.test(k) || /^hp(quad|hex|64)$/.test(k);
+    });
+    keys.sort(function (a, b) {
+      function rank(k) {
+        return k === preferKey ? 0 : /^card:bip39/.test(k) ? 1
+             : k === 'hphex' ? 2 : k === 'hpquad' ? 3 : 4;
+      }
+      return rank(a) - rank(b);
+    });
+    for (var i = 0; i < keys.length; i++) {
+      var p = null;
+      try { p = RO.parse(keys[i], t); } catch (e) {}
+      var r = hit(p, keys[i], RO.FORMATS[keys[i]].label);
+      if (r) return r;
+    }
+    return null;
+  }
+
+  window.starpinReadAnything = readAnything;       // for the console, and the tests
+
   function flyToTyped() {
     var key = readout.format(), txt = $('pin-ll').value;
-    var p = null;
-    try { p = GeosonifyStarpinReadout.parse(key, txt); } catch (e) {}
-    if (!p) {
-      alert('I could not read that as ' + fmtLabel() + '.\n\n' +
-            'Check the notation picker in the Go tab matches what you were given.');
+    var got = readAnything(txt, key);
+    if (!got) {
+      alert('I could not read that as an address.\n\n' +
+            'Coordinates, a maps link, or a code in any of the app\u2019s notations will do ' +
+            '\u2014 four BIP39 words in any language, HEALPix, and the rest.');
       return;
     }
-    var la = p[0], lo = p[1];
-    if (!(la >= -90 && la <= 90)) { alert('That latitude is not on Earth.'); return; }
-    if (lo > 180) lo -= 360;
-    showMap();
+    var la = got.p[0], lo = got.p[1];
+    goTab('map');
     map.leaflet.setView([la, lo], Math.max(map.leaflet.getZoom(), 17));
     map.dropPin(la, lo);
     readAt(la, lo, 'typed in');
     $('pin-ll').blur();
+    // Say how it was read when that was not the notation on screen, so a wrong
+    // guess is visible rather than silent.
+    if (got.key !== key) $('addr-hint').textContent = 'Read as ' + got.label + '.';
   }
   $('pin-go').addEventListener('click', flyToTyped);
   $('pin-ll').addEventListener('keydown', function (e) {
@@ -2713,6 +2811,35 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // four characters. Cornerstone order 14 is a separate thing and stays where
   // it is used, in nearestCornerstone below.
   var readout = RO.mount($('readout'), {});
+  // ── words by default, in the reader's own language ─────────────────────
+  // BIP39 is an open wordlist (the one Bitcoin wallets use); Geosonify turns a
+  // place into four of its words. It is NOT what3words: nothing is licensed,
+  // anyone may decode it, and it works in ten languages. A person who has never
+  // chosen a notation gets these words, in the first language on their device
+  // that BIP39 has; English otherwise. A choice once made is kept.
+  var BIP39_LANG = { en: 'english', es: 'spanish', fr: 'french', it: 'italian', pt: 'portuguese',
+                     cs: 'czech', ja: 'japanese', ko: 'korean' };
+  function localBip39() {
+    var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
+    for (var i = 0; i < langs.length; i++) {
+      var l = String(langs[i] || '').toLowerCase();
+      if (/^zh/.test(l)) return /hant|tw|hk|mo/.test(l) ? 'bip39chinesetraditional' : 'bip39chinesesimplified';
+      var base = l.split('-')[0];
+      if (BIP39_LANG[base] && GeosonifyStarpinReadout.available('card:bip39' + BIP39_LANG[base]))
+        return 'bip39' + BIP39_LANG[base];
+    }
+    return 'bip39english';
+  }
+  (function wordsByDefault() {
+    var chosen = null;
+    try { chosen = localStorage.getItem('starpin.readout.format'); } catch (e) {}
+    if (chosen) return;
+    var k = 'card:' + localBip39();
+    if (GeosonifyStarpinReadout.available(k)) readout.setFormat(k);
+  })();
+  // Label and hint follow the notation from the first paint, not the first pan.
+  paintMapAddr(addrPoint ? addrPoint.lat : null, addrPoint ? addrPoint.lon : null, $('addr-src').textContent);
+  function isWords(key) { return /^card:bip39/.test(key || ''); }
   readout.el.addEventListener('change', function () {
     if (addrPoint) paintMapAddr(addrPoint.lat, addrPoint.lon, $('addr-src').textContent);
   });
