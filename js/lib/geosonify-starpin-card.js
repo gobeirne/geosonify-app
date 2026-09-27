@@ -93,11 +93,11 @@ var GeosonifyStarpinCard = (function () {
     '.spc-title .id{font-family:Fraunces,Georgia,serif;font-weight:600;font-size:19px;',
     '  line-height:1.25;margin-top:3px;word-break:break-word}',
     '.spc-med{display:flex;justify-content:center;margin:2px 0 10px}',
-    '.spc-ground{position:relative;width:200px;height:200px;border-radius:18px;overflow:hidden;',
+    '.spc-ground{position:relative;width:176px;height:176px;border-radius:16px;overflow:hidden;',
     '  background:#070A14;box-shadow:0 0 0 1px rgba(220,201,73,.4),0 12px 30px -12px rgba(0,0,0,.8)}',
     '.spc-ground img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}',
     '.spc-ground .spc-overlay{position:absolute;inset:0;width:100%;height:100%}',
-    '.spc-ground-cap{font-size:10px;line-height:1.3;color:var(--muted);text-align:center;margin-top:6px;letter-spacing:.02em}',
+    '.spc-ground-cap{font-size:10px;line-height:1.3;color:var(--muted);text-align:center;margin-top:4px;letter-spacing:.02em}',
     '.spc-card.light .spc-ground-cap{color:#5C6349}',
     '.spc-card.mini .spc-ground{width:150px;height:150px}',
     '.spc-place{text-align:center;font-size:12.5px;line-height:1.35;margin:-4px 0 10px;color:var(--text);opacity:.88}',
@@ -159,12 +159,17 @@ var GeosonifyStarpinCard = (function () {
     '.spc-card.mini .spc-title .id{font-size:14px}',
     '.spc-card.mini .spc-med{margin:0 0 6px}',
     // full-screen presentation
-    '.spc-stage{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;',
-    '  justify-content:center;padding:16px;background:rgba(5,7,14,.86);',
+    // Scrolls when the card is taller than the screen, so its buttons are always
+    // reachable. Auto margins centre a short card without clipping a tall one
+    // (align-items:center would push its top off-screen, out of scroll's reach).
+    '.spc-stage{position:fixed;inset:0;z-index:10000;display:flex;align-items:flex-start;',
+    '  justify-content:center;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;',
+    '  padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));',
+    '  background:rgba(5,7,14,.86);',
     '  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);opacity:0;',
     '  transition:opacity .35s}',
     '.spc-stage.on{opacity:1}',
-    '.spc-stage .wrap{transform:scale(.94) translateY(10px);transition:transform .45s cubic-bezier(.2,.9,.25,1)}',
+    '.spc-stage .wrap{margin:auto 0;transform:scale(.94) translateY(10px);transition:transform .45s cubic-bezier(.2,.9,.25,1)}',
     '.spc-stage.on .wrap{transform:none}',
     '.spc-close{margin-top:14px;display:block;width:100%;font:inherit;font-size:13px;',
     '  padding:.6rem 1rem;border-radius:10px;border:1px solid rgba(220,201,73,.55);',
@@ -326,9 +331,21 @@ var GeosonifyStarpinCard = (function () {
   // has already shown draws at once, from memory.
   function tileStore() { var T = TL(); return T ? (T.shared ? T.shared() : T.createStore({})) : null; }
 
+  // The tile zoom that puts about three tiles across the card. A street-scale
+  // starpin window gets z14 (every lane); an order-7 cornerstone spanning 130 km
+  // gets ~z10 (main roads -- which is also what reads at that scale). Asking
+  // for z13 across 130 km meant hundreds of tiles, which then pushed each other
+  // out of memory as they arrived: the patch that crept up the card and stopped.
+  function cardZoom(lat, spanM) {
+    var w = 40075016.7 * Math.max(0.05, Math.cos(lat * D2R));
+    return Math.max(0, Math.min(14, Math.round(Math.log(w / (spanM / 3)) / Math.LN2)));
+  }
   function cardTiles(lat, lon, spanM) {
     var T = TL(), dLat = spanM / 2 / M_PER_DEG, dLon = dLat / Math.max(0.05, Math.cos(lat * D2R));
-    return T.tilesFor({ s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon }, spanM > 2500 ? 13 : 14, 0);
+    var box = { s: lat - dLat, n: lat + dLat, w: lon - dLon, e: lon + dLon };
+    var z = cardZoom(lat, spanM), list = T.tilesFor(box, z, 0);
+    while (list.length > 36 && z > 0) list = T.tilesFor(box, --z, 0);   // hard ceiling, whatever the span
+    return list;
   }
   // What can be drawn NOW: each wanted tile if it is in memory, otherwise its
   // nearest cached ancestor (coarser, fewer lanes, but the right streets in the
@@ -1156,7 +1173,7 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.6', render: render, show: show, html: html,
+  return { VERSION: '0.7', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
            skyWindow: skyWindow, groundWindow: groundWindow, gridSVG: gridSVG,
            starGlowValue: starGlowValue, niceBar: niceBar };
