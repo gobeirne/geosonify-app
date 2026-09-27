@@ -87,10 +87,11 @@
           },
           {
             id: 'four-words',
-            q: 'What are the four words?',
-            a: `<p>They are another way of writing where you are. Starpin turns a place into four words from the BIP39 wordlist, an open list originally designed for cryptocurrency wallets.</p>
-<p>It is not what3words. The list is free to use, anyone can decode the words, and they come in ten languages. Starpin uses your device's language where it can.</p>
-<p>You can paste almost anything into the address box: four words in any of those languages, ordinary coordinates, a Google or Apple Maps link, or a Geosonify code. Starpin works out what it is and takes you there.</p>`
+            q: 'How do I share locations?',
+            a: `<p>You can share the location of a starpin or cornerstone in several ways, including latitude and longitude.</p>
+<p>Coordinates can be a mouthful, so Starpin also uses Geosonify's BIP39 encoding to describe a location to within about 5 metres using just four words. It's similar to what3words, but free, open-source, and available in multiple languages.</p>
+<p>You can paste these words, coordinates, a Google or Apple Maps link, or a Geosonify code into the address box to go to that location.</p>
+<p>Visit <a href="https://geosonify.org/">geosonify.org</a> to find out more.</p>`
           },
           {
             id: 'compass',
