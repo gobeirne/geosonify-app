@@ -724,10 +724,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-map.js?v=20260926b"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
-<script src="js/lib/geosonify-starpin-vtiles.js?v=20260928"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20260928"></script>
-<script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20260928"></script>
+<script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20260929"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
      Load order matters: vendored crypto and the shared target helper first,
@@ -2833,7 +2834,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   (function wordsByDefault() {
     var chosen = null;
     try { chosen = localStorage.getItem('starpin.readout.format'); } catch (e) {}
-    if (chosen) return;
+    // A notation chosen before is kept -- unless it is no longer offered
+    // (Music, ChromaCoord, Local Grid), in which case words take its place.
+    if (chosen && GeosonifyStarpinReadout.available(chosen)) return;
     var k = 'card:' + localBip39();
     if (GeosonifyStarpinReadout.available(k)) readout.setFormat(k);
   })();
