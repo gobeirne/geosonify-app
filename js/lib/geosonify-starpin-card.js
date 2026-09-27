@@ -100,6 +100,10 @@ var GeosonifyStarpinCard = (function () {
     '.spc-ground-cap{font-size:10px;line-height:1.3;color:var(--muted);text-align:center;margin-top:6px;letter-spacing:.02em}',
     '.spc-card.light .spc-ground-cap{color:#5C6349}',
     '.spc-card.mini .spc-ground{width:150px;height:150px}',
+    '.spc-place{text-align:center;font-size:12.5px;line-height:1.35;margin:-4px 0 10px;color:var(--text);opacity:.88}',
+    '.spc-place:empty{display:none}',
+    '.spc-card.light .spc-place{color:#22270F}',
+    '.spc-osm{text-align:center;font-size:9.5px;opacity:.55;margin-top:6px;letter-spacing:.02em}',
     '.spc-sky{position:relative;width:112px;height:112px}',
     '.spc-sky img{width:100%;height:100%;border-radius:50%;object-fit:cover;background:#070A14;',
     '  display:block}',
@@ -308,6 +312,10 @@ var GeosonifyStarpinCard = (function () {
   var R_ARCSEC = (S && S.VISIT_R_ARCSEC) || 3;          // visit-geometry-v1
   var STAR_FOV_ARCSEC = 40;                              // ~1.2 km of ground
 
+  function placeModule() {
+    try { if (typeof GeosonifyStarpinPlace !== 'undefined') return GeosonifyStarpinPlace; } catch (e) {}
+    return (typeof window !== 'undefined' && window.GeosonifyStarpinPlace) || null;
+  }
   function TL() {
     try { if (typeof GeosonifyStarpinTiles !== 'undefined') return GeosonifyStarpinTiles; } catch (e) {}
     try { if (typeof window !== 'undefined' && window.GeosonifyStarpinTiles) return window.GeosonifyStarpinTiles; }
@@ -624,7 +632,8 @@ var GeosonifyStarpinCard = (function () {
         '<div class="spc-title"><div class="cat">HEALPix vertex</div>' +
         '<div class="id">' + esc(c.name) + '</div></div>' +
         (c.lat != null ? '<div class="spc-coords"><b>LAT</b> ' + c.lat.toFixed(6) +
-          ' &nbsp; <b>LON</b> ' + c.lon.toFixed(6) + '</div>' : '') +
+          ' &nbsp; <b>LON</b> ' + c.lon.toFixed(6) + '</div>' +
+          '<div class="spc-place" data-place></div>' : '') +
         '<div class="spc-ledger">' +
           row('Lines', 'order ' + c.crossOrder + ' \u00D7 order ' + c.intrinsicOrder) +
           row('Tier', (rr != null ? rr.toFixed(1) : '\u2014') +
@@ -664,6 +673,7 @@ var GeosonifyStarpinCard = (function () {
         '<div class="spc-med" data-sky="1"></div>' +
         (d.ra != null ? '<div class="spc-coords"><b>RA</b> ' + raToHMS(d.ra) +
           ' &nbsp; <b>DEC</b> ' + decToDMS(d.dec) + '</div>' : '') +
+        (d.lat != null ? '<div class="spc-place" data-place></div>' : '') +
         '<div class="spc-ledger">' +
           (opts.findNumber ? row('Found', '#' + opts.findNumber + ' in your log') : '') +
           (d.lat != null ? row('Starpin', d.lat.toFixed(6) + ', ' + d.lon.toFixed(6), 'mono') : '') +
@@ -693,7 +703,8 @@ var GeosonifyStarpinCard = (function () {
         '</div>';
     }
 
-    body += '<div class="spc-flip">tap the card for the printable version</div>';
+    body += '<div class="spc-flip">tap the card for the printable version</div>' +
+            '<div class="spc-osm">streets and place names \u00A9 OpenStreetMap contributors</div>';
     // The sunrise is a per-card background (rarer = more dawn). Only cornerstones,
     // only the dark (screen) face — the printable light variant keeps paper.
     // Legibility over the bright lower band is handled by a text-shadow applied
@@ -766,6 +777,15 @@ var GeosonifyStarpinCard = (function () {
       bearingDeg: (opts.visit || {}).bearingDeg,
       fovArcsec: (opts.star || {}).fovArcsec
     }));
+    // Where it is, in words: from the device cache at once, or one polite lookup.
+    var slotP = card.querySelector('[data-place]');
+    var pl = opts.kind === 'cornerstone' ? (opts.cornerstone || {}) : (opts.star || {});
+    var PL = placeModule();
+    if (slotP && PL && pl.lat != null) {
+      var now = PL.cached(pl.lat, pl.lon);
+      if (now) slotP.textContent = now;
+      else PL.lookup(pl.lat, pl.lon).then(function (t) { if (t) slotP.textContent = t; });
+    }
     // The cornerstone's lattice now sits over real streets.
     var cs = opts.cornerstone || {};
     var stg = opts.kind === 'cornerstone' && card.querySelector('.bg svg .st-g');
@@ -824,11 +844,18 @@ var GeosonifyStarpinCard = (function () {
     var lat = isStar ? d.lat : c.lat, lon = isStar ? d.lon : c.lon;
     var span = isStar ? (d.fovArcsec || STAR_FOV_ARCSEC) * M_PER_ARCSEC * 1.1
                       : Math.sqrt(510.1e12 / (12 * Math.pow(4, Math.round(c.order || 12)))) * 2.9 * 1.3;
-    return roadsAround(lat, lon, span, 3000).then(function (roads) { return drawCard(opts, doc, roads || []); });
+    var PL = placeModule();
+    var place = (PL && lat != null) ? (PL.cached(lat, lon) ? Promise.resolve(PL.cached(lat, lon))
+      : Promise.race([PL.lookup(lat, lon), new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })]))
+      : Promise.resolve(null);
+    return Promise.all([roadsAround(lat, lon, span, 3000), place]).then(function (got) {
+      return drawCard(opts, doc, got[0] || [], got[1]);
+    });
   }
-  function drawCard(opts, doc, roads) {
+  function drawCard(opts, doc, roads, placeText) {
     // Star cards are taller now: the window is bigger and has a caption.
-    var W = 680, H = opts.kind !== 'cornerstone' ? 1060 : 1000, pad = 46;
+    // Room for the window, its caption, the place line and the map credit.
+    var W = 680, H = opts.kind !== 'cornerstone' ? 1090 : 1040, pad = 46;
     var cv = doc.createElement('canvas');
     cv.width = W; cv.height = H;
     var g = cv.getContext('2d');
@@ -959,6 +986,10 @@ var GeosonifyStarpinCard = (function () {
     var title = isStar ? String(d.id || d.name || '') : String(c.name || '');
     var size = title.length > 20 ? 30 : 36;
     text(title, W / 2, 180, '600 ' + size + 'px Georgia,serif', INK, 'center');
+    if (placeText) {
+      var pf = placeText.length > 44 ? 15 : 17;
+      text(placeText, W / 2, 208, pf + 'px ' + SANS, INK, 'center');
+    }
 
     var rows = [];
     if (isStar) {
@@ -1030,6 +1061,8 @@ var GeosonifyStarpinCard = (function () {
         g.fillStyle = light ? 'rgba(34,39,15,.14)' : 'rgba(184,192,212,.12)';
         g.fillRect(pad, y + 16, W - pad * 2, 1);
       });
+      text('streets and place names \u00A9 OpenStreetMap contributors', W / 2, H - 58,
+           '12px ' + SANS, labelAt(H - 58), 'center');
       text('geosonify.org', W / 2, H - 34, '15px ' + MONO, labelAt(H - 34), 'center');
     }
 
@@ -1123,7 +1156,7 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.5', render: render, show: show, html: html,
+  return { VERSION: '0.6', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
            skyWindow: skyWindow, groundWindow: groundWindow, gridSVG: gridSVG,
            starGlowValue: starGlowValue, niceBar: niceBar };

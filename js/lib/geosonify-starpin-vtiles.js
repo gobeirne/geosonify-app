@@ -164,7 +164,9 @@ var GeosonifyStarpinTiles = (function () {
   function tileZoomFor(mapZoom) { return Math.max(0, Math.min(MAX_Z, Math.round(mapZoom) - 1)); }
 
   // ── schema: OpenMapTiles layers -> what we draw ─────────────────────────────
-  var LAYERS = ['water', 'waterway', 'boundary', 'transportation'];
+  // place and water_name are points with names: they let a card say where a
+  // find is even out at sea, where there is no address to look up.
+  var LAYERS = ['water', 'waterway', 'boundary', 'transportation', 'place', 'water_name'];
   var ROAD = {
     motorway: 'major', trunk: 'major', primary: 'major', secondary: 'major', tertiary: 'major',
     minor: 'minor', residential: 'minor', unclassified: 'minor', living_street: 'minor', pedestrian: 'minor',
@@ -181,7 +183,7 @@ var GeosonifyStarpinTiles = (function () {
   // into tiles, not a coastline; such segments are marked so they are never
   // stroked (they are still filled, clipped to the tile).
   function toGeo(dec, z, x, y) {
-    var out = { roads: [], waterways: [], borders: [], water: [] };
+    var out = { roads: [], waterways: [], borders: [], water: [], places: [], waterNames: [] };
     function conv(L) {
       var ext = L.extent, n = Math.pow(2, z);
       return function (p) {
@@ -227,6 +229,25 @@ var GeosonifyStarpinTiles = (function () {
         f.rings.forEach(function (r) { if (r.length > 1) out.borders.push({ level: lvl, pts: r.map(cB) }); });
       });
     }
+    // Named points. Every name:xx the tile carries is kept, so the caller can
+    // pick the reader's language and fall back to the local form.
+    function names(props) {
+      var o = {};
+      Object.keys(props).forEach(function (k) { if (k === 'name' || k.indexOf('name:') === 0 || k === 'name_en') o[k] = props[k]; });
+      return o;
+    }
+    ['place', 'water_name'].forEach(function (layer) {
+      var Lp = dec[layer];
+      if (!Lp) return;
+      var cP = conv(Lp);
+      Lp.features.forEach(function (f) {
+        if (!f.props.name || !f.rings.length || !f.rings[0].length) return;
+        // water_name may be a line (a named sea's label path): its midpoint will do.
+        var r = f.rings[0], q = r[Math.floor(r.length / 2)], ll = cP(q);
+        (layer === 'place' ? out.places : out.waterNames).push({
+          cls: String(f.props['class'] || ''), names: names(f.props), rank: f.props.rank, lat: ll[0], lon: ll[1] });
+      });
+    });
     if ((L = dec.water)) {
       var cWa = conv(L), ext = L.extent;
       L.features.forEach(function (f) {
@@ -339,7 +360,8 @@ var GeosonifyStarpinTiles = (function () {
             }).then(function (b) { stats.network++; devicePut(k, b); return b; });
           });
         }).then(inflate).then(function (u8) {
-          var geo = u8.length ? toGeo(decode(u8, LAYERS), z, xw, y) : { roads: [], waterways: [], borders: [], water: [] };
+          var geo = u8.length ? toGeo(decode(u8, LAYERS), z, xw, y)
+                              : { roads: [], waterways: [], borders: [], water: [], places: [], waterNames: [] };
           geo.z = z; geo.x = xw; geo.y = y; geo.bounds = tileBounds(z, xw, y);
           touch(k, geo);
           delete inflight[k]; delete jobs[k];
@@ -381,7 +403,7 @@ var GeosonifyStarpinTiles = (function () {
   function shared() { return _shared || (_shared = createStore({})); }
 
   return {
-    VERSION: '0.2', TILEJSON_URL: TILEJSON_URL, MAX_Z: MAX_Z, LAYERS: LAYERS,
+    VERSION: '0.3', TILEJSON_URL: TILEJSON_URL, MAX_Z: MAX_Z, LAYERS: LAYERS,
     decode: decode, toGeo: toGeo, roadClass: roadClass,
     lon2x: lon2x, lat2y: lat2y, x2lon: x2lon, y2lat: y2lat, tileBounds: tileBounds,
     tilesFor: tilesFor, wrapX: wrapX, tileZoomFor: tileZoomFor, createStore: createStore, shared: shared

@@ -104,14 +104,7 @@ var GeosonifyStarpinReadout = (function () {
                    explicit ? order : schemeOrder('hp64', order));
       } },
 
-    localgrid: { label: 'Local Grid', group: 'geographic', needs: 'GISGrids',
-      fn: function (lat, lon, order) {
-        // Local Grid iterations are metres-of-resolution steps, not HEALPix
-        // orders, so map across rather than passing the order straight through.
-        var it = Math.max(1, Math.min(8, Math.round((order - 6) / 2)));
-        return mod('GISGrids').encode('localgrid', lat, lon, it);
-      } },
-
+    // Local Grid is not offered in Starpin (see HIDDEN below).
   };
 
   // ── Geosonify's own vocabularies ─────────────────────────────────────────
@@ -136,13 +129,20 @@ var GeosonifyStarpinReadout = (function () {
   // will otherwise resurrect anything left half-retired.
   var RETIRED = {};
 
+  // Not RETIRED -- these are live Geosonify vocabularies, still on its cards --
+  // but not what Starpin offers as an address. A sound, a colour swatch and a
+  // local metric grid do not read out as a place to walk to, and the picker is
+  // a list of ways to say where. Hidden from the picker AND from reading back,
+  // so a pasted code is never silently decoded through one of them.
+  var HIDDEN = { music: 1, chromacoord: 1, hpchromacoord: 1 };
+
   function cardGrids() {
     var G = mod('CARD_GRIDS');
     if (!G || typeof mod('encodeCardCoordinate') !== 'function') return {};
     var out = {};
     Object.keys(G).forEach(function (k) {
       var d = G[k];
-      if (!d || RETIRED[k] || (d.display && SKIP_DISPLAY[d.display])) return;
+      if (!d || RETIRED[k] || HIDDEN[k] || (d.display && SKIP_DISPLAY[d.display])) return;
       out['card:' + k] = {
         label: 'Geosonify \u00B7 ' + (d.name || k),
         group: 'geosonify', needs: 'encodeCardCoordinate', gridKey: k,
@@ -373,8 +373,8 @@ var GeosonifyStarpinReadout = (function () {
     };
   }
 
-  return { VERSION: '0.4', mount: mount, FORMATS: FORMATS, available: available,
-           ensureCardFormats: ensureCardFormats, RETIRED: RETIRED,
+  return { VERSION: '0.5', mount: mount, FORMATS: FORMATS, available: available,
+           ensureCardFormats: ensureCardFormats, RETIRED: RETIRED, HIDDEN: HIDDEN,
            mod: mod, register: register, parse: parse, canParse: canParse };
 })();
 
