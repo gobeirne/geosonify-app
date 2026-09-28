@@ -344,6 +344,7 @@ var GeosonifyStarpinMap = (function () {
       function ptRaw(lat, lon) { var p = map.latLngToContainerPoint([lat, lon]); return [p.x, p.y]; }
       function pt(lat, lon) { return ptRaw(lat, wrapNear(lon, refLon)); }
 
+      var layers = [];                                  // per order: its rings and its stroke
       for (var order = 0; order <= 20; order++) {
         var cw = cellWidthM(order);
         // No coarse skip: a cell 60x the view still has an edge that may run
@@ -365,12 +366,29 @@ var GeosonifyStarpinMap = (function () {
         // only line in view and 3 m is metres of pavement.
         // Rings are built and projected ONCE per order, then stroked twice
         // (halo, line); they used to be recomputed for each pass.
-        var segs = Math.max(1, Math.min(24, Math.round(4 * Math.min(8, cw / spanM) + 1)));
+        // Enough points that no straight piece of an edge is longer than ~4 px
+        // ON SCREEN. It used to be set from cells-across-the-view, which gave a
+        // continent-scale cell only one or two straight chords while the next
+        // order's edges bent through the midpoint -- the same boundary drawn as
+        // two slightly different lines, one thick and straight, one thin and kinked.
+        var segs = Math.max(4, Math.min(64, Math.ceil((cw / mpp) / 4)));
+        // EACH EDGE ONCE, at the coarsest order that owns it. In the nested
+        // scheme every child cell shares two of its four edges with its parent
+        // (which two is read off its last two index bits -- checked against the
+        // geometry on 2,880 edges), so when the parent order is also drawn,
+        // only the child's two NEW edges are. Drawing all four laid every
+        // coarse line again at each finer order, and sub-pixel differences
+        // between the copies made one boundary look doubled or kinked.
+        var parentDrawn = drawn.indexOf(order - 1) >= 0;
         var screenRings = [];
         for (var i = 0; i < cells.length; i++) {
-          var ip = BigInt(cells[i]), ring = [];
+          var ip = BigInt(cells[i]);
+          var xb = Number(ip & 1n), yb = Number((ip >> 1n) & 1n);
+          var inherited = [yb === 0, xb === 1, yb === 1, xb === 0];     // e0 v=0, e1 u=1, e2 v=1, e3 u=0
           for (var e = 0; e < 4; e++) {
-            for (var t = 0; t < segs; t++) {
+            if (parentDrawn && inherited[e]) continue;
+            var line = [];
+            for (var t = 0; t <= segs; t++) {
               var f = t / segs;
               var uv = e === 0 ? [f, 0] : e === 1 ? [1, f]
                      : e === 2 ? [1 - f, 1] : [0, 1 - f];
@@ -380,28 +398,33 @@ var GeosonifyStarpinMap = (function () {
               var r3 = Math.hypot(x, y, z);
               // A corner exactly on a pole has no longitude; atan2(0, 0) = 0
               // is not an answer, it is a default. ringCopies fills it in.
-              ring.push([Math.asin(z / r3) / D2R,
+              line.push([Math.asin(z / r3) / D2R,
                          Math.hypot(x, y) < 1e-12 * r3 ? null : Math.atan2(y, x) / D2R]);
             }
+            ringCopies(line, refLon, westLon, eastLon).forEach(function (rg) {
+              screenRings.push(rg.map(function (p) { return ptRaw(p[0], p[1]); }));
+            });
           }
-          ringCopies(ring, refLon, westLon, eastLon).forEach(function (rg) {
-            screenRings.push(rg.map(function (p) { return ptRaw(p[0], p[1]); }));
-          });
         }
 
-        // Halo first, then the line, so the grid holds on any basemap.
-        [[pal.under, st.width + 1.8, st.alpha * 0.85], [pal.grid, st.width, st.alpha]]
-        .forEach(function (layer) {
-          g.strokeStyle = layer[0]; g.lineWidth = layer[1]; g.globalAlpha = layer[2];
-          g.beginPath();
-          screenRings.forEach(function (sr) {
-            g.moveTo(sr[0][0], sr[0][1]);
-            for (var j = 1; j < sr.length; j++) g.lineTo(sr[j][0], sr[j][1]);
-            g.lineTo(sr[0][0], sr[0][1]);
-          });
-          g.stroke();
-        });
+        layers.push({ rings: screenRings, st: st });
       }
+      // ALL the dark underlays first, then ALL the lines, coarsest last. Drawn
+      // order by order, a finer order's underlay was laid over the coarser line
+      // it shares an edge with, cutting into it: the same boundary looked
+      // doubled or kinked. Now every line sits on every underlay, and the
+      // rarest line is always the one on top.
+      function strokeAll(L, colour, width, alpha) {
+        g.strokeStyle = colour; g.lineWidth = width; g.globalAlpha = alpha;
+        g.beginPath();
+        L.rings.forEach(function (sr) {                     // open edges: no closing stroke
+          g.moveTo(sr[0][0], sr[0][1]);
+          for (var j = 1; j < sr.length; j++) g.lineTo(sr[j][0], sr[j][1]);
+        });
+        g.stroke();
+      }
+      layers.forEach(function (L) { strokeAll(L, pal.under, L.st.width + 1.8, L.st.alpha * 0.85); });
+      layers.slice().reverse().forEach(function (L) { strokeAll(L, pal.grid, L.st.width, L.st.alpha); });
       g.globalAlpha = 1;
 
       hits = [];
@@ -606,7 +629,9 @@ var GeosonifyStarpinMap = (function () {
       setFix: function (lat, lon, acc) {
         var first = !fix;
         fix = { lat: lat, lon: lon, accuracy_m: acc };
-        if (first) map.setView([lat, lon], Math.max(map.getZoom(), 17));
+        // The first fix frames you at street scale: about a 100 m scale bar,
+        // enough to see the block around you and the nearest targets.
+        if (first) map.setView([lat, lon], 16);
         redraw();
       },
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
@@ -660,7 +685,7 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.6', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.7', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName,
            wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,

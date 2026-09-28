@@ -88,9 +88,11 @@ var GeosonifyStarpinFlip = (function () {
   // The turn needs the streets canvas and the sky to agree after it lands,
   // which holds to ~60 km across (see alignment() below); wider, it crossfades.
   var TURN_MAX_VIEW_M = 60000;
-  // Arrival distance for a cornerstone (the app's 15 m rule): the point is
-  // exact, so the only slack is the GPS fix, and the ring shows exactly that.
-  var CORNER_BAG_M = 15;
+  // The catch circle for a cornerstone is the SAME visit-geometry-v1 circle as
+  // a starpin's: 3", about 93 m (assessVisit uses one rule for both). An earlier
+  // version drew it at 15 m, a figure never enforced anywhere; the ring now
+  // shows the rule the game actually applies.
+  var CORNER_BAG_M = VISIT_R_ARCSEC * M_PER_ARCSEC;
   var STAR_MAX_VIEW_M = 8000;                        // matches the map's star lookup
 
   // ── pure maths (exported, and held by the self-test) ──────────────────────
@@ -891,18 +893,18 @@ var GeosonifyStarpinFlip = (function () {
           g.addColorStop(0.7, 'rgba(' + col + ',' + (0.12 * strength) + ')');
           g.addColorStop(1, 'rgba(' + col + ',0)');
           ctx.fillStyle = g;
+          // A glow with no edge: it says how rare, never where the line is.
           ctx.beginPath(); ctx.arc(p[0], p[1], hPx, 0, 6.2832); ctx.fill();
-          ctx.strokeStyle = 'rgba(' + col + ',' + (0.35 * strength) + ')'; ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.arc(p[0], p[1], hPx, 0, 6.2832); ctx.stroke();
           return;
         }
         if (hPx < 5 && c.rarity > 10) return;          // far out, only the rare ones keep a mark
-        if (bagPx >= 3) {
+        // The catch ring: thin and crisp, the one line that means "get within this".
+        if (bagPx >= 4) {
           ctx.beginPath(); ctx.arc(p[0], p[1], bagPx, 0, 6.2832);
-          ctx.strokeStyle = 'rgba(7,10,20,.55)'; ctx.lineWidth = 3; ctx.stroke();
-          ctx.strokeStyle = 'rgba(' + col + ',.95)'; ctx.lineWidth = 1.5; ctx.stroke();
+          ctx.strokeStyle = 'rgba(7,10,20,.5)'; ctx.lineWidth = 2.6; ctx.stroke();
+          ctx.strokeStyle = 'rgba(' + col + ',.9)'; ctx.lineWidth = 1.2; ctx.stroke();
         }
-        ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(2, Math.min(3.5, bagPx * 0.25)), 0, 6.2832);
+        ctx.beginPath(); ctx.arc(p[0], p[1], Math.max(2, Math.min(3.5, bagPx * 0.05)), 0, 6.2832);
         ctx.fillStyle = 'rgba(' + col + ',1)'; ctx.fill();
       });
     }
@@ -1429,7 +1431,7 @@ var GeosonifyStarpinFlip = (function () {
   }
 
   return {
-    VERSION: '0.6', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
+    VERSION: '0.7', mount: mount, SURVEYS: SURVEYS, VISIT_R_ARCSEC: VISIT_R_ARCSEC, CORNER_BAG_M: CORNER_BAG_M,
     wrap360: wrap360, wrapNear: wrapNear, aspForZoom: aspForZoom, zoomForAsp: zoomForAsp,
     skyProjector: skyProjector, tangentOf: tangentOf, fromTangent: fromTangent, sepArcsec: sepArcsec, scaleBar: scaleBar, cellSideM: cellSideM, haloM: haloM, reachFromGeos: reachFromGeos,
     nearestLineM: nearestLineM, floorAsp: floorAsp
