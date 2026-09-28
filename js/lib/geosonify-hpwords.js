@@ -22,8 +22,20 @@
  *            to a single child. Drawn by tracing the parent with nw ∈ [b/2,(b+1)/2]
  *            (verified: pixcoord ne = x = digit bit 0, nw = y = digit bit 1).
  *
- * Not in the beta (deliberately): passphrase/obfuscation, URL parameter, spoken
- * substitute profiles. The first word index must be < 1536 (faces 0–B).
+ * Passphrase (beta, healpix-bip39-pass-v1): each WORD INDEX is permuted with the
+ * FROZEN grid-passphrase v1 shuffle, used unchanged as a primitive —
+ *   slot 0: 1×1536 row (valid first words stay valid; faces C–F stay invalid),
+ *   slot i: 1×2048 row,
+ *   chain  = "healpix-bip39-pass-v1:" + comma-joined TRUE preceding indices.
+ * The tagged chain domain-separates this use from legacy grid-pass and
+ * healpix-pass-v1 (whose chains are digits/commas only, so can never collide).
+ * Because each slot depends only on the TRUE prefix, displayed prefixes stay
+ * consistent (drop a word → the displayed parent). The checksum is computed over
+ * the DISPLAYED indices, so anyone can check a transcription without the
+ * passphrase — and therefore a valid checksum does NOT confirm the passphrase.
+ *
+ * Not in the beta (deliberately): obfuscation, URL parameter, spoken substitute
+ * profiles. The first word index must be < 1536 (faces 0–B).
  *
  * Depends on: HealpixGrids (geosonify-healpix.js), BIP39_OFFICIAL_WORDLISTS.
  * Node self-test:  node geosonify-hpwords.js --selftest
@@ -224,9 +236,44 @@ const HealpixWords = (function () {
     return indices.map(i => displayWord(lang, i)).join(cfg.delim) + cfg.csDelim + checksum(indices);
   }
 
-  function encode(lat, lon, n, lang) {
+  // ── passphrase layer (healpix-bip39-pass-v1, beta) ──────
+  const PASS_TAG = 'healpix-bip39-pass-v1';
+  const rows = {};
+  const rowOf = N => rows[N] || (rows[N] = [Array.from({ length: N }, (_, i) => i)]);
+  const permCache = new Map();
+  const slotSize = i => (i === 0 ? FIRST_WORD_LIMIT : 2048);
+  function perm(opt, i, truePrefix) {
+    const N = slotSize(i);
+    const chain = PASS_TAG + ':' + truePrefix.join(',');
+    const key = opt.pass + '\u0000' + N + '\u0000' + chain;
+    let p = permCache.get(key);
+    if (!p) {
+      const order = opt.shuffleFn(rowOf(N), opt.pass, chain).order;   // order[displayed] = true
+      const inv = new Array(N);
+      for (let d = 0; d < N; d++) inv[order[d]] = d;
+      p = { order, inv };
+      if (permCache.size > 256) permCache.clear();
+      permCache.set(key, p);
+    }
+    return p;
+  }
+  const active = opt => !!(opt && opt.pass && opt.shuffleFn);
+  // true indices → displayed indices
+  function protect(trueIdx, opt) {
+    if (!active(opt)) return trueIdx.slice();
+    return trueIdx.map((x, i) => perm(opt, i, trueIdx.slice(0, i)).inv[x]);
+  }
+  // displayed indices → true indices
+  function unprotect(disp, opt) {
+    if (!active(opt)) return disp.slice();
+    const out = [];
+    for (let i = 0; i < disp.length; i++) out.push(perm(opt, i, out).order[disp[i]]);
+    return out;
+  }
+
+  function encode(lat, lon, n, lang, opt) {
     const idx = encodeIndices(lat, lon, n);
-    return idx ? format(lang, idx) : '';
+    return idx ? format(lang, protect(idx, opt)) : '';
   }
 
   // Parse user text. Accepts any common delimiter; checksum optional.
@@ -452,6 +499,30 @@ const HealpixWords = (function () {
     ok(Math.abs(area(r3) / area(full14) - 0.5) < 1e-3, 'odd-word ring = half its parent cell (area ratio ' + (area(r3) / area(full14)).toFixed(5) + ')');
     ok(r2 && r2.length > 10, 'even-word ring drawn');
 
+    // Passphrase layer (needs the frozen-shuffle oracle as shuffleFn)
+    const oracle = selftest._oracle;
+    if (oracle) {
+      const shuffleFn = (grid, pass, chain) => ({ order: oracle.gridPassphraseOrderV1(grid.flat().length, pass, chain) });
+      const opt = { pass: 'correct horse battery staple', shuffleFn };
+      let s2 = 999;
+      const rnd2 = () => ((s2 = (s2 * 1103515245 + 12345) >>> 0) / 4294967296);
+      for (let t = 0; t < 40; t++) {
+        const lat = Math.asin(2 * rnd2() - 1) * 180 / Math.PI, lon = rnd2() * 360 - 180;
+        const tru = encodeIndices(lat, lon, 8), disp = protect(tru, opt);
+        ok(disp[0] < FIRST_WORD_LIMIT, 'protected first word stays a valid face word');
+        ok(JSON.stringify(unprotect(disp, opt)) === JSON.stringify(tru), 'pass round trip');
+        for (let n = 1; n <= 8; n++) ok(JSON.stringify(protect(tru.slice(0, n), opt)) === JSON.stringify(disp.slice(0, n)), 'protected prefix consistency n=' + n);
+      }
+      const dOffice = protect(office, opt);
+      ok(JSON.stringify(dOffice) !== JSON.stringify(office), 'passphrase changes the words');
+      ok(JSON.stringify(protect(office, { pass: 'Ma\u0304ori', shuffleFn })) ===
+         JSON.stringify(protect(office, { pass: 'M\u0101ori', shuffleFn })), 'NFC/NFD passphrases derive identically');
+      ok(JSON.stringify(protect(office, { pass: 'other', shuffleFn })) !== JSON.stringify(dOffice), 'different passphrase → different words');
+      log('  pass vector (beta, not frozen): "correct horse battery staple" office → ' + format('english', dOffice));
+    } else {
+      log('  SKIP passphrase tests (grid-passphrase-v1-reference.js not found)');
+    }
+
     log(fails ? `hpwords selftest: ${fails} FAILURE(S)` : 'hpwords selftest: ALL PASS');
     return fails === 0;
   }
@@ -460,7 +531,7 @@ const HealpixWords = (function () {
     FORMAT_ID, MIN_WORDS, MAX_WORDS, DEFAULT_WORDS, WEIGHTS, DOMAIN, FIRST_WORD_LIMIT, LANGS,
     checksum, checksumValue, runningChecksums, candidatesForSlot,
     orderForWords, effectiveOrder, orderLabel,
-    pathToIndices, indicesToPath, encodeIndices, encode, format, parse,
+    pathToIndices, indicesToPath, encodeIndices, encode, format, parse, protect, unprotect, PASS_TAG,
     wordToIndex, displayWord, suggest, keyOf, list,
     ringForIndices, ringAt, centreForIndices, cellsForIndices,
     cellMetres, cellArcsec, beyondMeasured, clampWords,
@@ -476,5 +547,8 @@ if (typeof require === 'function' && typeof module !== 'undefined' && require.ma
   const path = require('path');
   globalThis.HealpixGrids = require(path.join(__dirname, 'geosonify-healpix.js'));
   globalThis.BIP39_OFFICIAL_WORDLISTS = require(path.join(__dirname, 'bip39-official-wordlists.js'));
+  for (const c of ['../../spec/grid-passphrase-v1-reference.js', 'grid-passphrase-v1-reference.js']) {
+    try { HealpixWords.selftest._oracle = require(path.join(__dirname, c)); break; } catch (e) {}
+  }
   process.exit(HealpixWords.selftest() ? 0 : 1);
 }

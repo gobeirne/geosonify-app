@@ -66,6 +66,9 @@
   }
   const lockedCount = st => { let k = 0; while (k < st.n && st.locked[k] !== null) k++; return k; };
   const lockedPrefix = st => st.locked.slice(0, lockedCount(st));
+  // Passphrase: typed words are DISPLAYED indices; geometry needs the TRUE ones.
+  const passOpt = () => { try { return CardRenderer.getHpWordsOpt ? CardRenderer.getHpWordsOpt() : null; } catch (e) { return null; } };
+  const trueOf = idx => HW().unprotect(idx, passOpt());
   const word = (gridKey, i) => HW().displayWord(lang(gridKey), i);
 
   function sizeLabel(n) {
@@ -120,7 +123,7 @@
     const k = lockedCount(st);
     if (!bar) return;
     if (k === 0 || isSky() || !st.active) { bar.style.display = 'none'; return; }
-    const c = HW().centreForIndices(lockedPrefix(st));
+    const c = HW().centreForIndices(trueOf(lockedPrefix(st)));
     if (!c) { bar.style.display = 'none'; return; }
     bar.style.display = 'flex';
     bar.textContent = 'Looking up...';
@@ -146,10 +149,10 @@
     const pre = lockedPrefix(st);
     // Faint outline of the parent level for context, then the current cell dashed.
     if (k >= 2) {
-      const pr = HW().ringForIndices(pre.slice(0, k - 1), 24);
+      const pr = HW().ringForIndices(trueOf(pre.slice(0, k - 1)), 24);
       if (pr) st.mapLayers.push(L.polygon(pr, { color: COLORS[(k - 2) % 8], weight: 1, opacity: 0.45, fill: false, interactive: false }).addTo(m));
     }
-    const ring = HW().ringForIndices(pre, 24);
+    const ring = HW().ringForIndices(trueOf(pre), 24);
     if (!ring) return;
     const color = COLORS[(k - 1) % 8];
     const poly = L.polygon(ring, { color, weight: 2.5, fillOpacity: 0.12, dashArray: '6,4', interactive: false }).addTo(m);
@@ -157,7 +160,7 @@
     const maxZ = (typeof m.getMaxZoom === 'function' && isFinite(m.getMaxZoom())) ? m.getMaxZoom() : 19;
     if (!noFit) m.fitBounds(poly.getBounds(), { padding: [20, 20], maxZoom: maxZ });
     if (k === st.n) {
-      const c = HW().centreForIndices(pre);
+      const c = HW().centreForIndices(trueOf(pre));
       if (c) st.mapPin = L.marker(c, { title: pre.map(i => word(gridKey, i)).join('-'), zIndexOffset: 1000 }).addTo(m);
     }
   }
@@ -177,6 +180,13 @@
     beta.textContent = 'BETA · words are stable; checksum digits may change before release' +
       (zh ? ' · not yet validated for voice in Chinese' : '');
     entry.appendChild(beta);
+    if (passOpt()) {
+      const pb = document.createElement('div');
+      pb.style.cssText = 'font-size:11px; color:#fde68a; background:#422006; border:1px solid #f59e0b; border-radius:4px; padding:5px 8px; margin-bottom:6px; font-weight:600; line-height:1.4;';
+      pb.textContent = '🔑 Passphrase active — enter the words exactly as sent; the map uses your passphrase to place them. ' +
+        'A matching checksum only confirms the words were copied correctly, not that the passphrase is right.';
+      entry.appendChild(pb);
+    }
 
     const geoBar = document.createElement('div');
     geoBar.className = 'bip39-geo-bar';
@@ -452,7 +462,7 @@
     html += `</div>`;
 
     if (st.csStatus === 'pass' && all) {
-      const c = HW().centreForIndices(pre);
+      const c = HW().centreForIndices(trueOf(pre));
       const code = codeString(gridKey, pre);
       if (c) {
         const lat = c[0].toFixed(7), lon = c[1].toFixed(7);
@@ -580,7 +590,7 @@
     for (const c of cands) {
       const test = lockedPrefix(st).slice(); test[slot] = c;
       const depth = Math.min(slot + 1, 3);
-      const cen = HW().centreForIndices(test.slice(0, Math.max(depth, slot + 1)));
+      const cen = HW().centreForIndices(trueOf(test.slice(0, Math.max(depth, slot + 1))));
       const el = box.querySelector(`.bip39-correction-geo[data-idx="${c}"]`);
       if (!cen || !el || isSky()) continue;
       const res = await reverseGeocode(cen[0], cen[1]);
@@ -601,13 +611,14 @@
     const st = getState(gridKey);
     if (!st._speakerDiv) return;
     const coord = CardRenderer.getCoordinate ? CardRenderer.getCoordinate() : null;
-    if (!coord || (CardRenderer.getPassphrase && CardRenderer.getPassphrase()) || (CardRenderer.isObfuscated && CardRenderer.isObfuscated())) {
+    if (!coord || (CardRenderer.isObfuscated && CardRenderer.isObfuscated())) {
       st._speakerDiv.innerHTML = '<div style="color:#64748b; font-size:12px;">' + (coord ? 'Hidden while privacy mode is active' : 'Move the map to generate a code') + '</div>';
       return;
     }
     const n = cardWords(gridKey);
-    const idx = HW().encodeIndices(coord.lat, coord.lon, n);
-    if (!idx) return;
+    const tru = HW().encodeIndices(coord.lat, coord.lon, n);
+    if (!tru) return;
+    const idx = HW().protect(tru, passOpt());
     const rc = HW().runningChecksums(idx);
     let html = '';
     idx.forEach((x, i) => {
@@ -616,7 +627,7 @@
           <span style="font-size:18px; font-weight:600; color:#94a3b8; font-variant-numeric:tabular-nums;">${rc[i]}</span>
         </div>`;
     });
-    html += `<div style="font-size:10px; color:#64748b; margin-top:6px;">${HW().orderLabel(n)} · ${sizeLabel(n)} equal-area cell · BETA</div>`;
+    html += `<div style="font-size:10px; color:#64748b; margin-top:6px;">${HW().orderLabel(n)} · ${sizeLabel(n)} equal-area cell · BETA${passOpt() ? ' · 🔑 passphrase' : ''}</div>`;
     st._speakerDiv.innerHTML = html;
   }
 
