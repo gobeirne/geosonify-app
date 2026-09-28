@@ -592,6 +592,79 @@
     console.warn('[card-renderer] scale card registration deferred:', e);
   }
 
+  // HEALPix addresses encoded with BIP39 wordlists (healpix-bip39-v1, BETA).
+  // Ten cards, one per OFFICIAL 2048-word list. Own family flag `hpwords` (NOT
+  // `healpix`): card iterations are WORD COUNTS (1–8), not HEALPix orders, so
+  // none of the order-based healpix paths (@k suffixes, fromHealpixCode, hex
+  // sibling logic) may see them. Not visible by default; no URL parameter in
+  // the beta; redacted under passphrase/obfuscation (plain addresses only).
+  function registerHpWordsCards() {
+    if (typeof HealpixWords === 'undefined' || typeof BIP39_OFFICIAL_WORDLISTS === 'undefined') return;
+    const defs = HealpixWords.cardDefs();
+    for (const [key, d] of Object.entries(defs)) {
+      CARD_GRIDS[key] = d;
+      if (cardState.iterations[key] === undefined) cardState.iterations[key] = d.defaultIterations;
+      if (!cardState.order.includes(key)) cardState.order.push(key);
+    }
+  }
+
+  // hpwords decode: parse words (+ optional checksum) → centre of the word
+  // cell; the ENTERED word count becomes the card's precision.
+  function decodeHpWordsCode(gridKey, code) {
+    const gd = CARD_GRIDS[gridKey];
+    if (!gd || !gd.hpwords || typeof HealpixWords === 'undefined') return null;
+    if (passphrase || obfuscated) return null;          // beta: plain addresses only
+    const r = HealpixWords.parse(code, gd.hpwords);
+    if (!r || r.error || !r.indices) return null;
+    const c = HealpixWords.centreForIndices(r.indices);
+    if (!c) return null;
+    cardState.iterations[gridKey] = r.indices.length;
+    saveCardState();
+    const out = [c[0], c[1]];
+    if (r.checksumOk !== null) out.checksumValid = r.checksumOk;
+    return out;
+  }
+
+  // ℹ️ for hpwords: reuse the shared resolution popup (GISGrids renderer), one
+  // level per word count. Odd counts are labelled ½ and are two-cell half-levels.
+  function showHpWordsInfo(gridKey, n, uncertaintyLine) {
+    const gd = CARD_GRIDS[gridKey];
+    if (!gd || !currentCardCoord || typeof GISGrids === 'undefined' || !GISGrids.renderResolutionPopup) return;
+    const lat = currentCardCoord.lat, lon = currentCardCoord.lon;
+    const levels = [];
+    for (let k = HealpixWords.MIN_WORDS; k <= HealpixWords.MAX_WORDS; k++) {
+      levels.push({
+        label: `${k} word${k > 1 ? 's' : ''} · ${HealpixWords.orderLabel(k)}`,
+        code: (passphrase || obfuscated) ? '████████' : HealpixWords.encode(lat, lon, k, gd.hpwords),
+        dims: `${formatLength(HealpixWords.cellMetres(k).w)} cell (equal-area)`,
+        here: k === n
+      });
+    }
+    GISGrids.renderResolutionPopup({
+      title: gd.name + ' (beta)',
+      note: 'HEALPix NESTED address written as 11-bit words from the official BIP39 ' +
+        'list: 4 bits of base face + 2 bits per level. Every two words add exactly 11 ' +
+        'HEALPix orders (4 words = order 20). Odd word counts end halfway through a ' +
+        'level: an exact equal-area half cell (two child cells), never a single child. ' +
+        'Dropping a word always gives the containing parent. BETA: the words are stable; ' +
+        'the three checksum digits may change before the format is frozen, and there is ' +
+        'no share-link parameter yet.',
+      uncertaintyLine: uncertaintyLine || null,
+      levels,
+      detail: null,
+      compareLine: HealpixWords.beyondMeasured(n)
+        ? 'Words beyond order 26 are an exact contained-cell refinement, not extra measured precision.'
+        : null
+    });
+  }
+
+  // Words with the checksum greyed, like the legacy BIP39 display.
+  function hpWordsDisplayHTML(code) {
+    const m = /^(.*?)([.\u3002])(\d{3})$/.exec(code || '');
+    if (!m) return code;
+    return `${m[1]}<span style="font-size:0.85em;opacity:0.5">${m[2]}${m[3]}</span>`;
+  }
+
   function registerHealpixCards() {
     if (typeof HealpixGrids === 'undefined') return;
     const defs = HealpixGrids.cardDefs();
@@ -992,6 +1065,11 @@
       if (!SD || !SD.valueFor) return null;
       return SD.valueFor(gridKey, lat, ((lon % 360) + 360) % 360, iterations);
     }
+    // HEALPix words (beta): plain addresses only — redact under privacy.
+    if (gridDef && gridDef.hpwords && typeof HealpixWords !== 'undefined') {
+      if (passphrase || obfuscated) return '████████';
+      return HealpixWords.encode(lat, lon, iterations, gridDef.hpwords);
+    }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
     // both at the quaternary tree level, conforming to the vocabulary-grid
@@ -1107,6 +1185,7 @@
     if (_presDecCo) {
       return decodeCardCoordinate(_presDecCo, code, iterations);
     }
+    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code);
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
@@ -1202,6 +1281,7 @@
     if (_presDC) {
       return decodeCardCode(_presDC, code, deobfuscate);
     }
+    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code);
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
@@ -1607,6 +1687,8 @@
             const lon = currentCardCoord ? currentCardCoord.lon : 0;
             return { min: s.minIterations, max: s.maxIterations,
                      cell: (it) => s.cellMetres(it, lat, lon) }; })()
+        : (gd.hpwords && typeof HealpixWords !== 'undefined')
+          ? { min: HealpixWords.MIN_WORDS, max: HealpixWords.MAX_WORDS, cell: (it) => HealpixWords.cellMetres(it) }
         : null;
     if (ladder) {
       const EPS_L = 1e-9;
@@ -1667,6 +1749,10 @@
     qrhex: 6, qrbin: 6, datamatrix: 6, qrurl: 6,
     // HEALPix (order) — ~1.6 m
     hphex: 22, hpquad: 22, hp64: 22, hpmatrix: 22,
+    // HEALPix words (beta) — 4 words = order 20 ≈ 6.2 m, the human unit
+    hpbip39english: 4, hpbip39spanish: 4, hpbip39french: 4, hpbip39italian: 4,
+    hpbip39portuguese: 4, hpbip39czech: 4, hpbip39japanese: 4, hpbip39korean: 4,
+    hpbip39chinesesimplified: 4, hpbip39chinesetraditional: 4,
     // GIS — each standard's ~1–2 m level
     pluscode: 6, mgrs: 6, geohash: 9, utm: 5, nztm: 5, bng: 6, mga: 5, localgrid: 5
   };
@@ -1761,6 +1847,14 @@
       const skyText = GeosonifySkyUnits.cellText(gridKey, gd, iterations, currentCardCoord);
       if (skyText) return skyText;
     }
+    if (gd && gd.hpwords && typeof HealpixWords !== 'undefined') {
+      if (typeof GeosonifySkyUnits !== 'undefined' && GeosonifySkyUnits.isSky && GeosonifySkyUnits.isSky()
+          && GeosonifySkyUnits.formatAngle) {
+        return GeosonifySkyUnits.formatAngle(HealpixWords.cellArcsec(iterations) / 3600) + ' · ' + HealpixWords.orderLabel(iterations);
+      }
+      const d = HealpixWords.cellMetres(iterations);
+      return `${formatLength(d.w)} × ${formatLength(d.h)} · ${HealpixWords.orderLabel(iterations)}`;
+    }
     if (gd && gd.healpix && typeof HealpixGrids !== 'undefined') {
       // Funnel through formatLength (metric/US) instead of the module's own
       // hard-metric precisionText, so one toggle flips every card. cellMetres
@@ -1815,6 +1909,11 @@
     // never redacts — it emits a real transformed code that decodes back with the key.
     if (gridDef.gis && (passphrase || obfuscated)) {
       return '████████';
+    }
+    // HEALPix words (beta) have NO URL parameter yet (the URL grammar is a
+    // permanent contract), so shares/compact output fall back to raw lat/lon.
+    if (gridDef.hpwords) {
+      return `${lat.toFixed(6)},${lon.toFixed(6)}`;
     }
     const isBarcodeCard = (gridDef.display === 'qrhex' || gridDef.display === 'qrbin' || gridDef.display === 'qrurl' || gridDef.display === 'datamatrix');
     const iterations = isBarcodeCard ? getBarcodeIterations(gridKey)
@@ -3307,7 +3406,8 @@
       const gridKey = card.dataset.gridKey;
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
-      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !presentationOf(gridDef))) return;
+      if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !gridDef.hpwords && !presentationOf(gridDef))) return;
+      if (gridDef.hpwords && (passphrase || obfuscated)) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
       // HEALPix now transforms properly under both passphrase and obfuscation,
       // so it always re-renders (never skipped for privacy).
@@ -3402,7 +3502,9 @@
       } else {
         const el = card.querySelector('.code-display');
         if (el) {
-          const newHTML = isWordBased 
+          const newHTML = gridDef.hpwords
+            ? hpWordsDisplayHTML(code)
+            : isWordBased 
             ? `<span>${formatCodeForDisplay(code, gridKey, checksumValue)}</span>`
             : (checksumValue 
                 ? `${code}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>` 
@@ -3414,6 +3516,7 @@
       // Update precision text
       const precEl = card.querySelector('.precision-display');
       if (precEl) precEl.textContent = getPrecisionText(gridKey, iterations);
+      if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined') HPWordsEntry.onCoordUpdate(gridKey);
       
       // Dispatch fullscreen update
       if (document.getElementById('fs-overlay')) {
@@ -3429,7 +3532,7 @@
     if (!container || !currentCardCoord) return;
     
     const visibleCards = cardState.order.filter(k => 
-      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || CARD_GRIDS[k].sky || presentationOf(CARD_GRIDS[k]))
+      cardState.visible.includes(k) && CARD_GRIDS[k] && (CARD_GRIDS[k].grid || CARD_GRIDS[k].gis || CARD_GRIDS[k].healpix || CARD_GRIDS[k].hpwords || CARD_GRIDS[k].sky || presentationOf(CARD_GRIDS[k]))
     );
     
     container.innerHTML = '';
@@ -3444,7 +3547,7 @@
       // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …)
       // that can't be privacy-transformed → redact under any privacy mode.
       // HEALPix transforms properly (permute + obfuscate) so it is NEVER redacted.
-      const gisRedacted = !!(gridDef.gis && (passphrase || obfuscated));
+      const gisRedacted = !!((gridDef.gis || gridDef.hpwords) && (passphrase || obfuscated));
       if (gisRedacted) {
         code = '████████';
       }
@@ -3477,7 +3580,9 @@
       
       // For word-based grids, use formatted HTML with line breaks
       const isWordBased = gridDef.prefixLength || gridKey === 'nato';
-      const formattedCode = isWordBased 
+      const formattedCode = gridDef.hpwords
+        ? hpWordsDisplayHTML(code)
+        : isWordBased 
         ? formatCodeForDisplay(code, gridKey, checksumValue)
         : codeWithChecksum;
       
@@ -3606,7 +3711,7 @@
                  for which the thumbnail already IS the neighbourhood view.
                  gridDef.sky covers all five.
               */''}
-            ${(gridDef.gis || gridDef.healpix || gridDef.sky || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
+            ${(gridDef.gis || gridDef.healpix || gridDef.hpwords || gridDef.sky || gridDef.display === 'chessboard') ? '' : '<button class="action-btn grid3x3 grid3x3-btn">3×3</button>'}
             <button class="action-btn fullscreen-btn">Full</button>
           </div>
         </div>
@@ -3846,7 +3951,9 @@
         const _presInfo = presentationOf(gridDef);
         const infoDef = (_presInfo && CARD_GRIDS[_presInfo]) ? CARD_GRIDS[_presInfo] : gridDef;
         const infoKey = _presInfo || gridKey;
-        if (infoDef.healpix && typeof HealpixGrids !== 'undefined') {
+        if (infoDef.hpwords && typeof HealpixWords !== 'undefined') {
+          showHpWordsInfo(infoKey, iterations, uncertaintyLine);
+        } else if (infoDef.healpix && typeof HealpixGrids !== 'undefined') {
           let compareLine = null;
           const activeKey = cardState.active;
           const activeDef = CARD_GRIDS[activeKey];
@@ -4125,6 +4232,9 @@
 	  // BIP39 entry view (like piano roll for music)
 if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
   BIP39Entry.attach(card, gridKey);
+}
+if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
+  HPWordsEntry.attach(card, gridKey);
 }
       
       // Dispatch update event for fullscreen listeners
@@ -5249,7 +5359,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
     // are meaningless here and would imply a false sense of security, so
     // they're hidden for GIS cards.
     const _gd = CARD_GRIDS[gridKey];
-    const isGis = !!(_gd && _gd.gis);
+    const isGis = !!(_gd && (_gd.gis || _gd.hpwords));
     
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -5553,7 +5663,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
         out of this list and could never be enabled. Registration was working;
         the picker simply never showed them.
       */
-      if ((!def.grid && !def.gis && !def.healpix && !def.sky && !presentationOf(def)) || def.deprecated) return;
+      if ((!def.grid && !def.gis && !def.healpix && !def.hpwords && !def.sky && !presentationOf(def)) || def.deprecated) return;
 
       /*
         And only offer what the CURRENT frame can actually display. Enabling a
@@ -5579,7 +5689,9 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // the key prefix — new scales then tag themselves with no edit here.
       const isMusic = def.display === 'music';
       const isSky = !!def.sky;
-      const tag = isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
+      const tag = def.hpwords ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix · beta)</span>'
+                : def.prefixLength ? ' <span style="font-size:11px;opacity:0.5;">(legacy)</span>'
+                : isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
                 : isSky ? ' <span style="font-size:11px;opacity:0.5;">(Sky)</span>'
                 : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
                 : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
@@ -6572,6 +6684,11 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       if (gd && gd.healpix && GeoPrecision.fromHealpixCode) {
         const ord = cardState.iterations[gridKey] || (gd.defaultIterations);
         pt = GeoPrecision.fromHealpixCode(code, gd.healpix, ord);
+      } else if (gd && gd.hpwords && typeof HealpixWords !== 'undefined') {
+        // Word cell (incl. odd-count half cells): uncertainty = its square-equivalent width.
+        pt = GeoPrecision.fromLatLon(lat, lon, {});
+        const n = cardState.iterations[gridKey] || gd.defaultIterations;
+        if (pt && pt.meta) pt.meta.uncertaintyMetres = HealpixWords.cellMetres(n).w;
       } else if (gd && gd.gis) {
         // GIS schemes are externally-defined; fall back to lat/lon-derived point
         // but tag basis as decoded code (uncertainty ≈ the scheme cell at its iters).
@@ -6688,6 +6805,7 @@ if (gridDef.prefixLength && typeof BIP39Entry !== 'undefined') {
       // yet and saved additions/ordering for them are dropped on reload).
       registerGISCards();
       registerHealpixCards();
+      registerHpWordsCards();
       registerScaleCards();
       registerChessboardCards();
 
