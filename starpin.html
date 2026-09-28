@@ -721,12 +721,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20260926b"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261001"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261001"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20260930"></script>
 
@@ -918,7 +918,22 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     r.appendChild(d); b.appendChild(r); return d;
   }
 
+  var tabPressed = false, tabRepaintOwed = false;
+  (function guardTaps() {
+    var body = $('tab-body');
+    function up() {
+      if (!tabPressed) return;
+      tabPressed = false;
+      // after the click has had its chance to fire
+      setTimeout(function () { if (tabRepaintOwed) { tabRepaintOwed = false; paintTabBody(); } }, 400);
+    }
+    body.addEventListener('pointerdown', function () { tabPressed = true; }, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+  })();
+  window.starpinPaintTargets = function () { paintTabBody(); };   // for the console, and the tests
   function paintTabBody() {
+    if (tabPressed) { tabRepaintOwed = true; return; }
     var b = $('tab-body'); b.textContent = '';
     driveByTick = null;   // repaint rebuilds the row; the ticker re-finds it by id
     if (!fix) { b.appendChild(el('p', 'hint', 'Use my location first.')); return; }
@@ -2572,7 +2587,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     var la = got.p[0], lo = got.p[1];
     goTab('map');
-    map.leaflet.setView([la, lo], Math.max(map.leaflet.getZoom(), 17));
+    map.leaflet.setView([la, lo], 16);
     map.dropPin(la, lo);
     readAt(la, lo, 'typed in');
     $('pin-ll').blur();
