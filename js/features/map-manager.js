@@ -489,6 +489,28 @@
       gridConfig = CARD_GRIDS[sibKey];
     }
 
+    // HEALPix-words cards (beta): iterations are WORD COUNTS. Draw the word
+    // hierarchy — the cell after 1…N words (odd counts are exact half cells,
+    // traced by HealpixWords), outermost faintest, innermost filled.
+    if (gridConfig && gridConfig.hpwords && typeof HealpixWords !== 'undefined') {
+      const n = HealpixWords.clampWords(iterations);
+      const minN = Math.max(1, n - 5);
+      for (let k = minN; k <= n; k++) {
+        const ring = HealpixWords.ringAt(lat, lon, k, 18);
+        if (!ring) continue;
+        const isInnermost = (k === n);
+        const opacity = isInnermost ? 0.8 : Math.max(0.05, 0.3 - (n - k) * 0.05);
+        const layer = L.polygon(ring, {
+          color: '#ff4444', fillColor: '#ff4444',
+          weight: isInnermost ? 2 : 1, opacity,
+          fillOpacity: isInnermost ? 0.15 : 0,
+          interactive: false
+        }).addTo(map);
+        gridLayers.push(layer);
+      }
+      return;
+    }
+
     // HEALPix cards: the cell boundary is a curved equal-area diamond, not a
     // lat/lon box. Draw the current order PLUS up to 5 parent orders, each at
     // decreasing prominence — the equal-area equivalent of the multi-level
