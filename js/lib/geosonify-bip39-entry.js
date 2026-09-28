@@ -710,14 +710,23 @@
     const state = getState(gridKey);
 
     state.inputEls.forEach((input, i) => {
-      input.addEventListener('input', () => {
+      // Letters and combining marks of ANY script. The old filter kept only
+      // a-z + Latin-1/Extended-A, which silently deleted every Japanese, Korean
+      // and Chinese keystroke, so the CJK cards could never receive. Filtering is
+      // skipped while an IME is composing: rewriting input.value mid-composition
+      // cancels the candidate the user is choosing. compositionend re-runs it.
+      const onWordInput = () => {
         if (state.locked[i] !== null) { input.value = ''; return; }
-        state.words[i] = input.value.replace(/[^a-zA-Z\u00C0-\u024F]/g, '').toLowerCase();
-        input.value = state.words[i];
+        state.words[i] = input.value.replace(/[^\p{L}\p{M}]/gu, '').toLowerCase();
+        if (input.value !== state.words[i]) input.value = state.words[i];
         updateAutocomplete(gridKey, i, wordlist);
-      });
+      };
+      input.addEventListener('input', (e) => { if (e.isComposing) return; onWordInput(); });
+      input.addEventListener('compositionend', onWordInput);
 
       input.addEventListener('keydown', (e) => {
+        // IME in progress (Space converts kana/pinyin; Enter commits): leave it alone.
+        if (e.isComposing || e.keyCode === 229) return;
         // Space, Tab, or Enter = lock top suggestion
         if ((e.key === ' ' || e.key === 'Tab' || e.key === 'Enter') && state.suggestions.length > 0 && state.words[i].length >= 1) {
           e.preventDefault();

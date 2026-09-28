@@ -177,7 +177,7 @@
     const beta = document.createElement('div');
     beta.style.cssText = 'font-size:10px; color:#fbbf24; font-weight:600; margin-bottom:6px; line-height:1.4;';
     const zh = /^chinese/.test(lang(gridKey));
-    beta.textContent = 'BETA · words are stable; checksum digits may change before release' +
+    beta.textContent = 'Code format frozen (words + checksum) · BETA: passphrase mode and share links may still change' +
       (zh ? ' · not yet validated for voice in Chinese' : '');
     entry.appendChild(beta);
     if (passOpt()) {
@@ -282,14 +282,18 @@
 
       box.appendChild(row);
 
-      input.addEventListener('input', () => {
+      const onWordInput = () => {
         if (st.locked[i] !== null) { input.value = ''; return; }
         // Any script: letters + combining marks only (CJK, kana, Hangul, accents).
         st.typed[i] = input.value.replace(/[^\p{L}\p{M}]/gu, '');
         if (input.value !== st.typed[i]) input.value = st.typed[i];
         updateAutocomplete(gridKey, i);
-      });
+      };
+      // Never rewrite the field while an IME is composing (it cancels the candidate).
+      input.addEventListener('input', e => { if (e.isComposing) return; onWordInput(); });
+      input.addEventListener('compositionend', onWordInput);
       input.addEventListener('keydown', e => {
+        if (e.isComposing || e.keyCode === 229) return;   // Space/Enter belong to the IME
         if ((e.key === ' ' || e.key === 'Tab' || e.key === 'Enter') && st.suggestions.length && st.typed[i].length) {
           e.preventDefault(); lockWord(gridKey, i, st.suggestions[0]);
         }

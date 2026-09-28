@@ -1,15 +1,20 @@
 /**
  * geosonify-hpwords.js  —  HEALPix addresses encoded with BIP39 wordlists
- * Format id: healpix-bip39-v1   ·   STATUS: BETA (not frozen)
+ * Format id: healpix-bip39-v1
+ * STATUS: core format FROZEN 2026-09-29 (spec/HEALPIX-BIP39-V1-SPEC.md §2–6):
+ *   bitstream, word counts/half levels, pinned word lists, checksum, parsing.
+ *   ⚠ Never change any of these. New behaviour = a new format id; keep this
+ *   decoder forever. Changing them doesn't error — it silently alters codes.
+ *   Still BETA: passphrase layer (§7), spoken profiles (§8); no URL parameter.
  *
- * WHAT IS STABLE IN THE BETA
+ * FROZEN SPATIAL MEANING
  *   The spatial meaning of the words. N words = the first 11N bits of
  *   [4-bit face | root-first NESTED path, 2 bits/level, digit = (yBit<<1)|xBit],
  *   read as N big-endian 11-bit indices into an OFFICIAL 2048-word BIP39 list.
  *   That is pure HEALPix arithmetic and is not expected to change.
  *
- * WHAT MAY CHANGE BEFORE FREEZE
- *   The three checksum digits. Beta candidate:
+ * FROZEN CHECKSUM
+ *   The three checksum digits:
  *     C = (D + 101·N + Σ w_i·x_i) mod 997,  D = CRC32C("healpix-bip39-v1") mod 997 = 120
  *     w = [1, 140, 819, 343, 884, 825, 620, 515]   (supports 1–8 words)
  *   Running checksum after k words = C over those k words (N = k).
@@ -51,12 +56,13 @@ const HealpixWords = (function () {
 
   // Language key → card suffix, display tag, delimiters (mirror the legacy cards).
   const LANGS = {
-    english:             { tag: 'EN',   delim: '-',      csDelim: '.' },
-    spanish:             { tag: 'ES',   delim: '-',      csDelim: '.' },
-    french:              { tag: 'FR',   delim: '-',      csDelim: '.' },
-    italian:             { tag: 'IT',   delim: '-',      csDelim: '.' },
-    portuguese:          { tag: 'PT',   delim: '-',      csDelim: '.' },
-    czech:               { tag: 'CS',   delim: '-',      csDelim: '.' },
+    english:             { tag: 'EN',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    spanish:             { tag: 'ES',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    french:              { tag: 'FR',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    italian:             { tag: 'IT',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    portuguese:          { tag: 'PT',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    czech:               { tag: 'CS',   delim: '-',      csDelim: '.', prefixMin: 4 },
+    german:              { tag: 'DE',   delim: '-',      csDelim: '.', prefixMin: 4 },   // dys2p de-2048-v1 (not official BIP39)
     japanese:            { tag: 'JA',   delim: '\u30FB', csDelim: '.' },
     korean:              { tag: 'KO',   delim: '-',      csDelim: '.' },
     chinese_simplified:  { tag: 'ZH-S', delim: '\u3001', csDelim: '\u3002' },
@@ -205,13 +211,21 @@ const HealpixWords = (function () {
   }
   function displayWord(lang, idx) { const L = list(lang); return L ? L[idx].normalize('NFC') : '?'; }
 
-  // One token → index, or -1. Exact key match, else a UNIQUE prefix of ≥ 4 key chars.
-  function wordToIndex(lang, token) {
+  // One token → index, or -1. Exact key match; then, ONLY for languages whose
+  // list guarantees unique N-letter prefixes (Latin-script lists, prefixMin 4),
+  // a unique prefix of ≥ N key chars. CJK lists match exact tokens only (the
+  // entry UI's autocomplete still helps there). With a spoken profile, its
+  // substitutes and aliases are consulted after the official list.
+  function wordToIndex(lang, token, profile) {
     const K = keyIndex(lang); if (!K) return -1;
     const k = keyOf(token);
     if (!k) return -1;
     if (K.map.has(k)) return K.map.get(k);
-    if (k.length >= 4) {
+    const P = profileIndex(profile, lang);
+    if (P && P.subs.has(k)) return P.subs.get(k);
+    if (P && P.aliases.has(k)) return P.aliases.get(k);
+    const pm = (LANGS[lang] || {}).prefixMin;
+    if (pm && k.length >= pm) {
       let hit = -1;
       for (let i = 0; i < 2048; i++) {
         if (K.keys[i].startsWith(k)) { if (hit >= 0) return -1; hit = i; }
@@ -276,25 +290,134 @@ const HealpixWords = (function () {
     return idx ? format(lang, protect(idx, opt)) : '';
   }
 
-  // Parse user text. Accepts any common delimiter; checksum optional.
-  // → { indices, checksumGiven, checksumOk (true|false|null), error }
-  function parse(str, lang) {
-    if (!str) return { error: 'empty' };
+  // Parse user text — the §6 parsing contract of HEALPIX-BIP39-V1-SPEC.md.
+  // The language is REQUIRED (no auto-detection). Any error rejects the whole
+  // input; nothing is guessed or partially decoded.
+  // → { valid, indices, checksumStatus: 'verified'|'absent'|'mismatch',
+  //     checksumGiven, checksum, checksumOk (true|false|null), resolved, error }
+  // 'absent' is a valid but UNCHECKED address — never report it as verified.
+  function parse(str, lang, profile) {
+    if (!LANGS[lang] || !list(lang)) return { valid: false, error: 'language required' };
+    if (!str) return { valid: false, error: 'empty' };
     let s = String(str).normalize('NFC').trim();
     let given = null;
-    const m = s.match(/[.\u3002\uFF0E]\s*(\d{1,3})\s*$/);
-    if (m) { given = m[1].padStart(3, '0'); s = s.slice(0, m.index); }
-    const toks = s.split(/[\s\-_,\u3001\u30FB\u00B7\u3000/|.\u3002]+/u).filter(Boolean);
-    if (toks.length < MIN_WORDS || toks.length > MAX_WORDS) return { error: `need ${MIN_WORDS}–${MAX_WORDS} words` };
-    const indices = [];
+    const m = s.match(/[.\u3002\uFF0E]\s*(\d+)\s*$/);
+    if (m) {
+      if (m[1].length !== 3) return { valid: false, error: 'checksum must be exactly three digits' };
+      given = m[1]; s = s.slice(0, m.index);
+    }
+    const toks = s.split(/[\s\-_,\u3001\u30FB\u00B7\u3000/|.\u3002\uFF0E]+/u).filter(Boolean);
+    if (toks.length < MIN_WORDS || toks.length > MAX_WORDS) return { valid: false, error: `need ${MIN_WORDS}–${MAX_WORDS} words` };
+    const indices = [], resolved = [];
+    const K = keyIndex(lang);
     for (const t of toks) {
-      const i = wordToIndex(lang, t);
-      if (i < 0) return { error: `not in the ${lang} list: "${t}"` };
+      const i = wordToIndex(lang, t, profile);
+      if (i < 0) return { valid: false, error: `not in the ${lang} list (or ambiguous prefix): "${t}"` };
+      if (K && !K.map.has(keyOf(t)) && profile) {
+        const P = profileIndex(profile, lang), k = keyOf(t);
+        const via = P && P.subs.has(k) ? 'substitute' : P && P.aliases.has(k) ? 'alias' : 'prefix';
+        if (via !== 'prefix') resolved.push({ token: t, index: i, via });
+      }
       indices.push(i);
     }
-    if (indices[0] >= FIRST_WORD_LIMIT) return { indices, error: 'first word is not a valid HEALPix face' };
+    if (indices[0] >= FIRST_WORD_LIMIT) return { valid: false, indices, error: 'first word is not a valid HEALPix face' };
     const cs = checksum(indices);
-    return { indices, checksumGiven: given, checksum: cs, checksumOk: given == null ? null : given === cs };
+    if (given != null && +given >= P) return { valid: false, indices, error: 'checksum 997–999 cannot occur' };
+    const status = given == null ? 'absent' : given === cs ? 'verified' : 'mismatch';
+    return { valid: status !== 'mismatch', indices, resolved, checksumGiven: given, checksum: cs,
+             checksumStatus: status, checksumOk: given == null ? null : status === 'verified',
+             error: status === 'mismatch' ? `checksum mismatch (stated ${given}, words give ${cs})` : null };
+  }
+
+  // ── spoken profiles (framework; vocabularies need separate approval) ──
+  // A profile is explicit and versioned. Nothing is accepted from it unless the
+  // caller passes it (records/UI must carry the profile id), because accepting
+  // substitutes does not by itself remove ambiguity: if a sender still reads the
+  // canonical word, the listener is exposed to the original confusion.
+  //   aliases:      heard-as token → OFFICIAL word  (receiver side; token must be
+  //                 typed in full; maps deterministically, which is not proof of intent)
+  //   substitutes:  OFFICIAL word → spoken token    (sender speaks the token; the
+  //                 receiver accepts it for that index)
+  //   confusionGroups: sets of tokens known to be confused when spoken
+  function profileObj(p) {
+    if (!p) return null;
+    if (typeof p === 'object') return p;
+    const reg = (typeof HPWORDS_SPOKEN_PROFILES !== 'undefined') ? HPWORDS_SPOKEN_PROFILES
+              : (typeof globalThis !== 'undefined' ? globalThis.HPWORDS_SPOKEN_PROFILES : null);
+    return reg && reg[p] ? reg[p] : null;
+  }
+  const profCache = new WeakMap();
+  function profileIndex(p, lang) {
+    p = profileObj(p);
+    if (!p || p.lang !== lang) return null;
+    if (profCache.has(p)) return profCache.get(p);
+    const K = keyIndex(lang), subs = new Map(), aliases = new Map(), spoken = new Map();
+    for (const [off, tok] of Object.entries(p.substitutes || {})) {
+      const i = K.map.get(keyOf(off)); if (i == null) continue;
+      subs.set(keyOf(tok), i); spoken.set(i, tok);
+    }
+    for (const [tok, off] of Object.entries(p.aliases || {})) {
+      const i = K.map.get(keyOf(off)); if (i != null) aliases.set(keyOf(tok), i);
+    }
+    const r = { subs, aliases, spoken };
+    profCache.set(p, r);
+    return r;
+  }
+  // Word to SAY for an index under a profile (substitute if one exists).
+  function spokenWord(lang, idx, profile) {
+    const P = profileIndex(profile, lang);
+    return P && P.spoken.has(idx) ? P.spoken.get(idx) : displayWord(lang, idx);
+  }
+  // Validator: exact-token and prefix collisions are machine-checkable; whether a
+  // substitute is actually easy to hear is NOT — that needs native-speaker testing.
+  // → { errors[], warnings[], approvable }
+  function validateProfile(p) {
+    p = profileObj(p);
+    const errors = [], warnings = [];
+    if (!p || !LANGS[p.lang]) return { errors: ['unknown profile or language'], warnings, approvable: false };
+    const K = keyIndex(p.lang), pm = LANGS[p.lang].prefixMin;
+    const officialPrefix = new Map();
+    if (pm) K.keys.forEach((k, i) => officialPrefix.set(k.slice(0, pm), i));
+    const seen = new Map();                                  // token key → role
+    const claim = (tok, role) => {
+      const k = keyOf(tok);
+      if (K.map.has(k)) errors.push(`${role} "${tok}" is already an official word`);
+      if (seen.has(k)) errors.push(`${role} "${tok}" duplicates ${seen.get(k)}`);
+      seen.set(k, `${role} "${tok}"`);
+      return k;
+    };
+    const subbed = new Set();
+    const subPrefixes = new Map();
+    for (const [off, tok] of Object.entries(p.substitutes || {})) {
+      if (!K.map.has(keyOf(off))) { errors.push(`substitute source "${off}" is not an official word`); continue; }
+      subbed.add(keyOf(off));
+      const k = claim(tok, 'substitute');
+      if (pm) {
+        if (k.length < pm) errors.push(`substitute "${tok}" is shorter than the ${pm}-letter prefix rule`);
+        const pre = k.slice(0, pm);
+        if (officialPrefix.has(pre)) errors.push(`substitute "${tok}" shares prefix "${pre}" with official "${displayWord(p.lang, officialPrefix.get(pre))}"`);
+        if (subPrefixes.has(pre)) errors.push(`substitutes "${tok}" and "${subPrefixes.get(pre)}" share prefix "${pre}"`);
+        subPrefixes.set(pre, tok);
+      }
+    }
+    const rawGroups = p.confusionGroups || [];
+    const groups = rawGroups.map(g => g.map(keyOf));
+    for (const [tok, off] of Object.entries(p.aliases || {})) {
+      if (!K.map.has(keyOf(off))) { errors.push(`alias target "${off}" is not an official word`); continue; }
+      const k = claim(tok, 'alias');
+      if (pm && k.length >= pm && officialPrefix.has(k.slice(0, pm)))
+        warnings.push(`alias "${tok}" shares a prefix with official "${displayWord(p.lang, officialPrefix.get(k.slice(0, pm)))}" — must be typed in full`);
+      for (const g of groups) {
+        if (!g.includes(k)) continue;
+        const others = g.filter(x => K.map.has(x) && x !== keyOf(off) && !subbed.has(x));
+        if (others.length) errors.push(`alias "${tok}" → "${off}" is in a confusion group with unsubstituted official word(s): ${others.join(', ')}`);
+      }
+    }
+    groups.forEach((g, gi) => {
+      const off = g.filter(x => K.map.has(x)), unsub = off.filter(x => !subbed.has(x));
+      if (off.length >= 2 && unsub.length > 1) warnings.push(`unresolved on-list group: ${rawGroups[gi].join('/')} (substitute all but one)`);
+    });
+    return { errors, warnings, approvable: errors.length === 0 && !warnings.some(w => w.startsWith('unresolved')) };
   }
 
   // ── geometry ─────────────────────────────────────────────
@@ -379,7 +502,7 @@ const HealpixWords = (function () {
         maxIterations: MAX_WORDS,
         delimiter: cfg.delim,
         checksumDelimiter: cfg.csDelim,
-        link: 'https://github.com/bitcoin/bips/blob/master/bip-0039/' + lang + '.txt',
+        link: (WL() && WL().sources && WL().sources[lang]) || ('https://github.com/bitcoin/bips/blob/master/bip-0039/' + lang + '.txt'),
         isEmoji: false,
         beta: true,
         curvedCell: true
@@ -486,7 +609,18 @@ const HealpixWords = (function () {
       ok(!pr.error && pr.checksumOk === true && JSON.stringify(pr.indices) === JSON.stringify(office), 'round trip ' + lang + ': ' + s);
       ok(s.endsWith(cs), 'checksum language-independent ' + lang);
     }
-    ok(JSON.stringify(parse('NICE barely parr NATURE.59', 'english').indices) === JSON.stringify([1195, 148, 1283, 1179]), 'loose input (case, prefix, bare checksum)');
+    ok(JSON.stringify(parse('  NICE -- barely  parr NATURE . 059 ', 'english').indices) === JSON.stringify([1195, 148, 1283, 1179]), 'loose input (case, prefix, repeated separators, spaced checksum)');
+    // §6 parsing contract
+    const pc = (s, l) => parse(s, l || 'english');
+    ok(pc('nice-barely-parrot-need').checksumStatus === 'absent' && pc('nice-barely-parrot-need').valid === true && pc('nice-barely-parrot-need').checksumOk === null, 'absent checksum = valid but unchecked');
+    ok(pc('nice-barely-parrot-need.090').valid === false && pc('nice-barely-parrot-need.090').checksumStatus === 'mismatch', 'mismatch rejects');
+    ok(pc('nice-barely-parrot-need.91').valid === false && pc('nice-barely-parrot-need.0910').valid === false, 'checksum must be exactly 3 digits');
+    ok(pc('nice-barely-parrot-need.998').valid === false, '997–999 rejected');
+    ok(pc('').valid === false && pc('.091').valid === false && pc('nice nice nice nice nice nice nice nice nice').valid === false, 'zero words / more than eight rejected');
+    ok(pc('zoo').valid === false, 'invalid first index rejected');
+    ok(pc('nice-barely-parrot-xyzzy').valid === false && pc('nice-barely-par-need').valid === false, 'unknown token / short prefix rejected');
+    ok(parse('nice-barely-parrot-need.091', 'klingon').valid === false, 'language required');
+    ok(pc('nice-barely-parrot-need 091').valid === false, 'checksum needs its separator');
 
     // Half cell ring is half the area of the parent ring (spherical polygon area)
     const area = ring => { let s = 0; for (let i = 0; i < ring.length - 1; i++) {
@@ -498,6 +632,24 @@ const HealpixWords = (function () {
     const full14 = H.cellCorners('hphex', ...centreForIndices(office.slice(0, 3)), 14, 40);
     ok(Math.abs(area(r3) / area(full14) - 0.5) < 1e-3, 'odd-word ring = half its parent cell (area ratio ' + (area(r3) / area(full14)).toFixed(5) + ')');
     ok(r2 && r2.length > 10, 'even-word ring drawn');
+
+    // Spoken-profile framework (synthetic profile; real vocabularies are drafts)
+    const tp = { id: 'test', lang: 'english', status: 'test',
+      aliases: { to: 'two', too: 'two', knight: 'night' },
+      substitutes: { write: 'zeppelin' },
+      confusionGroups: [['right', 'write', 'rite'], ['two', 'to', 'too']] };
+    const v = validateProfile(tp);
+    ok(v.errors.length === 0 && v.approvable, 'synthetic profile validates: ' + v.errors.concat(v.warnings).join(' | '));
+    const iTwo = wordToIndex('english', 'two'), iWrite = wordToIndex('english', 'write');
+    ok(wordToIndex('english', 'to', tp) === iTwo && wordToIndex('english', 'to') === -1, 'alias only with explicit profile');
+    ok(wordToIndex('english', 'zeppelin', tp) === iWrite && spokenWord('english', iWrite, tp) === 'zeppelin', 'substitute both ways');
+    const pr2 = parse('nice-barely-parrot-need.091', 'english', tp);
+    ok(pr2.checksumOk === true && pr2.resolved.length === 0, 'profile does not disturb official words');
+    ok(parse('nice-barely-parrot-need.998', 'english').valid === false, '997–999 invalid');
+    const bad = validateProfile({ lang: 'english', aliases: { rite: 'right', abandon: 'able' }, substitutes: { right: 'ride' },
+      confusionGroups: [['right', 'write', 'rite']] });
+    ok(bad.errors.some(e => /already an official/.test(e)) && bad.errors.some(e => /confusion group/.test(e)), 'validator catches collisions and unsafe aliases');
+    ok(wordToIndex('chinese_simplified', '救') >= 0 && wordToIndex('korean', '가격') >= 0, 'CJK exact tokens');
 
     // Passphrase layer (needs the frozen-shuffle oracle as shuffleFn)
     const oracle = selftest._oracle;
@@ -532,7 +684,7 @@ const HealpixWords = (function () {
     checksum, checksumValue, runningChecksums, candidatesForSlot,
     orderForWords, effectiveOrder, orderLabel,
     pathToIndices, indicesToPath, encodeIndices, encode, format, parse, protect, unprotect, PASS_TAG,
-    wordToIndex, displayWord, suggest, keyOf, list,
+    wordToIndex, displayWord, suggest, keyOf, list, spokenWord, validateProfile,
     ringForIndices, ringAt, centreForIndices, cellsForIndices,
     cellMetres, cellArcsec, beyondMeasured, clampWords,
     cardDefs, cardKey, selftest, _crc32cUtf8: crc32cUtf8
