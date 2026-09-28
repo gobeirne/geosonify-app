@@ -614,14 +614,19 @@
     const gd = CARD_GRIDS[gridKey];
     if (!gd || !gd.hpwords || typeof HealpixWords === 'undefined') return null;
     if (obfuscated) return null;                        // beta: no obfuscation
+    // Spec §6: invalid input (incl. a checksum MISMATCH) is rejected outright.
+    // An absent checksum decodes as an UNCHECKED address (no ✓ toast).
     const r = HealpixWords.parse(code, gd.hpwords);     // DISPLAYED indices (+ checksum)
-    if (!r || r.error || !r.indices) return null;
+    if (!r || !r.valid || !r.indices) {
+      if (r && r.error && typeof console !== 'undefined') console.warn('[hpwords] rejected:', r.error);
+      return null;
+    }
     const c = HealpixWords.centreForIndices(HealpixWords.unprotect(r.indices, hpWordsPassOpt()));
     if (!c) return null;
     cardState.iterations[gridKey] = r.indices.length;
     saveCardState();
     const out = [c[0], c[1]];
-    if (r.checksumOk !== null) out.checksumValid = r.checksumOk;
+    if (r.checksumStatus === 'verified') out.checksumValid = true;
     return out;
   }
 
@@ -650,8 +655,8 @@
         (passphrase ? 'PASSPHRASE ACTIVE: each word is shuffled by your key (the receiver needs the ' +
           'same passphrase). The checksum covers the shown words, so a valid checksum does NOT ' +
           'confirm the passphrase. ' : '') +
-        'BETA: the plain words are stable; the checksum digits and the passphrase scheme may ' +
-        'change before the format is frozen, and there is no share-link parameter yet.',
+        'The plain code format (words and checksum) is frozen: codes will always mean the same place. ' +
+        'BETA: the passphrase scheme may still change, and there is no share-link parameter yet.',
       uncertaintyLine: uncertaintyLine || null,
       levels,
       detail: null,
@@ -1762,6 +1767,7 @@
     hpbip39english: 4, hpbip39spanish: 4, hpbip39french: 4, hpbip39italian: 4,
     hpbip39portuguese: 4, hpbip39czech: 4, hpbip39japanese: 4, hpbip39korean: 4,
     hpbip39chinesesimplified: 4, hpbip39chinesetraditional: 4,
+    hpbip39german: 4,
     // GIS — each standard's ~1–2 m level
     pluscode: 6, mgrs: 6, geohash: 9, utm: 5, nztm: 5, bng: 6, mga: 5, localgrid: 5
   };
