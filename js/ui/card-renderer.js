@@ -613,10 +613,10 @@
   function decodeHpWordsCode(gridKey, code) {
     const gd = CARD_GRIDS[gridKey];
     if (!gd || !gd.hpwords || typeof HealpixWords === 'undefined') return null;
-    if (passphrase || obfuscated) return null;          // beta: plain addresses only
-    const r = HealpixWords.parse(code, gd.hpwords);
+    if (obfuscated) return null;                        // beta: no obfuscation
+    const r = HealpixWords.parse(code, gd.hpwords);     // DISPLAYED indices (+ checksum)
     if (!r || r.error || !r.indices) return null;
-    const c = HealpixWords.centreForIndices(r.indices);
+    const c = HealpixWords.centreForIndices(HealpixWords.unprotect(r.indices, hpWordsPassOpt()));
     if (!c) return null;
     cardState.iterations[gridKey] = r.indices.length;
     saveCardState();
@@ -635,7 +635,7 @@
     for (let k = HealpixWords.MIN_WORDS; k <= HealpixWords.MAX_WORDS; k++) {
       levels.push({
         label: `${k} word${k > 1 ? 's' : ''} · ${HealpixWords.orderLabel(k)}`,
-        code: (passphrase || obfuscated) ? '████████' : HealpixWords.encode(lat, lon, k, gd.hpwords),
+        code: obfuscated ? '████████' : HealpixWords.encode(lat, lon, k, gd.hpwords, hpWordsPassOpt()),
         dims: `${formatLength(HealpixWords.cellMetres(k).w)} cell (equal-area)`,
         here: k === n
       });
@@ -646,9 +646,12 @@
         'list: 4 bits of base face + 2 bits per level. Every two words add exactly 11 ' +
         'HEALPix orders (4 words = order 20). Odd word counts end halfway through a ' +
         'level: an exact equal-area half cell (two child cells), never a single child. ' +
-        'Dropping a word always gives the containing parent. BETA: the words are stable; ' +
-        'the three checksum digits may change before the format is frozen, and there is ' +
-        'no share-link parameter yet.',
+        'Dropping a word always gives the containing parent. ' +
+        (passphrase ? 'PASSPHRASE ACTIVE: each word is shuffled by your key (the receiver needs the ' +
+          'same passphrase). The checksum covers the shown words, so a valid checksum does NOT ' +
+          'confirm the passphrase. ' : '') +
+        'BETA: the plain words are stable; the checksum digits and the passphrase scheme may ' +
+        'change before the format is frozen, and there is no share-link parameter yet.',
       uncertaintyLine: uncertaintyLine || null,
       levels,
       detail: null,
@@ -656,6 +659,12 @@
         ? 'Words beyond order 26 are an exact contained-cell refinement, not extra measured precision.'
         : null
     });
+  }
+
+  // Passphrase option for hpwords: the FROZEN shuffle, used unchanged as the
+  // primitive of healpix-bip39-pass-v1 (see geosonify-hpwords.js header).
+  function hpWordsPassOpt() {
+    return passphrase ? { pass: passphrase, shuffleFn: shuffleGridAndOrder } : null;
   }
 
   // Words with the checksum greyed, like the legacy BIP39 display.
@@ -1067,8 +1076,8 @@
     }
     // HEALPix words (beta): plain addresses only — redact under privacy.
     if (gridDef && gridDef.hpwords && typeof HealpixWords !== 'undefined') {
-      if (passphrase || obfuscated) return '████████';
-      return HealpixWords.encode(lat, lon, iterations, gridDef.hpwords);
+      if (obfuscated) return '████████';           // obfuscation not supported (beta)
+      return HealpixWords.encode(lat, lon, iterations, gridDef.hpwords, hpWordsPassOpt());
     }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
@@ -3407,7 +3416,7 @@
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !gridDef.hpwords && !presentationOf(gridDef))) return;
-      if (gridDef.hpwords && (passphrase || obfuscated)) return;
+      if (gridDef.hpwords && obfuscated) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
       // HEALPix now transforms properly under both passphrase and obfuscation,
       // so it always re-renders (never skipped for privacy).
@@ -3547,7 +3556,7 @@
       // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …)
       // that can't be privacy-transformed → redact under any privacy mode.
       // HEALPix transforms properly (permute + obfuscate) so it is NEVER redacted.
-      const gisRedacted = !!((gridDef.gis || gridDef.hpwords) && (passphrase || obfuscated));
+      const gisRedacted = !!((gridDef.gis && (passphrase || obfuscated)) || (gridDef.hpwords && obfuscated));
       if (gisRedacted) {
         code = '████████';
       }
@@ -5359,7 +5368,8 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     // are meaningless here and would imply a false sense of security, so
     // they're hidden for GIS cards.
     const _gd = CARD_GRIDS[gridKey];
-    const isGis = !!(_gd && (_gd.gis || _gd.hpwords));
+    const isGis = !!(_gd && _gd.gis);
+    const noDeobf = isGis || !!(_gd && _gd.hpwords);   // hpwords: passphrase yes, obfuscation no
     
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -5379,7 +5389,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       <input type="text" id="editCodeInput" value="${prefillCode}" style="width:100%;padding:10px;font-size:16px;font-family:'SF Mono',monospace;border:1px solid #ccc;border-radius:8px;box-sizing:border-box;">
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button id="decodeBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #007AFF;background:#007AFF;color:white;font-size:15px;cursor:pointer;">Decode</button>
-        ${isGis ? '' : '<button id="deobfuscateBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #5856D6;background:#5856D6;color:white;font-size:15px;cursor:pointer;">Deobfuscate</button>'}
+        ${noDeobf ? '' : '<button id="deobfuscateBtn" style="flex:1;padding:10px;border-radius:8px;border:1px solid #5856D6;background:#5856D6;color:white;font-size:15px;cursor:pointer;">Deobfuscate</button>'}
       </div>
       ${isGis ? '' : '<button id="passphraseDecodeBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #FF9500;background:#FF9500;color:white;font-size:15px;cursor:pointer;">🔑 Enter Passphrase</button>'}
       <button id="cancelEditBtn" style="width:100%;padding:10px;margin-top:8px;border-radius:8px;border:1px solid #ccc;background:#f5f5f5;font-size:15px;cursor:pointer;">Cancel</button>
@@ -6758,6 +6768,19 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         '</div>';
       return;
     }
+    if (gridDef && gridDef.hpwords) {
+      preview.innerHTML =
+        '<div style="font-size:11px;color:#888;line-height:1.5;">' +
+        '<b>' + gridDef.name + '</b> (beta)<br>' +
+        (passphrase
+          ? 'Passphrase active — each word is shuffled by your key, conditioned on the words ' +
+            'before it, so shorter codes stay prefixes of longer ones. The receiver needs the same ' +
+            'passphrase. The checksum covers the shown words: a valid checksum does not confirm the passphrase.'
+          : 'Enter a passphrase to shuffle these words. Each word position is permuted by your key; ' +
+            'the same passphrase reverses it. Obfuscation is not available on this card.') +
+        '</div>';
+      return;
+    }
     if (!gridDef || !gridDef.grid) {
       preview.innerHTML = '<div style="color:#888;font-size:11px;">No grid selected</div>';
       return;
@@ -7214,6 +7237,11 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
      */
     getPassphrase() {
       return passphrase;
+    },
+
+    /** Passphrase option for the HEALPix-words cards ({pass, shuffleFn} or null). */
+    getHpWordsOpt() {
+      return hpWordsPassOpt();
     },
     
     /**
