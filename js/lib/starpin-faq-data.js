@@ -35,7 +35,7 @@
           {
             id: 'how-map-works',
             q: 'How does the map work?',
-            a: `<p>Starpin uses a system called HEALPix to divide the whole Earth into a grid.</p>
+            a: `<p>Starpin uses a system called HEALPix to divide the whole Earth into a grid. HEALPix was originally designed for astronomy, to map the whole sky in equal-area pieces, which is why the same grid fits the sky and the ground so naturally.</p>
 <p>Lines of longitude converge towards the poles, so an ordinary latitude-longitude grid does not divide the Earth evenly. HEALPix covers it with equal-area, diamond-shaped pieces instead. Each piece has the same area, wherever it lies on the globe.</p>
 <p>This grid is what Starpin uses to match stars to places on the ground.</p>`
           },
@@ -88,7 +88,7 @@
           {
             id: 'four-words',
             q: 'What are the four words?',
-            a: `<p>They are another way of writing where you are. Starpin names a small patch of ground, about six metres across, with four words from the BIP39 wordlists, an open set of lists originally designed for cryptocurrency wallets. The words sit on the same equal-area grid, HEALPix, as everything else in Starpin.</p>
+            a: `<p>They are another way of writing where you are. Starpin names a small patch of ground, about six metres across, with four words from the BIP39 wordlists, a set of open word lists chosen to be easy to read aloud and hard to confuse. The words sit on the same equal-area grid, HEALPix, as everything else in Starpin.</p>
 <p>It is not what3words. The lists are free to use and anyone can decode the words. There are eleven languages: the ten official BIP39 lists, plus a German community list. Starpin uses your device's language where it can.</p>
 <p>The three digits after the dot are a checksum. If a word is misheard or mistyped, the digits will not match and Starpin will say so rather than take you somewhere else. You can leave them off, but then the words are unchecked.</p>
 <p>You can paste almost anything into the address box: words in any of those languages, ordinary coordinates, a Google or Apple Maps link, or a Geosonify code or link. If the same words make sense in more than one language, Starpin asks which you meant.</p>`
@@ -121,14 +121,16 @@
           {
             id: 'culmination',
             q: 'What\u2019s a culmination?',
-            a: `<p>A star's culmination is the moment when it is directly overhead at its corresponding place on Earth.</p>
-<p>If you reach the place at that time, you complete the alignment between yourself, the point on the ground, and the star above you. Starpin marks this separately from an ordinary visit.</p>`
+            a: `<p>A star's culmination is the moment when it stands directly overhead at its own place on Earth. It happens once every sidereal day (about 23 hours 56 minutes), so the time drifts about four minutes earlier each day.</p>
+<p>Be standing on the spot at that moment and you, the ground beneath you, and a star perhaps thousands of light years away are lined up exactly. Light that may have left that star centuries or millennia ago is falling straight down onto the one place on Earth that belongs to it, and you are standing in it.</p>
+<p>It is the rarest thing you can do in Starpin. The <strong>Countdown</strong> tab counts down to it, and a visit made at culmination is recorded as one, set apart in your log from an ordinary visit.</p>`
           },
           {
             id: 'drive-by',
             q: 'What is drive-by mode?',
-            a: `<p>Drive-by mode can record a visit when you pass close enough to a target while travelling by car, bus, or bike.</p>
-<p>The find still counts, but it is marked as a drive-by so your log records how it happened.</p>`
+            a: `<p>Drive-by mode can record a visit when you pass close enough to a target while travelling by bike, or as a passenger in a bus or car.</p>
+<p>A timer counts down the seconds to your closest approach, so you know when to press the <strong>Bag</strong> button. The find still counts, but it is marked as a drive-by so your log records how it happened.</p>
+<p>If you are driving, leave it to a passenger.</p>`
           }
         ]
       },
@@ -227,6 +229,11 @@
             id: 'presence',
             q: 'Does sharing prove somebody really went there?',
             a: `<p>Not yet. A Starpin record includes the location fix reported by that person's device, but this version does not provide cryptographic proof that the person was at the target. Members of a private group must therefore trust one another.</p>`
+          },
+          {
+            id: 'privacy-policy',
+            q: 'Is there a formal privacy policy?',
+            a: `<p>Yes. The <a href="privacy.html">privacy policy</a> sets out, in one place and in formal terms, what Starpin handles, where it goes, and who can see it. Schools and parents may find it the easier document to work from.</p>`
           },
           {
             id: 'what-is-sent',

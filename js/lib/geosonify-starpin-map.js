@@ -629,9 +629,9 @@ var GeosonifyStarpinMap = (function () {
       setFix: function (lat, lon, acc) {
         var first = !fix;
         fix = { lat: lat, lon: lon, accuracy_m: acc };
-        // The first fix frames you at street scale: about a 100 m scale bar,
-        // enough to see the block around you and the nearest targets.
-        if (first) map.setView([lat, lon], 16);
+        // The first fix frames you at neighbourhood scale: about a 200 m scale
+        // bar, enough to see the streets around you and the nearest targets.
+        if (first) map.setView([lat, lon], 15);
         redraw();
       },
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
@@ -685,7 +685,7 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.7', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.8', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName,
            wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,

@@ -497,12 +497,9 @@ var GeosonifyStarpinCard = (function () {
     var wrap = doc.createElement('div');
     wrap.innerHTML = svg.join('');
     box.appendChild(wrap.firstChild);
-    var cap = doc.createElement('div');
-    cap.className = 'spc-ground-cap';
-    cap.textContent = 'its own sky, laid on the ground below';
     var outer = doc.createElement('div');
     outer.style.cssText = 'display:flex;flex-direction:column;align-items:center';
-    outer.appendChild(box); outer.appendChild(cap);
+    outer.appendChild(box);
     if (d.lat != null) {
       var P = groundProj(d.lat, d.lon, spanM, SZ);
       liveRoads(box, d.lat, d.lon, spanM * 1.1, function (roads) {
@@ -1140,8 +1137,6 @@ var GeosonifyStarpinCard = (function () {
           g.lineTo(cx + Math.cos(t) * (rr + 14), cy + Math.sin(t) * (rr + 14));
           g.stroke();
         }
-        text('its own sky, laid on the ground below',
-             cx, cy + R + 34, '15px ' + SANS, MUTED, 'center');
         finish();
       }
       img.onload = function () { drawSky(true); };
@@ -1173,7 +1168,7 @@ var GeosonifyStarpinCard = (function () {
     });
   }
 
-  return { VERSION: '0.7', render: render, show: show, html: html,
+  return { VERSION: '0.8', render: render, show: show, html: html,
            toBlob: toBlob, share: share,
            skyWindow: skyWindow, groundWindow: groundWindow, gridSVG: gridSVG,
            starGlowValue: starGlowValue, niceBar: niceBar };
