@@ -224,3 +224,23 @@ oracle on random paths up to k = 22; (c) shipped public
 `HealpixGrids.encode`/`decode` vs the oracle's pipeline, all three schemes,
 random lat/lon/order/pass with each toggle combination, decode centres
 cross-checked bit-exactly.
+
+---
+
+## Status note (2026-09-30) — obfuscation layer withdrawn for encoding
+
+This note does not change any frozen rule above; every vector still holds.
+
+The design stance above says the obfuscation layer "mirrors the host's
+obfuscation model". That was inaccurate. The host model (GeoCodec) shuffles the
+vocabulary **keyed by the final token** and then shifts; §5.3 copies only the
+shift. Neighbouring cells therefore receive identical shifts and keep
+identical-looking prefixes (plain `956250B0092`/`956250B0090` →
+`1B241676CFE`/`1B241676CFC`), which defeats the purpose of obfuscation.
+
+From 2026-09-30:
+- new obfuscated HEALPix codes use **healpix-obf-v2** (`HEALPIX-OBF-V2.md`),
+  signalled by the URL flag `j`, `?hpchsj=`, `?hpcj=` and matrix signifier `Q`;
+- this layer is **decode-only**, reached through the legacy `o` flag,
+  `?hpchso=`, `?hpco=` and signifier `P`, and in code via `opt.obfV === 1`;
+- the passphrase layer (§§1–3 permutation) is unaffected and remains current.

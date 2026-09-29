@@ -1,6 +1,6 @@
 # healpix-bip39-v1 — HEALPix addresses encoded with BIP39 wordlists
 
-**Document status: sections 2–6 FROZEN on 2026-09-29.** Sections are marked individually:
+**Document status: sections 2–7 and 9 FROZEN (2–6 on 2026-09-29; 7, 9 and obfuscation on 2026-09-30).** Sections are marked individually:
 
 | Section | Status |
 |---|---|
@@ -8,9 +8,10 @@
 | 4 Word lists | **FROZEN** (pinned by SHA-256) |
 | 5 Checksum | **FROZEN** |
 | 6 Parsing & normalisation | **FROZEN** |
-| 7 Passphrase layer (healpix-bip39-pass-v1) | **Beta — not frozen** |
+| 7 Passphrase layer (healpix-bip39-pass-v1) | **FROZEN** (2026-09-30) |
 | 8 Spoken profiles | **Framework only; no approved vocabulary** |
-| 9 URL parameter | **Not defined** (none exists in the beta) |
+| Obfuscation (healpix-bip39-obf-v1) | **FROZEN** (2026-09-30) — `HEALPIX-OBF-V2.md` §3 |
+| 9 URL links | **FROZEN** (2026-09-30) |
 
 Once a section is frozen it never changes: new behaviour gets a new identifier,
 and decoders for frozen versions are kept forever. A wrong derivation does not
@@ -218,7 +219,7 @@ Matching and normalisation:
   whole tokens only.
 - Codes are rendered in NFC.
 
-## 7. Passphrase layer — healpix-bip39-pass-v1 (BETA)
+## 7. Passphrase layer — healpix-bip39-pass-v1 (FROZEN)
 
 Each index is permuted by the frozen grid-passphrase v1 shuffle
 (`FROZEN-FORMAT-SPEC.md`), used unchanged as a primitive:
@@ -233,7 +234,7 @@ frozen shuffle's per-index keys do not include the list size, so existing
 formats that share a passphrase and an empty chain share the relative order of
 their common indices.
 
-Beta vector: office (`95625281C9E`) + passphrase `correct horse battery staple`
+Vector: office (`95625281C9E`) + passphrase `correct horse battery staple`
 → `injury-moon-combine-cabin.521`. A wrong passphrase still yields a
 valid checksum and a different place.
 
@@ -260,7 +261,20 @@ with more than one unsubstituted word (block approval). Whether a substitute is
 actually easy to hear is **not** machine-checkable and needs native-speaker
 listening tests. Published entries are accepted forever.
 
-## 9. Not defined yet
+## 9. URL links (FROZEN)
 
-URL parameter; obfuscation; N > 8; ellipsoidal (authalic) mapping; celestial
+A single point is shared as `?hpw<lang>=<code>` (plain or passphrase-permuted
+words) or `?hpw<lang>j=<code>` (obfuscated, healpix-bip39-obf-v1), where
+`<lang>` is one of `en es fr it pt cs de ja ko zhs zht` and `<code>` is the
+displayed code with its checksum, percent-encoded as needed. The word count —
+hence the precision — is carried by the code. The value is parsed by the §6
+rules with the language implied by the parameter; any failure (including a
+checksum mismatch) rejects the link. Passphrase codes carry no marker: the
+recipient must enter the same passphrase, or the whole link is AES-encrypted
+with `?enc=`. Shapes, paths and multi-point shares with a words card active use
+the raw `?r=` link. Parameter names are permanent and never repurposed.
+
+## 10. Not defined yet
+
+N > 8; ellipsoidal (authalic) mapping; celestial
 frame/epoch fields (belong to the enclosing record).
