@@ -1,0 +1,23 @@
+# displacement study · seed 20260930 · numpy 2.4.4 · python 3.12.3
+# confusion pairs present: hpbip39/ordloc 4, starhash 0
+design        class         trials   passed  pass rate      median  ≤300m  ≤10km ≤1000km
+hpbip39       sub-random   2000000      935     0.047%      9654 m  23.0%  50.1%   82.5%
+hpbip39-nocs  sub-random    200000   187775    93.888%       11 km  24.1%  48.4%   80.0%
+hpbip39       sub-near     2000000        0     0.000%           —      —      —       —
+hpbip39-nocs  sub-near      200000   199969    99.984%      7612 m  31.5%  50.0%   91.2%
+hpbip39       swap-adj     1999046      932     0.047%      355 km   0.0%  33.8%   75.8%
+hpbip39-nocs  swap-adj      199902   183171    91.630%      248 km   0.0%  30.1%   73.0%
+hpbip39       confusion      29817        0     0.000%           —      —      —       —
+hpbip39-nocs  confusion       3089     2954    95.630%      6762 m  28.0%  53.7%   81.0%
+ordloc        sub-random    200000      631     0.316%      6443 m  42.0%  57.1%   84.3%
+ordloc-nocrc  sub-random     50000    47464    94.928%      5493 m  41.6%  58.0%   84.2%
+ordloc        sub-near      200000        0     0.000%           —      —      —       —
+ordloc-nocrc  sub-near       50000    49993    99.986%       413 m  45.1%  60.8%   93.4%
+ordloc        swap-adj      199897     1384     0.692%       12 km  26.5%  46.2%   80.9%
+ordloc-nocrc  swap-adj       49975    46872    93.791%       13 km  25.9%  46.6%   80.2%
+ordloc        confusion       3729        0     0.000%           —      —      —       —
+ordloc-nocrc  confusion        950      922    97.053%      1248 m  43.3%  62.6%   84.8%
+starhash      sub-random     40000    15574    38.935%     9979 km   0.0%   0.0%    0.6%
+starhash      sub-near       40000    20603    51.507%    10047 km   0.0%   0.0%    0.6%
+starhash      swap-adj       39998    13223    33.059%    10005 km   0.0%   0.0%    0.7%
+starhash      confusion          0        0       nan%           —      —      —       —
