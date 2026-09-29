@@ -1865,7 +1865,10 @@
     if (gd && gd.hpwords && typeof HealpixWords !== 'undefined') {
       if (typeof GeosonifySkyUnits !== 'undefined' && GeosonifySkyUnits.isSky && GeosonifySkyUnits.isSky()
           && GeosonifySkyUnits.formatAngle) {
-        return GeosonifySkyUnits.formatAngle(HealpixWords.cellArcsec(iterations) / 3600) + ' · ' + HealpixWords.orderLabel(iterations);
+        // formatAngle takes ARCSECONDS (it previously received degrees here,
+        // understating every sky size ×3600: 1 word read "5.18 arcsec", not 5.18°).
+        const a = GeosonifySkyUnits.formatAngle(HealpixWords.cellArcsec(iterations));
+        if (a) return `${a} × ${a} · ${HealpixWords.orderLabel(iterations)}`;
       }
       const d = HealpixWords.cellMetres(iterations);
       return `${formatLength(d.w)} × ${formatLength(d.h)} · ${HealpixWords.orderLabel(iterations)}`;
