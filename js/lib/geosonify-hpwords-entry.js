@@ -1,5 +1,5 @@
 /**
- * geosonify-hpwords-entry.js  (beta)
+ * geosonify-hpwords-entry.js
  *
  * 📥 RECEIVE and ✓ per-word speaker readout for the HEALPix-words cards
  * (hpbip39*). Same look, colours, flow and emergency-contrast styling as
@@ -11,7 +11,7 @@
  *   - The map shows the TRUE curved HEALPix cell after every word, dashed —
  *     a full diamond after an even count, the exact equal-area half-diamond
  *     after an odd count (never padded to a single child cell).
- *   - Running checksums and candidate search use the healpix-bip39-v1 beta
+ *   - Running checksums and candidate search use the healpix-bip39-v1 frozen
  *     weighted checksum (HealpixWords); candidates are algebraic (≤ 3 per slot)
  *     and are only ever SUGGESTED — the receiver must tap to apply.
  *   - Word-1 hints come from reverse geocoding the cell centre (the legacy
@@ -68,7 +68,13 @@
   const lockedPrefix = st => st.locked.slice(0, lockedCount(st));
   // Passphrase: typed words are DISPLAYED indices; geometry needs the TRUE ones.
   const passOpt = () => { try { return CardRenderer.getHpWordsOpt ? CardRenderer.getHpWordsOpt() : null; } catch (e) { return null; } };
-  const trueOf = idx => HW().unprotect(idx, passOpt());
+  // With obfuscation every word depends on the words AFTER it, so nothing can be
+  // placed until the code is complete: trueOf() returns null for a partial prefix.
+  const obfActive = () => !!(passOpt() && passOpt().obf);
+  const trueOf = (st, idx) => {
+    if (obfActive() && idx.length < st.n) return null;
+    return HW().fromDisplayed(idx, passOpt());
+  };
   const word = (gridKey, i) => HW().displayWord(lang(gridKey), i);
 
   function sizeLabel(n) {
@@ -123,8 +129,12 @@
     const k = lockedCount(st);
     if (!bar) return;
     if (k === 0 || isSky() || !st.active) { bar.style.display = 'none'; return; }
-    const c = HW().centreForIndices(trueOf(lockedPrefix(st)));
-    if (!c) { bar.style.display = 'none'; return; }
+    const c = (t => t && HW().centreForIndices(t))(trueOf(st, lockedPrefix(st)));
+    if (!c) {
+      if (obfActive() && k < st.n) { bar.style.display = 'flex'; bar.textContent = `🔀 Obfuscated — the place appears when all ${st.n} words are in`; }
+      else bar.style.display = 'none';
+      return;
+    }
     bar.style.display = 'flex';
     bar.textContent = 'Looking up...';
     const res = await reverseGeocode(c[0], c[1]);
@@ -149,10 +159,10 @@
     const pre = lockedPrefix(st);
     // Faint outline of the parent level for context, then the current cell dashed.
     if (k >= 2) {
-      const pr = HW().ringForIndices(trueOf(pre.slice(0, k - 1)), 24);
+      const pr = (t => t && HW().ringForIndices(t, 24))(trueOf(st, pre.slice(0, k - 1)));
       if (pr) st.mapLayers.push(L.polygon(pr, { color: COLORS[(k - 2) % 8], weight: 1, opacity: 0.45, fill: false, interactive: false }).addTo(m));
     }
-    const ring = HW().ringForIndices(trueOf(pre), 24);
+    const ring = (t => t && HW().ringForIndices(t, 24))(trueOf(st, pre));
     if (!ring) return;
     const color = COLORS[(k - 1) % 8];
     const poly = L.polygon(ring, { color, weight: 2.5, fillOpacity: 0.12, dashArray: '6,4', interactive: false }).addTo(m);
@@ -160,7 +170,7 @@
     const maxZ = (typeof m.getMaxZoom === 'function' && isFinite(m.getMaxZoom())) ? m.getMaxZoom() : 19;
     if (!noFit) m.fitBounds(poly.getBounds(), { padding: [20, 20], maxZoom: maxZ });
     if (k === st.n) {
-      const c = HW().centreForIndices(trueOf(pre));
+      const c = (t => t && HW().centreForIndices(t))(trueOf(st, pre));
       if (c) st.mapPin = L.marker(c, { title: pre.map(i => word(gridKey, i)).join('-'), zIndexOffset: 1000 }).addTo(m);
     }
   }
@@ -177,10 +187,16 @@
     const beta = document.createElement('div');
     beta.style.cssText = 'font-size:10px; color:#fbbf24; font-weight:600; margin-bottom:6px; line-height:1.4;';
     const zh = /^chinese/.test(lang(gridKey));
-    beta.textContent = 'Code format frozen (words + checksum) · BETA: passphrase mode and share links may still change' +
+    beta.textContent = 'Frozen format: words, checksum, passphrase, obfuscation and links will always mean the same place' +
       (zh ? ' · not yet validated for voice in Chinese' : '');
     entry.appendChild(beta);
-    if (passOpt()) {
+    if (obfActive()) {
+      const ob = document.createElement('div');
+      ob.style.cssText = 'font-size:11px; color:#e9d5ff; background:#2e1065; border:1px solid #a78bfa; border-radius:4px; padding:5px 8px; margin-bottom:6px; font-weight:600; line-height:1.4;';
+      ob.textContent = '🔀 Obfuscation on — each word depends on the words after it, so the map shows the place only once the code is complete. Obfuscated codes can’t be shortened.';
+      entry.appendChild(ob);
+    }
+    if (passOpt() && passOpt().pass) {
       const pb = document.createElement('div');
       pb.style.cssText = 'font-size:11px; color:#fde68a; background:#422006; border:1px solid #f59e0b; border-radius:4px; padding:5px 8px; margin-bottom:6px; font-weight:600; line-height:1.4;';
       pb.textContent = '🔑 Passphrase active — enter the words exactly as sent; the map uses your passphrase to place them. ' +
@@ -466,7 +482,7 @@
     html += `</div>`;
 
     if (st.csStatus === 'pass' && all) {
-      const c = HW().centreForIndices(trueOf(pre));
+      const c = (t => t && HW().centreForIndices(t))(trueOf(st, pre));
       const code = codeString(gridKey, pre);
       if (c) {
         const lat = c[0].toFixed(7), lon = c[1].toFixed(7);
@@ -594,7 +610,7 @@
     for (const c of cands) {
       const test = lockedPrefix(st).slice(); test[slot] = c;
       const depth = Math.min(slot + 1, 3);
-      const cen = HW().centreForIndices(trueOf(test.slice(0, Math.max(depth, slot + 1))));
+      const cen = (t => t && HW().centreForIndices(t))(trueOf(st, obfActive() ? test : test.slice(0, Math.max(depth, slot + 1))));
       const el = box.querySelector(`.bip39-correction-geo[data-idx="${c}"]`);
       if (!cen || !el || isSky()) continue;
       const res = await reverseGeocode(cen[0], cen[1]);
@@ -615,14 +631,14 @@
     const st = getState(gridKey);
     if (!st._speakerDiv) return;
     const coord = CardRenderer.getCoordinate ? CardRenderer.getCoordinate() : null;
-    if (!coord || (CardRenderer.isObfuscated && CardRenderer.isObfuscated())) {
+    if (!coord) {
       st._speakerDiv.innerHTML = '<div style="color:#64748b; font-size:12px;">' + (coord ? 'Hidden while privacy mode is active' : 'Move the map to generate a code') + '</div>';
       return;
     }
     const n = cardWords(gridKey);
     const tru = HW().encodeIndices(coord.lat, coord.lon, n);
     if (!tru) return;
-    const idx = HW().protect(tru, passOpt());
+    const idx = HW().toDisplayed(tru, passOpt());
     const rc = HW().runningChecksums(idx);
     let html = '';
     idx.forEach((x, i) => {
@@ -631,7 +647,7 @@
           <span style="font-size:18px; font-weight:600; color:#94a3b8; font-variant-numeric:tabular-nums;">${rc[i]}</span>
         </div>`;
     });
-    html += `<div style="font-size:10px; color:#64748b; margin-top:6px;">${HW().orderLabel(n)} · ${sizeLabel(n)} equal-area cell · BETA${passOpt() ? ' · 🔑 passphrase' : ''}</div>`;
+    html += `<div style="font-size:10px; color:#64748b; margin-top:6px;">${HW().orderLabel(n)} · ${sizeLabel(n)} equal-area cell${passOpt() && passOpt().pass ? ' · 🔑 passphrase' : ''}${obfActive() ? ' · 🔀 obfuscated' : ''}</div>`;
     st._speakerDiv.innerHTML = html;
   }
 
@@ -701,7 +717,7 @@
       if (st && st.speakerActive) updateSpeaker(gridKey);
     },
     isActive(gridKey) { return !!states.get(gridKey)?.active; },
-    version: 'beta-1'
+    version: '1.0'
   };
-  try { console.log('[geosonify] hpwords-entry beta-1 loaded'); } catch (e) {}
+  try { console.log('[geosonify] hpwords-entry 1.0 loaded'); } catch (e) {}
 })(typeof window !== 'undefined' ? window : this);

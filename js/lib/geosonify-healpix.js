@@ -374,6 +374,47 @@ const HealpixGrids = (function () {
     return { f: out[0], digits: out.slice(1) };
   }
 
+  // ── obfuscation v2: healpix-obf-v2 — FROZEN 2026-09-30 ────
+  // ⚠ Never change: spec/HEALPIX-OBF-V2.md, oracle spec/healpix-obf-v2-reference.js.
+  // healpix-pass-v1's obfuscatePath (above, FROZEN, kept for decoding) copied
+  // only the position shift of the host model and not its keyed shuffle, so two
+  // neighbouring cells get IDENTICAL shifts and keep a shared-looking prefix —
+  // it disguises a code but does not jumble it. v2 does what obfuscation is for:
+  // a change at the fine end re-jumbles everything before it, reversibly.
+  //
+  //   tokens = [face, d1 … dk]  (sizes 12, 4, …, 4); the FINAL token is unchanged.
+  //   For i = n−2 down to 0, token i is permuted by the frozen grid-passphrase v1
+  //   shuffle on a 1×size row, with the PUBLIC passphrase OBF_V2_PASS and chain
+  //   "healpix-obf-v2:" + comma-joined input tokens i+1 … n−1 (input = the path
+  //   after any passphrase permutation). displayed = position of the token in the
+  //   shuffled order. Decode runs back-to-front, recovering the later tokens first.
+  // The key is public: this is casual-observer obfuscation, not encryption.
+  const OBF_V2_PASS = 'geosonify-public-obfuscation';
+  function obfuscatePathV2(f, digits, mode, shuffleFn) {
+    if (typeof shuffleFn !== 'function') throw new Error('healpix-obf-v2 needs the frozen shuffle');
+    const sizes = [12].concat(digits.map(() => 4));
+    const inp = [f].concat(digits.slice());
+    const n = inp.length, out = inp.slice();
+    if (mode === 'encode') {
+      for (let i = n - 2; i >= 0; i--) {
+        const order = shuffleFn(_row(sizes[i]), OBF_V2_PASS, 'healpix-obf-v2:' + inp.slice(i + 1).join(',')).order;
+        out[i] = order.indexOf(inp[i]);
+      }
+    } else {
+      // inp holds DISPLAYED tokens; out collects the recovered input tokens.
+      for (let i = n - 2; i >= 0; i--) {
+        const order = shuffleFn(_row(sizes[i]), OBF_V2_PASS, 'healpix-obf-v2:' + out.slice(i + 1).join(',')).order;
+        out[i] = order[inp[i]];
+      }
+    }
+    return { f: out[0], digits: out.slice(1) };
+  }
+  // opt.obf with opt.obfV === 1 → frozen v1 (decode of legacy 'o' codes only);
+  // anything else → v2. New codes are always produced with v2.
+  function applyObf(f, digits, mode, opt) {
+    return (opt.obfV === 1) ? obfuscatePath(f, digits, mode) : obfuscatePathV2(f, digits, mode, opt.shuffleFn);
+  }
+
   // ── scheme registry (mirrors GISGrids.SCHEMES shape) ──────
   const SCHEMES = {
     hpquad: {
@@ -385,13 +426,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'encode', opt); f = o.f; digits = o.digits; }
         return serQuad(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserQuad(str, opt); if (!p) return null;
         let { f, digits } = p;
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'decode', opt); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -406,13 +447,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'encode', opt); f = o.f; digits = o.digits; }
         return serHex(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deserHex(str, k, opt); if (!p) return null;
         let { f, digits } = p;
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'decode', opt); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -427,13 +468,13 @@ const HealpixGrids = (function () {
       encode: (lat, lon, k, opt) => {
         let { f, digits } = nestPath(nestIndex(lat, lon, k), k);
         if (opt && opt.pass) { const p = permutePath(f, digits, opt.pass, opt.shuffleFn); f = p.f; digits = p.digits; }
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'encode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'encode', opt); f = o.f; digits = o.digits; }
         return ser64(f, digits, opt);
       },
       decodeAt: (str, k, opt) => {
         const p = deser64(str, k, opt); if (!p) return null;
         let { f, digits } = p;
-        if (opt && opt.obf)  { const o = obfuscatePath(f, digits, 'decode'); f = o.f; digits = o.digits; }
+        if (opt && opt.obf)  { const o = applyObf(f, digits, 'decode', opt); f = o.f; digits = o.digits; }
         if (opt && opt.pass) { const u = unpermutePath(f, digits, opt.pass, opt.shuffleFn); f = u.f; digits = u.digits; }
         return nestCentre(pathToNest(f, digits), digits.length);
       },
@@ -1281,7 +1322,8 @@ function assert(condition) {
     inferOrder, clampOrder,
     // serializers exposed for tests
     _ser: { serQuad, deserQuad, serHex, deserHex, ser64, deser64, packBase, unpackBase },
-    _perm: { permutePath, unpermutePath, obfuscatePath },
+    _perm: { permutePath, unpermutePath, obfuscatePath, obfuscatePathV2 },
+    OBF_V2_PASS,
     // core exposed for tests
     _core: { ang2pix_nest, pix2ang_nest, corners_nest, pixcoord2vec_nest,
              order2nside, nside2pixarea, orderpix2uniq }

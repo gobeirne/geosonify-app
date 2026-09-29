@@ -5,7 +5,10 @@
  *   bitstream, word counts/half levels, pinned word lists, checksum, parsing.
  *   ⚠ Never change any of these. New behaviour = a new format id; keep this
  *   decoder forever. Changing them doesn't error — it silently alters codes.
- *   Still BETA: passphrase layer (§7), spoken profiles (§8); no URL parameter.
+ *   Also FROZEN 2026-09-30: passphrase layer (§7, healpix-bip39-pass-v1),
+ *   obfuscation (spec/HEALPIX-OBF-V2.md §3, healpix-bip39-obf-v1) and the
+ *   ?hpw<lang>[j]= URL links (§9). Independent oracle:
+ *   spec/healpix-obf-v2-reference.js. Spoken profiles (§8): framework only.
  *
  * FROZEN SPATIAL MEANING
  *   The spatial meaning of the words. N words = the first 11N bits of
@@ -27,7 +30,7 @@
  *            to a single child. Drawn by tracing the parent with nw ∈ [b/2,(b+1)/2]
  *            (verified: pixcoord ne = x = digit bit 0, nw = y = digit bit 1).
  *
- * Passphrase (beta, healpix-bip39-pass-v1): each WORD INDEX is permuted with the
+ * Passphrase (FROZEN, healpix-bip39-pass-v1): each WORD INDEX is permuted with the
  * FROZEN grid-passphrase v1 shuffle, used unchanged as a primitive —
  *   slot 0: 1×1536 row (valid first words stay valid; faces C–F stay invalid),
  *   slot i: 1×2048 row,
@@ -39,8 +42,7 @@
  * the DISPLAYED indices, so anyone can check a transcription without the
  * passphrase — and therefore a valid checksum does NOT confirm the passphrase.
  *
- * Not in the beta (deliberately): obfuscation, URL parameter, spoken substitute
- * profiles. The first word index must be < 1536 (faces 0–B).
+ * Not defined: approved spoken substitute profiles. The first word index must be < 1536 (faces 0–B).
  *
  * Depends on: HealpixGrids (geosonify-healpix.js), BIP39_OFFICIAL_WORDLISTS.
  * Node self-test:  node geosonify-hpwords.js --selftest
@@ -250,7 +252,7 @@ const HealpixWords = (function () {
     return indices.map(i => displayWord(lang, i)).join(cfg.delim) + cfg.csDelim + checksum(indices);
   }
 
-  // ── passphrase layer (healpix-bip39-pass-v1, beta) ──────
+  // ── passphrase layer (healpix-bip39-pass-v1, FROZEN) ────
   const PASS_TAG = 'healpix-bip39-pass-v1';
   const rows = {};
   const rowOf = N => rows[N] || (rows[N] = [Array.from({ length: N }, (_, i) => i)]);
@@ -285,9 +287,41 @@ const HealpixWords = (function () {
     return out;
   }
 
+  // ── obfuscation layer (healpix-bip39-obf-v1, FROZEN) ────
+  // Same principle as healpix-obf-v2, on WORD INDICES: the last word is kept;
+  // every earlier word i is permuted by the frozen grid-passphrase v1 shuffle
+  // (slot 0 over 1536, others over 2048) with the public passphrase
+  // OBF_PASS and chain "healpix-bip39-obf-v1:" + comma-joined input indices
+  // i+1 … N−1 (input = after any passphrase layer). Any change at the end
+  // re-jumbles every earlier word. Obfuscated codes cannot be truncated, and a
+  // location appears only once every word is known. Checksum = displayed indices.
+  const OBF_TAG = 'healpix-bip39-obf-v1', OBF_PASS = 'geosonify-public-obfuscation';
+  const obfOn = opt => !!(opt && opt.obf && opt.shuffleFn);
+  function obfuscate(inp, opt) {
+    if (!obfOn(opt)) return inp.slice();
+    const out = inp.slice();
+    for (let i = inp.length - 2; i >= 0; i--) {
+      const order = opt.shuffleFn(rowOf(slotSize(i)), OBF_PASS, OBF_TAG + ':' + inp.slice(i + 1).join(',')).order;
+      out[i] = order.indexOf(inp[i]);
+    }
+    return out;
+  }
+  function deobfuscate(disp, opt) {
+    if (!obfOn(opt)) return disp.slice();
+    const out = disp.slice();
+    for (let i = disp.length - 2; i >= 0; i--) {
+      const order = opt.shuffleFn(rowOf(slotSize(i)), OBF_PASS, OBF_TAG + ':' + out.slice(i + 1).join(',')).order;
+      out[i] = order[disp[i]];
+    }
+    return out;
+  }
+  // Full pipelines: true → passphrase → obfuscation → displayed, and back.
+  const toDisplayed = (trueIdx, opt) => obfuscate(protect(trueIdx, opt), opt);
+  const fromDisplayed = (disp, opt) => unprotect(deobfuscate(disp, opt), opt);
+
   function encode(lat, lon, n, lang, opt) {
     const idx = encodeIndices(lat, lon, n);
-    return idx ? format(lang, protect(idx, opt)) : '';
+    return idx ? format(lang, toDisplayed(idx, opt)) : '';
   }
 
   // Parse user text — the §6 parsing contract of HEALPIX-BIP39-V1-SPEC.md.
@@ -296,7 +330,7 @@ const HealpixWords = (function () {
   // → { valid, indices, checksumStatus: 'verified'|'absent'|'mismatch',
   //     checksumGiven, checksum, checksumOk (true|false|null), resolved, error }
   // 'absent' is a valid but UNCHECKED address — never report it as verified.
-  function parse(str, lang, profile) {
+  function parse(str, lang, profile, obfuscatedInput) {
     if (!LANGS[lang] || !list(lang)) return { valid: false, error: 'language required' };
     if (!str) return { valid: false, error: 'empty' };
     let s = String(str).normalize('NFC').trim();
@@ -320,7 +354,10 @@ const HealpixWords = (function () {
       }
       indices.push(i);
     }
-    if (indices[0] >= FIRST_WORD_LIMIT) return { valid: false, indices, error: 'first word is not a valid HEALPix face' };
+    // With obfuscation the displayed first word may be any of the 2048; the
+    // face rule applies to the TRUE first index, checked by the caller after
+    // fromDisplayed(). Plain codes are checked here.
+    if (indices[0] >= FIRST_WORD_LIMIT && !obfuscatedInput) return { valid: false, indices, error: 'first word is not a valid HEALPix face' };
     const cs = checksum(indices);
     if (given != null && +given >= P) return { valid: false, indices, error: 'checksum 997–999 cannot occur' };
     const status = given == null ? 'absent' : given === cs ? 'verified' : 'mismatch';
@@ -504,7 +541,6 @@ const HealpixWords = (function () {
         checksumDelimiter: cfg.csDelim,
         link: (WL() && WL().sources && WL().sources[lang]) || ('https://github.com/bitcoin/bips/blob/master/bip-0039/' + lang + '.txt'),
         isEmoji: false,
-        beta: true,
         curvedCell: true
       };
     }
@@ -670,7 +706,28 @@ const HealpixWords = (function () {
       ok(JSON.stringify(protect(office, { pass: 'Ma\u0304ori', shuffleFn })) ===
          JSON.stringify(protect(office, { pass: 'M\u0101ori', shuffleFn })), 'NFC/NFD passphrases derive identically');
       ok(JSON.stringify(protect(office, { pass: 'other', shuffleFn })) !== JSON.stringify(dOffice), 'different passphrase → different words');
-      log('  pass vector (beta, not frozen): "correct horse battery staple" office → ' + format('english', dOffice));
+      log('  pass vector (frozen): "correct horse battery staple" office → ' + format('english', dOffice));
+      // Obfuscation (word level)
+      const oOpt = { obf: true, shuffleFn }, poOpt = { obf: true, shuffleFn, pass: 'correct horse battery staple' };
+      let s3 = 4242, shared = 0;
+      const rnd3 = () => ((s3 = (s3 * 1103515245 + 12345) >>> 0) / 4294967296);
+      for (let t = 0; t < 40; t++) {
+        const lat = Math.asin(2 * rnd3() - 1) * 180 / Math.PI, lon = rnd3() * 360 - 180;
+        for (let n = 1; n <= 8; n++) {
+          const tru = encodeIndices(lat, lon, n);
+          for (const o of [oOpt, poOpt]) {
+            const d = toDisplayed(tru, o);
+            ok(JSON.stringify(fromDisplayed(d, o)) === JSON.stringify(tru), 'obf round trip n=' + n);
+            ok(d[n - 1] === protect(tru, o)[n - 1], 'last word unchanged by obfuscation');
+          }
+        }
+        const t4 = encodeIndices(lat, lon, 4), sib = t4.slice(); sib[3] ^= 1;
+        const a = toDisplayed(t4, oOpt), b = toDisplayed(sib, oOpt);
+        shared += (a[0] === b[0]) + (a[1] === b[1]) + (a[2] === b[2]);
+      }
+      ok(shared <= 2, 'changing the last word re-jumbles earlier words (' + shared + ' of 120 kept)');
+      log('  obf vector (frozen): office → ' + format('english', toDisplayed(office, oOpt)) +
+          ' · with passphrase → ' + format('english', toDisplayed(office, poOpt)));
     } else {
       log('  SKIP passphrase tests (grid-passphrase-v1-reference.js not found)');
     }
@@ -684,6 +741,7 @@ const HealpixWords = (function () {
     checksum, checksumValue, runningChecksums, candidatesForSlot,
     orderForWords, effectiveOrder, orderLabel,
     pathToIndices, indicesToPath, encodeIndices, encode, format, parse, protect, unprotect, PASS_TAG,
+    obfuscate, deobfuscate, toDisplayed, fromDisplayed, OBF_TAG,
     wordToIndex, displayWord, suggest, keyOf, list, spokenWord, validateProfile,
     ringForIndices, ringAt, centreForIndices, cellsForIndices,
     cellMetres, cellArcsec, beyondMeasured, clampWords,
