@@ -134,7 +134,73 @@ var GeosonifyStarpinReadout = (function () {
   // local metric grid do not read out as a place to walk to, and the picker is
   // a list of ways to say where. Hidden from the picker AND from reading back,
   // so a pasted code is never silently decoded through one of them.
-  var HIDDEN = { music: 1, chromacoord: 1, hpchromacoord: 1 };
+  var HIDDEN = { music: 1, chromacoord: 1, hpchromacoord: 1,
+                 // The legacy 2025-word BIP39 grids (45 x 45 lat/lon). Replaced in
+                 // Starpin by HEALPix words (healpix-bip39-v1, below), which put the
+                 // same wordlists on the same equal-area grid as everything else.
+                 bip39english: 1, bip39spanish: 1, bip39french: 1, bip39italian: 1,
+                 bip39portuguese: 1, bip39czech: 1, bip39japanese: 1, bip39korean: 1,
+                 bip39chinesesimplified: 1, bip39chinesetraditional: 1,
+                 // and Geosonify's own cards for the new words, if a page registered
+                 // them: Starpin offers them directly below instead, not twice.
+                 hpbip39english: 1, hpbip39spanish: 1, hpbip39french: 1, hpbip39italian: 1,
+                 hpbip39portuguese: 1, hpbip39czech: 1, hpbip39german: 1, hpbip39japanese: 1,
+                 hpbip39korean: 1, hpbip39chinesesimplified: 1, hpbip39chinesetraditional: 1 };
+
+  // ── HEALPix words (healpix-bip39-v1, FROZEN) ─────────────────────────────
+  // Spec: spec/HEALPIX-BIP39-V1-SPEC.md; codec: geosonify-hpwords.js
+  // (HealpixWords). Encoded and decoded by that codec only -- never
+  // re-implemented here. Keys are 'hpw' + the frozen URL suffix, so a format
+  // key and its link parameter (?hpw<suffix>=) are the same word.
+  var HPW_SUFFIX = { english: 'en', spanish: 'es', french: 'fr', italian: 'it', portuguese: 'pt',
+                     czech: 'cs', german: 'de', japanese: 'ja', korean: 'ko',
+                     chinese_simplified: 'zhs', chinese_traditional: 'zht' };
+  var HPW_NAME = { english: 'English', spanish: 'Spanish', french: 'French', italian: 'Italian',
+                   portuguese: 'Portuguese', czech: 'Czech', german: 'German (community list)',
+                   japanese: 'Japanese', korean: 'Korean', chinese_simplified: 'Chinese, simplified',
+                   chinese_traditional: 'Chinese, traditional' };
+  var HPW_WORDS = 4;                         // 4 words: order 20, a ~6 m cell -- human scale
+  var HPW_LOADED = false;
+  function hpwLangOf(key) {
+    for (var l in HPW_SUFFIX) if ('hpw' + HPW_SUFFIX[l] === key) return l;
+    return null;
+  }
+  function ensureHpWords() {
+    if (HPW_LOADED) return;
+    var HW = mod('HealpixWords');
+    if (!HW || !HW.LANGS || !HW.list || !HW.list('english')) return;   // codec or wordlists not loaded
+    var words = {};
+    Object.keys(HPW_SUFFIX).forEach(function (lang) {
+      if (!HW.LANGS[lang] || !HW.list(lang)) return;
+      var key = 'hpw' + HPW_SUFFIX[lang];
+      words[key] = {
+        label: 'HEALPix words \u00B7 ' + HPW_NAME[lang], group: 'words', needs: 'HealpixWords', hpwLang: lang,
+        fn: function (lat, lon) { return HW.encode(lat, lon, HPW_WORDS, lang); }
+      };
+      // §6: the language is given (by the notation chosen), all-or-nothing,
+      // and a checksum mismatch rejects. The status travels with the point so
+      // the page can say "unchecked" when no checksum was typed.
+      PARSERS[key] = function (text) {
+        var r = HW.parse(String(text), lang);
+        if (!r || !r.valid || !r.indices) return null;
+        var c = HW.centreForIndices(r.indices);
+        if (!c) return null;
+        var out = [c[0], c[1]];
+        out.checksumStatus = r.checksumStatus;
+        out.words = r.indices.length;
+        return out;
+      };
+    });
+    // Rebuild the list in place (the object is shared) so the words come
+    // straight after latitude/longitude, where people will look for them.
+    var old = {};
+    Object.keys(FORMATS).forEach(function (k) { old[k] = FORMATS[k]; delete FORMATS[k]; });
+    Object.keys(old).forEach(function (k) {
+      FORMATS[k] = old[k];
+      if (k === 'latlon') Object.keys(words).forEach(function (w) { FORMATS[w] = words[w]; });
+    });
+    HPW_LOADED = true;
+  }
 
   function cardGrids() {
     var G = mod('CARD_GRIDS');
@@ -259,6 +325,7 @@ var GeosonifyStarpinReadout = (function () {
   }
 
   function available(key) {
+    ensureHpWords();
     var f = FORMATS[key];
     if (!f) return false;
     if (!f.needs) return true;
@@ -283,6 +350,7 @@ var GeosonifyStarpinReadout = (function () {
 
   function mount(container, opts) {
     opts = opts || {};
+    ensureHpWords();
     var doc = container.ownerDocument || document;
     if (!doc.getElementById(CSS_ID)) {
       var st = doc.createElement('style'); st.id = CSS_ID; st.textContent = CSS;
@@ -341,7 +409,11 @@ var GeosonifyStarpinReadout = (function () {
                           'It is a frozen format and will not be approximated.';
         return;
       }
-      sub.textContent = f.group === 'healpix'
+      var HWm = mod('HealpixWords'), m6 = (f.group === 'words' && HWm && HWm.cellMetres) ? HWm.cellMetres(HPW_WORDS) : null;
+      sub.textContent = f.group === 'words'
+                        ? HPW_WORDS + ' words' + (m6 ? ', a ' + m6.w.toFixed(1) + ' m cell' : '') +
+                          ' \u00B7 the three digits are a checksum'
+                      : f.group === 'healpix'
                         ? 'order ' + (explicitOrder ? order : schemeOrder(sel.value, order))
                       : f.group === 'geosonify'
                         ? 'Geosonify vocabulary' + (f.defaultIterations
@@ -373,8 +445,9 @@ var GeosonifyStarpinReadout = (function () {
     };
   }
 
-  return { VERSION: '0.5', mount: mount, FORMATS: FORMATS, available: available,
+  return { VERSION: '0.6', mount: mount, FORMATS: FORMATS, available: available,
            ensureCardFormats: ensureCardFormats, RETIRED: RETIRED, HIDDEN: HIDDEN,
+           HPW_SUFFIX: HPW_SUFFIX, HPW_NAME: HPW_NAME, hpwLangOf: hpwLangOf, ensureHpWords: ensureHpWords,
            mod: mod, register: register, parse: parse, canParse: canParse };
 })();
 
