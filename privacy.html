@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Starpin — Privacy policy</title>
+<!--
+  privacy.html — Starpin's formal privacy policy.
+
+  Every factual statement was checked against the code (starpin.html and its
+  modules, firestore.rules) at the time of writing. Items in [square brackets]
+  are facts only the operator can supply or confirm, and must be settled before
+  this is relied on. If the app changes what it sends, where, or to whom, this
+  page changes with it: the same "literally true" standard as the FAQ.
+
+  A plain-language draft, not legal advice. A school may want it reviewed against
+  its own obligations (in New Zealand, the Privacy Act 2020 and the Ministry of
+  Education's guidance on cloud services).
+-->
+<style>
+  :root { --ink:#1d2410; --muted:#5C6349; --line:#d8dcc6; --bg:#F7F6EE; --moss:#7D9D33; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:16px/1.6 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif; }
+  main { max-width:44rem; margin:0 auto; padding:2rem 1.25rem 4rem; }
+  .mark { font-family:"Source Code Pro",ui-monospace,monospace; font-weight:600; color:var(--moss); }
+  h1 { font-size:1.7rem; line-height:1.2; margin:.4rem 0 .2rem; }
+  .meta { color:var(--muted); font-size:.9rem; margin:0 0 2rem; }
+  h2 { font-size:1.15rem; margin:2.2rem 0 .5rem; padding-top:.2rem; border-top:1px solid var(--line); }
+  h3 { font-size:1rem; margin:1.4rem 0 .3rem; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; margin:.6rem 0 1rem; }
+  th, td { text-align:left; vertical-align:top; padding:.5rem .6rem; border-bottom:1px solid var(--line); }
+  th { font-weight:650; color:var(--muted); }
+  .wrap { overflow-x:auto; }
+  .todo { background:#fff3c4; padding:0 .2em; border-radius:3px; }
+  a { color:#4a6a15; }
+  .summary { background:#fff; border:1px solid var(--line); border-radius:12px; padding:1rem 1.2rem; }
+  .summary li { margin:.3rem 0; }
+</style>
+</head>
+<body>
+<main>
+  <div class="mark">starpin!</div>
+  <h1>Privacy policy</h1>
+  <p class="meta">Last updated <span class="todo">[date]</span> · applies to Starpin at starpin.org and at geosonify.org/starpin.html</p>
+
+  <div class="summary">
+    <p><strong>In short:</strong></p>
+    <ul>
+      <li>No registration or personal sign-in is required. Starpin asks for no name, email address or phone number.</li>
+      <li>We do not use advertising or analytics tools.</li>
+      <li>Your log of finds is stored on your own device, unless you choose to share or sync it.</li>
+      <li>To draw maps, the sky and place names, Starpin sends the coordinates of the area you are viewing, or of a find, to the services listed in section 3. They also receive your internet address.</li>
+      <li>Starpin creates an anonymous Firebase identifier on your device (section 4).</li>
+      <li>When you share or sync finds, their contents are encrypted on your device first. The storage service holds that encrypted content, which it cannot read, together with some technical information it can.</li>
+    </ul>
+  </div>
+
+  <h2>1. Who is responsible</h2>
+  <p>Starpin is a free, non-commercial project by Greg O’Beirne, <span class="todo">[city]</span>, New Zealand, built on the Geosonify engine. He is responsible for how Starpin handles personal information, including information held on his behalf by the service providers named below. For privacy questions or requests, contact <span class="todo">[email address]</span>.</p>
+
+  <h2>2. Information on your device</h2>
+
+  <h3>Your location</h3>
+  <p>When you allow it, your device tells Starpin where you are. Starpin uses this on your device to show your position, point you towards targets, and judge whether you are close enough to record a visit. Starpin does not send your device's position to the operator. Section 3 explains how the area shown on the map can nevertheless reflect where you are.</p>
+
+  <h3>Your log</h3>
+  <p>Each visit you record is saved in your browser's storage on your device. A record holds the target, the time, and the position and accuracy your device reported at that moment. It leaves your device only if you download it as a file, share it with a group, or sync it to your other devices (section 4).</p>
+
+  <h3>Settings and saved answers</h3>
+  <p>These are saved on your device and not sent to the operator:</p>
+  <ul>
+    <li>your settings, such as your preferred address notation and whether the compass is on;</li>
+    <li>place names already looked up; and</li>
+    <li>map tiles already downloaded.</li>
+  </ul>
+
+  <h3>Motion and orientation</h3>
+  <p>If the compass is on, your device's orientation is used on the device to turn the pointer. It is not recorded or sent anywhere.</p>
+
+  <h2>3. Services Starpin contacts</h2>
+  <p>Like any website, each service below receives your device's internet address and the ordinary technical details of a web request, and may keep logs of them under its own policy. None of them receives your log of finds, except the storage service in section 4, which receives only encrypted copies.</p>
+  <div class="wrap"><table>
+    <tr><th>Service</th><th>Why</th><th>What it receives</th><th>Policy</th></tr>
+    <tr><td>Cloudflare Pages (starpin.org) · GitHub Pages (geosonify.org)</td><td>Hosting: delivers the app's pages and code</td><td>Page requests</td>
+        <td><a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">Cloudflare</a> · <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noopener">GitHub</a></td></tr>
+    <tr><td>OpenFreeMap</td><td>Street, coast and border map tiles</td><td>The area on screen</td><td><a href="https://openfreemap.org/privacy/" rel="noopener">OpenFreeMap</a></td></tr>
+    <tr><td>OpenStreetMap tile servers</td><td>Map imagery, when the plain map is chosen</td><td>The area on screen</td><td><a href="https://osmfoundation.org/wiki/Privacy_Policy" rel="noopener">OSMF</a></td></tr>
+    <tr><td>Esri</td><td>Aerial and topographic imagery</td><td>The area on screen</td><td><a href="https://www.esri.com/en-us/privacy/overview" rel="noopener">Esri</a></td></tr>
+    <tr><td>OpenStreetMap Nominatim</td><td>The place name on a find's card</td><td>The coordinates of that find's target (the star's ground point, or the cornerstone). Not your recorded position.</td><td><a href="https://osmfoundation.org/wiki/Privacy_Policy" rel="noopener">OSMF</a></td></tr>
+    <tr><td>CDS, Strasbourg (Aladin, hips2fits, VizieR)</td><td>Sky photographs and the star catalogue</td><td>The patch of sky matching the area on screen, or a find</td><td><a href="https://cds.unistra.fr/" rel="noopener">CDS</a></td></tr>
+    <tr><td>Google Firebase</td><td>Anonymous identity; storage for groups and sync</td><td>See section 4</td><td><a href="https://firebase.google.com/support/privacy" rel="noopener">Firebase</a></td></tr>
+    <tr><td>Google Fonts · unpkg · jsDelivr · gstatic</td><td>Fonts and the app's code libraries</td><td>Requests for those files</td><td><a href="https://policies.google.com/privacy" rel="noopener">Google</a> · <a href="https://www.jsdelivr.com/terms/privacy-policy-jsdelivr-net" rel="noopener">jsDelivr</a> · <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">unpkg (Cloudflare)</a></td></tr>
+  </table></div>
+  <p>When the map is centred on you, the area on screen is roughly where you are, so these services may be able to infer your approximate location. A place name is normally looked up once per find on each device, and the answer is kept there. Clearing your browser's data, using another device, or a failed lookup can cause it to be looked up again.</p>
+
+  <h2>4. The anonymous identifier, groups, and sync</h2>
+
+  <h3>The anonymous identifier</h3>
+  <p>When Starpin opens, it signs in to Google Firebase Authentication anonymously. This happens whether or not you use groups. Firebase creates a random identifier, and your browser keeps it, so it stays the same across visits until you clear this website's data. It is not linked to your name, email address or phone number. It is still a persistent identifier: Google's systems can associate requests made with it with one another. It exists so that the storage service accepts reads and writes.</p>
+
+  <h3>Sharing and syncing</h3>
+  <p>If you share a find with a group, or sync your log between your own devices, each record is encrypted on your device before it leaves. It can be decrypted by anyone holding the relevant key:</p>
+  <ul>
+    <li>for a group, its members, and anyone else who obtains the group's key; and</li>
+    <li>for sync, your devices, and anyone who obtains your sync key.</li>
+  </ul>
+  <p>Firebase (Cloud Firestore) stores, for each shared record:</p>
+  <ul>
+    <li>the encrypted record, which Firebase and the operator cannot read;</li>
+    <li>an opaque handle, a code derived from the group or sync key. Within a group, records about the same target share a handle, and all of one person's synced records share one handle;</li>
+    <li>a hash of the encrypted content; and</li>
+    <li>the time the record was stored.</li>
+  </ul>
+  <p>The handle, hash and time are readable by the operator and by Google.</p>
+  <p>Anyone you admit to a group can read what you share with it, including the time and position of each visit, and can keep their own copies. Share only with people you trust with that information.</p>
+  <p>Firebase stores data on Google's servers <span class="todo">[in region: confirm the Firestore location]</span>, which may be outside New Zealand.</p>
+
+  <h2>5. Keeping and deleting information</h2>
+  <div class="wrap"><table>
+    <tr><th>Information</th><th>How long it is kept</th><th>How it is deleted</th></tr>
+    <tr><td>Your log, settings and saved answers on your device</td><td>Until you delete them</td><td>Delete a record in the Log tab, or clear this website's data in your browser, which removes everything.</td></tr>
+    <tr><td>Shared and synced records in Firebase</td><td><span class="todo">[Until deleted by the operator. Confirm that no automatic expiry is configured, or state it.]</span></td><td>They cannot be edited or deleted from the app: the storage rules forbid it. Deleting a find on your device does not delete copies already shared or synced. The operator can delete stored records on request (section 6), but cannot withdraw copies that group members have already saved on their own devices.</td></tr>
+    <tr><td>The anonymous identifier</td><td>On your device, until you clear this website's data. In Firebase, <span class="todo">[confirm: until deleted; Firebase does not remove anonymous accounts automatically unless configured to]</span></td><td>Clearing this website's data removes it from your device. <span class="todo">[State how the operator removes it from Firebase on request.]</span></td></tr>
+    <tr><td>Other services' logs (section 3)</td><td>Under each service's own policy</td><td>By request to that service</td></tr>
+  </table></div>
+
+  <h2>6. Access, correction and deletion requests</h2>
+  <p>Under the New Zealand Privacy Act 2020, you may ask for access to, and correction of, personal information held about you. You may also ask for shared records to be deleted.</p>
+  <p>The operator can see, through the Firebase console, the opaque handles, hashes, storage times and anonymous identifiers described in section 4, but not the contents of encrypted records. Because none of this carries your name, the operator may need your help to find your data. For example, you may need to open the app on your device and supply details it shows you. <span class="todo">[Describe the exact steps once decided.]</span></p>
+  <p>Send requests to <span class="todo">[email address]</span>. If you are not satisfied with the response, you may complain to the Office of the Privacy Commissioner (<a href="https://www.privacy.org.nz" rel="noopener">privacy.org.nz</a>).</p>
+  <p>You can also turn off location or motion access at any time in your device or browser settings. Starpin keeps working, but cannot record visits without location.</p>
+
+  <h2>7. Children and schools</h2>
+  <p>Starpin requires no registration and asks for no names or contact details. It has no messaging and no advertising or analytics tools. That makes it simple to try, but not requiring registration is not the same as a school having assessed Starpin as suitable. Schools should check it against their own policies for online services before use.</p>
+  <p>Points a school may want to consider:</p>
+  <ul>
+    <li>the anonymous identifier and the storage service in section 4;</li>
+    <li>that the services in section 3 receive the area on screen, which can reflect a student's location, together with the device's internet address; and</li>
+    <li>that group members can see the finds shared with them, including where and when each was made.</li>
+  </ul>
+  <p>For classroom use, we suggest groups made and managed by a teacher, with students sharing only within their class group.</p>
+
+  <h2>8. Changes</h2>
+  <p>If Starpin changes what it collects, where it sends it, or who can see it, this policy will be updated first, and the date at the top will change.</p>
+
+  <p style="margin-top:3rem"><a href="starpin.html">Back to Starpin</a></p>
+</main>
+</body>
+</html>

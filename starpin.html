@@ -398,7 +398,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <nav id="tabbar" role="tablist" aria-label="sections">
   <button type="button" data-go="go"  aria-selected="true"><span>◎</span>Go</button>
   <button type="button" data-go="map" aria-selected="false"><span>⌖</span>Place</button>
-  <button type="button" data-go="sky" aria-selected="false"><span>✦</span>Sky</button>
+  <button type="button" data-go="sky" aria-selected="false"><span>◷</span>Countdown</button>
   <button type="button" data-go="groups" aria-selected="false"><span>⌘</span>Groups</button>
   <button type="button" data-go="log" aria-selected="false"><span>▤</span>Log</button>
 </nav>
@@ -631,10 +631,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       <div id="grp-list"><span class="hint">none yet</span></div>
     </div>
 
-    <div class="card" id="grp-faq-card">
-      <h3>How this works &amp; how safe it is</h3>
-      <div id="grp-faq"></div>
-    </div>
   </div>
 
   <p class="hint" id="grp-unavailable" hidden>Sharing is unavailable right now (offline, or the sharing service didn’t load). Your own records are unaffected; you can still log visits.</p>
@@ -675,11 +671,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      skipped, and anything you have deleted stays deleted.<br><br>
      Swipe a record left, slowly, to delete it.</p>
 
+    <div class="card" id="grp-faq-card">
+      <h3>Questions &amp; answers</h3>
+      <div id="grp-faq"></div>
+    </div>
+
   <div class="credits">
     <div class="cr-mark">starpin<span>!</span></div>
-    <p>A spin-off of <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Geosonify</b></a>. Every star already has a place on Earth:
+    <p>A spin-off of <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Geosonify</b></a>. Every star has a place on Earth:
        declination reads as latitude, right ascension as longitude.</p>
     <p>&copy; 2026 <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Greg O&rsquo;Beirne</b></a>. Built on the Geosonify engine.</p>
+    <p><a href="privacy.html"><b>Privacy policy</b></a></p>
     <p>Star positions and photometry from the <a href="https://www.cosmos.esa.int/gaia" target="_blank" rel="noopener"><b>ESA Gaia</b></a> mission, processed by
        the <a href="https://www.cosmos.esa.int/web/gaia/dpac" target="_blank" rel="noopener">Gaia Data Processing and Analysis Consortium (DPAC)</a>. Funding for DPAC
        has been provided by national institutions, in particular those
@@ -724,14 +726,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261001"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261003"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261001"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20260930"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
      Load order matters: vendored crypto and the shared target helper first,
@@ -742,7 +744,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261002"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261003"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -2120,6 +2122,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
 
   var flip = GeosonifyStarpinFlip.mount($('stage'), {
+    zoom: 15,                    // about a 200 m scale bar
     lookupStars: false,          // loadStars() below does it, once, and hands them over
     locate: false,               // this page owns geolocation
     onSelect: function (sel) {
@@ -2616,7 +2619,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function goToHit(got, key) {
     var la = got.p[0], lo = got.p[1];
     goTab('map');
-    map.leaflet.setView([la, lo], 16);
+    map.leaflet.setView([la, lo], 15);                 // the 200 m scale, as for your own location
     map.dropPin(la, lo);
     readAt(la, lo, 'typed in');
     $('pin-ll').blur();
