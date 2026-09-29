@@ -713,6 +713,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-codec-engine_v11_8a.js?v=20260109"></script>
 <script src="js/lib/geosonify-rgb111-lib_v2_5.js?v=20260627c"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
+<!-- HEALPix words (healpix-bip39-v1, frozen): the codec and its pinned wordlists, as Geosonify loads them -->
+<script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
+<script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
@@ -727,7 +730,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261001"></script>
-<script src="js/lib/geosonify-starpin-readout.js?v=20260929"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20260930"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
@@ -739,7 +742,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20260930"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -2471,10 +2474,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
   function fmtLabel() {
     var key = readout.format(), f = GeosonifyStarpinReadout.FORMATS[key];
-    if (isWords(key)) {
-      var lang = key.replace('card:bip39', '').replace('chinese', 'Chinese ');
-      return 'BIP39 words · ' + lang.charAt(0).toUpperCase() + lang.slice(1);
-    }
     return f ? f.label : 'Latitude / Longitude';
   }
   function paintMapAddr(lat, lon, label) {
@@ -2486,7 +2485,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     $('pin-ll').readOnly = false;
     $('pin-ll').placeholder = 'paste or type any address to go there';
     $('addr-hint').textContent = isWords(key)
-      ? 'Four words from the open BIP39 list — not what3words: free, and anyone can decode them. ' +
+      ? 'HEALPix words: the open BIP39 wordlists on the same equal-area grid as the rest of Starpin ' +
+        '— not what3words: free, and anyone can decode them. The three digits after the dot are a checksum. ' +
         'Paste any address or coordinates here to go there.'
       : 'Someone can read this to you, or paste any address or coordinates, and it goes there.';
     if (addrEditing || lat == null) return;
@@ -2525,6 +2525,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (/^https?:\/\//i.test(t)) {
       try {
         var u = new URL(t);
+        // HEALPix-words links (spec §9): the parameter names the language, and
+        // any failure -- a checksum mismatch included -- rejects the link.
+        var sfx = RO.HPW_SUFFIX || {}, lk;
+        for (lk in sfx) {
+          if (u.searchParams.get('hpw' + sfx[lk] + 'j') != null)
+            return { reject: 'That link is an obfuscated word code. Open it in Geosonify, which holds the key.' };
+          var wv = u.searchParams.get('hpw' + sfx[lk]);
+          if (wv != null) {
+            var pw = RO.parse('hpw' + sfx[lk], wv);
+            if (!pw) return { reject: 'That link\u2019s words do not decode (a mistyped word or a checksum that does not match).' };
+            var rw = hit(pw, 'hpw' + sfx[lk], RO.FORMATS['hpw' + sfx[lk]].label);
+            if (rw) rw.checksumStatus = pw.checksumStatus;
+            return rw;
+          }
+        }
         var hk = ['hphex', 'hpquad', 'hp64'];
         for (var h = 0; h < hk.length; h++) {
           var v = u.searchParams.get(hk[h]);
@@ -2548,6 +2563,29 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var rl = hit([+m[1], +m[2]], 'latlon', 'latitude and longitude');
       if (rl) return rl;
     }
+    // HEALPix words. The spec requires the LANGUAGE to be given: the notation
+    // on screen is that choice. Otherwise every list that decodes the input is
+    // offered, and none is picked silently (§6 rule 1). A checksum that does
+    // not match rejects the input outright (§6 rule 5).
+    var hpwKeys = Object.keys(RO.FORMATS).filter(function (k) { return /^hpw/.test(k) && RO.available(k); });
+    if (hpwKeys.length && /[^\d\s.,;:+\-]/.test(t)) {
+      if (hpwKeys.indexOf(preferKey) >= 0) {
+        var pp = RO.parse(preferKey, t);
+        if (pp) { var rp = hit(pp, preferKey, RO.FORMATS[preferKey].label); if (rp) { rp.checksumStatus = pp.checksumStatus; return rp; } }
+      }
+      var fits = [], mismatch = false, HWm = window.HealpixWords;
+      hpwKeys.forEach(function (k) {
+        var pk = RO.parse(k, t);
+        if (pk) { var rk = hit(pk, k, RO.FORMATS[k].label); if (rk) { rk.checksumStatus = pk.checksumStatus; fits.push(rk); } }
+        else if (HWm) {
+          var raw = HWm.parse(t, RO.FORMATS[k].hpwLang);
+          if (raw && raw.checksumStatus === 'mismatch') mismatch = true;
+        }
+      });
+      if (fits.length === 1) return fits[0];
+      if (fits.length > 1) return { choices: fits };
+      if (mismatch) return { reject: 'Those words are real, but the three-digit checksum does not match them. Check each word, and the digits.' };
+    }
     // Then the notation on screen, then only the notations that RECOGNISE
     // themselves: BIP39 words (every word must be on the list, in one of ten
     // languages) and HEALPix codes (a strict grammar). The free-form
@@ -2556,12 +2594,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // actually chosen; otherwise "the quick brown fox" would land in a paddock.
     var keys = Object.keys(RO.FORMATS).filter(function (k) {
       if (k === 'radec' || k === 'latlon' || !RO.available(k) || !RO.canParse(k)) return false;
-      return k === preferKey || /^card:bip39/.test(k) || /^hp(quad|hex|64)$/.test(k);
+      return k === preferKey || /^hp(quad|hex|64)$/.test(k);
     });
     keys.sort(function (a, b) {
       function rank(k) {
-        return k === preferKey ? 0 : /^card:bip39/.test(k) ? 1
-             : k === 'hphex' ? 2 : k === 'hpquad' ? 3 : 4;
+        return k === preferKey ? 0 : k === 'hphex' ? 2 : k === 'hpquad' ? 3 : 4;
       }
       return rank(a) - rank(b);
     });
@@ -2576,24 +2613,46 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
   window.starpinReadAnything = readAnything;       // for the console, and the tests
 
-  function flyToTyped() {
-    var key = readout.format(), txt = $('pin-ll').value;
-    var got = readAnything(txt, key);
-    if (!got) {
-      alert('I could not read that as an address.\n\n' +
-            'Coordinates, a maps link, or a code in any of the app\u2019s notations will do ' +
-            '\u2014 four BIP39 words in any language, HEALPix, and the rest.');
-      return;
-    }
+  function goToHit(got, key) {
     var la = got.p[0], lo = got.p[1];
     goTab('map');
     map.leaflet.setView([la, lo], 16);
     map.dropPin(la, lo);
     readAt(la, lo, 'typed in');
     $('pin-ll').blur();
-    // Say how it was read when that was not the notation on screen, so a wrong
-    // guess is visible rather than silent.
-    if (got.key !== key) $('addr-hint').textContent = 'Read as ' + got.label + '.';
+    // Say how it was read when that was not the notation on screen, and say
+    // plainly whether a word code's checksum was checked: an absent checksum is
+    // a valid but UNCHECKED address and must never read as verified.
+    var note = got.key !== key ? 'Read as ' + got.label + '. ' : '';
+    if (got.checksumStatus === 'verified') note += 'Checksum \u2713.';
+    else if (got.checksumStatus === 'absent') note += 'No checksum given, so the words are unchecked.';
+    if (note) $('addr-hint').textContent = note;
+  }
+  function flyToTyped() {
+    var key = readout.format(), txt = $('pin-ll').value;
+    var got = readAnything(txt, key);
+    if (got && got.reject) { alert(got.reject); return; }
+    if (got && got.choices) {
+      // Valid in more than one language: the person chooses. Never guessed.
+      var hint = $('addr-hint');
+      hint.textContent = 'Those words are valid in more than one list. Which did you mean? ';
+      got.choices.forEach(function (c) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'linkish';
+        b.style.cssText = 'display:inline-block;width:auto;margin:.3rem .35rem 0 0;padding:.25rem .7rem;font-size:.8rem';
+        b.textContent = c.label.replace('HEALPix words \u00B7 ', '');
+        b.addEventListener('click', function () { goToHit(c, key); });
+        hint.appendChild(b);
+      });
+      return;
+    }
+    if (!got) {
+      alert('I could not read that as an address.\n\n' +
+            'Coordinates, a maps link, or a code in any of the app\u2019s notations will do ' +
+            '\u2014 HEALPix words in any of eleven languages, HEALPix codes, and the rest.');
+      return;
+    }
+    goToHit(got, key);
   }
   $('pin-go').addEventListener('click', flyToTyped);
   $('pin-ll').addEventListener('keydown', function (e) {
@@ -2827,37 +2886,30 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // four characters. Cornerstone order 14 is a separate thing and stays where
   // it is used, in nearestCornerstone below.
   var readout = RO.mount($('readout'), {});
-  // ── words by default, in the reader's own language ─────────────────────
-  // BIP39 is an open wordlist (the one Bitcoin wallets use); Geosonify turns a
-  // place into four of its words. It is NOT what3words: nothing is licensed,
-  // anyone may decode it, and it works in ten languages. A person who has never
-  // chosen a notation gets these words, in the first language on their device
-  // that BIP39 has; English otherwise. A choice once made is kept.
-  var BIP39_LANG = { en: 'english', es: 'spanish', fr: 'french', it: 'italian', pt: 'portuguese',
-                     cs: 'czech', ja: 'japanese', ko: 'korean' };
-  function localBip39() {
-    var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'en'];
-    for (var i = 0; i < langs.length; i++) {
-      var l = String(langs[i] || '').toLowerCase();
-      if (/^zh/.test(l)) return /hant|tw|hk|mo/.test(l) ? 'bip39chinesetraditional' : 'bip39chinesesimplified';
-      var base = l.split('-')[0];
-      if (BIP39_LANG[base] && GeosonifyStarpinReadout.available('card:bip39' + BIP39_LANG[base]))
-        return 'bip39' + BIP39_LANG[base];
-    }
-    return 'bip39english';
+  // ── HEALPix words by default, in the reader's own language ───────────────
+  // healpix-bip39-v1: the BIP39 wordlists on the same equal-area HEALPix grid
+  // as everything else here. NOT what3words: nothing is licensed, anyone may
+  // decode it, eleven languages. Someone who has never chosen a notation gets
+  // these, in their device's language by the frozen mapping (navigator.language,
+  // first match): zh-Hant/TW/HK/MO -> traditional, other zh -> simplified;
+  // en es fr it pt cs de ja ko -> that list; anything else -> English.
+  // A choice once made is kept, unless it is no longer offered.
+  function localHpw() {
+    var l = String(navigator.language || 'en').toLowerCase();
+    if (/^zh/.test(l)) return /hant|-tw|-hk|-mo/.test(l) ? 'hpwzht' : 'hpwzhs';
+    var base = l.split('-')[0];
+    return /^(en|es|fr|it|pt|cs|de|ja|ko)$/.test(base) ? 'hpw' + base : 'hpwen';
   }
   (function wordsByDefault() {
     var chosen = null;
     try { chosen = localStorage.getItem('starpin.readout.format'); } catch (e) {}
-    // A notation chosen before is kept -- unless it is no longer offered
-    // (Music, ChromaCoord, Local Grid), in which case words take its place.
     if (chosen && GeosonifyStarpinReadout.available(chosen)) return;
-    var k = 'card:' + localBip39();
+    var k = localHpw();
     if (GeosonifyStarpinReadout.available(k)) readout.setFormat(k);
   })();
+  function isWords(key) { return /^hpw/.test(key || ''); }
   // Label and hint follow the notation from the first paint, not the first pan.
   paintMapAddr(addrPoint ? addrPoint.lat : null, addrPoint ? addrPoint.lon : null, $('addr-src').textContent);
-  function isWords(key) { return /^card:bip39/.test(key || ''); }
   readout.el.addEventListener('change', function () {
     if (addrPoint) paintMapAddr(addrPoint.lat, addrPoint.lon, $('addr-src').textContent);
   });
