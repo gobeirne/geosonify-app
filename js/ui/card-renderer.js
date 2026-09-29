@@ -263,14 +263,15 @@
     'datamatrix|false': 'G',   // Geosonify hex (standard)
     'datamatrix|true' : 'O',   // Geosonify obfuscated hex
     'hpmatrix|false'  : 'H',   // HEALPix hex
-    'hpmatrix|true'   : 'P'    // HEALPix obfuscated hex
+    'hpmatrix|true'   : 'Q'    // HEALPix obfuscated hex (healpix-obf-v2); 'P' = legacy v1, decode only
     // future families: Q, R, S, … (any unused G-Z letter)
   };
   const SIGNIFIER_TO_MODE = {
     'G': { gridKey: 'datamatrix', obf: false },
     'O': { gridKey: 'datamatrix', obf: true  },
     'H': { gridKey: 'hpmatrix',   obf: false },
-    'P': { gridKey: 'hpmatrix',   obf: true  }
+    'P': { gridKey: 'hpmatrix',   obf: 'v1' },          // legacy healpix-pass-v1 obfuscation
+    'Q': { gridKey: 'hpmatrix',   obf: true  }
   };
 
   // Prepend the mode signifier at GENERATE time. Applied OUTSIDE
@@ -592,12 +593,12 @@
     console.warn('[card-renderer] scale card registration deferred:', e);
   }
 
-  // HEALPix addresses encoded with BIP39 wordlists (healpix-bip39-v1, BETA).
+  // HEALPix addresses encoded with BIP39 wordlists (healpix-bip39-v1, FROZEN).
   // Ten cards, one per OFFICIAL 2048-word list. Own family flag `hpwords` (NOT
   // `healpix`): card iterations are WORD COUNTS (1–8), not HEALPix orders, so
   // none of the order-based healpix paths (@k suffixes, fromHealpixCode, hex
-  // sibling logic) may see them. Not visible by default; no URL parameter in
-  // the beta; redacted under passphrase/obfuscation (plain addresses only).
+  // sibling logic) may see them. Not visible by default; point links are
+  // ?hpw<lang>[j]= links (index.html); passphrase and obfuscation supported.
   function registerHpWordsCards() {
     if (typeof HealpixWords === 'undefined' || typeof BIP39_OFFICIAL_WORDLISTS === 'undefined') return;
     const defs = HealpixWords.cardDefs();
@@ -610,18 +611,20 @@
 
   // hpwords decode: parse words (+ optional checksum) → centre of the word
   // cell; the ENTERED word count becomes the card's precision.
-  function decodeHpWordsCode(gridKey, code) {
+  function decodeHpWordsCode(gridKey, code, deobfuscate) {
     const gd = CARD_GRIDS[gridKey];
     if (!gd || !gd.hpwords || typeof HealpixWords === 'undefined') return null;
-    if (obfuscated) return null;                        // beta: no obfuscation
+    const wOpt = hpWordsOpt(deobfuscate);
     // Spec §6: invalid input (incl. a checksum MISMATCH) is rejected outright.
     // An absent checksum decodes as an UNCHECKED address (no ✓ toast).
-    const r = HealpixWords.parse(code, gd.hpwords);     // DISPLAYED indices (+ checksum)
+    const r = HealpixWords.parse(code, gd.hpwords, null, !!(wOpt && wOpt.obf));  // DISPLAYED indices (+ checksum)
     if (!r || !r.valid || !r.indices) {
       if (r && r.error && typeof console !== 'undefined') console.warn('[hpwords] rejected:', r.error);
       return null;
     }
-    const c = HealpixWords.centreForIndices(HealpixWords.unprotect(r.indices, hpWordsPassOpt()));
+    const tru = HealpixWords.fromDisplayed(r.indices, wOpt);
+    if (tru[0] >= HealpixWords.FIRST_WORD_LIMIT) return null;   // face rule on the TRUE index
+    const c = HealpixWords.centreForIndices(tru);
     if (!c) return null;
     cardState.iterations[gridKey] = r.indices.length;
     saveCardState();
@@ -640,13 +643,13 @@
     for (let k = HealpixWords.MIN_WORDS; k <= HealpixWords.MAX_WORDS; k++) {
       levels.push({
         label: `${k} word${k > 1 ? 's' : ''} · ${HealpixWords.orderLabel(k)}`,
-        code: obfuscated ? '████████' : HealpixWords.encode(lat, lon, k, gd.hpwords, hpWordsPassOpt()),
+        code: HealpixWords.encode(lat, lon, k, gd.hpwords, hpWordsOpt(false)),
         dims: `${formatLength(HealpixWords.cellMetres(k).w)} cell (equal-area)`,
         here: k === n
       });
     }
     GISGrids.renderResolutionPopup({
-      title: gd.name + ' (beta)',
+      title: gd.name,
       note: 'HEALPix NESTED address written as 11-bit words from the official BIP39 ' +
         'list: 4 bits of base face + 2 bits per level. Every two words add exactly 11 ' +
         'HEALPix orders (4 words = order 20). Odd word counts end halfway through a ' +
@@ -655,8 +658,10 @@
         (passphrase ? 'PASSPHRASE ACTIVE: each word is shuffled by your key (the receiver needs the ' +
           'same passphrase). The checksum covers the shown words, so a valid checksum does NOT ' +
           'confirm the passphrase. ' : '') +
+        (obfuscated ? 'OBFUSCATED: every word except the last is re-jumbled by the words after it, so ' +
+          'neighbouring places look unrelated; the rows above cannot be shortened into each other. ' : '') +
         'The plain code format (words and checksum) is frozen: codes will always mean the same place. ' +
-        'BETA: the passphrase scheme may still change, and there is no share-link parameter yet.',
+        'The format is frozen — words, checksum, passphrase, obfuscation and ?hpw links.',
       uncertaintyLine: uncertaintyLine || null,
       levels,
       detail: null,
@@ -666,11 +671,30 @@
     });
   }
 
-  // Passphrase option for hpwords: the FROZEN shuffle, used unchanged as the
-  // primitive of healpix-bip39-pass-v1 (see geosonify-hpwords.js header).
-  function hpWordsPassOpt() {
-    return passphrase ? { pass: passphrase, shuffleFn: shuffleGridAndOrder } : null;
+  // HEALPix obfuscation option. mode: falsy → none; 'v1' → FROZEN
+  // healpix-pass-v1 obfuscation (decode of legacy codes only: ?hphexo=,
+  // ?hpchso=, ?hpco=, matrix 'P'); anything else truthy → healpix-obf-v2, which
+  // every NEW obfuscated HEALPix code uses. v2 needs the frozen shuffle.
+  function hpObfOpt(opt, mode) {
+    if (!mode) return opt;
+    opt.obf = true;
+    opt.obfV = (mode === 'v1') ? 1 : 2;
+    opt.shuffleFn = shuffleGridAndOrder;
+    return opt;
   }
+
+  // Passphrase + obfuscation option for hpwords: the FROZEN shuffle, used
+  // unchanged as the primitive of healpix-bip39-pass-v1 and healpix-bip39-obf-v1
+  // (see geosonify-hpwords.js). null when neither is active.
+  function hpWordsOpt(deobfuscate) {
+    const obf = !!(obfuscated || deobfuscate);
+    if (!passphrase && !obf) return null;
+    const o = { shuffleFn: shuffleGridAndOrder };
+    if (passphrase) o.pass = passphrase;
+    if (obf) o.obf = true;
+    return o;
+  }
+  const hpWordsPassOpt = () => hpWordsOpt(false);
 
   // Words with the checksum greyed, like the legacy BIP39 display.
   function hpWordsDisplayHTML(code) {
@@ -1079,10 +1103,9 @@
       if (!SD || !SD.valueFor) return null;
       return SD.valueFor(gridKey, lat, ((lon % 360) + 360) % 360, iterations);
     }
-    // HEALPix words (beta): plain addresses only — redact under privacy.
+    // HEALPix words: passphrase + obfuscation via HealpixWords (frozen formats).
     if (gridDef && gridDef.hpwords && typeof HealpixWords !== 'undefined') {
-      if (obfuscated) return '████████';           // obfuscation not supported (beta)
-      return HealpixWords.encode(lat, lon, iterations, gridDef.hpwords, hpWordsPassOpt());
+      return HealpixWords.encode(lat, lon, iterations, gridDef.hpwords, hpWordsOpt(false));
     }
     // HEALPix reference grids (hphex/hpquad/hp64) — own engine, hierarchical.
     // Tier 2: keyed permutation (passphrase) + position-shift (obfuscation),
@@ -1093,7 +1116,7 @@
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      if (obfuscated) { opt.obf = true; }
+      hpObfOpt(opt, !!obfuscated);                     // new codes: ALWAYS healpix-obf-v2
       return HealpixGrids.encode(gridDef.healpix, lat, lon, iterations, opt);
     }
     // GIS reference grids (Plus Codes, MGRS, UTM, NZTM, …) — own engine, no shuffle/obfuscation
@@ -1199,11 +1222,11 @@
     if (_presDecCo) {
       return decodeCardCoordinate(_presDecCo, code, iterations);
     }
-    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code);
+    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code, false);
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      if (obfuscated) { opt.obf = true; }
+      hpObfOpt(opt, !!obfuscated);
       return HealpixGrids.decode(gridDef.healpix, code, iterations, opt);
     }
     if (gridDef && gridDef.gis && typeof GISGrids !== 'undefined') {
@@ -1295,11 +1318,14 @@
     if (_presDC) {
       return decodeCardCode(_presDC, code, deobfuscate);
     }
-    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code);
+    if (gridDef && gridDef.hpwords) return decodeHpWordsCode(gridKey, code, deobfuscate);
     if (gridDef && gridDef.healpix && typeof HealpixGrids !== 'undefined') {
       const opt = {};
       if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-      if (obfuscated) { opt.obf = true; }
+      // Honour the caller's deobfuscate flag (URL/scan paths pass it; previously
+      // ignored here, so ?hphexo= links decoded un-deobfuscated on a cold load).
+      // deobfuscate === 'v1' marks a LEGACY healpix-pass-v1 code ('o' params, 'P').
+      hpObfOpt(opt, deobfuscate || obfuscated);
       // Prefer the card's CURRENT order over inferring from the string: bare
       // hex/base64 codes are order-ambiguous (packing rounds up to whole chars),
       // so the known stepper value is exact where inference might over-read.
@@ -1763,7 +1789,7 @@
     qrhex: 6, qrbin: 6, datamatrix: 6, qrurl: 6,
     // HEALPix (order) — ~1.6 m
     hphex: 22, hpquad: 22, hp64: 22, hpmatrix: 22,
-    // HEALPix words (beta) — 4 words = order 20 ≈ 6.2 m, the human unit
+    // HEALPix words — 4 words = order 20 ≈ 6.2 m, the human unit
     hpbip39english: 4, hpbip39spanish: 4, hpbip39french: 4, hpbip39italian: 4,
     hpbip39portuguese: 4, hpbip39czech: 4, hpbip39japanese: 4, hpbip39korean: 4,
     hpbip39chinesesimplified: 4, hpbip39chinesetraditional: 4,
@@ -1928,8 +1954,9 @@
     if (gridDef.gis && (passphrase || obfuscated)) {
       return '████████';
     }
-    // HEALPix words (beta) have NO URL parameter yet (the URL grammar is a
-    // permanent contract), so shares/compact output fall back to raw lat/lon.
+    // HEALPix words: compact output stays raw lat/lon so shapes/paths keep
+    // working; a single point is shared as ?hpw<lang>[j]= by index.html
+    // (hpwordsPointShare), overriding this.
     if (gridDef.hpwords) {
       return `${lat.toFixed(6)},${lon.toFixed(6)}`;
     }
@@ -3425,7 +3452,6 @@
       if (!gridKey) return;
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef || (!gridDef.grid && !gridDef.gis && !gridDef.healpix && !gridDef.hpwords && !presentationOf(gridDef))) return;
-      if (gridDef.hpwords && obfuscated) return;
       // Redacted GIS card under privacy mode: leave the blurred block alone.
       // HEALPix now transforms properly under both passphrase and obfuscation,
       // so it always re-renders (never skipped for privacy).
@@ -3565,7 +3591,7 @@
       // GIS reference cards are real, interoperable standards (Plus Code, MGRS, …)
       // that can't be privacy-transformed → redact under any privacy mode.
       // HEALPix transforms properly (permute + obfuscate) so it is NEVER redacted.
-      const gisRedacted = !!((gridDef.gis && (passphrase || obfuscated)) || (gridDef.hpwords && obfuscated));
+      const gisRedacted = !!(gridDef.gis && (passphrase || obfuscated));
       if (gisRedacted) {
         code = '████████';
       }
@@ -5378,7 +5404,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     // they're hidden for GIS cards.
     const _gd = CARD_GRIDS[gridKey];
     const isGis = !!(_gd && _gd.gis);
-    const noDeobf = isGis || !!(_gd && _gd.hpwords);   // hpwords: passphrase yes, obfuscation no
+    const noDeobf = isGis;
     
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -5708,7 +5734,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       // the key prefix — new scales then tag themselves with no edit here.
       const isMusic = def.display === 'music';
       const isSky = !!def.sky;
-      const tag = def.hpwords ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix · beta)</span>'
+      const tag = def.hpwords ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
                 : def.prefixLength ? ' <span style="font-size:11px;opacity:0.5;">(legacy)</span>'
                 : isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
                 : isSky ? ' <span style="font-size:11px;opacity:0.5;">(Sky)</span>'
@@ -6607,7 +6633,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         const order = hpDef.fixedIterations || 22;
         const opt = {};
         if (passphrase) { opt.pass = passphrase; opt.shuffleFn = shuffleGridAndOrder; }
-        if (obfuscated) { opt.obf = true; }
+        hpObfOpt(opt, obfuscated);                     // 'v1' while a legacy 'P' scan is decoding
         const coord = (typeof HealpixGrids !== 'undefined')
           ? HealpixGrids.decode(scheme, hexCode.toUpperCase(), order, opt)
           : null;
@@ -6780,13 +6806,14 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     if (gridDef && gridDef.hpwords) {
       preview.innerHTML =
         '<div style="font-size:11px;color:#888;line-height:1.5;">' +
-        '<b>' + gridDef.name + '</b> (beta)<br>' +
+        '<b>' + gridDef.name + '</b><br>' +
         (passphrase
           ? 'Passphrase active — each word is shuffled by your key, conditioned on the words ' +
             'before it, so shorter codes stay prefixes of longer ones. The receiver needs the same ' +
             'passphrase. The checksum covers the shown words: a valid checksum does not confirm the passphrase.'
           : 'Enter a passphrase to shuffle these words. Each word position is permuted by your key; ' +
-            'the same passphrase reverses it. Obfuscation is not available on this card.') +
+            'the same passphrase reverses it.') +
+        (obfuscated ? ' Obfuscation is ON: every word except the last is re-jumbled by the words after it.' : '') +
         '</div>';
       return;
     }
@@ -7248,9 +7275,9 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       return passphrase;
     },
 
-    /** Passphrase option for the HEALPix-words cards ({pass, shuffleFn} or null). */
+    /** Passphrase/obfuscation option for the HEALPix-words cards ({pass?, obf?, shuffleFn} or null). */
     getHpWordsOpt() {
-      return hpWordsPassOpt();
+      return hpWordsOpt(false);
     },
     
     /**
