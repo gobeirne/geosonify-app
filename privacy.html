@@ -51,8 +51,8 @@
       <li>We do not use advertising or analytics tools.</li>
       <li>Your log of finds is stored on your own device, unless you choose to share or sync it.</li>
       <li>To draw maps, the sky and place names, Starpin sends the coordinates of the area you are viewing, or of a find, to the services listed in section 3. They also receive your internet address.</li>
-      <li>Starpin creates an anonymous Firebase identifier on your device (section 4).</li>
-      <li>When you share or sync finds, their contents are encrypted on your device first. The storage service holds that encrypted content, which it cannot read, together with some technical information it can.</li>
+      <li>Starpin uses Firebase anonymous authentication and stores its identifier in your browser (section 4).</li>
+      <li>When you share or sync finds, their contents are encrypted on your device first. Neither Firebase nor the operator receives the keys through the storage service. They can see some technical information about what is stored, but not its contents (section 4).</li>
     </ul>
   </div>
 
@@ -65,7 +65,7 @@
   <p>When you allow it, your device tells Starpin where you are. Starpin uses this on your device to show your position, point you towards targets, and judge whether you are close enough to record a visit. Starpin does not send your device's position to the operator. Section 3 explains how the area shown on the map can nevertheless reflect where you are.</p>
 
   <h3>Your log</h3>
-  <p>Each visit you record is saved in your browser's storage on your device. A record holds the target, the time, and the position and accuracy your device reported at that moment. It leaves your device only if you download it as a file, share it with a group, or sync it to your other devices (section 4).</p>
+  <p>Each visit you record is saved in your browser's storage on your device. A record holds the target, the time, and the position and accuracy your device reported at that moment. You can export it as a file, share it with a group, or sync it to your other devices (section 4). Otherwise it is not sent anywhere.</p>
 
   <h3>Settings and saved answers</h3>
   <p>These are saved on your device and not sent to the operator:</p>
@@ -88,46 +88,80 @@
     <tr><td>OpenStreetMap tile servers</td><td>Map imagery, when the plain map is chosen</td><td>The area on screen</td><td><a href="https://osmfoundation.org/wiki/Privacy_Policy" rel="noopener">OSMF</a></td></tr>
     <tr><td>Esri</td><td>Aerial and topographic imagery</td><td>The area on screen</td><td><a href="https://www.esri.com/en-us/privacy/overview" rel="noopener">Esri</a></td></tr>
     <tr><td>OpenStreetMap Nominatim</td><td>The place name on a find's card</td><td>The coordinates of that find's target (the star's ground point, or the cornerstone). Not your recorded position.</td><td><a href="https://osmfoundation.org/wiki/Privacy_Policy" rel="noopener">OSMF</a></td></tr>
-    <tr><td>CDS, Strasbourg (Aladin, hips2fits, VizieR)</td><td>Sky photographs and the star catalogue</td><td>The patch of sky matching the area on screen, or a find</td><td><a href="https://cds.unistra.fr/" rel="noopener">CDS</a></td></tr>
+    <tr><td>CDS, Strasbourg (Aladin, hips2fits, VizieR)</td><td>Sky photographs and the star catalogue</td><td>The patch of sky matching the area on screen, or a find</td><td>CDS is part of the Université de Strasbourg. We found no privacy policy specific to these services; the university's data protection officer is dpo@unistra.fr.</td></tr>
     <tr><td>Google Firebase</td><td>Anonymous identity; storage for groups and sync</td><td>See section 4</td><td><a href="https://firebase.google.com/support/privacy" rel="noopener">Firebase</a></td></tr>
-    <tr><td>Google Fonts · unpkg · jsDelivr · gstatic</td><td>Fonts and the app's code libraries</td><td>Requests for those files</td><td><a href="https://policies.google.com/privacy" rel="noopener">Google</a> · <a href="https://www.jsdelivr.com/terms/privacy-policy-jsdelivr-net" rel="noopener">jsDelivr</a> · <a href="https://www.cloudflare.com/privacypolicy/" rel="noopener">unpkg (Cloudflare)</a></td></tr>
+    <tr><td>Google Fonts · unpkg · jsDelivr · gstatic</td><td>Fonts and the app's code libraries</td><td>Requests for those files</td><td><a href="https://policies.google.com/privacy" rel="noopener">Google</a> · <a href="https://www.jsdelivr.com" rel="noopener">jsDelivr</a> · <a href="https://unpkg.com" rel="noopener">unpkg</a> (see each site for its terms)</td></tr>
   </table></div>
   <p>When the map is centred on you, the area on screen is roughly where you are, so these services may be able to infer your approximate location. A place name is normally looked up once per find on each device, and the answer is kept there. Clearing your browser's data, using another device, or a failed lookup can cause it to be looked up again.</p>
 
-  <h2>4. The anonymous identifier, groups, and sync</h2>
+  <h2>4. Firebase: the anonymous identifier, groups, and sync</h2>
+  <p>Starpin uses two separate Google Firebase services.</p>
 
-  <h3>The anonymous identifier</h3>
-  <p>When Starpin opens, it signs in to Google Firebase Authentication anonymously. This happens whether or not you use groups. Firebase creates a random identifier, and your browser keeps it, so it stays the same across visits until you clear this website's data. It is not linked to your name, email address or phone number. It is still a persistent identifier: Google's systems can associate requests made with it with one another. It exists so that the storage service accepts reads and writes.</p>
+  <h3>Firebase Authentication: the anonymous identifier</h3>
+  <p>When Starpin opens, it signs in to Firebase Authentication anonymously. This happens whether or not you use groups. Firebase creates a random identifier, and your browser stores it, so it stays the same across visits until this website's data is cleared.</p>
+  <p>Firebase Authentication holds that identifier and technical details of its use, such as when it was created and last used. It is not linked to your name, email address or phone number. It is still a persistent identifier: Google's systems can associate requests made with it with one another.</p>
+  <p>Its purpose is to let the storage service accept reads and writes.</p>
 
-  <h3>Sharing and syncing</h3>
-  <p>If you share a find with a group, or sync your log between your own devices, each record is encrypted on your device before it leaves. It can be decrypted by anyone holding the relevant key:</p>
+  <h3>Cloud Firestore: stored records</h3>
+  <p>If you share a find with a group, or sync your log between your own devices, each record is encrypted on your device before it leaves. For each record, Firestore stores:</p>
   <ul>
-    <li>for a group, its members, and anyone else who obtains the group's key; and</li>
-    <li>for sync, your devices, and anyone who obtains your sync key.</li>
+    <li>the encrypted record;</li>
+    <li>an opaque handle, a code derived from the group or sync key, under which it is filed. Within a group, records about the same target share a handle. All of one person's synced records share one handle;</li>
+    <li>a hash of the encrypted record; and</li>
+    <li>the time it was stored.</li>
   </ul>
-  <p>Firebase (Cloud Firestore) stores, for each shared record:</p>
+  <p>The stored document contains only the encrypted record. The storage rules allow no other field, so the anonymous identifier is not stored with it. From the stored data, the operator cannot connect a record to an identifier. <span class="todo">[Confirm that Firestore “Data Access” audit logging is off in the Google Cloud project. If it is on, Google's logs could record which identifier wrote which record.]</span></p>
+
+  <h3>Who can read the contents</h3>
+  <p>Neither Firebase nor the operator receives any group key, sync key, group code or group identifier through the storage service. A record can be decrypted by anyone holding the relevant key:</p>
   <ul>
-    <li>the encrypted record, which Firebase and the operator cannot read;</li>
-    <li>an opaque handle, a code derived from the group or sync key. Within a group, records about the same target share a handle, and all of one person's synced records share one handle;</li>
-    <li>a hash of the encrypted content; and</li>
-    <li>the time the record was stored.</li>
+    <li>for a group: its members, and anyone else who obtains the group's code or invite link, which could include the operator if invited; and</li>
+    <li>for sync: your own devices, and anyone who obtains your sync key.</li>
   </ul>
-  <p>The handle, hash and time are readable by the operator and by Google.</p>
-  <p>Anyone you admit to a group can read what you share with it, including the time and position of each visit, and can keep their own copies. Share only with people you trust with that information.</p>
-  <p>Firebase stores data on Google's servers <span class="todo">[in region: confirm the Firestore location]</span>, which may be outside New Zealand.</p>
+  <p>A group's records are only as well protected as its code, so a longer code is harder to guess. Anyone you admit to a group can read what you share with it, including the time and position of each visit, and can keep their own copies. Share only with people you trust with that information.</p>
+
+  <h3>Moving your identity to another device</h3>
+  <p>If you move your identity to a new device with a transfer code, an encrypted copy of your whole identity is placed in Firestore for the new device to collect. That identity includes every group and sync key you hold. It is encrypted with a key derived from the transfer code: 20 random characters, generated on your device and never sent. The copy cannot be deleted from the app, and remains stored <span class="todo">[until the operator deletes it: state the process, or add automatic expiry]</span>. Anyone who later obtained that transfer code could open it, so treat the code like a password and do not keep it.</p>
+
+  <p>Firestore stores data on Google's servers <span class="todo">[in region: confirm the Firestore location]</span>, which may be outside New Zealand.</p>
 
   <h2>5. Keeping and deleting information</h2>
   <div class="wrap"><table>
     <tr><th>Information</th><th>How long it is kept</th><th>How it is deleted</th></tr>
-    <tr><td>Your log, settings and saved answers on your device</td><td>Until you delete them</td><td>Delete a record in the Log tab, or clear this website's data in your browser, which removes everything.</td></tr>
-    <tr><td>Shared and synced records in Firebase</td><td><span class="todo">[Until deleted by the operator. Confirm that no automatic expiry is configured, or state it.]</span></td><td>They cannot be edited or deleted from the app: the storage rules forbid it. Deleting a find on your device does not delete copies already shared or synced. The operator can delete stored records on request (section 6), but cannot withdraw copies that group members have already saved on their own devices.</td></tr>
-    <tr><td>The anonymous identifier</td><td>On your device, until you clear this website's data. In Firebase, <span class="todo">[confirm: until deleted; Firebase does not remove anonymous accounts automatically unless configured to]</span></td><td>Clearing this website's data removes it from your device. <span class="todo">[State how the operator removes it from Firebase on request.]</span></td></tr>
-    <tr><td>Other services' logs (section 3)</td><td>Under each service's own policy</td><td>By request to that service</td></tr>
+    <tr><td>Your log, settings and saved answers on your device</td>
+        <td>Until you delete them. Browser storage can also be lost without your choosing: the browser may clear it to free space, or the device may be lost or reset. Keep an exported copy of anything you value.</td>
+        <td>Delete a record in the Log tab, or clear this website's data in your browser, which removes everything on that device.</td></tr>
+    <tr><td>Shared and synced records in Firestore</td>
+        <td><span class="todo">[Until deleted by the operator. Confirm that no automatic expiry is configured, or state it.]</span></td>
+        <td>They cannot be edited or deleted from the app: the storage rules forbid it. See below for what this means for your devices, and section 6 for requests.</td></tr>
+    <tr><td>Transfer copies of your identity</td>
+        <td><span class="todo">[As above]</span></td>
+        <td>Not from the app (section 4).</td></tr>
+    <tr><td>The anonymous identifier</td>
+        <td>In your browser, until this website's data is cleared. In Firebase Authentication, <span class="todo">[confirm: until deleted; Firebase does not remove anonymous accounts automatically unless configured to]</span></td>
+        <td>Clearing this website's data removes it from your browser. <span class="todo">[State how the operator removes it from Firebase on request.]</span></td></tr>
+    <tr><td>Other services' logs (section 3)</td>
+        <td>Subject to that service's policy</td>
+        <td>Subject to that service's policy</td></tr>
   </table></div>
+  <h3>Deleting a find you have shared or synced</h3>
+  <p>Deleting a find removes it from that device. It also stops sync from bringing it back to that device, because the device remembers the deletion. The deletion is not passed on anywhere else:</p>
+  <ul>
+    <li><strong>Other devices you have synced with</strong> keep their copy.</li>
+    <li><strong>The copy in Firestore</strong> stays. A new device you sync later will receive the find again, and so will the same device if its website data is cleared, because the record of the deletion is cleared with it.</li>
+    <li><strong>Group members</strong> keep any copies they have received.</li>
+  </ul>
 
   <h2>6. Access, correction and deletion requests</h2>
-  <p>Under the New Zealand Privacy Act 2020, you may ask for access to, and correction of, personal information held about you. You may also ask for shared records to be deleted.</p>
-  <p>The operator can see, through the Firebase console, the opaque handles, hashes, storage times and anonymous identifiers described in section 4, but not the contents of encrypted records. Because none of this carries your name, the operator may need your help to find your data. For example, you may need to open the app on your device and supply details it shows you. <span class="todo">[Describe the exact steps once decided.]</span></p>
+  <p>Under the New Zealand Privacy Act 2020, you may ask for access to, and correction of, personal information held about you. You may also ask for records to be deleted.</p>
+  <p>Through the Firebase console, the operator can see:</p>
+  <ul>
+    <li>in Firestore, the handles, hashes, storage times and encrypted records described in section 4, but not what the records say; and</li>
+    <li>in Firebase Authentication, the list of anonymous identifiers and their technical details.</li>
+  </ul>
+  <p>Because none of this carries your name, and a stored record is not linked to an identifier, the operator may need your help to find your data.</p>
+  <p><strong>Never send us a group code, invite link, transfer code or key</strong>, even to help us find your data. Anyone holding one can read the records it protects.</p>
+  <p>A handle can hold records from several members of a group, so deleting one person's records may not be possible without affecting others'. <span class="todo">[Before publishing, decide and describe how someone identifies their records without revealing a key (for example, the app could show the handles of your own records for you to send), and who may ask for a group's shared records to be deleted.]</span></p>
   <p>Send requests to <span class="todo">[email address]</span>. If you are not satisfied with the response, you may complain to the Office of the Privacy Commissioner (<a href="https://www.privacy.org.nz" rel="noopener">privacy.org.nz</a>).</p>
   <p>You can also turn off location or motion access at any time in your device or browser settings. Starpin keeps working, but cannot record visits without location.</p>
 
@@ -135,7 +169,7 @@
   <p>Starpin requires no registration and asks for no names or contact details. It has no messaging and no advertising or analytics tools. That makes it simple to try, but not requiring registration is not the same as a school having assessed Starpin as suitable. Schools should check it against their own policies for online services before use.</p>
   <p>Points a school may want to consider:</p>
   <ul>
-    <li>the anonymous identifier and the storage service in section 4;</li>
+    <li>the anonymous identifier and the stored records in section 4, and that shared records cannot be deleted from the app (section 5);</li>
     <li>that the services in section 3 receive the area on screen, which can reflect a student's location, together with the device's internet address; and</li>
     <li>that group members can see the finds shared with them, including where and when each was made.</li>
   </ul>
