@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Starpin — field demo</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@500;600&display=swap">
 <!--
@@ -323,40 +323,6 @@ dl{margin:.7rem 0 0}
 .goto{display:flex;gap:.5rem;margin-top:.7rem}
 .goto input{font-family:'SF Mono',ui-monospace,monospace;font-size:.8rem}
 .goto button{flex:0 0 auto;width:auto}
-
-/* ══ the redesign: one stage, one sheet ══════════════════════════════════════
-   The streets-over-the-stars view fills the screen and never scrolls away.
-   Everything else lives in a sheet at the bottom with three resting heights:
-   peek (just the tabs), half, and full. The page itself no longer scrolls;
-   the sheet's body does. */
-html,body{height:100%;overflow:hidden}
-body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
-.wordmark,header{display:none}
-#stage{position:fixed;inset:0;height:100dvh;z-index:0}
-#sheet{position:fixed;left:0;right:0;bottom:0;z-index:8000;margin:0 auto;max-width:40rem;
-  height:calc(100dvh - 3.4rem - env(safe-area-inset-top,0px));display:flex;flex-direction:column;
-  background:var(--bg);border-radius:26px 26px 0 0;
-  box-shadow:0 -1px 0 color-mix(in srgb,var(--ink) 10%,transparent),0 -14px 44px -14px rgba(0,0,0,.6);
-  transform:translateY(var(--sheet-y,100%));transition:transform .42s cubic-bezier(.2,.9,.25,1);
-  will-change:transform}
-#sheet.dragging{transition:none}
-.sheet-grip{flex:none;height:20px;display:grid;place-items:center;cursor:grab;touch-action:none}
-.sheet-grip::before{content:"";width:42px;height:5px;border-radius:3px;
-  background:color-mix(in srgb,var(--ink) 24%,transparent)}
-#sheet #tabbar{position:static;flex:none;z-index:auto;touch-action:none;
-  padding:0 .5rem calc(.35rem + env(safe-area-inset-bottom,0px));
-  background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none;border-top:0}
-#sheet[data-state="half"] #tabbar,#sheet[data-state="full"] #tabbar{padding-bottom:.35rem}
-.sheet-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;
-  -webkit-overflow-scrolling:touch;padding:.2rem .75rem calc(2rem + env(safe-area-inset-bottom,0px));
-  display:flex;flex-direction:column;align-items:center;gap:.9rem;
-  border-top:1.5px solid var(--line)}
-#sheet[data-state="peek"] .sheet-body{visibility:hidden}
-.sheet-body section{flex:none}
-#tune-key.linkish{font:inherit;font-size:.72rem;font-weight:700;width:auto;padding:.2rem .5rem;
-  margin:.2rem 0 0;border-radius:999px;box-shadow:none;background:transparent;
-  border:1px solid var(--line);color:var(--ink-2)}
-@media (prefers-reduced-motion:reduce){#sheet{transition:none}}
 </style>
 </head>
 <body>
@@ -389,20 +355,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <div class="splash-author">Greg O&rsquo;Beirne, 2026</div>
 </div>
 
+<div class="wordmark">starpin<span>!</span></div>
 
-
-<div id="stage"></div>
-
-<div id="sheet" data-state="peek">
-  <div class="sheet-grip"></div>
-<nav id="tabbar" role="tablist" aria-label="sections">
-  <button type="button" data-go="go"  aria-selected="true"><span>◎</span>Go</button>
-  <button type="button" data-go="map" aria-selected="false"><span>⌖</span>Place</button>
-  <button type="button" data-go="sky" aria-selected="false"><span>◷</span>Countdown</button>
-  <button type="button" data-go="groups" aria-selected="false"><span>⌘</span>Groups</button>
-  <button type="button" data-go="log" aria-selected="false"><span>▤</span>Log</button>
-</nav>
-  <div class="sheet-body">
+<header>
+  <h1>Every star has a place on Earth</h1>
+  <p>Declination reads as latitude, right ascension as longitude. Once per
+     sidereal day, every star stands over its own place at the same instant.</p>
+</header>
 
 <section id="clock-panel" data-tab="sky">
   <h2>the clock</h2>
@@ -424,7 +383,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 </section>
 
 <section data-tab="map">
-  <h2>this place</h2>
+  <h2>the <button type="button" id="tune-key">lattice</button></h2>
+  <div id="map"></div>
   <div class="addrbox">
     <div class="addrlabel"><span id="addr-fmt">Latitude / Longitude</span>
       <b id="addr-src">map centre</b></div>
@@ -436,7 +396,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     <p class="hint" id="addr-hint" style="margin-top:.45rem"></p>
   </div>
   <div id="info" hidden></div>
-  <button type="button" id="tune-key" class="linkish">lattice tuning</button>
   <div id="tuning" hidden>
   <label class="tune" for="wt">weight <b id="wt-val">1.1</b>
     <input id="wt" type="range" min="0.3" max="8" step="0.1" value="1.1"></label>
@@ -453,6 +412,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   </div>
   <div class="apps" data-apps="map"></div>
 
+  <p class="hint">Coarse orders are drawn boldest because those are the rare ones;
+     hairlines are the commonplace. The grid switches to yellow on aerial, where
+     purple would disappear. Your finds are green: cornerstones as dots sized by
+     rarity, bagged starpins ticked. Both are drawn from your log, so they show
+     at every zoom, anywhere in the world — the yellow stars are a live
+     lookup around the view and only appear close in.
+     the crosshair is the one you're heading for. The halo is your real fix
+     accuracy, drawn to scale. A straight line to a point is not a route —
+     use the map to find a way there. Amber dots are catalogue stars whose
+     starpins fall in view; move the map and it looks up what is near the
+     centre. Tap any dot for its details.</p>
 </section>
 
 <section data-tab="go">
@@ -631,6 +601,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       <div id="grp-list"><span class="hint">none yet</span></div>
     </div>
 
+    <div class="card" id="grp-faq-card">
+      <h3>How this works &amp; how safe it is</h3>
+      <div id="grp-faq"></div>
+    </div>
   </div>
 
   <p class="hint" id="grp-unavailable" hidden>Sharing is unavailable right now (offline, or the sharing service didn’t load). Your own records are unaffected; you can still log visits.</p>
@@ -671,17 +645,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      skipped, and anything you have deleted stays deleted.<br><br>
      Swipe a record left, slowly, to delete it.</p>
 
-    <div class="card" id="grp-faq-card">
-      <h3>Questions &amp; answers</h3>
-      <div id="grp-faq"></div>
-    </div>
-
   <div class="credits">
     <div class="cr-mark">starpin<span>!</span></div>
     <p>A spin-off of <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Geosonify</b></a>. Every star has a place on Earth:
        declination reads as latitude, right ascension as longitude.</p>
     <p>&copy; 2026 <a href="https://geosonify.org" target="_blank" rel="noopener"><b>Greg O&rsquo;Beirne</b></a>. Built on the Geosonify engine.</p>
-    <p><a href="privacy.html"><b>Privacy policy</b></a></p>
     <p>Star positions and photometry from the <a href="https://www.cosmos.esa.int/gaia" target="_blank" rel="noopener"><b>ESA Gaia</b></a> mission, processed by
        the <a href="https://www.cosmos.esa.int/web/gaia/dpac" target="_blank" rel="noopener">Gaia Data Processing and Analysis Consortium (DPAC)</a>. Funding for DPAC
        has been provided by national institutions, in particular those
@@ -698,12 +666,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   </div>
 </section>
 
-  </div>
-</div>
+<nav id="tabbar" role="tablist" aria-label="sections">
+  <button type="button" data-go="go"  aria-selected="true"><span>◎</span>Go</button>
+  <button type="button" data-go="map" aria-selected="false"><span>▦</span>Map</button>
+  <button type="button" data-go="sky" aria-selected="false"><span>✦</span>Sky</button>
+  <button type="button" data-go="groups" aria-selected="false"><span>⌘</span>Groups</button>
+  <button type="button" data-go="log" aria-selected="false"><span>▤</span>Log</button>
+</nav>
 
-
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="js/lib/geosonify-healpix.js?v=20260808"></script>
 <script src="js/lib/gis-grids.js?v=20260808"></script>
 <!-- Geosonify vocabularies: card-renderer already exposes encodeCardCoordinate
@@ -715,9 +686,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-codec-engine_v11_8a.js?v=20260109"></script>
 <script src="js/lib/geosonify-rgb111-lib_v2_5.js?v=20260627c"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
-<!-- HEALPix words (healpix-bip39-v1, frozen): the codec and its pinned wordlists, as Geosonify loads them -->
-<script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
-<script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
@@ -725,15 +693,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-feedback.js?v=20260808"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261003"></script>
-<script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
-<script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261001"></script>
-<script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20261008"></script>
+<script src="js/lib/geosonify-starpin-replay.js?v=20261008"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20260810"></script>
+<script src="js/lib/geosonify-starpin-readout.js?v=20260809c"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20260810"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
      Load order matters: vendored crypto and the shared target helper first,
@@ -744,7 +708,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261003"></script>
+<script src="js/lib/starpin-faq-data.js?v=20260920"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -771,7 +735,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function compass(b) { return COMPASS[Math.round(b / 22.5) % 16]; }
   function walk(m, b) {
     return (m < 1000 ? m.toFixed(0) + ' m' : (m / 1000).toFixed(2) + ' km') +
-           ' ' + compass(b) + ' (' + b.toFixed(0) + '\u00B0)';
+           ' ' + compass(b) + ' (' + b.toFixed(0) + '°)';
   }
   // 1 arcsec is 30.92 m of ground at every latitude, so ground distance IS sky
   // separation — but "616630.19 arcseconds" is a true statement nobody can read.
@@ -780,7 +744,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // the record. What a person reads is a sentence about where they are.
   var VERDICT_TEXT = {
     'well-supported': 'accepted',
-    'compatible': 'might count \u2014 get closer to be sure',
+    'compatible': 'might count — get closer to be sure',
     'not-supported': 'too far from where you are',
     'fix-too-coarse': 'your fix is too rough to tell',
     'accuracy-unknown': 'no accuracy reported'
@@ -789,20 +753,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
   function skySep(m) {
     var arcsec = m / S.M_PER_ARCSEC;
-    if (arcsec < 60) return arcsec.toFixed(2) + '\u2033';
-    if (arcsec < 3600) return (arcsec / 60).toFixed(2) + '\u2032';
-    return (arcsec / 3600).toFixed(1) + '\u00B0 of sky';
+    if (arcsec < 60) return arcsec.toFixed(2) + '″';
+    if (arcsec < 3600) return (arcsec / 60).toFixed(2) + '′';
+    return (arcsec / 3600).toFixed(1) + '° of sky';
   }
 
   function acquireFix(onOk) {
     if (!navigator.geolocation) { $('fix').textContent = 'no geolocation here'; return; }
-    $('fix').textContent = 'locating\u2026';
+    $('fix').textContent = 'locating…';
     navigator.geolocation.getCurrentPosition(function (p) {
       fix = { lat: p.coords.latitude, lon: p.coords.longitude,
               accuracy_m: p.coords.accuracy };
       $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
-      $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
-      flip.setFix(fix.lat, fix.lon, fix.accuracy_m);
+      $('acc').textContent = '±' + fix.accuracy_m.toFixed(0) + ' m';
+      map.setFix(fix.lat, fix.lon, fix.accuracy_m);
       clock.setPosition(fix.lat, fix.lon < 0 ? fix.lon + 360 : fix.lon);
       // The readout was never told where you are, so its box stayed at "—".
       readAt(fix.lat, fix.lon, 'your fix');
@@ -923,22 +887,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     r.appendChild(d); b.appendChild(r); return d;
   }
 
-  var tabPressed = false, tabRepaintOwed = false;
-  (function guardTaps() {
-    var body = $('tab-body');
-    function up() {
-      if (!tabPressed) return;
-      tabPressed = false;
-      // after the click has had its chance to fire
-      setTimeout(function () { if (tabRepaintOwed) { tabRepaintOwed = false; paintTabBody(); } }, 400);
-    }
-    body.addEventListener('pointerdown', function () { tabPressed = true; }, true);
-    window.addEventListener('pointerup', up, true);
-    window.addEventListener('pointercancel', up, true);
-  })();
-  window.starpinPaintTargets = function () { paintTabBody(); };   // for the console, and the tests
   function paintTabBody() {
-    if (tabPressed) { tabRepaintOwed = true; return; }
     var b = $('tab-body'); b.textContent = '';
     driveByTick = null;   // repaint rebuilds the row; the ticker re-finds it by id
     if (!fix) { b.appendChild(el('p', 'hint', 'Use my location first.')); return; }
@@ -955,7 +904,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var vr = S.assessVisit(fix, { lat: sp.lat, lon: sp.lon });
       var dl = el('dl');
       detailRow(dl, 'name', sp.name || 'unnamed');
-      detailRow(dl, 'brightness', sp.mag == null ? 'unknown' : 'G \u2248 ' + sp.mag.toFixed(2));
+      detailRow(dl, 'brightness', sp.mag == null ? 'unknown' : 'G ≈ ' + sp.mag.toFixed(2));
       detailRow(dl, 'distance', sp.distLy == null ? 'unknown parallax'
         : Number(sp.distLy).toLocaleString() + ' light years');
       detailRow(dl, 'direction', walk(nearestStar.distanceM, bs));
@@ -978,23 +927,23 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var wouldImprove = supported || bestSoFar == null || vr.distanceM < bestSoFar - 0.5;
       var sb = el('button', null, supported ? 'Bag this starpin'
         : wouldImprove
-          ? 'Save this as my closest approach so far \u00B7 ' +
+          ? 'Save this as my closest approach so far · ' +
             Math.round(vr.distanceM) + ' m away'
-          : 'You have been closer \u00B7 ' + bestSoFar.toFixed(1) + ' m');
+          : 'You have been closer · ' + bestSoFar.toFixed(1) + ' m');
       sb.type = 'button';
       if (!wouldImprove) { sb.disabled = true; sb.style.opacity = '.5'; }
       else sb.addEventListener('click', function () { bagStar(sp, vr, supported); });
       b.appendChild(sb);
 
     } else {
-      if (!lastCs) { b.appendChild(el('p', 'hint', 'Looking for the nearest vertex\u2026')); return; }
+      if (!lastCs) { b.appendChild(el('p', 'hint', 'Looking for the nearest vertex…')); return; }
       var bc = bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon);
       var vc2 = S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon });
       var t = F.tierOf(lastCs.tierOrder, lastCs.degree);
       var dl2 = el('dl');
       detailRow(dl2, 'name', lastCs.name);
-      detailRow(dl2, 'lines', 'order ' + lastCs.crossOrder + ' \u00D7 order ' + lastCs.intrinsicOrder);
-      detailRow(dl2, 'tier', lastCs.tierOrder.toFixed(1) + ' \u00B7 ' + t.key);
+      detailRow(dl2, 'lines', 'order ' + lastCs.crossOrder + ' × order ' + lastCs.intrinsicOrder);
+      detailRow(dl2, 'tier', lastCs.tierOrder.toFixed(1) + ' · ' + t.key);
       detailRow(dl2, 'others within 50 km', F.nearbyCount(lastCs.intrinsicOrder, 50).toLocaleString() +
         '  (one every ' + (F.spacingM(lastCs.intrinsicOrder) < 1000
           ? Math.round(F.spacingM(lastCs.intrinsicOrder)) + ' m'
@@ -1007,14 +956,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         ddC.id = 'driveby-row';
         driveByTick = { lat: lastCs.lat, lon: lastCs.lon, radiusM: vc2.radiusM };
       }
-      var pips = detailRow(dl2, 'corners of this cell', '\u2014', 'pips');
+      var pips = detailRow(dl2, 'corners of this cell', '—', 'pips');
       detailRow(dl2, 'visit', verdictText(vc2.verdict),
         vc2.verdict === 'well-supported' ? 'ok' : vc2.verdict === 'not-supported' ? 'bad' : null);
       b.appendChild(dl2);
       try {
         var st2 = S.cellComplete(lastCs.incident[0], Object.keys(collected));
         pips.textContent = st2.corners.map(function (n) {
-          return collected[n] ? '\u25CF' : '\u25CB'; }).join('') +
+          return collected[n] ? '●' : '○'; }).join('') +
           '  ' + (4 - st2.missing.length) + ' of 4';
       } catch (e) {}
       var vc = visitedOn(lastCs.name);
@@ -1069,7 +1018,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       // firing and set it straight back, so the dial could never return to
       // north-up. Detach them.
       compassOn = false; heading = null;
-      try { localStorage.setItem('starpin.perm.compass', '0'); } catch (e) {}   // off, and it stays off
       window.removeEventListener('deviceorientationabsolute', onOrient);
       window.removeEventListener('deviceorientation', onOrient);
       btn.setAttribute('aria-pressed', 'false'); btn.textContent = 'Compass';
@@ -1085,7 +1033,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().then(function (r) {
         if (r === 'granted') { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} listen(); }
-        else alert('Compass permission denied \u2014 the dial stays north-up.');
+        else alert('Compass permission denied — the dial stays north-up.');
       }).catch(function () { alert('This device would not share its compass.'); });
     } else { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} listen(); }
   });
@@ -1100,17 +1048,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (want('starpin.perm.location') || want('starpin.perm.track')) {
       acquireFix(want('starpin.perm.track') ? startTracking : null);
     }
-    // The compass is ON unless the person turned it off (stored as '0').
-    // Where the platform needs no permission it simply starts. Where it does
-    // (iOS), a permission can only be asked for inside a tap -- so the first tap
-    // anywhere in the app asks, alongside location. If iOS already remembers the
-    // grant for this site the answer comes back at once with no dialog; if not,
-    // it asks, once per visit.
-    var cpref = null;
-    try { cpref = localStorage.getItem('starpin.perm.compass'); } catch (e) {}
-    if (cpref !== '0') {
+    if (want('starpin.perm.compass')) {
       var reattach = function () {
-        if (compassOn) return;
         compassOn = true;
         $('compass').setAttribute('aria-pressed', 'true'); $('compass').textContent = 'North up';
         window.addEventListener('deviceorientationabsolute', onOrient);
@@ -1118,20 +1057,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       };
       if (typeof DeviceOrientationEvent !== 'undefined' &&
           typeof DeviceOrientationEvent.requestPermission === 'function') {
-        var askOnFirstTap = function (e) {
-          // A tap on the Compass button itself is left to that button's own handler.
-          if (e && e.target && e.target.closest && e.target.closest('#compass')) {
-            document.removeEventListener('click', askOnFirstTap, true); return;
-          }
-          document.removeEventListener('click', askOnFirstTap, true);
-          if (compassOn) return;
-          DeviceOrientationEvent.requestPermission().then(function (r) {
-            if (r === 'granted') { try { localStorage.setItem('starpin.perm.compass', '1'); } catch (e) {} reattach(); }
-          }).catch(function () {});
-        };
-        document.addEventListener('click', askOnFirstTap, true);
+        // iOS: only resume without a prompt if already granted.
+        if (navigator.permissions && navigator.permissions.query) {
+          navigator.permissions.query({ name: 'accelerometer' })
+            .then(function (s) { if (s.state === 'granted') reattach(); })
+            .catch(function () {});
+        }
       } else {
-        reattach();
+        reattach();                        // platforms without the gated API
       }
     }
   })();
@@ -1172,6 +1105,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
   var F = GeosonifyStarpinFeedback;
+  var R = (typeof GeosonifyStarpinReplay !== 'undefined') ? GeosonifyStarpinReplay : null;
+  function replayDeps() {
+    return { F: F, S: S, csName: csName, sourceIdOf: sourceIdOf,
+             H: (typeof HealpixGrids !== 'undefined') ? HealpixGrids : null };
+  }
   var prox = F.proximity($('cs-prox'));
   var SN = (typeof GeosonifySkyNeighbour !== 'undefined') ? GeosonifySkyNeighbour : null;
 
@@ -1323,7 +1261,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
             // is always available; offer to build the one-click link from the code.
             inviteOut.appendChild(el('p', 'hint', '② Plain link + spoken code — share this link and tell people the code separately:'));
             inviteOut.appendChild(grpField('Plain invite link (no code inside)', info.descriptorLink));
-            var note = el('p', 'hint', 'This is a group you joined, so the app didn\u2019t keep its code. ' +
+            var note = el('p', 'hint', 'This is a group you joined, so the app didn’t keep its code. ' +
               'To make the ① one-click version, paste the code here:');
             inviteOut.appendChild(note);
             var ci = document.createElement('input'); ci.type = 'text'; ci.placeholder = 'e.g. ABCD-2345';
@@ -1384,7 +1322,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var wrap = el('div'); wrap.className = 'share-wrap';
     var sheet = el('div'); sheet.className = 'share-sheet';
 
-    sheet.appendChild(el('h3', null, mode === 'new' ? 'Logged \u2014 share this find?' : 'Share this find'));
+    sheet.appendChild(el('h3', null, mode === 'new' ? 'Logged — share this find?' : 'Share this find'));
 
     if (!groups.length) {
       sheet.appendChild(el('p', 'hint',
@@ -1402,7 +1340,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
       function defaultChecked(r) { return r.kind !== 'closest-approach'; }
       function kindLabel(r) {
-        if (r.kind === 'culmination-attempt') return 'culmination \u2605';
+        if (r.kind === 'culmination-attempt') return 'culmination ★';
         if (r.kind === 'closest-approach') return 'closest approach';
         if (r.kind === 'observation') return 'observation';
         return 'visit';
@@ -1429,7 +1367,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         cb.checked = defaultChecked(r);
         var when = new Date(r.event.time_ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
         row.appendChild(cb);
-        row.appendChild(el('span', null, kindLabel(r) + ' \u00b7 ' + when));
+        row.appendChild(el('span', null, kindLabel(r) + ' · ' + when));
         sheet.appendChild(row);
         checks.push({ cb: cb, rec: r });
       });
@@ -1471,7 +1409,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
                       (failed ? ', ' + failed + ' failed' : '') + ' to “' + groupLabel(groups, gid) + '”.';
             if (failed && errors.length) msg += ' — ' + errors[0];
             status.textContent = msg;
-            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
+            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared ✓';
             if (failed) console.error('[starpin] share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
             else console.info('[starpin] share: finished ok', { shared: shared, skipped: skipped });
             // Announce ONE story for the newly-published records (publication-first;
@@ -1664,7 +1602,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
                       (failed ? ', ' + failed + ' failed' : '') + ' to “' + groupLabel(groups, gid) + '”.';
             if (failed && errors.length) msg += ' — ' + errors[0];
             status.textContent = msg;
-            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared \u2713';
+            shareBtn.textContent = failed ? 'Done (with errors)' : 'Shared ✓';
             shareBtn.disabled = false; toggle.disabled = false;
             if (failed) console.error('[starpin] bulk share: finished WITH ERRORS', { shared: shared, skipped: skipped, failed: failed, errors: errors });
             else { console.info('[starpin] bulk share: finished ok', { shared: shared, skipped: skipped }); setTimeout(closeSheet, 1400); }
@@ -1762,7 +1700,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         var probe = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
         var ct = F.tierOf((probe.intrinsicOrder + probe.crossOrder) / 2, 4);
         out.rarityKey = ct.key; out.rarityLevel = Math.min(4, Math.round(ct.rarity * 4));
-        out.extra = 'order ' + probe.crossOrder + '\u00D7' + probe.intrinsicOrder;
+        out.extra = 'order ' + probe.crossOrder + '×' + probe.intrinsicOrder;
       }
     } catch (e) { /* tags are best-effort; a card without them still renders */ }
     return out;
@@ -1835,7 +1773,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         }
       }
       if (lat != null && lon != null) {
-        showMap();
+        goTab('map');
         map.leaflet.setView([lat, lon], Math.max(map.leaflet.getZoom(), 16));
       } else {
         alert('This is “' + label + '”. Its exact spot isn’t loaded here — open it from the map or Sky once it’s in view.');
@@ -2074,13 +2012,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       // soft duplicate-name confirm: names aren't identifiers, so a repeat is
       // allowed on purpose — but it's usually an accident, so ask first.
       var clash = ctrl.myGroups().some(function (g) { return (g.label || '') === label; });
-      if (clash && !confirm('You already have a group called \u201c' + label + '\u201d. ' +
-                            'Group names don\u2019t have to be unique \u2014 make another one anyway?')) {
+      if (clash && !confirm('You already have a group called “' + label + '”. ' +
+                            'Group names don’t have to be unique — make another one anyway?')) {
         st.textContent = '';
         return;
       }
 
-      creating = true; btn.disabled = true; st.textContent = 'creating\u2026';
+      creating = true; btn.disabled = true; st.textContent = 'creating…';
       ctrl.createGroup({
         label: label,
         mode: 'fragment'          // create retaining the code; both link forms are then derivable
@@ -2090,9 +2028,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         // here and now — no need to make a second group to compare them.
         var info = null;
         try { info = StarpinGroups.getInvite(res.groupUuid); } catch (_) {}
-        out.appendChild(el('p', 'hint', 'Group ready. Two ways to invite people \u2014 same group, your choice:'));
+        out.appendChild(el('p', 'hint', 'Group ready. Two ways to invite people — same group, your choice:'));
         if (info && info.oneClickLink) {
-          out.appendChild(el('p', 'hint', '① One-click link (code inside \u2014 tapping it joins straight away; only send privately):'));
+          out.appendChild(el('p', 'hint', '① One-click link (code inside — tapping it joins straight away; only send privately):'));
           out.appendChild(grpField('One-click invite link', info.oneClickLink));
           out.appendChild(el('p', 'hint', '② Plain link + spoken code (no secret in the link; tell people the code separately):'));
           out.appendChild(grpField('Plain invite link', info.descriptorLink));
@@ -2121,14 +2059,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
 
 
-  var flip = GeosonifyStarpinFlip.mount($('stage'), {
-    zoom: 15,                    // about a 200 m scale bar
-    lookupStars: false,          // loadStars() below does it, once, and hands them over
-    locate: false,               // this page owns geolocation
-    onSelect: function (sel) {
-      showInfo(sel);
-      if (sel) { goTab('map'); sheetTo('half'); }
-    },
+  var map = GeosonifyStarpinMap.mount($('map'), {
+    onSelect: showInfo,
     onMove: function (lat, lon, spanM) {
       loadStars(lat, lon, spanM);
       var p = map.pin();
@@ -2136,8 +2068,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       paintMapAddr(p ? p.lat : lat, p ? p.lon : lon, p ? 'dropped pin' : 'map centre');
     }
   });
-  var map = flip.earth;
-  window.starpinFlip = flip;     // for the console
 
   function showRamp() {
     var out = [];
@@ -2148,7 +2078,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     var sp = map.spanM ? map.spanM() : 0;
     $('ramp').textContent = out.join('  ') +
-      (sp ? '   \u00B7 view ' + (sp < 1000 ? Math.round(sp) + ' m'
+      (sp ? '   · view ' + (sp < 1000 ? Math.round(sp) + ' m'
                                            : (sp / 1000).toFixed(1) + ' km') : '') +
       '   (falloff sets depth too; persist keeps coarse lines bold when zoomed in)';
   }
@@ -2214,8 +2144,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (m.label) d.title = m.label;
       frame.appendChild(d);
     });
-    th.appendChild(el('div', 'cap', fovArcsec + '\u2033 across \u00B7 ' +
-      Math.round(fovArcsec * S.M_PER_ARCSEC) + ' m on the ground \u00B7 ' +
+    th.appendChild(el('div', 'cap', fovArcsec + '″ across · ' +
+      Math.round(fovArcsec * S.M_PER_ARCSEC) + ' m on the ground · ' +
       'crosshair is your target, circles are its neighbours'));
     return th;
   }
@@ -2241,8 +2171,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         pm.appendChild(document.createTextNode('nearest cornerstone ' + v0.name));
         pm.appendChild(el('br'));
         pm.appendChild(document.createTextNode(
-          Math.round(v0.distanceM) + ' m away \u00B7 lines of order ' + v0.crossOrder +
-          ' and ' + v0.intrinsicOrder + ' cross here \u00B7 tier ' +
+          Math.round(v0.distanceM) + ' m away · lines of order ' + v0.crossOrder +
+          ' and ' + v0.intrinsicOrder + ' cross here · tier ' +
           v0.tierOrder.toFixed(1) + ', ' + t0.key));
         pm.appendChild(el('br'));
         pm.appendChild(document.createTextNode(t0.label));
@@ -2262,7 +2192,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var onIt = vv0 && vv0.verdict === 'well-supported';
       if (v0 && !baggableTier) {
         box.appendChild(el('div', 'meta',
-          'Too common to be sought after \u2014 tier ' + v0.tierOrder.toFixed(1) +
+          'Too common to be sought after — tier ' + v0.tierOrder.toFixed(1) +
           '. Logged for completeness only; the compass will not send you here.'));
       } else if (v0 && fix && onIt && !already0) {
         var pinBag = el('button', null, 'Bag this cornerstone');
@@ -2292,9 +2222,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         box.appendChild(el('div', 'meta',
           already0 ? 'You have this one.'
           : (v0 && fix && vv0)
-            ? 'Reading only \u2014 you are ' + Math.round(vv0.distanceM) +
+            ? 'Reading only — you are ' + Math.round(vv0.distanceM) +
               ' m from this vertex. Stand on it to bag it.'
-            : 'Reading only. Dropping a pin claims nothing \u2014 walk there to log it.'));
+            : 'Reading only. Dropping a pin claims nothing — walk there to log it.'));
       }
 
     } else if (sel.kind === 'cornerstone') {
@@ -2304,8 +2234,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         return r.target && csName(r.target.cornerstone) === csName(d.name); });
       var m = el('div', 'meta');
       m.appendChild(document.createTextNode(
-        'Intrinsic order ' + d.order + ' \u00B7 ' +
-        F.tierOf(d.order).label + ' \u00B7 one every ' +
+        'Intrinsic order ' + d.order + ' · ' +
+        F.tierOf(d.order).label + ' · one every ' +
         (F.spacingM(d.order) < 1000 ? Math.round(F.spacingM(d.order)) + ' m'
                                     : (F.spacingM(d.order) / 1000).toFixed(1) + ' km')));
       m.appendChild(el('br'));
@@ -2315,7 +2245,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         var v = '?';
         try { v = S.assessRecord(r).visit.verdict; } catch (e) {}
         m.appendChild(document.createTextNode(
-          'visited ' + new Date(r.event.time_ms).toLocaleString() + ' \u2014 ' + v));
+          'visited ' + new Date(r.event.time_ms).toLocaleString() + ' — ' + v));
       });
       if (!visits.length) m.appendChild(el('div', null, 'not yet logged'));
       else m.appendChild(visitedLine(visits[0]));
@@ -2332,7 +2262,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var sm = el('div', 'meta');
       function row(k, v) { if (v == null || v === '') return;
         sm.appendChild(document.createTextNode(k + ': ' + v)); sm.appendChild(el('br')); }
-      row('RA / Dec', st.ra.toFixed(6) + '\u00B0, ' + st.dec.toFixed(6) + '\u00B0');
+      row('RA / Dec', st.ra.toFixed(6) + '°, ' + st.dec.toFixed(6) + '°');
       row('starpin', st.lat.toFixed(7) + ', ' + st.lon.toFixed(7));
       row('magnitude', st.mag == null ? null : st.mag.toFixed(2));
       row('distance', st.distLy == null ? 'unknown parallax'
@@ -2353,7 +2283,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         var vr2 = S.assessVisit(fix, { lat: st.lat, lon: st.lon });
         var supported = vr2.verdict === 'well-supported' || vr2.verdict === 'compatible';
         var lb = el('button', null, supported ? 'Bag this starpin'
-          : 'Save this as my closest approach so far \u00B7 ' +
+          : 'Save this as my closest approach so far · ' +
             Math.round(vr2.distanceM) + ' m away');
         lb.type = 'button'; lb.style.marginTop = '.6rem';
         lb.addEventListener('click', function () {
@@ -2383,7 +2313,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
           F.celebrate({ kind: 'starpin', name: st.name || 'starpin', mag: st.mag,
                         digits: String(id || ''),
                         kicker: supported ? 'starpin bagged'
-                                          : 'closest approach saved \u00B7 ' +
+                                          : 'closest approach saved · ' +
                                             Math.round(vr2.distanceM) + ' m' });
           // The card lands once the banner has had its moment, with the lead
           // still playing underneath.
@@ -2424,7 +2354,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var starTimer = null, starKey = '';
   function loadStars(lat, lon, spanM) {
     if (!SN || !SN.lookupRemote) return;
-    if (spanM > 8000) { flip.setStars([]); return; }        // too wide to be useful
+    if (spanM > 8000) { map.setStars([]); return; }        // too wide to be useful
     var k = lat.toFixed(4) + ',' + lon.toFixed(4) + ',' + Math.round(spanM / 200);
     if (k === starKey) return;
     starKey = k;
@@ -2436,14 +2366,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var radiusArcmin = Math.min(12, Math.max(0.3, spanM * 0.75 / S.M_PER_ARCSEC / 60));
       Promise.resolve(SN.lookupRemote(lat, lon, { radiusArcmin: radiusArcmin, limit: 40 }))
         .then(function (list) {
-          if (!list || !list.length) { flip.setStars([]); return; }
-          flip.setStars(list.map(function (n) {
+          if (!list || !list.length) { map.setStars([]); return; }
+          map.setStars(list.map(function (n) {
             var s2 = n.star, a = S.starpinAddress(String(s2.ra), String(s2.dec));
             return { name: s2.name, ra: s2.ra, dec: s2.dec, mag: s2.mag,
                      distLy: n.distLy, links: n.links, lat: a.lat, lon: a.lon };
           }));
         })
-        .catch(function () { flip.setStars([]); });
+        .catch(function () { map.setStars([]); });
     }, 450);
   }
 
@@ -2476,7 +2406,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('pin-ll').addEventListener('blur', function () { addrEditing = false; });
 
   function fmtLabel() {
-    var key = readout.format(), f = GeosonifyStarpinReadout.FORMATS[key];
+    var f = GeosonifyStarpinReadout.FORMATS[readout.format()];
     return f ? f.label : 'Latitude / Longitude';
   }
   function paintMapAddr(lat, lon, label) {
@@ -2485,13 +2415,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     $('addr-src').textContent = label || '';
     var key = readout.format();
     var canRead = GeosonifyStarpinReadout.canParse(key);
-    $('pin-ll').readOnly = false;
-    $('pin-ll').placeholder = 'paste or type any address to go there';
-    $('addr-hint').textContent = isWords(key)
-      ? 'HEALPix words: the open BIP39 wordlists on the same equal-area grid as the rest of Starpin ' +
-        '— not what3words: free, and anyone can decode them. The three digits after the dot are a checksum. ' +
-        'Paste any address or coordinates here to go there.'
-      : 'Someone can read this to you, or paste any address or coordinates, and it goes there.';
+    $('pin-ll').readOnly = !canRead;
+    $('pin-ll').placeholder = canRead
+      ? 'paste or type to go there' : 'this notation cannot be read back yet';
+    $('addr-hint').textContent = canRead
+      ? 'Someone can read this to you and you can type it in.'
+      : 'Choose another notation in the Go tab if you want to paste one in.';
     if (addrEditing || lat == null) return;
     var v = '';
     try {
@@ -2502,160 +2431,23 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
   function showPinLL(lat, lon) { /* superseded by paintMapAddr */ }
 
-  // ── reading ANY address pasted into the box ─────────────────────────────
-  // Coordinates, a maps link, degrees-minutes-seconds, a Geosonify or Starpin
-  // share link, or a code in ANY vocabulary the app knows -- in any BIP39
-  // language -- is read and flown to, whatever the picker happens to say.
-  // Tried in an order that keeps the unambiguous readings first, so a pair of
-  // numbers is always coordinates, never a guess at something more exotic.
-  function readAnything(text, preferKey) {
-    var RO = GeosonifyStarpinReadout;
-    var t = String(text == null ? '' : text).trim();
-    if (!t) return null;
-    function ok(la, lo) { return isFinite(la) && isFinite(lo) && la >= -90 && la <= 90 && lo >= -360 && lo <= 360; }
-    function hit(p, key, label) { return (p && ok(p[0], p[1])) ? { p: [p[0], p[1] > 180 ? p[1] - 360 : p[1]], key: key, label: label } : null; }
-    var dec = t;
-    try { dec = decodeURIComponent(t); } catch (e) {}
-    var m;
-    // geo: URIs, and the coordinates inside Google / Apple / OpenStreetMap links
-    if ((m = dec.match(/^geo:\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i))) return hit([+m[1], +m[2]], null, 'a geo: link');
-    if ((m = dec.match(/[?&#](?:q|query|ll|sll|daddr|destination|center|mlat)=\s*(-?\d+(?:\.\d+)?)\s*[,+ ]\s*(-?\d+(?:\.\d+)?)/i)))
-      return hit([+m[1], +m[2]], null, 'a maps link');
-    if ((m = dec.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/))) return hit([+m[1], +m[2]], null, 'a maps link');
-    if ((m = dec.match(/[?&#]map=\d+(?:\.\d+)?\/(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)/))) return hit([+m[1], +m[2]], null, 'an OpenStreetMap link');
-    if ((m = dec.match(/[?&#]at=\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/))) return hit([+m[1], +m[2]], null, 'a Starpin link');
-    // Geosonify share links carry a HEALPix code in their own parameter
-    if (/^https?:\/\//i.test(t)) {
-      try {
-        var u = new URL(t);
-        // HEALPix-words links (spec §9): the parameter names the language, and
-        // any failure -- a checksum mismatch included -- rejects the link.
-        var sfx = RO.HPW_SUFFIX || {}, lk;
-        for (lk in sfx) {
-          if (u.searchParams.get('hpw' + sfx[lk] + 'j') != null)
-            return { reject: 'That link is an obfuscated word code. Open it in Geosonify, which holds the key.' };
-          var wv = u.searchParams.get('hpw' + sfx[lk]);
-          if (wv != null) {
-            var pw = RO.parse('hpw' + sfx[lk], wv);
-            if (!pw) return { reject: 'That link\u2019s words do not decode (a mistyped word or a checksum that does not match).' };
-            var rw = hit(pw, 'hpw' + sfx[lk], RO.FORMATS['hpw' + sfx[lk]].label);
-            if (rw) rw.checksumStatus = pw.checksumStatus;
-            return rw;
-          }
-        }
-        var hk = ['hphex', 'hpquad', 'hp64'];
-        for (var h = 0; h < hk.length; h++) {
-          var v = u.searchParams.get(hk[h]);
-          if (v) { var r0 = hit(RO.parse(hk[h], v), hk[h], 'a Geosonify link'); if (r0) return r0; }
-        }
-      } catch (e) {}
+  function flyToTyped() {
+    var key = readout.format(), txt = $('pin-ll').value;
+    var p = null;
+    try { p = GeosonifyStarpinReadout.parse(key, txt); } catch (e) {}
+    if (!p) {
+      alert('I could not read that as ' + fmtLabel() + '.\n\n' +
+            'Check the notation picker in the Go tab matches what you were given.');
+      return;
     }
-    // degrees, minutes, seconds: 43°31'51"S 172°38'11"E, in either order
-    var dmsRe = /(\d+(?:\.\d+)?)\s*[°º d]\s*(?:(\d+(?:\.\d+)?)\s*['′m]\s*)?(?:(\d+(?:\.\d+)?)\s*(?:"|″|''|s)\s*)?([NSEW])/gi;
-    var parts = [], dm;
-    while ((dm = dmsRe.exec(dec)) && parts.length < 2) {
-      var val = (+dm[1]) + (dm[2] ? +dm[2] / 60 : 0) + (dm[3] ? +dm[3] / 3600 : 0);
-      parts.push({ v: /[SW]/i.test(dm[4]) ? -val : val, ns: /[NS]/i.test(dm[4]) });
-    }
-    if (parts.length === 2 && parts[0].ns !== parts[1].ns) {
-      var la0 = parts[0].ns ? parts[0].v : parts[1].v, lo0 = parts[0].ns ? parts[1].v : parts[0].v;
-      return hit([la0, lo0], null, 'degrees, minutes and seconds');
-    }
-    // a plain pair of decimal numbers is always latitude, longitude
-    if ((m = dec.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*$/))) {
-      var rl = hit([+m[1], +m[2]], 'latlon', 'latitude and longitude');
-      if (rl) return rl;
-    }
-    // HEALPix words. The spec requires the LANGUAGE to be given: the notation
-    // on screen is that choice. Otherwise every list that decodes the input is
-    // offered, and none is picked silently (§6 rule 1). A checksum that does
-    // not match rejects the input outright (§6 rule 5).
-    var hpwKeys = Object.keys(RO.FORMATS).filter(function (k) { return /^hpw/.test(k) && RO.available(k); });
-    if (hpwKeys.length && /[^\d\s.,;:+\-]/.test(t)) {
-      if (hpwKeys.indexOf(preferKey) >= 0) {
-        var pp = RO.parse(preferKey, t);
-        if (pp) { var rp = hit(pp, preferKey, RO.FORMATS[preferKey].label); if (rp) { rp.checksumStatus = pp.checksumStatus; return rp; } }
-      }
-      var fits = [], mismatch = false, HWm = window.HealpixWords;
-      hpwKeys.forEach(function (k) {
-        var pk = RO.parse(k, t);
-        if (pk) { var rk = hit(pk, k, RO.FORMATS[k].label); if (rk) { rk.checksumStatus = pk.checksumStatus; fits.push(rk); } }
-        else if (HWm) {
-          var raw = HWm.parse(t, RO.FORMATS[k].hpwLang);
-          if (raw && raw.checksumStatus === 'mismatch') mismatch = true;
-        }
-      });
-      if (fits.length === 1) return fits[0];
-      if (fits.length > 1) return { choices: fits };
-      if (mismatch) return { reject: 'Those words are real, but the three-digit checksum does not match them. Check each word, and the digits.' };
-    }
-    // Then the notation on screen, then only the notations that RECOGNISE
-    // themselves: BIP39 words (every word must be on the list, in one of ten
-    // languages) and HEALPix codes (a strict grammar). The free-form
-    // vocabularies -- alphanumeric, hex-coloured and the like -- turn ANY
-    // string into SOME place, so they are only tried when they are the notation
-    // actually chosen; otherwise "the quick brown fox" would land in a paddock.
-    var keys = Object.keys(RO.FORMATS).filter(function (k) {
-      if (k === 'radec' || k === 'latlon' || !RO.available(k) || !RO.canParse(k)) return false;
-      return k === preferKey || /^hp(quad|hex|64)$/.test(k);
-    });
-    keys.sort(function (a, b) {
-      function rank(k) {
-        return k === preferKey ? 0 : k === 'hphex' ? 2 : k === 'hpquad' ? 3 : 4;
-      }
-      return rank(a) - rank(b);
-    });
-    for (var i = 0; i < keys.length; i++) {
-      var p = null;
-      try { p = RO.parse(keys[i], t); } catch (e) {}
-      var r = hit(p, keys[i], RO.FORMATS[keys[i]].label);
-      if (r) return r;
-    }
-    return null;
-  }
-
-  window.starpinReadAnything = readAnything;       // for the console, and the tests
-
-  function goToHit(got, key) {
-    var la = got.p[0], lo = got.p[1];
+    var la = p[0], lo = p[1];
+    if (!(la >= -90 && la <= 90)) { alert('That latitude is not on Earth.'); return; }
+    if (lo > 180) lo -= 360;
     goTab('map');
-    map.leaflet.setView([la, lo], 15);                 // the 200 m scale, as for your own location
+    map.leaflet.setView([la, lo], Math.max(map.leaflet.getZoom(), 17));
     map.dropPin(la, lo);
     readAt(la, lo, 'typed in');
     $('pin-ll').blur();
-    // Say how it was read when that was not the notation on screen, and say
-    // plainly whether a word code's checksum was checked: an absent checksum is
-    // a valid but UNCHECKED address and must never read as verified.
-    var note = got.key !== key ? 'Read as ' + got.label + '. ' : '';
-    if (got.checksumStatus === 'verified') note += 'Checksum \u2713.';
-    else if (got.checksumStatus === 'absent') note += 'No checksum given, so the words are unchecked.';
-    if (note) $('addr-hint').textContent = note;
-  }
-  function flyToTyped() {
-    var key = readout.format(), txt = $('pin-ll').value;
-    var got = readAnything(txt, key);
-    if (got && got.reject) { alert(got.reject); return; }
-    if (got && got.choices) {
-      // Valid in more than one language: the person chooses. Never guessed.
-      var hint = $('addr-hint');
-      hint.textContent = 'Those words are valid in more than one list. Which did you mean? ';
-      got.choices.forEach(function (c) {
-        var b = document.createElement('button');
-        b.type = 'button'; b.className = 'linkish';
-        b.style.cssText = 'display:inline-block;width:auto;margin:.3rem .35rem 0 0;padding:.25rem .7rem;font-size:.8rem';
-        b.textContent = c.label.replace('HEALPix words \u00B7 ', '');
-        b.addEventListener('click', function () { goToHit(c, key); });
-        hint.appendChild(b);
-      });
-      return;
-    }
-    if (!got) {
-      alert('I could not read that as an address.\n\n' +
-            'Coordinates, a maps link, or a code in any of the app\u2019s notations will do ' +
-            '\u2014 HEALPix words in any of eleven languages, HEALPix codes, and the rest.');
-      return;
-    }
-    goToHit(got, key);
   }
   $('pin-go').addEventListener('click', flyToTyped);
   $('pin-ll').addEventListener('keydown', function (e) {
@@ -2701,7 +2493,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     });
     var more = el('div'); more.hidden = true;
     var plus = b('+', function () {
-      more.hidden = !more.hidden; plus.textContent = more.hidden ? '+' : '\u2212';
+      more.hidden = !more.hidden; plus.textContent = more.hidden ? '+' : '−';
     }, true);
 
     var r2 = el('div', 'btnrow'), r3 = el('div', 'btnrow');
@@ -2753,82 +2545,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (e.key === 'Enter') { e.preventDefault(); flyToTyped(); }
   });
 
-  // ── the sheet ─────────────────────────────────────────────────────────────
-  // Three resting heights. peek: just the tabs, the stage is the whole view.
-  // half: a panel beside the map. full: reading the Log or a group. Drag the
-  // grip or the tab row; tap a tab to open it; tap the open tab to lower it.
-  var sheet = $('sheet'), sheetBody = sheet.querySelector('.sheet-body');
-  var grip = sheet.querySelector('.sheet-grip'), sheetState = 'peek';
-  function sheetMetrics() {
-    var H = sheet.offsetHeight;
-    var peek = grip.offsetHeight + $('tabbar').offsetHeight;
-    return { H: H, peek: peek, half: Math.min(H, Math.round(window.innerHeight * 0.52)), full: H };
-  }
-  function visibleFor(state, m) { return state === 'full' ? m.full : state === 'half' ? m.half : m.peek; }
-  function sheetTo(state) {
-    sheetState = state;
-    sheet.setAttribute('data-state', state);
-    var m = sheetMetrics();
-    sheet.style.setProperty('--sheet-y', (m.H - visibleFor(state, m)) + 'px');
-  }
-  function syncSheet() {
-    var m = sheetMetrics();
-    // The stage keeps its buttons and credits clear of the sheet's peek.
-    document.documentElement.style.setProperty('--spf-bottom', m.peek + 'px');
-    sheet.style.setProperty('--sheet-y', (m.H - visibleFor(sheetState, m)) + 'px');
-  }
-  function showMap() {
-    goTab('map');
-    sheetTo('peek');
-    if (flip.face && flip.face() === 'sky') flip.toEarth();
-  }
-  window.addEventListener('resize', syncSheet);
-  setTimeout(syncSheet, 0);
-
-  var sDrag = null, suppressTabClick = false;
-  function sheetDown(e) {
-    if (e.button !== undefined && e.button !== 0) return;
-    var m = sheetMetrics();
-    sDrag = { y0: e.clientY, from: m.H - visibleFor(sheetState, m), moved: false, t0: Date.now() };
-  }
-  [grip, $('tabbar')].forEach(function (n) { n.addEventListener('pointerdown', sheetDown); });
-  window.addEventListener('pointermove', function (e) {
-    if (!sDrag) return;
-    var dy = e.clientY - sDrag.y0;
-    if (!sDrag.moved && Math.abs(dy) < 7) return;
-    sDrag.moved = true;
-    sheet.classList.add('dragging');
-    var m = sheetMetrics();
-    var y = Math.max(0, Math.min(m.H - m.peek, sDrag.from + dy));
-    sheet.style.setProperty('--sheet-y', y + 'px');
-  });
-  window.addEventListener('pointerup', function (e) {
-    if (!sDrag) return;
-    var d = sDrag; sDrag = null;
-    sheet.classList.remove('dragging');
-    if (!d.moved) {
-      if (e.target === grip) sheetTo(sheetState === 'peek' ? 'half' : 'peek');
-      return;
-    }
-    suppressTabClick = true; setTimeout(function () { suppressTabClick = false; }, 60);
-    var m = sheetMetrics(), dy = e.clientY - d.y0;
-    var shown = m.H - Math.max(0, Math.min(m.H - m.peek, d.from + dy));
-    // A flick carries on in its direction; a slow drag settles at the nearest.
-    var v = dy / Math.max(1, Date.now() - d.t0);
-    var order = ['peek', 'half', 'full'];
-    var best = order.reduce(function (a, s) {
-      return Math.abs(visibleFor(s, m) - shown) < Math.abs(visibleFor(a, m) - shown) ? s : a;
-    }, 'peek');
-    if (Math.abs(v) > 0.6) {
-      var i = order.indexOf(sheetState) + (v < 0 ? 1 : -1);
-      best = order[Math.max(0, Math.min(2, i))];
-    }
-    sheetTo(best);
-  });
-  $('tabbar').addEventListener('click', function (e) {
-    if (suppressTabClick) { e.stopPropagation(); e.preventDefault(); }
-  }, true);
-
   // ── tabs ─────────────────────────────────────────────────────────────────
   // Each tab remembers where you had it scrolled. Leaving the Log scrolled
   // halfway down, glancing at the Map, and coming back used to dump you at the
@@ -2839,7 +2555,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var currentTab = document.body.getAttribute('data-active') || 'go';
   function goTab(name) {
     if (name === currentTab) return;              // no-op re-tap must not lose position
-    tabScroll[currentTab] = sheetBody.scrollTop;  // remember where we were
+    tabScroll[currentTab] = window.scrollY;       // remember where we were
     currentTab = name;
     document.body.setAttribute('data-active', name);
     [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
@@ -2853,15 +2569,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // Restore after layout settles (the Log rebuilds its panel synchronously
     // above, but the map's invalidate is deferred, so defer the scroll too).
     var y = tabScroll[name] || 0;
-    setTimeout(function () { sheetBody.scrollTop = y; }, 0);
+    setTimeout(function () { window.scrollTo(0, y); }, 0);
   }
   [].forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
-    b.addEventListener('click', function () {
-      var name = b.getAttribute('data-go');
-      if (name === currentTab && sheetState !== 'peek') { sheetTo('peek'); return; }
-      goTab(name);
-      if (sheetState === 'peek') sheetTo('half');
-    });
+    b.addEventListener('click', function () { goTab(b.getAttribute('data-go')); });
   });
   document.body.setAttribute('data-active', 'go');
 
@@ -2889,30 +2600,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // four characters. Cornerstone order 14 is a separate thing and stays where
   // it is used, in nearestCornerstone below.
   var readout = RO.mount($('readout'), {});
-  // ── HEALPix words by default, in the reader's own language ───────────────
-  // healpix-bip39-v1: the BIP39 wordlists on the same equal-area HEALPix grid
-  // as everything else here. NOT what3words: nothing is licensed, anyone may
-  // decode it, eleven languages. Someone who has never chosen a notation gets
-  // these, in their device's language by the frozen mapping (navigator.language,
-  // first match): zh-Hant/TW/HK/MO -> traditional, other zh -> simplified;
-  // en es fr it pt cs de ja ko -> that list; anything else -> English.
-  // A choice once made is kept, unless it is no longer offered.
-  function localHpw() {
-    var l = String(navigator.language || 'en').toLowerCase();
-    if (/^zh/.test(l)) return /hant|-tw|-hk|-mo/.test(l) ? 'hpwzht' : 'hpwzhs';
-    var base = l.split('-')[0];
-    return /^(en|es|fr|it|pt|cs|de|ja|ko)$/.test(base) ? 'hpw' + base : 'hpwen';
-  }
-  (function wordsByDefault() {
-    var chosen = null;
-    try { chosen = localStorage.getItem('starpin.readout.format'); } catch (e) {}
-    if (chosen && GeosonifyStarpinReadout.available(chosen)) return;
-    var k = localHpw();
-    if (GeosonifyStarpinReadout.available(k)) readout.setFormat(k);
-  })();
-  function isWords(key) { return /^hpw/.test(key || ''); }
-  // Label and hint follow the notation from the first paint, not the first pan.
-  paintMapAddr(addrPoint ? addrPoint.lat : null, addrPoint ? addrPoint.lon : null, $('addr-src').textContent);
   readout.el.addEventListener('change', function () {
     if (addrPoint) paintMapAddr(addrPoint.lat, addrPoint.lon, $('addr-src').textContent);
   });
@@ -2925,9 +2612,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var txt = label;
     if (v) {
       var t = F.tierOf(v.tierOrder, v.degree);
-      txt += ' \u00B7 nearest cornerstone ' + v.name + ' (' + Math.round(v.distanceM) +
-             ' m) \u00B7 orders ' + v.crossOrder + '\u00D7' + v.intrinsicOrder +
-             ' \u2192 tier ' + v.tierOrder.toFixed(1) + ', ' + t.key;
+      txt += ' · nearest cornerstone ' + v.name + ' (' + Math.round(v.distanceM) +
+             ' m) · orders ' + v.crossOrder + '×' + v.intrinsicOrder +
+             ' → tier ' + v.tierOrder.toFixed(1) + ', ' + t.key;
     }
     $('readout-src').textContent = txt;
   }
@@ -3006,7 +2693,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
     var s = Math.round(Math.abs(ms) / 1000);
     var mm = Math.floor(s / 60), ss = s % 60;
-    $('culmbar-time').textContent = (ms < 0 ? '+' : '\u2212') +
+    $('culmbar-time').textContent = (ms < 0 ? '+' : '−') +
       mm + ':' + (ss < 10 ? '0' : '') + ss + '  culmination';
     bar.classList.toggle('close', Math.abs(ms) <= 60000);
 
@@ -3017,8 +2704,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     } else {
       var d = Math.round(near.distanceM);
       var inR = near.distanceM <= 3 * 30.9222;
-      $('culmbar-near').textContent = (near.star.name || 'nearest') + ' \u00B7 ' + d + ' m \u00B7 ' +
-        (inR ? 'close enough' : 'too far \u2014 ' + Math.round(near.distanceM - 92.8) + ' m to go');
+      $('culmbar-near').textContent = (near.star.name || 'nearest') + ' · ' + d + ' m · ' +
+        (inR ? 'close enough' : 'too far — ' + Math.round(near.distanceM - 92.8) + ' m to go');
     }
 
     // The sound. Armed once per culmination, on the first tick that lands
@@ -3101,20 +2788,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var mark = $('moment-mark');
     if (ms > 0) {
       $('moment-where').textContent = near
-        ? near.star.name + ' \u00B7 ' + Math.round(near.distanceM) + ' m'
+        ? near.star.name + ' · ' + Math.round(near.distanceM) + ' m'
         : (fix ? '' : 'no fix yet');
       mark.hidden = true;
     } else if (inR && culmOffered !== culmMs) {
-      $('moment-where').textContent = near.star.name + ' \u00B7 ' +
-        Math.round(near.distanceM) + ' m \u00B7 close enough';
+      $('moment-where').textContent = near.star.name + ' · ' +
+        Math.round(near.distanceM) + ' m · close enough';
       mark.hidden = false;
     } else if (culmOffered === culmMs) {
       $('moment-where').textContent = 'marked';
       mark.hidden = true;
     } else {
       $('moment-where').textContent = near
-        ? near.star.name + ' \u00B7 ' + Math.round(near.distanceM) +
-          ' m \u00B7 too far to mark this one'
+        ? near.star.name + ' · ' + Math.round(near.distanceM) +
+          ' m · too far to mark this one'
         : 'no starpin close enough to mark';
       mark.hidden = true;
     }
@@ -3189,14 +2876,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function startTracking() {
     if (watchId != null || !navigator.geolocation) return;
     prevFix = null;   // start each tracking run clean
-    $('track').setAttribute('aria-pressed', 'true'); $('track').textContent = 'Tracking\u2026';
+    $('track').setAttribute('aria-pressed', 'true'); $('track').textContent = 'Tracking…';
     watchId = navigator.geolocation.watchPosition(function (p) {
       var vel = velocityFrom(p);
       fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy,
               speedMps: vel.speedMps, headingDeg: vel.headingDeg };
       $('fix').textContent = fix.lat.toFixed(6) + ', ' + fix.lon.toFixed(6);
-      $('acc').textContent = '\u00B1' + fix.accuracy_m.toFixed(0) + ' m';
-      flip.setFix(fix.lat, fix.lon, fix.accuracy_m);
+      $('acc').textContent = '±' + fix.accuracy_m.toFixed(0) + ' m';
+      map.setFix(fix.lat, fix.lon, fix.accuracy_m);
       map.clearPin();
       readAt(fix.lat, fix.lon, 'you, live');
       // Walk far enough and the star list must be refetched around WHERE YOU
@@ -3303,14 +2990,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (!r.target || !r.target.cornerstone) return;
       collected[csName(r.target.cornerstone)] = 1;
     });
-    flip.setBagged(Object.keys(collected));
+    map.setBagged(Object.keys(collected));
 
     // Bagged STARPINS come from the record too, and the record carries the
     // ground address, so they draw at any zoom without a catalogue lookup.
     // One dot per star, not per record: a closest approach and a later visit
     // to the same starpin are one find.
     var seen = {};
-    flip.setFinds(log.current().filter(function (r) {
+    map.setFinds(log.current().filter(function (r) {
       return r.target && r.target.starpin &&
              r.target.lat_1e7 != null && r.target.lon_1e7 != null;
     }).map(function (r) {
@@ -3362,7 +3049,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var parts = [];
     if (!supported && distanceM != null) parts.push('logged from ' + Math.round(distanceM) + ' m away');
     if (isDriveBy()) parts.push('drive-by');
-    return parts.length ? parts.join(' \u00B7 ') : null;
+    return parts.length ? parts.join(' · ') : null;
   }
 
   // Seconds until closest approach along a straight path at the current
@@ -3401,8 +3088,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var within = ca.distanceM <= radiusM;
     var dist = within ? 'within ' + Math.max(1, Math.round(radiusM)) + ' m'
                       : 'nearest ' + Math.round(ca.distanceM) + ' m';
-    var tail = within ? ' \u2014 time your press' : ' (too far to count)';
-    return 'closest in ' + secs + ' \u00B7 ' + dist + tail;
+    var tail = within ? ' — time your press' : ' (too far to count)';
+    return 'closest in ' + secs + ' · ' + dist + tail;
   }
 
   // What rules actually applied to this record. A cornerstone is a corner of
@@ -3501,9 +3188,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     } else if (already.length) {
       F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
                     kicker: att.attended && !supported
-                      ? 'already yours \u2014 too far to count at culmination'
+                      ? 'already yours — too far to count at culmination'
                       : haveThisCulmination
-                        ? 'already yours \u00B7 culmination already recorded'
+                        ? 'already yours · culmination already recorded'
                         : 'already yours' });
       return;
     }
@@ -3518,7 +3205,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     drawLog(); redraw();
     F.celebrate({ kind: 'starpin', name: sp.name, mag: sp.mag, digits: id,
                   kicker: !supported
-                        ? 'closest approach saved \u00B7 ' + Math.round(vr.distanceM) + ' m'
+                        ? 'closest approach saved · ' + Math.round(vr.distanceM) + ' m'
                         : att.attended ? 'bagged at culmination'
                         : 'starpin bagged' });
     var just = log.current().filter(function (x) {
@@ -3562,6 +3249,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
   $('lg-show').addEventListener('click', function () {
     var box = $('lg-panel'); box.textContent = ''; box.hidden = false;
+    if (R) R.stop();
     var recs = log.current();
     if (!recs.length) {
       box.appendChild(el('p', 'hint', 'Nothing yet. Go and stand somewhere.'));
@@ -3640,6 +3328,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       return groupMs(b) - groupMs(a);
     });
 
+    var runUI = (R && mode !== 'rare') ? R.runUI(box, groups, replayDeps()) : null;
     groups.forEach(function (gp, i) {
       var r = gp.rep;
       var rk = rank[r.record_id] || {};
@@ -3687,8 +3376,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
       d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
 
-      var disc = el('div', 'disc ' + (isStar ? 'star' : 'corner'), isStar ? '\u2726' : '\u25C6');
+      var disc = el('div', 'disc ' + (isStar ? 'star' : 'corner'), isStar ? '✦' : '◆');
       d.appendChild(disc);
+      if (R) { try { R.wireDisc(disc, gp, replayDeps()); } catch (e) {} }
 
       var body = el('div', 'body');
       body.appendChild(el('div', 'title', isStar
@@ -3726,7 +3416,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         if (ord != null) {
           var ct = F.tierOf((ord + cr) / 2, 4);
           chip(ct.key, 'rar r' + Math.min(4, Math.round(ct.rarity * 4)));
-          chip('order ' + cr + '\u00D7' + ord);
+          chip('order ' + cr + '×' + ord);
           chip('1 in ' + F.crossCount(cr, ord, 50).toLocaleString() + ' near you');
         }
       }
@@ -3766,6 +3456,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
           new Date(ln.ms).toLocaleDateString(undefined, dateFmt)));
         rowEl.appendChild(el('span', 'vl-dist',
           ln.distanceM != null ? Math.round(ln.distanceM) + ' m' : ''));
+        if (R && ln.culm) { try { R.wireCulmLine(rowEl, gp, ln.ms, replayDeps()); } catch (e) {} }
         visitsEl.appendChild(rowEl);
       });
       body.appendChild(visitsEl);
@@ -3790,7 +3481,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         var go = el('button', null, 'on map');
         go.type = 'button';
         go.addEventListener('click', function () {
-          showMap();
+          goTab('map');
           map.leaflet.setView([pt2.lat, pt2.lon], 18);
           if (!isStar) map.setHighlight(csName(r.target.cornerstone));
         });
@@ -3833,7 +3524,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
           face.style.transform = 'translateX(' + (open ? -OPEN : 0) + 'px)';
         });
       });
-      box.appendChild(slot);
+      if (runUI) runUI.place(slot, gp); else box.appendChild(slot);
     });
     box.appendChild(el('p', 'hint',
       'Verdicts and "your closest" are worked out fresh every time this is drawn, ' +
@@ -4044,7 +3735,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         return;
       }
       var r = todo.shift();
-      btn.textContent = 'Looking up \u2026 ' + (done + 1) + '/' + (done + todo.length + 1);
+      btn.textContent = 'Looking up … ' + (done + 1) + '/' + (done + todo.length + 1);
       backfillOne(r).then(function (ok) {
         done++; if (ok) found++;
         // one at a time, gently: CDS is a research facility, not our backend
@@ -4058,6 +3749,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var savedSort = localStorage.getItem('starpin.log.sort');
     if (savedSort) $('lg-sort').value = savedSort;
   } catch (e) {}
+  if (R) R.mountToggle($('lg-sort').parentNode, function () {
+    if (!$('lg-panel').hidden) $('lg-show').click();
+  });
   $('lg-sort').addEventListener('change', function () {
     try { localStorage.setItem('starpin.log.sort', $('lg-sort').value); } catch (e) {}
     if (!$('lg-panel').hidden) $('lg-show').click();
