@@ -1,7 +1,19 @@
 /**
- * geosonify-audio-ui.js v3.6
+ * geosonify-audio-ui.js v3.7
  * 
  * Audio playback controls for BPM-clock-driven location sonification.
+ * 
+ * v3.7 features:
+ * - Octave compression ("tame the top end") is ON by default and has its own
+ *   toggle in every music card's header (🗜️), next to the speaker and Sound
+ *   Design buttons. The choice is remembered (localStorage
+ *   'geosonify-octave-compression': {on, factor}). The Sound Design checkbox
+ *   and slider drive the same preference, so the two never disagree.
+ *   Compressed sounds lush, with the lead floating free above; uncompressed
+ *   keeps the "background is the pattern" spread across all octaves.
+ * - The Suggested music card plays whichever scale card it is showing:
+ *   updateNotesFromCurrentLocation resolves it through
+ *   CardRenderer.resolveMusicCardKey before reading the scale off the key.
  * 
  * v3.6 features:
  * - FIX: the per-octave instrument binding loop selected by bare class
@@ -330,6 +342,18 @@
       border-color: #444;
       color: #888;
     }
+    
+    /* Octave-compression toggle in the music card header */
+    .audio-speaker-btn.octave-comp-toggle {
+      opacity: 0.35;
+      filter: grayscale(1);
+    }
+    
+    .audio-speaker-btn.octave-comp-toggle.active {
+      opacity: 1;
+      filter: none;
+      background: rgba(255, 255, 255, 0.12);
+    }
   `;
 
   // Inject styles
@@ -340,6 +364,88 @@
     style.id = 'audio-ui-styles';
     style.textContent = STYLES;
     document.head.appendChild(style);
+  }
+
+  // ============== OCTAVE COMPRESSION ==============
+
+  // How many code iterations share one sounding octave (AudioService
+  // setOctaveCompression). 1 = off: one octave per iteration, so the pattern
+  // spreads through every register. Compressed (2 by default) pulls the top
+  // down — lush and piano-like, with the lead floating above. ON by default;
+  // the choice is remembered. Pitch only: it can never change a decode.
+  const OCT_COMP_KEY = 'geosonify-octave-compression';
+  const OCT_COMP_DEFAULT = { on: true, factor: 2 };
+  let octComp = loadOctaveCompressionPref();
+  const octCompButtons = new Set();
+
+  function loadOctaveCompressionPref() {
+    try {
+      const raw = global.localStorage && global.localStorage.getItem(OCT_COMP_KEY);
+      if (raw) {
+        const p = JSON.parse(raw);
+        const f = Math.max(2, Math.min(4, parseInt(p.factor, 10) || 2));
+        return { on: p.on !== false, factor: f };
+      }
+    } catch (e) {}
+    return { on: OCT_COMP_DEFAULT.on, factor: OCT_COMP_DEFAULT.factor };
+  }
+
+  function saveOctaveCompressionPref() {
+    try { global.localStorage && global.localStorage.setItem(OCT_COMP_KEY, JSON.stringify(octComp)); } catch (e) {}
+  }
+
+  // Push the preference into AudioService. setOctaveCompression rebuilds the
+  // lead ladder, so a change is audible straight away, mid-playback.
+  function applyOctaveCompressionPref() {
+    if (global.AudioService && global.AudioService.setOctaveCompression) {
+      global.AudioService.setOctaveCompression(octComp.on ? octComp.factor : 1);
+    }
+  }
+
+  function updateOctaveCompressionButtons() {
+    for (const btn of octCompButtons) {
+      if (!btn.isConnected && btn._mounted) { octCompButtons.delete(btn); continue; }   // card was rebuilt
+      btn.classList.toggle('active', octComp.on);
+      btn.setAttribute('aria-pressed', octComp.on ? 'true' : 'false');
+      btn.title = octComp.on
+        ? 'Compressed octaves: ON (' + octComp.factor + ' iterations per octave). Tap for the full spread.'
+        : 'Compressed octaves: OFF (full spread, one octave per iteration). Tap to tame the top end.';
+    }
+    // Keep an open Sound Design panel in step with the header buttons.
+    const cb = document.getElementById('octaveCompressionEnabled');
+    if (cb) cb.checked = octComp.on;
+  }
+
+  /**
+   * Turn compression on/off; optionally set how many iterations share an
+   * octave (2-4). Saves, applies and updates every toggle and the panel.
+   */
+  function setOctaveCompressionEnabled(on, factor) {
+    octComp.on = !!on;
+    if (factor !== undefined && factor !== null) {
+      octComp.factor = Math.max(2, Math.min(4, parseInt(factor, 10) || octComp.factor));
+    }
+    saveOctaveCompressionPref();
+    applyOctaveCompressionPref();
+    updateOctaveCompressionButtons();
+  }
+
+  function createOctaveCompressionToggle() {
+    injectStyles();
+    const btn = document.createElement('button');
+    btn.className = 'audio-speaker-btn octave-comp-toggle';
+    btn.innerHTML = '🗜️';
+    btn.setAttribute('aria-label', 'Compress octaves');
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setOctaveCompressionEnabled(!octComp.on);
+    };
+    octCompButtons.add(btn);
+    // Mark as mounted once it is in the page, so a later rebuild can prune it.
+    setTimeout(() => { btn._mounted = true; }, 0);
+    updateOctaveCompressionButtons();
+    return btn;
   }
 
   // ============== SPEAKER BUTTON ==============
@@ -496,7 +602,12 @@
     if (typeof global.encodeCardCoordinate === 'function') {
       const cs = (global.CardRenderer && global.CardRenderer.getCardState)
         ? global.CardRenderer.getCardState() : null;
-      const activeCard = audioSourceCard || (cs && cs.active) || 'music';
+      const sourceCard = audioSourceCard || (cs && cs.active) || 'music';
+      // The Suggested card has no scale of its own: it voices whichever scale
+      // card it is showing for this place, so resolve it to that card before
+      // reading the scale off the key. Identity for every other card.
+      const activeCard = (global.CardRenderer && global.CardRenderer.resolveMusicCardKey)
+        ? global.CardRenderer.resolveMusicCardKey(sourceCard) : sourceCard;
       const scaleId = activeCard.indexOf('scale_') === 0 ? activeCard.slice(6) : null;
       const cardKey = scaleId ? activeCard : 'music';
       if (global.AudioService.setScale) global.AudioService.setScale(scaleId);
@@ -777,7 +888,10 @@
     const octaveSwapDuration = AudioService?.getOctaveSwapDurationBars?.() ?? 8;
     // Octave compression: how many code iterations share one sounding octave.
     // 1 = off (original mapping). Sonification only — cannot change a decode.
-    const octaveCompression = AudioService?.getOctaveCompression?.() ?? 1;
+    // Read from the remembered preference (also what the header 🗜️ shows), so
+    // the slider keeps its factor even while compression is switched off.
+    const octaveCompressionOn = octComp.on;
+    const octaveCompressionFactor = octComp.factor;
     
     designModal.innerHTML = `
       <div class="audio-design-panel">
@@ -1195,13 +1309,13 @@
           </div>
           <div class="octave-compression-tuning" style="margin-top:12px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.1);">
             <label class="drone-toggle-label">
-              <input type="checkbox" id="octaveCompressionEnabled" ${octaveCompression > 1 ? 'checked' : ''}>
+              <input type="checkbox" id="octaveCompressionEnabled" ${octaveCompressionOn ? 'checked' : ''}>
               <span>🗜️ Compress octaves (tame the top end)</span>
             </label>
             <div class="audio-design-label" style="margin-top:6px;">
-              <span>Iterations per octave</span><span id="octaveCompressionValue">${octaveCompression > 1 ? octaveCompression : 2}</span>
+              <span>Iterations per octave</span><span id="octaveCompressionValue">${octaveCompressionFactor}</span>
             </div>
-            <input type="range" class="audio-design-slider" id="octaveCompressionSlider" min="2" max="4" value="${octaveCompression > 1 ? octaveCompression : 2}" step="1">
+            <input type="range" class="audio-design-slider" id="octaveCompressionSlider" min="2" max="4" value="${octaveCompressionFactor}" step="1">
             <div class="audio-design-label" style="margin-top:4px;opacity:0.6;font-size:11px;">
               <span>Pitch only — never changes where a code decodes to.</span>
             </div>
@@ -2311,22 +2425,25 @@
         AudioService?.setOctaveSwapDurationBars(parseInt(this.value, 10));
       };
     }
-    // Octave compression. Unchecked sends 1 (off) but leaves the slider at its
-    // chosen factor, so re-checking restores the same setting rather than
-    // resetting to 2. setOctaveCompression clears leadTune/leadPhrase, so the
-    // ladder rebuilds and the change is audible without a restart.
+    // Octave compression. Drives the same remembered preference as the 🗜️
+    // button in every music card header (setOctaveCompressionEnabled), so the
+    // panel and the headers never disagree. Unchecked sends 1 (off) but keeps
+    // the slider's factor, so re-checking restores the same setting. Moving
+    // the slider while off just stores the factor for next time.
+    // setOctaveCompression clears leadTune/leadPhrase, so the ladder rebuilds
+    // and the change is audible without a restart.
     const octaveCompEl = designModal.querySelector('#octaveCompressionEnabled');
     const octaveCompSlider = designModal.querySelector('#octaveCompressionSlider');
     function applyOctaveCompression() {
-      const on = octaveCompEl && octaveCompEl.checked;
-      const f = octaveCompSlider ? parseInt(octaveCompSlider.value, 10) : 2;
-      AudioService?.setOctaveCompression?.(on ? f : 1);
+      const on = !!(octaveCompEl && octaveCompEl.checked);
+      const f = octaveCompSlider ? parseInt(octaveCompSlider.value, 10) : octComp.factor;
+      setOctaveCompressionEnabled(on, f);
     }
     if (octaveCompEl) octaveCompEl.onchange = applyOctaveCompression;
     if (octaveCompSlider) {
       octaveCompSlider.oninput = function() {
         designModal.querySelector('#octaveCompressionValue').textContent = this.value;
-        if (octaveCompEl && octaveCompEl.checked) applyOctaveCompression();
+        applyOctaveCompression();
       };
     }
     
@@ -3007,6 +3124,7 @@
     init(appState) {
       injectStyles();
       state = appState;
+      applyOctaveCompressionPref();   // remembered choice; ON by default
       
       if (state) {
         state.subscribe('coordinate', () => {
@@ -3104,6 +3222,22 @@
     showSoundDesign: showSoundDesignModal,
 
     /**
+     * 🗜️ button for a music card header: toggles compressed octaves for the
+     * whole app (ON by default, remembered). Every button stays in sync.
+     * @returns {HTMLButtonElement}
+     */
+    createOctaveCompressionToggle,
+
+    /** @returns {{on: boolean, factor: number}} the remembered preference */
+    getOctaveCompression() { return { on: octComp.on, factor: octComp.factor }; },
+
+    /**
+     * @param {boolean} on
+     * @param {number} [factor] iterations per octave when on (2-4)
+     */
+    setOctaveCompressionEnabled,
+
+    /**
      * Switch music card between VexFlow staff and piano roll
      * @param {'staff'|'roll'} view
      */
@@ -3113,6 +3247,10 @@
   // ============== EXPORT ==============
 
   global.AudioUI = AudioUI;
+
+  // Apply the remembered octave-compression choice as soon as this file
+  // loads (audio-service.js loads first), so it holds even before init().
+  applyOctaveCompressionPref();
 
   /**
    * Create a "Save Waypoint" button for adding to card headers
@@ -3180,6 +3318,6 @@
     return btn;
   };
 
-  console.log('[geosonify] audio-ui v3.6 loaded (lead composer controls)');
+  console.log('[geosonify] audio-ui v3.7 loaded (octave compression toggle)');
 
 })(typeof window !== 'undefined' ? window : this);
