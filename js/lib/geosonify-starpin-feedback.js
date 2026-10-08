@@ -32,6 +32,15 @@ var GeosonifyStarpinFeedback = (function () {
 
   var CSS_ID = 'starpin-feedback-css';
   var ctx = null;
+  // Replay routes a sound through its own gain so it can be stopped; every
+  // synthesis path connects to sink(), which is ctx.destination otherwise.
+  var sinkNode = null;
+  function sink() { return sinkNode || ctx.destination; }
+  // `global` does not exist in a browser. composeCulminationRun reached for it
+  // inside a try; playCulminationRun reached for it bare, which throws a
+  // ReferenceError unless something else on the page defines `global`.
+  var G = (typeof global !== 'undefined') ? global
+        : (typeof window !== 'undefined') ? window : {};
 
   // ── rarity ────────────────────────────────────────────────────────────────
 
@@ -175,7 +184,7 @@ var GeosonifyStarpinFeedback = (function () {
       key: 'commonplace', rarity: 0.04, particles: 0,
       label: 'about ' + within50.toLocaleString() + ' within 50 km of here',
       blurb: 'Order ' + order + ', one every ' + spacingText() + '. ' +
-             'Logged, but too common to be worth a walk \u2014 try order ' +
+             'Logged, but too common to be worth a walk — try order ' +
              COLLECTIBLE_FLOOR + ' or coarser.'
     };
     if      (rOrd <= 6)  r = { key: 'exceptional', rarity: 1.00 };
@@ -200,7 +209,7 @@ var GeosonifyStarpinFeedback = (function () {
     // is the find's character, and it is honest next to a population-derived
     // rarity. Without the orders, fall back to the mean order.
     var geom = haveCross
-      ? 'A ' + Math.round(cross) + '\u00D7' + Math.round(intrinsic) + ' crossing'
+      ? 'A ' + Math.round(cross) + '×' + Math.round(intrinsic) + ' crossing'
       : 'Order ' + order;
     return {
       key: r.key, rarity: r.rarity,
@@ -289,26 +298,26 @@ var GeosonifyStarpinFeedback = (function () {
     };
     if (mag < 6.5) return {
       key: 'unaided', rarity: 1, particles: 300,
-      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 around the unaided-eye limit',
+      label: 'G ≈ ' + mag.toFixed(1) + ' — around the unaided-eye limit',
       blurb: 'Only a few thousand stars on the whole sky are this bright, so ' +
              'their starpins are scattered thousands of kilometres apart. ' +
              'Whether you can actually see it depends on the sky, not the catalogue.'
     };
     if (mag < 10) return {
       key: 'binocular', rarity: 0.65, particles: 190,
-      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 binocular range',
+      label: 'G ≈ ' + mag.toFixed(1) + ' — binocular range',
       blurb: 'Too faint for the unaided eye in most skies, easy in binoculars ' +
              'once you know where to point them.'
     };
     if (mag < 14) return {
       key: 'telescopic', rarity: 0.4, particles: 110,
-      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 a small telescope',
+      label: 'G ≈ ' + mag.toFixed(1) + ' — a small telescope',
       blurb: 'A backyard telescope will show it. You are standing on its address ' +
              'either way.'
     };
     return {
       key: 'deep', rarity: 0.22, particles: 60,
-      label: 'G \u2248 ' + mag.toFixed(1) + ' \u2014 camera or a serious telescope',
+      label: 'G ≈ ' + mag.toFixed(1) + ' — camera or a serious telescope',
       blurb: 'Far too faint to see by eye. Its place on Earth is no less exact.'
     };
   }
@@ -345,7 +354,7 @@ var GeosonifyStarpinFeedback = (function () {
     var t0 = ctx.currentTime + 0.01;
     var master = ctx.createGain();
     master.gain.value = 0.0001;
-    master.connect(ctx.destination);
+    master.connect(sink());
     master.gain.setValueAtTime(0.28 + shimmer * 0.06, t0);
 
     // A sustained low drone ONLY for the exceptional — the sound-floor of the
@@ -356,7 +365,7 @@ var GeosonifyStarpinFeedback = (function () {
       dg.gain.setValueAtTime(0.0001, t0);
       dg.gain.exponentialRampToValueAtTime(0.12, t0 + 0.25);
       dg.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.2 + tail);
-      drone.connect(dg); dg.connect(ctx.destination);
+      drone.connect(dg); dg.connect(sink());
       drone.start(t0); drone.stop(t0 + 2 + tail);
     }
 
@@ -475,7 +484,7 @@ var GeosonifyStarpinFeedback = (function () {
     var t0 = ctx.currentTime + 0.06;
     var root = rootHz || 261.626;
 
-    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(sink());
 
     // dotted-eighth delay with feedback — the signature
     var delay = ctx.createDelay(2.0); delay.delayTime.value = dotted;
@@ -545,7 +554,7 @@ var GeosonifyStarpinFeedback = (function () {
     var run = runSeconds || 12;
 
     var sc = null;
-    try { sc = global.GeoScales && global.GeoScales.get(scaleId || 'dorian'); } catch (e) {}
+    try { sc = G.GeoScales && G.GeoScales.get(scaleId || 'dorian'); } catch (e) {}
     var cents = (sc && sc.cents) || [0, 200, 300, 500, 700, 900, 1000];   // Dorian
     var tonicPc = (sc && sc.tonicPc) || 0;
 
@@ -574,7 +583,7 @@ var GeosonifyStarpinFeedback = (function () {
     var plan = composeCulminationRun(quaternary, scaleId);
     var zero = ctx.currentTime + Math.max(0.05, msUntil / 1000);
 
-    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(ctx.destination);
+    var out = ctx.createGain(); out.gain.value = 0.9; out.connect(sink());
     var eighth = 60 / BPM / 2;
     var delay = ctx.createDelay(2.0); delay.delayTime.value = eighth * 1.5;
     var fb = ctx.createGain(); fb.gain.value = 0.38;
@@ -602,7 +611,7 @@ var GeosonifyStarpinFeedback = (function () {
       flt.connect(amp); amp.connect(bus);
     }
 
-    var hzOf = (global.GeoScales && global.GeoScales.centsToHz) ||
+    var hzOf = (G.GeoScales && G.GeoScales.centsToHz) ||
                function (c) { return 440 * Math.pow(2, (c - 6900) / 1200); };
 
     plan.notes.forEach(function (nt, i) {
@@ -873,13 +882,13 @@ var GeosonifyStarpinFeedback = (function () {
       if (arrived) {
         wrap.classList.add('spf-here');
         wrap.style.color = 'var(--kakapo-moss,#7D9D33)';
-        word.textContent = 'You\u2019re standing on it';
+        word.textContent = 'You’re standing on it';
         sub.textContent = accepted ? 'well-supported' : r.verdict;
       } else if (withinError) {
         wrap.classList.remove('spf-here');
         wrap.style.color = main.colour || 'var(--kakapo-bark,#775B24)';
         word.textContent = 'Within device error';
-        sub.textContent = d.toFixed(0) + ' m away, fix \u00B1' + acc.toFixed(0) + ' m';
+        sub.textContent = d.toFixed(0) + ' m away, fix ±' + acc.toFixed(0) + ' m';
       } else {
         wrap.classList.remove('spf-here');
         wrap.style.color = main.colour || 'var(--kakapo-lichen,#CED38C)';
@@ -887,7 +896,7 @@ var GeosonifyStarpinFeedback = (function () {
                            (main.compassText ? ' ' + main.compassText : '');
         sub.textContent = accepted ? 'already close enough to count'
                         : r.verdict === 'fix-too-coarse' ? 'your fix is too rough to tell'
-                        : r.verdict === 'compatible' ? 'might already count \u2014 get closer to be sure'
+                        : r.verdict === 'compatible' ? 'might already count — get closer to be sure'
                         : 'keep going';
       }
 
@@ -963,6 +972,112 @@ var GeosonifyStarpinFeedback = (function () {
     }, 1400);
   }
 
+  // ── one sound per find, for the bag AND the replay ────────────────────────
+  //
+  // fanOf: the fanfare for celebrate() opts. Continuous intensity for
+  // cornerstones (population-derived rarity where the orders are known);
+  // stars keep their brightness-driven tier.
+  function fanOf(opts, tier) {
+    var isStar = opts.kind === 'starpin';
+    tier = tier || (isStar ? starTier(opts.mag)
+                           : tierOf(opts.order == null ? 14 : opts.order, opts.degree,
+                                    opts.crossOrder, opts.intrinsicOrder));
+    var cs = null, rOrd = opts.order == null ? 14 : opts.order;
+    if (!isStar && opts.crossOrder != null && opts.intrinsicOrder != null) {
+      cs = crossShare(opts.crossOrder, opts.intrinsicOrder);
+      rOrd = rarityOrder(opts.crossOrder, opts.intrinsicOrder);
+    }
+    var intens = isStar ? (tier.rarity == null ? 0.4 : tier.rarity)
+                        : intensity(rOrd, opts.degree, cs);
+    var exceptional = !isStar &&
+      (opts.degree === 3 || (rOrd != null && Number(rOrd) <= EXCEPTIONAL_ORDER));
+    return { intens: intens, exceptional: exceptional, fan: fanfareFor(intens, exceptional) };
+  }
+
+  // soundOf: celebrate() opts -> a plain description of the sound. Pure, so a
+  // test can prove the bag and the replay ask for the identical thing.
+  //   { kind:'lead', seed, rootHz }       a starpin's four bars of Dorian
+  //   { kind:'ring', digits, order, fan } a cornerstone's arpeggio
+  // seconds/tail say how long it lasts, for the replay's "playing" state.
+  function soundOf(opts) {
+    opts = opts || {};
+    if (opts.kind === 'starpin') {
+      // Root pitch from brightness: a bright star sounds lower and grander.
+      var mg = (opts.mag == null) ? 13 : opts.mag;
+      var semis = Math.max(-12, Math.min(7, Math.round((mg - 11) * 1.5)));
+      return { kind: 'lead', seed: opts.digits || opts.name || 'starpin',
+               rootHz: 261.626 * Math.pow(2, semis / 12),
+               seconds: 32 * (60 / BPM / 2), tail: 2.5 };
+    }
+    var fo = fanOf(opts);
+    return { kind: 'ring',
+             digits: opts.digits || (opts.name || '').replace(/\D/g, ''),
+             order: opts.order == null ? 14 : opts.order, fan: fo.fan,
+             seconds: 1.6 + fo.fan.ringTail + (fo.fan.exceptional ? 0.8 : 0), tail: 0.3 };
+  }
+
+  function playSound(spec) {
+    if (!spec) return;
+    if (spec.kind === 'lead') playDorianLead(spec.seed, spec.rootHz);
+    else if (spec.kind === 'ring') ring(spec.digits, spec.order, spec.fan);
+    else if (spec.kind === 'run') playCulminationRun(spec.quaternary, spec.scaleId, spec.leadMs);
+  }
+
+  // replay(specOrOpts, onEnd) -> { stop() } or null.
+  // Accepts a soundOf() spec, celebrate() opts, or a culmination run
+  // { kind:'run', quaternary, scaleId }. One replay at a time: a new one stops
+  // the last. Call from a gesture on iOS; if the context is still waking, the
+  // sound starts the moment it is running.
+  var replaying = null;
+  function stopReplay() {
+    var h = replaying; replaying = null;
+    if (!h) return;
+    if (h.timer) clearTimeout(h.timer);
+    h.stopped = true;
+    if (h.bus) {
+      try {
+        var t = ctx.currentTime;
+        h.bus.gain.cancelScheduledValues(t);
+        h.bus.gain.setValueAtTime(h.bus.gain.value, t);
+        h.bus.gain.linearRampToValueAtTime(0.0001, t + 0.08);
+        setTimeout(function () { try { h.bus.disconnect(); } catch (e) {} }, 160);
+      } catch (e) {}
+    }
+  }
+  function replay(spec, onEnd) {
+    if (!spec) return null;
+    if (spec.kind === 'starpin' || spec.kind === 'cornerstone') spec = soundOf(spec);
+    if (spec.kind === 'run') {
+      spec = Object.assign({ scaleId: 'dorian', leadMs: 12400 }, spec);
+      spec.seconds = spec.leadMs / 1000 + 4.5; spec.tail = 2;
+    }
+    if (!unlock() || !ctx) return null;
+    stopReplay();
+    var h = { stopped: false };
+    h.stop = function () { if (replaying === h) stopReplay(); };
+    replaying = h;
+    function start() {
+      if (h.stopped || replaying !== h) return;
+      var bus = ctx.createGain(); bus.gain.value = 1; bus.connect(ctx.destination);
+      h.bus = bus;
+      sinkNode = bus;
+      try { playSound(spec); } finally { sinkNode = null; }
+      h.timer = setTimeout(function () {
+        if (replaying !== h) return;
+        replaying = null;
+        try { bus.disconnect(); } catch (e) {}
+        if (onEnd) onEnd();
+      }, ((spec.seconds || 3) + (spec.tail || 0)) * 1000);
+    }
+    if (ctx.state === 'running') start();
+    else {
+      try { Promise.resolve(ctx.resume()).then(start, function () {
+        if (replaying === h) { replaying = null; if (onEnd) onEnd(); } }); }
+      catch (e) { replaying = null; return null; }
+    }
+    return h;
+  }
+
   // ── the moment ────────────────────────────────────────────────────────────
   //
   // opts: { kind: 'cornerstone'|'starpin', name, digits, kicker, doc,
@@ -984,16 +1099,8 @@ var GeosonifyStarpinFeedback = (function () {
     // scales with how rare the find actually is: 6x7 and 7x7 throw the same
     // party because there are equally many of each. crossShare still sharpens
     // the continuous curve where the orders are known.
-    var cs = null, rOrd = opts.order == null ? 14 : opts.order;
-    if (!isStar && opts.crossOrder != null && opts.intrinsicOrder != null) {
-      cs = crossShare(opts.crossOrder, opts.intrinsicOrder);
-      rOrd = rarityOrder(opts.crossOrder, opts.intrinsicOrder);
-    }
-    var intens = isStar ? (tier.rarity == null ? 0.4 : tier.rarity)
-                        : intensity(rOrd, opts.degree, cs);
-    var exceptional = !isStar &&
-      (opts.degree === 3 || (rOrd != null && Number(rOrd) <= EXCEPTIONAL_ORDER));
-    var fan = fanfareFor(intens, exceptional);
+    var fo = fanOf(opts, tier);
+    var intens = fo.intens, exceptional = fo.exceptional, fan = fo.fan;
 
     var b = doc.createElement('div');
     b.className = 'spf-banner' + (exceptional ? ' spf-exceptional' : '');
@@ -1015,16 +1122,7 @@ var GeosonifyStarpinFeedback = (function () {
 
     if (!quiet) confetti(doc, isStar ? tier.particles : fan.particles,
                          isStar ? 1 : fan.spread);
-    if (isStar) {
-      // Root pitch from brightness: a bright star sounds lower and grander.
-      var mg = (opts.mag == null) ? 13 : opts.mag;
-      var semis = Math.max(-12, Math.min(7, Math.round((mg - 11) * 1.5)));
-      playDorianLead(opts.digits || opts.name || 'starpin',
-                     261.626 * Math.pow(2, semis / 12));
-    } else {
-      ring(opts.digits || (opts.name || '').replace(/\D/g, ''),
-           opts.order == null ? 14 : opts.order, fan);
-    }
+    playSound(soundOf(opts));
     try {
       if (doc.defaultView.navigator.vibrate)
         doc.defaultView.navigator.vibrate(
@@ -1051,6 +1149,7 @@ var GeosonifyStarpinFeedback = (function () {
     crossOnEarth: crossOnEarth, rarityOrder: rarityOrder,
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     composeCulminationRun: composeCulminationRun, playCulminationRun: playCulminationRun,
+    fanOf: fanOf, soundOf: soundOf, replay: replay, stopReplay: stopReplay,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
 })();
