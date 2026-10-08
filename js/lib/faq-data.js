@@ -868,6 +868,34 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
           },
 
           {
+            id: 'suggested-scale',
+            q: 'What does the Suggested music card do?',
+            a: `<p>Geosonify can play a place in many scales - major and minor modes, pentatonics, blues scales, maqams and more - and each has its own music card under <strong>+ Add Mode</strong>. The <strong>Suggested</strong> card picks one for the neighbourhood you are in, and names it in brackets: <em>Suggested (Dorian)</em>.</p>
+<p>The choice works at roughly suburb scale, so as you cycle across town each neighbourhood has its own sound: it usually holds for a few kilometres, then changes as you move on. Every scale gets neighbourhoods of its own, and the card only ever picks a scale that sounds smooth at that spot, never a rough one.</p>
+<p>It is a suggestion, not a new kind of code: the card shows that scale's own code, and a shared link names the scale, so whoever opens it hears exactly what you heard.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;How it chooses - the details are here</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p><strong>Scoring.</strong> For each scale, Geosonify takes the first four groups of notes in that scale's code - one octave each, which is neighbourhood-sized, with cells from about 1 km across for the 12-note chromatic scale to about 30 km for five-note scales. Each note is given six harmonics, and every pair of harmonics is scored for how much it beats against the other, using the Plomp-Levelt roughness curve in Sethares' formulation. Lower means smoother. Every scale is scored as if it were rooted on C, so a scale built on D or E doesn't look smoother just because it sits a little higher.</p>
+<p><strong>Choosing.</strong> Simply taking the smoothest scale would hand most of the map to a few naturally smooth scales and leave others, such as Dorian, almost nowhere. Instead a scale qualifies at a place when two things are true: it is at its own best there - in the smoothest quarter of all the places that scale could be - and it is in the smoother half of all the scales at that spot. The place itself then chooses among the scales that qualify, using its own code as a fair, repeatable roll of the dice. The same place always gets the same choice, whichever way you arrive.</p>
+<p>Measured over thousands of random places, every one of the 37 scales is chosen somewhere, none takes more than about 9%, and the chosen scale is typically within a few percent of the smoothest possible at that spot.</p>
+<p>This is a rule of thumb for consonance, not a model of the app's own instruments: it ignores the synth's timbre, the lead line, the drone and octave compression.</p>
+<p><strong>Privacy.</strong> With a passphrase on, the choice is made from the passphrase-shuffled notes - the same ones the code shows - so to anyone without the passphrase the suggested scale looks unrelated to the place. It does give someone guessing passphrases a small extra check, like any other detail shared alongside a code. Obfuscation is ignored for the choice, because it changes every symbol whenever the last one changes and would otherwise switch the suggestion every few metres.</p>
+<p>A code typed into the Suggested card is read as the scale it names at that moment. A code from a different scale belongs in that scale's own card.</p>
+</div>
+</details>`
+          },
+
+          {
+            id: 'octave-compression',
+            q: 'What does the 🗜️ button on the music cards do?',
+            a: `<p>It switches <strong>compressed octaves</strong> on and off, for every music card at once. It is on by default.</p>
+<p>Each character of a music code is played an octave higher than the one before, so a long code climbs a long way. With compression on, two characters share each octave instead, which pulls the top of the stack down: the sound is fuller and more piano-like, with the lead melody floating freely above it. With compression off, every character keeps its own octave, so the whole pattern of the code spreads out across the range and the background itself is the pattern.</p>
+<p>Your choice is remembered. The same setting, plus how many characters share each octave (two to four), is in the <strong>Sound Design</strong> panel under <em>Compress octaves</em>. It changes only the pitch you hear, never where a code points.</p>`
+          },
+
+          {
             id: 'play-back-route',
             q: 'Can I play back a route as music?',
             a: `<p>Yes. Once you've imported a route - a GPX track from a walk, ride or run, or any path you've drawn - the sonification engine can play it back, sounding out the coordinate as it travels along the path so you literally hear the journey unfold. A marker traces the route on the map in step with the music.</p>
