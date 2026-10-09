@@ -742,9 +742,11 @@
   //
   // HOLDING THE WINNER: choose() is memoryless, and at block scale a GPS fix
   // wobbling across a region edge would flip the card (and the music) every
-  // few seconds. GeoScaleSuggest.makeFollower() holds the current winner
-  // until the fix is ~20 m inside the new region, the new winner has been
-  // seen on 10 updates in a row, or the point jumped (a pin, a pan, a link).
+  // few seconds, and clean riding would still change it every ~250 m.
+  // GeoScaleSuggest.makeFollower() holds the current winner for at least
+  // 700 m of travel (then needs the fix ~20 m inside the new area or 10
+  // updates in a row), so a ride hears a new scale every ~800 m; a jump (a
+  // pin, a pan, a link) switches at once.
   // Rule and measurements in that module. A shared link is unaffected: it
   // names the held scale and carries that scale's own code.
   const SUGGESTED_KEY = 'suggested';
@@ -842,6 +844,10 @@
       CARD_GRIDS[SUGGESTED_KEY] = {
         suggestScale: true,
         display: 'music',
+        // The "+ Add Mode" list names the card, not today's pick: the pick
+        // depends on where you are, so "Suggested (Dorian)" there would be a
+        // promise the card might not keep. The card's own title shows it.
+        listName: 'Suggested',
         isEmoji: false,
         get name() {
           return 'Suggested (' + GeoScaleSuggest.shortName(GeoScales, _suggest.scaleId) + ')';
@@ -5976,7 +5982,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
                 : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
                 : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
                 : isMusic ? ' <span style="font-size:11px;opacity:0.5;">(Music)</span>' : '';
-      const label = def.name + tag;
+      const label = (def.listName || def.name) + tag;
       html += `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
           <span style="color:white;">${label}</span>
