@@ -64,8 +64,14 @@
  *   score 4 / dice 4   ~7 km per change: a whole ride on one scale.
  *   score 5 / dice 5   ~800 m per change, median stretch ~550 m: still a
  *                      whole suburb on one scale in practice (Hijaz Kar).
- *   score 5 / dice 6   this: ~250 m per change, median stretch ~175 m.
+ *   score 5 / dice 6   ~250 m per change, median stretch ~175 m, some
+ *                      under 100 m: disconcerting at bike speed.
  *   score 5 / dice 7   ~50 m per change: twitchy.
+ * Dice 6 is kept because it gives the pick somewhere fresh to land almost
+ * anywhere; the PACE is then set by the follower's distance hold (HOLD_M,
+ * below): with it, a ride changes scale every ~800 m, evenly (p10 700 m,
+ * p90 ~900 m) — where dice 5 alone gave the same average but anything from
+ * 80 m to 1.5 km, which is how a whole suburb sat on Hijaz Kar.
  * The pick is unchanged by the dice depth: at every setting the chosen
  * scale is smoother (in this model) than ~90% of the other 36 scales at that
  * place, typically 2nd of 37, ~12% smoother than the place's median scale.
@@ -377,44 +383,58 @@
   }
 
   /**
-   * Hysteresis for a MOVING point. choose() is memoryless; at block-scale
-   * regions a GPS fix wobbling ±5 m across an edge would flip the scale
-   * hundreds of times in ten minutes parked at a junction. A follower holds
-   * the current winner and adopts a different one only when:
-   *   - it has nothing yet, the passphrase changed, or the point jumped
-   *     more than JUMP_M since the last update (a dropped pin, a pan, a
-   *     decoded link — not motion, so no reason to hold), or
-   *   - the point is at least MARGIN_M inside the region (regionMarginMetres),
-   *     or
-   *   - the same new winner has been seen on AGREE consecutive updates
-   *     (moving slowly along an edge still resolves in ~10 s at 1 Hz GPS).
-   * Measured on 96 km of simulated riding at one fix per 5 m with 5 m GPS
-   * noise: 716 raw switches against 343 real area changes, 291 with the
-   * follower. Parked on an area edge for ten minutes: 294 raw switches per
-   * edge, 0.3 with the follower. Typical delay after a real change ~40 m.
+   * Hysteresis and pacing for a MOVING point. choose() is memoryless; at
+   * street scale a GPS fix wobbling ±5 m across an edge would flip the scale
+   * hundreds of times in ten minutes parked at a junction, and even clean
+   * riding would change scale every ~250 m — too often on a bike.
    *
-   * The cost: within MARGIN_M of an edge, which scale you hear depends on
-   * the direction you arrived from. Away from edges the answer is the same
-   * whichever way you come, exactly as choose() gives it.
+   * A follower holds the current winner. It adopts a different one at once
+   * (no hold) when it has nothing yet, the passphrase changed, or the point
+   * jumped more than JUMP_M since the last update (a dropped pin, a pan, a
+   * decoded link — not motion). Otherwise only when BOTH:
+   *   - the point is at least HOLD_M (700 m) from where the current winner
+   *     was adopted — the pace: one change every ~800 m, ~2-3 min cycling;
+   *   - and it is at least MARGIN_M inside the new area (regionMarginMetres),
+   *     or the same new winner has been seen on AGREE consecutive updates.
+   * Measured on 144 km of simulated riding (one fix per 5 m, 5 m GPS noise):
+   * 800 m per change, p10 700 m, p90 905 m (no hold: 266 m, p10 100 m).
+   * Parked on an area edge for ten minutes: 294 raw switches per edge, 0.3
+   * with the follower.
+   *
+   * The cost: the scale shown and heard depends on the route as well as the
+   * place — choose()'s answer, held for up to 700 m. A jump (pin, link)
+   * gives choose()'s own answer at once; small pin moves (< JUMP_M) are held
+   * like riding.
    *
    * @returns {function(best, lat, lon, passKey, sizes): string}
    *   call with choose()'s result (or null); returns the held key.
    */
-  var MARGIN_M = 20, AGREE = 10, JUMP_M = 150;
-  function makeFollower() {
-    var st = { key: null, best: null, lat: null, lon: null, pass: null, pk: null, pc: 0 };
+  var MARGIN_M = 20, AGREE = 10, JUMP_M = 150, HOLD_M = 700;
+  function distM(lat1, lon1, lat2, lon2) {
+    var M = 111319.9;
+    return Math.sqrt(Math.pow((lat2 - lat1) * M, 2) +
+      Math.pow((lon2 - lon1) * M * Math.cos(lat2 * Math.PI / 180), 2));
+  }
+  function makeFollower(opts) {
+    var holdM = (opts && opts.holdM !== undefined) ? opts.holdM : HOLD_M;
+    var st = { key: null, best: null, lat: null, lon: null, pass: null, pk: null, pc: 0,
+               aLat: null, aLon: null };
+    function adopt(best, lat, lon) {
+      st.key = best.key; st.best = best; st.pk = null; st.pc = 0;
+      st.aLat = lat; st.aLon = lon;
+    }
     function update(best, lat, lon, passKey, sizes) {
       if (best && isFinite(best.score)) {
-        if (st.key === null || passKey !== st.pass || st.lat === null) {
-          st.key = best.key; st.best = best; st.pk = null; st.pc = 0;
+        if (st.key === null || passKey !== st.pass || st.lat === null ||
+            distM(st.lat, st.lon, lat, lon) > JUMP_M) {
+          // First fix, new passphrase, or a jump (pin, pan, link): no hold.
+          if (best.key !== st.key || st.key === null) adopt(best, lat, lon);
+          else st.best = best;
         } else if (best.key !== st.key) {
-          var M = 111319.9;
-          var d = Math.sqrt(Math.pow((lat - st.lat) * M, 2) +
-            Math.pow((lon - st.lon) * M * Math.cos(lat * Math.PI / 180), 2));
           if (st.pk === best.key) st.pc++; else { st.pk = best.key; st.pc = 1; }
-          if (d > JUMP_M || st.pc >= AGREE ||
-              regionMarginMetres(lat, lon, sizes || []) >= MARGIN_M) {
-            st.key = best.key; st.best = best; st.pk = null; st.pc = 0;
+          if (distM(st.aLat, st.aLon, lat, lon) >= holdM &&
+              (st.pc >= AGREE || regionMarginMetres(lat, lon, sizes || []) >= MARGIN_M)) {
+            adopt(best, lat, lon);
           }
         } else {
           st.best = best; st.pk = null; st.pc = 0;
@@ -424,7 +444,10 @@
       return st.key;
     }
     update.held = function () { return st.best; };
-    update.reset = function () { st.key = null; st.best = null; st.lat = st.lon = null; st.pk = null; st.pc = 0; };
+    update.reset = function () {
+      st.key = null; st.best = null; st.lat = st.lon = null; st.pk = null; st.pc = 0;
+      st.aLat = st.aLon = null;
+    };
     return update;
   }
 
