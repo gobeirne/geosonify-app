@@ -43,33 +43,44 @@
  * Among eligible scales THE PLACE CHOOSES, by rendezvous hashing: each scale
  * gets FNV-1a(dice + '|' + scaleId) and the highest wins. The dice is the
  * C-major ('music') candidate's own LEVELS-cell code, so it is a function of
- * the neighbourhood (~8 km cells) and of exactly what the ranked codes
- * already show — with a passphrase on, it is the permuted code, so it reveals
- * nothing new about the place. Rendezvous hashing keeps the choice stable:
- * if the eligible set changes but the chosen scale is still in it, it stays
- * unless a newcomer outranks it. If nothing is eligible (rare), the
- * smoothest scale here is used.
+ * the place and of exactly what the ranked codes already show — with a
+ * passphrase on, it is the permuted code, so it reveals nothing new about the
+ * place. Rendezvous hashing keeps the choice stable: if the eligible set
+ * changes but the chosen scale is still in it, it stays unless a newcomer
+ * outranks it. If nothing is eligible (rare), the smoothest scale here is
+ * used.
  *
- * Measured on 2,000 random places and 750 km of simulated rides (25 x 30 km,
- * 50 m steps), no passphrase, against the earlier "smoothest wins" rule:
- *                         smoothest wins     this rule
- *   most common scale     Ryukyu 22%         Bebop Dominant 8.7%, Ryukyu 8.1%
- *   scales never chosen   7 of 37            0 of 37 (least: Altered 0.7%)
- *   Dorian                0.3%               1.7%; the seven modes 10.9%
- *   rougher than smoothest  —                median +2.5%, p90 +12.4%
- *   along a ride          ~8 km per change   6.5 km per change, median
- *                                            stretch 4.5 km, 34 scales heard
- * Fair share would be 2.7% each. Weighting the hash to flatten the shares
- * further was tried: it moved Dorian only to 2.2% and needed per-scale
- * weights from 0 to 274, too fragile to keep.
+ * ── WHY 5 LEVELS ─────────────────────────────────────────────────────────
+ * Every candidate is scored at the SAME octave depth (fair). The depth sets
+ * how local the flavour is, because a region is the overlap of every
+ * candidate's LEVELS-deep cell (5- to 12-note grids, so the regions are
+ * irregular, not one grid's squares):
+ *   depth 3  city-scale: one change per ~60-80 km.
+ *   depth 4  neighbourhood: 6.5 km per change, median stretch 4.5 km. Too
+ *            coarse in practice — a whole Christchurch ride stayed on one
+ *            scale.
+ *   depth 5  block-scale (this): see the measurements below. A ride hears a
+ *            new scale every few streets.
+ * Depth 5 is what makes GPS jitter on a region edge matter, so the CHOICE
+ * here stays memoryless (same place, same answer, whichever way you arrive)
+ * and the smoothing lives where the motion is: card-renderer holds a winner
+ * until the new one has been seen consistently or the fix is clearly inside
+ * the new region (regionMarginMetres below), and the audio layer applies a
+ * change only between lead phrases.
  *
- * ── WHY 4 LEVELS ─────────────────────────────────────────────────────────
- * Every candidate is scored at the SAME octave depth (fair), and depth 4 is
- * neighbourhood-scale, so a ride across town passes through suburbs with
- * their own scales. Depth 3 is city-scale (one change per ~60-80 km); depth 5
- * is block-scale (median stretch 550 m), too twitchy. The choice is
- * deliberately memoryless (no hysteresis): the same place always gets the
- * same suggestion whichever way you arrive.
+ * Measured at depth 5, no passphrase, 4,000 random places and 750 km of
+ * simulated rides (25 x 30 km, 25 m steps), against depth 4:
+ *                         depth 4              depth 5
+ *   most common scale     Bebop Dominant 8.5%  Bebop Dominant 9.3%,
+ *                                              Chromatic 8.6%, Ryukyu 7.6%
+ *   scales never chosen   0 of 37              0 of 37 (least: Altered 0.8%)
+ *   Dorian; seven modes   1.3%; 10.2%          1.3%; 10.5%
+ *   rougher than smoothest  median +2.4%       median +1.5%, p90 +12.5%
+ *   along a ride          ~7 km per change     805 m per change, median
+ *                                              stretch 550 m, 37 heard
+ * Fair share would be 2.7% each. (Before the follower below; with it, a
+ * ride hears slightly fewer changes, because slivers under 40 m are
+ * skipped.)
  *
  * ── THE THRESHOLDS TABLE ─────────────────────────────────────────────────
  * THRESHOLDS[id] is the OWN_BEST quantile of that scale's score over SAMPLE_N
@@ -78,7 +89,7 @@
  * own grid and tuning. buildThreshold() is the exact procedure. Each entry
  * also stores a fingerprint of the grid, tuning and constants it was built
  * from; a scale that is missing, or whose fingerprint no longer matches, is
- * computed on first use instead (~0.2 s desktop, ~1 s phone, once per
+ * computed on first use instead (~0.3 s desktop, ~1.5 s phone, once per
  * scale). After editing a scale or these constants, regenerate the table
  * with buildThresholdTable(GeoScales) and paste it in to skip that cost.
  * Comparisons allow a 1e-9 relative tolerance so a score that lands exactly
@@ -91,7 +102,7 @@
 (function (global) {
   'use strict';
 
-  var LEVELS = 4;
+  var LEVELS = 5;
   var PARTIALS = 6;
   var OWN_BEST = 0.25;      // eligible when in the smoothest quarter of its own places
   var SAMPLE_N = 4000;      // random cell paths per scale for THRESHOLDS
@@ -100,43 +111,43 @@
   // Generated by buildThresholdTable(GeoScales) — see header.
   // id: [threshold, fingerprint of the grid + tuning + method it was built from]
   var THRESHOLDS = {
-    cmajor:          [0.0090049861303519788, '7a446996'],
-    ionian:          [0.0091054887912955552, '6627b23d'],
-    dorian:          [0.0092024164898918664, '384c50da'],
-    phrygian:        [0.0094133728130063165, '56aa9a2e'],
-    lydian:          [0.0090712649943995773, '14b02d34'],
-    mixolydian:      [0.0093884163824147198, 'cfc1d51'],
-    aeolian:         [0.0091178691103636616, '9f284df8'],
-    locrian:         [0.0094634727154865872, 'd2f2ba0e'],
-    harmonicminor:   [0.0091735585609617441, 'a3a8ef28'],
-    melodicminor:    [0.0091635100326566514, '59694f38'],
-    neapolitanminor: [0.0092467046962693596, '58532ce0'],
-    majpenta:        [0.0092662992855940506, '9a9a2b0c'],
-    minpenta:        [0.0089656360111959807, '6c1b0df'],
-    egyptian:        [0.0091148028895495330, '9fe6f645'],
-    ryukyu:          [0.0087523191263779304, 'a413f1eb'],
-    hirajoshi:       [0.0094046741865018418, '913456e8'],
-    insen:           [0.0091003346274551294, '5544be6c'],
-    iwato:           [0.0091594249162683800, '5eb80265'],
-    majblues:        [0.0094420675176866819, '978ae1c1'],
-    minblues:        [0.0090353946364541381, '3061886'],
-    wholetone:       [0.0092773904335417146, 'dff42500'],
-    prometheus:      [0.0092212846418130243, 'a1c8286b'],
-    diminished:      [0.0091284535724868807, '6da38aac'],
-    bebopdominant:   [0.0090757246522922361, 'e922e628'],
-    spanish:         [0.0093606182998782483, '540bf56f'],
-    romani:          [0.0090694275244757021, 'fd325515'],
-    arabian:         [0.0092191502208614131, '6d3a135b'],
-    persian:         [0.0091954139033195732, '87fe3051'],
-    acoustic:        [0.0091890460762613733, 'e7c27442'],
-    altered:         [0.0095663297511019065, 'bc7d1481'],
-    chromatic:       [0.0093384971733060842, 'e1a8c2f9'],
-    rast:            [0.0091319191442876726, '7597dbdc'],
-    bayati:          [0.0091059197922887039, 'f8e9c860'],
-    saba:            [0.0093483917468371539, '8ff2636e'],
-    hijaz:           [0.0093190941802511265, '2449e1fa'],
-    miyako:          [0.0093064906264279310, '2ec43c86'],
-    gongdiao:        [0.0092454009882323336, 'f22c0a4d']
+    cmajor:          [0.0061769770762183174, 'f6a2c09b'],
+    ionian:          [0.0062270562853124550, 'e021e7f0'],
+    dorian:          [0.0062674261662697111, '792be15f'],
+    phrygian:        [0.0064464376817328665, '34e16713'],
+    lydian:          [0.0062518893428462272, 'ae81cfe1'],
+    mixolydian:      [0.0064149967806931404, '39b51124'],
+    aeolian:         [0.0062405946373697545, '1de74525'],
+    locrian:         [0.0065023219191072366, '9bf78e73'],
+    harmonicminor:   [0.0062775751402176653, 'e425ee95'],
+    melodicminor:    [0.0063168891097953534, 'd826b365'],
+    neapolitanminor: [0.0063687607124900255, '999634ed'],
+    majpenta:        [0.0063119955191374933, '6887079'],
+    minpenta:        [0.0060972729296222931, 'c5e2205a'],
+    egyptian:        [0.0061626671449206086, '933ab418'],
+    ryukyu:          [0.0059960577672307034, 'd2e0daa6'],
+    hirajoshi:       [0.0064767331738506432, 'd1b15655'],
+    insen:           [0.0062707010519938156, 'a780d3d9'],
+    iwato:           [0.0063626398474165803, 'dffa9e38'],
+    majblues:        [0.0064499902304715655, '45e1f114'],
+    minblues:        [0.0061941975141180695, '5042f4cb'],
+    wholetone:       [0.0064576271907653190, '5e04c88d'],
+    prometheus:      [0.0063433212269189809, 'd0951126'],
+    diminished:      [0.0062971343943725271, 'bfdfa019'],
+    bebopdominant:   [0.0062616840228859058, '299fe595'],
+    spanish:         [0.0064544067000046664, '5d0e752a'],
+    romani:          [0.0062686293744422406, 'bcb555a8'],
+    arabian:         [0.0063593144336396993, 'f0dbbc56'],
+    persian:         [0.0063428259956380259, 'b4b72424'],
+    acoustic:        [0.0063556332981476206, 'ff4f05c7'],
+    altered:         [0.0066352833194356807, '6ad5b6d4'],
+    chromatic:       [0.0064726511312624838, '75ba7d8c'],
+    rast:            [0.0063211832739394633, '5801b749'],
+    bayati:          [0.0063119214797950698, '3a2cd06d'],
+    saba:            [0.0064502380357762644, '6e2ac353'],
+    hijaz:           [0.0064203542853265815, '5b05f17f'],
+    miyako:          [0.0064184463367940132, '7c0118cb'],
+    gongdiao:        [0.0062971600542078843, '741cf9c0']
   };
 
   // Plomp–Levelt dissonance of two partials (Sethares 1993 constants).
@@ -324,6 +335,85 @@
     return best;
   }
 
+  /**
+   * How far (metres) a point sits inside the region the choice is made on:
+   * the distance to the nearest edge of ANY candidate's LEVELS-deep cell,
+   * since crossing any of those edges can change some candidate's score.
+   * Geometry only — a passphrase permutes which symbol a cell carries, never
+   * where the cell is, so this is the same with or without one.
+   * @param {number} lat
+   * @param {number} lon
+   * @param {number[]} sizes  distinct grid sizes in play (5, 6, 7, 8, 12, …)
+   */
+  function regionMarginMetres(lat, lon, sizes) {
+    var M = 111319.9, best = Infinity;
+    var kx = Math.max(1e-9, Math.cos(lat * Math.PI / 180));
+    for (var s = 0; s < sizes.length; s++) {
+      var n = sizes[s];
+      if (!(n > 1)) continue;
+      var cells = Math.pow(n, LEVELS);
+      var hLat = 180 / cells, wLon = 360 / cells;
+      var fy = (90 - lat) / hLat, fx = (lon + 180) / wLon;
+      fy -= Math.floor(fy); fx -= Math.floor(fx);
+      var dy = Math.min(fy, 1 - fy) * hLat * M;
+      var dx = Math.min(fx, 1 - fx) * wLon * M * kx;
+      best = Math.min(best, dx, dy);
+    }
+    return best;
+  }
+
+  /**
+   * Hysteresis for a MOVING point. choose() is memoryless; at block-scale
+   * regions a GPS fix wobbling ±5 m across an edge would flip the scale
+   * hundreds of times in ten minutes parked at a junction. A follower holds
+   * the current winner and adopts a different one only when:
+   *   - it has nothing yet, the passphrase changed, or the point jumped
+   *     more than JUMP_M since the last update (a dropped pin, a pan, a
+   *     decoded link — not motion, so no reason to hold), or
+   *   - the point is at least MARGIN_M inside the region (regionMarginMetres),
+   *     or
+   *   - the same new winner has been seen on AGREE consecutive updates
+   *     (moving slowly along an edge still resolves in ~10 s at 1 Hz GPS).
+   * Measured on 96 km of simulated riding at one fix per 5 m with 5 m GPS
+   * noise: 190 raw switches against 106 real region changes, 95 with the
+   * follower. Parked on a region edge for ten minutes: 289 raw switches per
+   * edge, 0.3 with the follower. Typical delay after a real change ~35 m.
+   *
+   * The cost: within MARGIN_M of an edge, which scale you hear depends on
+   * the direction you arrived from. Away from edges the answer is the same
+   * whichever way you come, exactly as choose() gives it.
+   *
+   * @returns {function(best, lat, lon, passKey, sizes): string}
+   *   call with choose()'s result (or null); returns the held key.
+   */
+  var MARGIN_M = 20, AGREE = 10, JUMP_M = 150;
+  function makeFollower() {
+    var st = { key: null, best: null, lat: null, lon: null, pass: null, pk: null, pc: 0 };
+    function update(best, lat, lon, passKey, sizes) {
+      if (best && isFinite(best.score)) {
+        if (st.key === null || passKey !== st.pass || st.lat === null) {
+          st.key = best.key; st.best = best; st.pk = null; st.pc = 0;
+        } else if (best.key !== st.key) {
+          var M = 111319.9;
+          var d = Math.sqrt(Math.pow((lat - st.lat) * M, 2) +
+            Math.pow((lon - st.lon) * M * Math.cos(lat * Math.PI / 180), 2));
+          if (st.pk === best.key) st.pc++; else { st.pk = best.key; st.pc = 1; }
+          if (d > JUMP_M || st.pc >= AGREE ||
+              regionMarginMetres(lat, lon, sizes || []) >= MARGIN_M) {
+            st.key = best.key; st.best = best; st.pk = null; st.pc = 0;
+          }
+        } else {
+          st.best = best; st.pk = null; st.pc = 0;
+        }
+      }
+      st.lat = lat; st.lon = lon; st.pass = passKey;
+      return st.key;
+    }
+    update.held = function () { return st.best; };
+    update.reset = function () { st.key = null; st.best = null; st.lat = st.lon = null; st.pk = null; st.pc = 0; };
+    return update;
+  }
+
   /** "Aeolian (natural minor)" → "Aeolian"; the C-major card → "C major". */
   function shortName(GS, scaleId) {
     if (scaleId === 'cmajor') return 'C major';
@@ -344,6 +434,8 @@
     thresholdFor: thresholdFor,
     buildThreshold: buildThreshold,
     buildThresholdTable: buildThresholdTable,
+    regionMarginMetres: regionMarginMetres,
+    makeFollower: makeFollower,
     THRESHOLDS: THRESHOLDS
   };
   try { console.log('[geosonify] scale-suggest loaded'); } catch (e) {}
