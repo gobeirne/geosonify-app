@@ -898,6 +898,22 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
           },
 
           {
+            id: 'place-locked-sound',
+            q: 'What does the 📍 button on the music cards do?',
+            a: `<p>It switches on <strong>place-locked sound</strong>, for every music card at once. It is off by default, and Geosonify remembers your choice.</p>
+<p>Normally the notes come from where you are, but the rest of the music - the tempo, the drum kit, which lead instrument plays, its effect and the tune it composes - is chosen at random as it goes, so no two visits sound quite the same. With 📍 on, those choices come from the place instead. Stand in the same spot and you hear the same piece; anyone with the same passphrase hears the same piece there too. With no passphrase, every place has one public soundtrack.</p>
+<p>The music is built in layers, each one changing at its own scale as you move:</p>
+<ul>
+<li><strong>Neighbourhood</strong> (about 8 km): tempo, between 84 and 112 beats a minute, and the drum kit.</li>
+<li><strong>Block</strong> (about 1 km): the lead instrument, its style and its effect.</li>
+<li><strong>Street</strong> (about 200 m): the tune and the patterns in the background.</li>
+</ul>
+<p>Nothing changes abruptly. A new tempo eases in over a few bars, a new lead voice waits until the melody rests, and a new tune starts at the next phrase. Standing still, the piece keeps unfolding and the tune comes round again every few minutes.</p>
+<p>It works with any music card. With the <strong>Suggested</strong> card the scale is chosen by the place as well, so the whole soundtrack belongs to where you are. Your own sound settings are left alone: turn 📍 off and your tempo, drums and lead voice come back.</p>
+<p>Two visits to the same spot give the same tempo, drums, instrument and tune, though not a note-perfect recording: exactly when each part changes depends on when you arrived relative to the beat. Like 🗜️, it only shapes what you hear; it never changes a code or where one points.</p>`
+          },
+
+          {
             id: 'play-back-route',
             q: 'Can I play back a route as music?',
             a: `<p>Yes. Once you've imported a route - a GPX track from a walk, ride or run, or any path you've drawn - the sonification engine can play it back, sounding out the coordinate as it travels along the path so you literally hear the journey unfold. A marker traces the route on the map in step with the music.</p>
