@@ -48,7 +48,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -130,6 +130,15 @@
       return _modulePromise;
     }
     var url = src || CDN_URL;
+    /*
+      A self-hosted src must be ABSOLUTE. The import() below runs in code made
+      by new Function, which has no script URL of its own, so a relative path
+      does not resolve against the page as a <script src> would (trap found in
+      Starpin). Resolve it against the document first.
+    */
+    try {
+      if (typeof document !== 'undefined' && document.baseURI) url = new URL(url, document.baseURI).href;
+    } catch (e) {}
     _modulePromise = new Function('u', 'return import(u);')(url)
       .then(function (mod) {
         // A side-effecting classic build assigns a global instead of exporting.
@@ -273,7 +282,21 @@
       if (!aladin) return pendingFov;
       try {
         var f = aladin.getFov();               // ARRAY [fovX, fovY]
-        if (Array.isArray(f)) return Math.min(f[0], f[1]);
+        if (Array.isArray(f)) {
+          /*
+            Aladin 3.9.0-beta reports fovY = 180 until it has drawn its first
+            frame (trap found in Starpin). min() would then return the WIDTH, so
+            a field read straight after init -- exactly when the zoom carry
+            measures it -- came back too wide by the pane's aspect ratio.
+            Derive fovY from fovX and the pane shape until it is real.
+          */
+          var fx = f[0], fy = f[1];
+          if (isFinite(fx) && (!isFinite(fy) || fy >= 179.999) && fx < 179.999) {
+            var sz = size();
+            fy = (sz.width && sz.height) ? fx * sz.height / sz.width : fx;
+          }
+          return Math.min(fx, fy);
+        }
         return f;
       } catch (e) { return pendingFov; }
     }

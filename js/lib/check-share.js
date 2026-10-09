@@ -1,0 +1,21 @@
+// Scratch: card share links carry the frame; word cards share as ?hpw. Not for the repo.
+const fs = require('fs');
+const src = fs.readFileSync('/home/claude/work/card-renderer.js', 'utf8');
+const a = src.indexOf('  function frameShareSuffix()'), b = src.indexOf('  function showEditCodeModal');
+let fails = 0; const ok = (c, m) => { if (!c) { fails++; console.log('FAIL', m); } };
+let out = null, frame = null, obfuscated = false;
+const window = { location: { origin: 'https://geosonify.org', pathname: '/' } };
+const navigator = { clipboard: { writeText: u => { out = u; return Promise.resolve(); } } };
+const showToast = () => {};
+const AppState = { get: () => frame };
+const GeosonifySkyUrl = require('./sky-url.js');
+const CARD_GRIDS = { hpbip39german: { hpwords: 'german' }, alphanumeric: { grid: [[1]] }, hphex: { healpix: 'hphex' } };
+const cardState = { iterations: {} }; const presentationOf = () => null;
+eval(src.slice(a, b));
+shareCard('hpbip39german', 'wort-wort.123'); ok(out === 'https://geosonify.org/?hpwde=wort-wort.123', 'word card earth: ' + out);
+obfuscated = true; shareCard('hpbip39german', 'w.1'); ok(out === 'https://geosonify.org/?hpwdej=w.1', 'obfuscated: ' + out);
+obfuscated = false; frame = { key: 'icrs', sphere: 'sky', epoch: 'J2000' };
+shareCard('hpbip39german', 'w.1'); ok(out === 'https://geosonify.org/?hpwde=w.1&frame=icrs&epoch=J2000', 'word card sky: ' + out);
+shareCard('alphanumeric', 'thp9'); ok(out === 'https://geosonify.org/?a=thp9&frame=icrs&epoch=J2000', 'alphanumeric sky: ' + out);
+frame = { key: 'earth', sphere: 'earth' }; shareCard('alphanumeric', 'thp9'); ok(out === 'https://geosonify.org/?a=thp9', 'earth unchanged: ' + out);
+console.log(fails ? fails + ' FAILURE(S)' : 'ALL PASS');

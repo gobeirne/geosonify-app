@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.1  — the in-app sky view
+  geosonify-sky-view.js  v0.2  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -15,26 +15,37 @@
   readouts, the styling and the depth honesty; a renderer only ever answers
   "where on screen is this (ra, dec)?".
 
+  v0.2: Sky is a public mode, chosen beside Standard / Aerial / Topographic in
+  the Map imagery panel. Opening it no longer opens the separate read-only Sky
+  panel; the first time, it shows the ordinary RA / Dec card instead. And the
+  view now follows the frame: whenever the frame becomes the sky (a ?frame=icrs
+  link, a ?radec= link), the view opens, so a received sky link lands in Sky.
+
   PRIVACY: the view shows the true cell of the current pin, so it redacts under
-  passphrase or obfuscation exactly as the sky panel does. Same rule, same
+  passphrase or obfuscation exactly as the sky cards do. Same rule, same
   reason, and it is the whole reason a "just show the sky" view cannot skip it.
 */
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
   // The starred card's cell. Distinct from ACCENT so the graticule box is never
   // mistaken for the HEALPix cell the footer numbers actually describe.
   var CARD_ACCENT = '#4ade80';
-  var REDACT = '\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588';
+  var REDACT = '████████';
   var D2R = Math.PI / 180;
   var ancestryLevels = 6;          // parents drawn above the deepest cell
   var MIN_ORDER = 1, MAX_ORDER = 52;
 
   var MAP_CONTAINER_ID = 'mapContainerMobile';
+
+  // One-time: the first time Sky opens on a device, show the RA / Dec card.
+  // It carries what the old Sky panel led with, as an ordinary card.
+  var READOUT_CARD_KEY = 'sexagesimal';
+  var READOUT_FLAG = 'geosonify_sky_readout_card_added';
 
   var host = null, renderer = null, els = null, styleTag = null;
   var order = 16;
@@ -134,6 +145,36 @@
     document.head.appendChild(styleTag);
   }
 
+  /*
+    The first time Sky opens on a device, make the RA / Dec card visible.
+
+    This replaces auto-opening the read-only Sky panel, which was a block of
+    chrome unlike any card. What it led with -- the position in RA and Dec -- is
+    already an ordinary card, so that is what appears. MOC, NUNIQ and the IAU
+    designation stay one tap away in "+ Add Mode".
+
+    Once per device, like the other one-time defaults in card-renderer.js: a
+    card the user hides afterwards stays hidden.
+  */
+  function surfaceReadoutCard() {
+    try {
+      if (localStorage.getItem(READOUT_FLAG)) return;
+    } catch (e) { return; }
+    var CR = global.CardRenderer;
+    if (!CR || !CR.getCardState) return;
+    try {
+      if (global.GeosonifySkyCardDefs) global.GeosonifySkyCardDefs.register();
+      var st = CR.getCardState();
+      var grids = CR.getGridDefinitions ? CR.getGridDefinitions() : null;
+      if (!st || (grids && !grids[READOUT_CARD_KEY])) return;   // not registered yet: try next open
+      if (st.order && st.order.indexOf(READOUT_CARD_KEY) === -1) st.order.push(READOUT_CARD_KEY);
+      if (st.visible && st.visible.indexOf(READOUT_CARD_KEY) === -1) st.visible.push(READOUT_CARD_KEY);
+      if (CR.saveCardState) CR.saveCardState();
+      if (CR.render) CR.render();
+      localStorage.setItem(READOUT_FLAG, '1');
+    } catch (e) {}
+  }
+
   var _mapRO = null;
 
   /*
@@ -174,7 +215,7 @@
 
     /*
       Sit exactly over the map pane rather than over the whole screen. The coord
-      bar, the cards, the tabs and the sky panel all stay put and stay usable --
+      bar, the cards and the tabs all stay put and stay usable --
       Geosonify with a sky canvas, rather than a sky app that took the screen.
 
       Absolute inside the map's own offset parent, so nothing is reparented and
@@ -254,14 +295,14 @@
     var stepWrap = el('div', 'margin-left:auto; display:flex; align-items:center; gap:6px;');
     var btnStyle = 'width:30px; height:30px; border:1px solid #1f2937; border-radius:6px; ' +
                    'background:transparent; color:#e5e7eb; font-size:16px; line-height:1; cursor:pointer;';
-    var minus = el('button', btnStyle, '\u2212');
+    var minus = el('button', btnStyle, '−');
     var plus = el('button', btnStyle, '+');
     var orderTxt = el('span', 'font-size:12px; min-width:62px; text-align:center; color:#cbd5e1;');
     minus.setAttribute('aria-label', 'Coarser cell');
     plus.setAttribute('aria-label', 'Finer cell');
     stepWrap.appendChild(minus); stepWrap.appendChild(orderTxt); stepWrap.appendChild(plus);
-    var close = el('button', btnStyle + ' margin-left:6px;', '\u2715');
-    close.setAttribute('aria-label', 'Close sky view');
+    var close = el('button', btnStyle + ' margin-left:6px;', '✕');
+    close.setAttribute('aria-label', 'Back to the Earth map');
     stepWrap.appendChild(close);
     bar.appendChild(stepWrap);
     host.appendChild(bar);
@@ -290,7 +331,7 @@
     var zStyle = 'width:32px; height:32px; border:none; background:#1f2937; color:#e5e7eb; ' +
                  'font-size:19px; line-height:1; cursor:pointer; display:block;';
     var zIn = el('button', zStyle + ' border-bottom:1px solid #374151;', '+');
-    var zOut = el('button', zStyle, '\u2212');
+    var zOut = el('button', zStyle, '−');
     zIn.setAttribute('aria-label', 'Zoom in');
     zOut.setAttribute('aria-label', 'Zoom out');
     zoomBox.appendChild(zIn); zoomBox.appendChild(zOut);
@@ -439,8 +480,8 @@
         pushed = true;
       }
     } catch (e) {}
-    // Keep AppState coherent for anything that reads it directly (the sky panel
-    // does). Harmless if CardRenderer already ran; the bridge is idempotent.
+    // Keep AppState coherent for anything that reads it directly.
+    // Harmless if CardRenderer already ran; the bridge is idempotent.
     try {
       if (global.AppState && global.AppState.set) {
         global.AppState.set('coordinate', { lat: decDeg, lon: lon });
@@ -593,7 +634,7 @@
     if (els.cardTxt) {
       var label = '';
       if (drew) {
-        label = got.card.name + ' \u00b7 ' + got.card.iterations;
+        label = got.card.name + ' · ' + got.card.iterations;
         var size = null;
         try {
           if (global.GeosonifySkyUnits) {
@@ -601,7 +642,7 @@
                                                      got.card.iterations, { lat: mark.dec, lon: mark.ra });
           }
         } catch (e) {}
-        if (size) label += '  \u2014  ' + size;
+        if (size) label += '  —  ' + size;
       }
       els.cardTxt.textContent = label;
     }
@@ -748,7 +789,7 @@
     var dp = Sky.autoDecimals(order, mark.dec);
     els.orderTxt.textContent = 'order ' + order;
     els.sizeTxt.textContent = Sky.cellSize(order).text + ' cell';
-    els.frameTag.textContent = 'ICRS \u00b7 shown on a Geosonify canvas';
+    els.frameTag.textContent = 'ICRS · shown on a Geosonify canvas';
 
     if (redact) {
       els.posTxt.textContent = REDACT;
@@ -761,7 +802,7 @@
     els.posTxt.textContent = Sky.formatRA(mark.ra, { decimals: dp.ra }) + '  ' +
                              Sky.formatDec(mark.dec, { decimals: dp.dec, unicode: true });
     els.quadTxt.textContent = cell.quaternary;
-    els.mocTxt.textContent = moc.moc + (moc.standard ? '' : '  \u2190 past order 29');
+    els.mocTxt.textContent = moc.moc + (moc.standard ? '' : '  ← past order 29');
     els.legTxt.textContent = Overlay.legibility(picked, order, {
       maxResolvableOrder: renderer.capabilities().maxResolvableOrder
     });
@@ -776,7 +817,7 @@
         els.provTxt.style.color = '#fbbf24';        // amber: over-claiming
       } else {
         els.provTxt.textContent = 'Click accurate to ' + provenance.text +
-          ' at this zoom \u2014 order ' + provenance.order + ' is what it justifies' +
+          ' at this zoom — order ' + provenance.order + ' is what it justifies' +
           (order < provenance.order ? ', showing coarser' : '');
         els.provTxt.style.color = '#94a3b8';
       }
@@ -955,14 +996,9 @@
     gateEarthOnlyCards(true);
     setFrame('icrs', 'sky');
 
-    // The sky panel is already the honest RA/Dec + MOC readout, so reuse it
-    // rather than growing a second one. Canvas above, numbers below.
-    try {
-      if (global.GeosonifySkyPanel && global.GeosonifySkyPanel.setOpen) {
-        if (!global.GeosonifySkyPanel.isEnabled()) global.GeosonifySkyPanel.enable();
-        global.GeosonifySkyPanel.setOpen(true);
-      }
-    } catch (e) {}
+    // Numbers live on ordinary cards, not in a separate panel: the first time,
+    // show the RA / Dec card. Canvas above, cards below.
+    surfaceReadoutCard();
 
     draw();
 
@@ -1079,6 +1115,41 @@
   }
 
   function isOpen() { return !!host; }
+
+  /*
+    FOLLOW THE FRAME.
+
+    The frame is the truth about which sphere the codes are on. The URL parser
+    sets it from ?frame=icrs (and from sky-only inputs such as ?radec=), and
+    until now only a path link opened the view to match -- a single-point sky
+    link set the frame to sky and left the Earth map showing, with the Earth-only
+    cards still visible. Now any sky frame opens the view.
+
+    Deferred a tick: the URL parser sets the frame before it sets the
+    coordinate, and open() starts from the current coordinate. Ignored while the
+    view is already open, so open() calling setFrame() does not re-enter.
+    Leaving the sky is always through close(), which sets the frame itself.
+
+    ICRS ONLY. The view draws ICRS (its imagery, its readouts and its own
+    setFrame call all assume it). Opening it for frame=galactic or
+    frame=ecliptic would relabel those coordinates as ICRS: the wrong-sky
+    error the frame parameter exists to prevent. Those frames keep their
+    previous behaviour until the view can show them honestly.
+  */
+  function onFrameChange(f) {
+    if (!f || f.sphere !== 'sky' || f.key !== 'icrs' || host) return;
+    setTimeout(function () {
+      var now = null;
+      try { now = global.AppState.get('frame'); } catch (e) {}
+      if (!host && now && now.sphere === 'sky' && now.key === 'icrs') openView();
+    }, 0);
+  }
+
+  try {
+    if (global.AppState && global.AppState.subscribe) {
+      global.AppState.subscribe('frame', onFrameChange);
+    }
+  } catch (e) {}
 
   var API = {
     VERSION: VERSION,

@@ -81,8 +81,9 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The precise encoding details are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary, a 28x28 (784-cell) grid for emoji, and a 45×45 (2025-cell) grid for the BIP39 word vocabularies. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
+<p>The grid does not have to be 6×6. The same recursive subdivision works for any grid dimension, and Geosonify uses different grid sizes for different vocabularies - for example a 6×6 (36-cell) grid for the alphanumeric vocabulary and a 28×28 (784-cell) grid for emoji. Each iteration selects exactly one cell, so the information added per character is log₂(grid size): for a 6×6 alphanumeric grid that is log₂(36) ≈ 5.17 bits per character, and an 8-character code over a 36-symbol grid corresponds to roughly 41 bits of positional search space.</p>
 <p>Because each character selects one cell and the next character subdivides only that cell, codes are strict prefixes of one another. <code>thp9dahrg</code> and <code>thp9dah</code> describe the same point at different precisions - the shorter code is the larger enclosing cell. Truncating a code from the right never moves the location; it only enlarges the cell.</p>
+<p>The HEALPix cards, including the word cards, divide the globe differently: into 12 equal-area cells, each of which is split into four again and again. The principle is the same - each step picks one cell inside the last - but every cell at a given level has exactly the same area, wherever it is.</p>
 <p>The encoding is purely client-side and deterministic: the same coordinate always produces the same code for a given grid, with no server lookup and no randomness, so coordinates never leave your device unless you choose to share the resulting code.</p>
 </div>
 </details>`
@@ -131,7 +132,7 @@
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;How the three modes differ</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 <p><strong>Match</strong> keeps all the precision your measurement actually carries, and no more code than that needs. Because each grid only comes in discrete steps, it picks the <em>coarsest</em> step whose cell is still fine enough to hold your measurement - never coarser than the source (which would throw away precision you have), but not needlessly finer either. Drop a pin from a phone GPS good to ±3 m and a card whose steps land near there settles on the first step at or below 3 m - so the code is just long enough to preserve that 3 m, and no longer. Refine the fix and the cards follow it down, redrawing the grid on the map as they go. The idea is that a Match code never loses what you knew, while staying as short as it can.</p>
-<p><strong>Human</strong> ignores the measurement and instead uses a fixed, hand-picked level per card - roughly the size of a person with their arms outstretched, a metre or two, comfortable for reading aloud or jotting down. These presets don't drift with where you are on the globe; the metres shown might wobble a little by latitude, but the level of detail stays put. A couple of cards have their own sensible quirk - the music card opens a touch coarser, so a melody changes with genuine movement rather than jittering on every wobble of a GPS fix, and the BIP39 word cards always land on <strong>four words</strong>, because four words is the friendly unit for saying a place out loud.</p>
+<p><strong>Human</strong> ignores the measurement and instead uses a fixed, hand-picked level per card - roughly the size of a person with their arms outstretched, a metre or two, comfortable for reading aloud or jotting down. These presets don't drift with where you are on the globe; the metres shown might wobble a little by latitude, but the level of detail stays put. A couple of cards have their own sensible quirk - the music card opens a touch coarser, so a melody changes with genuine movement rather than jittering on every wobble of a GPS fix, and the word cards always land on <strong>four words</strong>, because four words is the friendly unit for saying a place out loud.</p>
 <p><strong>Custom</strong> is the hands-on mode: each adjustable card shows a <code>+/-</code> stepper beside its resolution, and you set each one wherever you like. Match and Human hide those steppers (the level is chosen for you); Custom brings them back. When you first ever open Geosonify it starts in Custom, already set to the Human presets, so you get sensible codes straight away with the steppers right there to adjust.</p>
 <p>One card sits out of all this: <strong>ChromaCoord</strong> has a fixed resolution by design, so it shows its level in every mode but never takes a stepper and is never changed by Match or Human. Chess boards aren't adjusted directly either - each mirrors a sibling card (the standard board follows the hex card, the HEALPix board follows HEALPix-hex), so setting the sibling sets the board for free.</p>
 <p>Your chosen mode and units are remembered between visits. If you reload while in Match, the cards recompute against wherever your point is then; in Custom, your exact per-card settings come back as you left them.</p>
@@ -141,19 +142,20 @@
 
           {
             id: 'map-imagery',
-            q: 'Can I put my shapes on aerial imagery instead of the street map?',
-            a: `<p>Yes. By default the map underneath your codes is the plain OpenStreetMap street map, but you can switch it to satellite/aerial imagery or a topographic map. The control lives in the <strong>FAQ</strong> tab under <strong>Map imagery</strong>: tap <strong>Aerial</strong> for worldwide satellite imagery, <strong>Topographic</strong> for terrain, or <strong>Standard</strong> to go back. Your choice rides along in the share link, so anyone you send it to sees the same imagery.</p>
-<p>Shapes change colour to stay visible: purple on the light street and topographic maps, and a high-contrast yellow on aerial photography (where purple tends to vanish). That happens automatically - nothing to set.</p>
+            q: 'Can I change what the map shows underneath my codes?',
+            a: `<p>Yes. The <strong>Map imagery</strong> panel in the <strong>FAQ</strong> tab has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>).</p>
+<p>Standard, Aerial and Topographic are a personal viewing preference, so an ordinary share link opens in whatever map the recipient is already using. A <strong>display link</strong> built on the Output tab is the exception: it carries your imagery, so the viewer sees what you chose. Sky is different again, because it changes what a code means, so every link made in Sky says so.</p>
+<p>Shapes change colour to stay visible: purple on the street and topographic maps, and a high-contrast yellow on aerial photography, where purple tends to vanish. That happens automatically.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Choosing imagery in a link, and pasting your own</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;Choosing imagery in a link, and pasting your own</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>Any link can carry a basemap with the <code>?basemap=</code> parameter. The three presets have short names, so a shareable aerial link stays tidy:</p>
+<p>A display link carries its imagery in the <code>?basemap=</code> parameter. The three presets have short names, so a shared aerial link stays tidy:</p>
 <pre>?basemap=aerial     (satellite / aerial imagery)
 ?basemap=topo       (topographic)
 ?basemap=osm        (standard street map - the default)</pre>
-<p>This works alongside everything else, including display mode and the import pipeline. For example, a parcel on satellite imagery:</p>
-<pre>?address_a=thp9el4j1&amp;auto=1&amp;basemap=aerial</pre>
+<p><code>?basemap=</code> is read only on display links (those carrying <code>?display</code>); any other link ignores it and opens in the recipient's own map. For example, a parcel shown on satellite imagery:</p>
+<pre>?address_a=thp9el4j1&amp;auto=1&amp;display&amp;basemap=aerial</pre>
 
 <h4>Pasting your own imagery</h4>
 <p>The Map imagery panel also has a paste field for any tile source of your own. Two URL shapes work:</p>
@@ -161,7 +163,7 @@
   <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
   <li>An <strong>ArcGIS hosted-tile URL</strong> - one ending in <code>/MapServer</code>; Geosonify appends the tile path for you.</li>
 </ul>
-<p>Dynamic ArcGIS image services (ending in <code>/ImageServer</code>, or a bare REST root) aren't tiled the way a web map needs, so those are declined with a note telling you what to paste instead. If a source you paste contains an access key or token, Geosonify warns you - because that link, key and all, would be visible to anyone you share it with. And if imagery ever fails to load, the map quietly falls back to the standard street map rather than going blank.</p>
+<p>Dynamic ArcGIS image services (ending in <code>/ImageServer</code>, or a bare REST root) aren't tiled the way a web map needs, so those are declined with a note telling you what to paste instead. If a source you paste contains an access key or token, Geosonify warns you, because a display link carrying it would show the key to anyone you share it with. If imagery fails to load, the map falls back to the standard street map rather than going blank.</p>
 
 <table>
   <tr><th>Value</th><th>Shows</th></tr>
@@ -171,6 +173,31 @@
   <tr><td>a pasted URL</td><td>Your own XYZ or ArcGIS hosted-tile source</td></tr>
 </table>
 <p>A note on imagery rights: the built-in aerial and topographic layers come from Esri's public basemap services, free for this kind of use with attribution shown on the map. Anything you paste carries its own provider's terms - worth a glance if you're publishing widely.</p>
+</div>
+</details>`
+          },
+
+          {
+            id: 'sky-mode',
+            q: 'What is Sky mode?',
+            a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>
+<p>Choose <strong>Sky</strong> in the Map imagery panel and the map is replaced by a view of the sky at your current coordinate, with the active card's cell drawn on it. Tap anywhere in the sky to move there, and the cards follow, just as they do on the map. Close the view, or pick an Earth map, to come back.</p>
+<p>Cards that only make sense on Earth - Plus Codes, MGRS, UTM, the national grids - are hidden while the sky is showing. Cards made for the sky take their place under <strong>+ Add Mode</strong>: <strong>RA / Dec</strong>, the <strong>IAU designation</strong>, and the <strong>MOC</strong> and <strong>NUNIQ</strong> forms used by astronomy software. They are for copying into other tools.</p>
+<p>A link made while the sky is showing carries <code>frame=icrs</code>, so whoever opens it lands in Sky mode too. Without it, the same code would quietly name a place on Earth.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;The details - frames, imagery and sky links - are here</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p>Sky mode uses the <strong>ICRS</strong> frame at epoch J2000, the standard reference frame for star positions. A link records it as <code>frame=icrs&amp;epoch=J2000</code>. A link with no <code>frame=</code> always means Earth, so every link made before Sky mode existed keeps its meaning. An unknown frame is refused with an error rather than guessed.</p>
+<p>The view draws a plain chart straight away and needs nothing to download. When the network allows, sky photography from <a href="https://aladin.cds.unistra.fr/" target="_blank" rel="noopener">Aladin Lite</a> (CDS, Strasbourg) replaces it, showing the Digitized Sky Survey. Offline, or on a device without WebGL2, the chart stays. Geosonify draws its own cells on top, which is why it can show cells finer than astronomy tools usually go.</p>
+<p>Links can also start from an astronomer's notation. These four parameters each open a single position:</p>
+<pre>?radec=...    right ascension and declination
+?desig=...    an IAU designation such as J113036.2-433319
+?moc=...      a MOC token, order/index
+?nuniq=...    a NUNIQ integer</pre>
+<p><code>radec=</code> and <code>desig=</code> can only mean the sky, so they open in Sky mode by themselves. <code>moc=</code> and <code>nuniq=</code> are HEALPix cells that could be on either sphere, so like every other code they follow <code>frame=</code> and mean Earth without it. An IAU designation names a small box rather than a point, so it opens at the centre of that box.</p>
+<p>Sizes are shown as angles while the sky is showing. At HEALPix order 22 a cell is about 0.05 arcseconds across; four HEALPix words are about 0.2 arcseconds.</p>
+<p>Privacy works as it does on Earth. With a passphrase or obfuscation on, the sky view and the sky cards hide the position, because RA / Dec and MOC are the position in plain text.</p>
 </div>
 </details>`
           }
@@ -193,7 +220,7 @@
           {
             id: 'gis-reference-grids',
             q: 'Can I see my location as a Plus Code, MGRS, UTM or national grid reference?',
-            a: `<p>Yes - and they sit right alongside Geosonify's own codes as cards, so you can compare them directly. Add them from <strong>+ Add Mode</strong> on the Output tab (Plus Code is shown by default). Each is a real, standards-compliant reference you can paste into other GIS tools, read over the radio, or type back in to jump to that spot.</p>
+            a: `<p>Yes - and they sit right alongside Geosonify's own codes as cards, so you can compare them directly. Add them from <strong>+ Add Mode</strong> on the Output tab. Each is a real, standards-compliant reference you can paste into other GIS tools, read over the radio, or type back in to jump to that spot.</p>
 <p>The global ones work anywhere: <strong>Plus Codes</strong> (Open Location Code), <strong>MGRS</strong> (the NATO military grid), <strong>Geohash</strong>, and <strong>UTM</strong> eastings/northings. The national ones appear where they apply: <strong>NZTM2000</strong> in New Zealand, <strong>OS grid references</strong> in Great Britain, and <strong>MGA2020</strong> in Australia. There's also a <strong>Local Grid</strong> card that automatically shows whichever national grid fits your current location, falling back to UTM elsewhere.</p>
 <p>Two of these are close cousins of Geosonify codes. A Plus Code is base-20 and hierarchical - every two characters refine the location 20x, exactly the principle Geosonify uses. An OS grid reference works the same way: the letters name a 100 km square and each pair of figures zooms in 10x. So the +/- buttons on those cards do the same job as Geosonify's iteration stepper - more characters, finer cell. On the plain easting/northing cards (UTM, NZTM, MGA) the +/- buttons change the rounding instead, from 10 km down to the millimetre.</p>
 <p>The information button on each card shows the cell size at every precision level for that scheme <em>and</em> the cell size of your currently-active Geosonify card, side by side - so you can see exactly how, say, an 8-digit Plus Code (around 14 m) compares to your alphanumeric code at a given number of iterations.</p>
@@ -202,19 +229,19 @@
 
           {
             id: 'healpix-grids',
-            q: 'What are the HEALPix cards, and how deep can they go?',
+            q: 'What are the HEALPix cards?',
             a: `<p>HEALPix is a way of dividing the sphere into cells that all have <strong>exactly the same area</strong>, used widely in astronomy and Earth science to tile a globe without the distortion you get from squares of latitude and longitude. Geosonify offers it as a coordinate vocabulary, so you can name any location by the HEALPix cell it falls in.</p>
-<p>It comes in three card forms, all describing the same HEALPix geography in different alphabets: <strong>HEALPix · hex</strong> (compact, case-free, URL-safe), <strong>HEALPix · quaternary</strong> (the raw 0-3 subdivision path), and <strong>HEALPix · base64</strong> (shortest of the three). There is also a <strong>HEALPix Matrix</strong> card that renders the hex form as a Data Matrix barcode.</p>
+<p>It comes in three card forms, all describing the same HEALPix geography in different alphabets: <strong>HEALPix · hex</strong> (compact, case-free, URL-safe), <strong>HEALPix · quaternary</strong> (the raw 0-3 subdivision path), and <strong>HEALPix · base64</strong> (shortest of the three). There is also a <strong>HEALPix Matrix</strong> card that renders the hex form as a Data Matrix barcode, and <strong>HEALPix · words</strong>, which writes the same address as words you can say aloud (see <em>Words &amp; Speech</em>).</p>
 <p>Like every Geosonify code, HEALPix codes are <strong>hierarchical and gracefully truncating</strong>: each character refines the cell, and dropping characters from the end gives you the same place at a coarser resolution, never a wrong place. The +/- buttons step the resolution exactly as they do on the other cards.</p>
-<p>The thing that makes Geosonify's HEALPix special is that it has <strong>no built-in depth limit</strong>. Standard HEALPix software stops at a fixed resolution because of how computers store whole numbers; Geosonify removes that ceiling, so you can specify a cell as finely as you like - down to nanometre and even femtometre scales - and it will be represented exactly. (How precisely such a code pins down a spot on the real Earth still depends on how precise the coordinate you started from was - but the code itself loses nothing.)</p>
+<p>Geosonify's HEALPix has <strong>no built-in depth limit</strong>. Standard HEALPix software stops at a fixed resolution because of how computers store whole numbers; Geosonify removes that ceiling, so you can specify a cell as finely as you like - down to nanometre and even femtometre scales - and it will be represented exactly. (How precisely such a code pins down a spot on the real Earth still depends on how precise the coordinate you started from was - but the code itself loses nothing.)</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;The details - arbitrary-depth HEALPix and how we extend it - are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 <p>Geosonify uses the standard <strong>HEALPix NESTED</strong> scheme, in which the sphere is split into 12 equal-area base cells and each cell is recursively quartered. A cell at order <em>k</em> is identified by its base face and its position within that face, and the NESTED index is the reference HEALPix bit-interleaving of that position. The mean cell size follows <code>L &#8776; R&#183;&#8730;(&#960;/3) / 2<sup>k</sup></code>: order 25 &#8776; 19 cm, order 53 &#8776; 0.7 nm, order 73 &#8776; 0.7 fm.</p>
 <p>Reference HEALPix libraries stop near order 29 because they pack the cell index into a 64-bit integer (12&#183;4<sup>29</sup> is about as large as a 64-bit value holds). The tessellation itself has no such limit; it arises from the integer storage format. Geosonify represents the cell as <code>(face, x, y, order)</code> using JavaScript <strong>BigInt</strong> arbitrary-precision integers throughout the address layer - the hex, quaternary and base64 serializers, parent/child operations, and NUNIQ export all run in BigInt from order 1 - so there is no order-25/29 ceiling at all. Geosonify therefore caps the interface at order 73 even though the numeric representation can continue further.</p>
-<p>This follows the standard HEALPix construction <strong>exactly</strong>. The BigInt construction is a direct transcription of the reference NESTED index, and is verified <strong>bit-identical to the reference implementation (healpy) at every shared order</strong>; beyond the reference's ceiling it is the same construction continued. A side effect of the rewrite: codes at order 25 (the previous maximum) are now computed exactly, correcting a small last-digit error the earlier double-precision code produced for some locations at that single order. Codes at order 24 and below are unchanged.</p>
-<p>The remaining limitation arises when an ordinary latitude/longitude is converted into a cell. Converting an ordinary latitude/longitude into a cell uses floating-point projection maths, which is reliable to roughly order 26 on Earth. Below that, a code generated from a tapped map point carries the safe coarse cell exactly, and the deeper digits are an exact refinement <em>within</em> that cell rather than information recovered from the tap. So an address is exactly representable and reproducible at any depth - but two people who tap the same spot may agree only down to the precision their coordinates actually carried. To reproduce a deep code exactly, share the code itself rather than regenerating it from the original coordinate. The code can therefore be exact even when the source coordinate had lower precision.</p>
+<p>This follows the standard HEALPix construction <strong>exactly</strong>. The BigInt construction is a direct transcription of the reference NESTED index, and is verified <strong>bit-identical to the reference implementation (healpy) at every shared order</strong>; beyond the reference's ceiling it is the same construction continued.</p>
+<p>The one limit is in turning an ordinary latitude/longitude into a cell. That step uses floating-point projection maths, which is reliable to roughly order 26 on Earth. Deeper than that, a code generated from a tapped map point carries the safe coarse cell exactly, and the deeper digits are an exact refinement <em>within</em> that cell rather than information recovered from the tap. So an address is exactly representable and reproducible at any depth - but two people who tap the same spot may agree only down to the precision their coordinates actually carried. To reproduce a deep code exactly, share the code itself rather than regenerating it from the original coordinate.</p>
 </div>
 </details>`
           },
@@ -224,14 +251,14 @@
             q: 'Why is hierarchy useful?',
             a: `<p>Because both computers and humans benefit from it, though in different ways.</p>
 <p>Computers can use the hierarchy for efficient storage, routing and compression. Humans start recognising patterns.</p>
-<p>Someone living in Christchurch, New Zealand, will quickly notice that many local coordinates begin with the same prefix. The same applies to word-based coordinates. An emergency responder might learn that <code>science food…</code> refers to the northern suburbs of Christchurch and <code>science gather…</code> to the southern ones. Instead of remembering four unfamiliar words each time, only the final word or two requires conscious attention. After a while, the prefix becomes familiar enough that it stops requiring attention at all.</p>
+<p>Someone living in Christchurch, New Zealand, will quickly notice that many local coordinates begin with the same prefix. The same applies to word-based coordinates. In HEALPix words, most of the central city and the northern suburbs begin <code>nice barely…</code>, while Cashmere and Halswell to the south begin <code>nice banana…</code>. An emergency responder working there soon stops needing to concentrate on the first two words, and listens for the last two.</p>
 <p>The hierarchy lets humans compress information in much the same way computers do. Nearby places feel related because they are related.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details - how hierarchy enables compression - are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
 <p>The shared-prefix property is exactly what Geosonify's path compression exploits. Geographically nearby points tend to share long hierarchical prefixes. A full 9-character alphanumeric code like <code>91v91qsxr</code> encodes a location to roughly 2-metre precision. A nearby point - say, 66 metres away - might encode to <code>91v91qz8d</code>. These two codes share a long common prefix: <code>91v91q</code>. The only difference is the final three characters.</p>
-<p>Delta encoding exploits this directly: instead of transmitting the full second code, you only transmit what changed - <code>z8d</code>. The receiver, who already has the first code, reconstructs the second by replacing the last 3 characters of <code>91v91qsxr</code> with <code>z8d</code>. See the Delta Encoding section for the full mechanism.</p>
+<p>Delta encoding exploits this directly: instead of transmitting the full second code, you only transmit what changed - <code>z8d</code>. The receiver, who already has the first code, reconstructs the second by replacing the last 3 characters of <code>91v91qsxr</code> with <code>z8d</code>. See <em>What is delta encoding?</em> for the full mechanism.</p>
 </div>
 </details>`
           },
@@ -244,10 +271,12 @@
 <li>Alphanumeric</li>
 <li>NATO phonetics</li>
 <li>Emoji</li>
-<li>BIP39 words</li>
+<li>Words, in eleven languages</li>
 <li>ChromaCoord colour grids</li>
-<li>Musical grids</li>
+<li>Musical grids, in many scales</li>
 <li>Hexadecimal</li>
+<li>HEALPix equal-area cells</li>
+<li>Chess positions</li>
 <li>QR and Data Matrix outputs</li>
 </ul>
 <p>Alongside these, Geosonify can display established GIS reference grids - Plus Codes, MGRS, Geohash, UTM, and national grids like NZTM2000, OS grid references and MGA2020 - as cards next to its own, for comparison and interoperability with other mapping tools.</p>
@@ -266,38 +295,67 @@
           {
             id: 'why-words',
             q: 'Why use words?',
-            a: `<p>Some locations need to be spoken rather than displayed. Radio communication, phone calls and emergency situations all present this challenge. Coordinates are sometimes communicated under difficult conditions - a word may be misheard, a character mistyped, or a location copied incorrectly from one system to another. Geosonify's word-based coordinate systems are easier to communicate verbally than raw alphanumeric strings, and the more sophisticated of them are built on BIP39 word lists selected for their spoken-word clarity.</p>`
+            a: `<p>Some locations need to be spoken rather than displayed. Radio, phone calls and emergencies all present this challenge, often under difficult conditions: a word may be misheard, a character mistyped, or a location copied incorrectly from one system to another. Words are easier to say, hear and write down than strings of letters and numbers, and Geosonify's word cards use lists designed to be told apart when spoken.</p>`
           },
 
           {
-            id: 'why-bip39',
-            q: 'Why BIP39?',
-            a: `<p>Geosonify needed a large vocabulary of words that were easy to distinguish when spoken. A custom list could have been built from scratch, but BIP39 already offered something useful: vocabularies designed to be easily distinguished when spoken, available in multiple languages, openly published, and well tested in real-world use.</p>
-<p>Geosonify starts with the internationally used BIP39 word lists and removes words more likely to cause confusion. The remaining words are arranged into a 45×45 grid. Unlike what3words, the resulting coordinates remain hierarchical: nearby places share common prefixes, making them easier to recognise, remember and communicate.</p>
-<p>Geosonify currently supports BIP39 vocabularies in English, Spanish, French, Italian, Portuguese, Czech, Japanese, Korean, Simplified Chinese and Traditional Chinese.</p>
+            id: 'healpix-bip39-words',
+            q: 'How do the word cards work?',
+            a: `<p>The <strong>HEALPix · words</strong> cards write a location as a few words, such as <code>nice-barely-parrot-need.091</code>. Each word narrows the place down, and four words pin it to a cell about 6 metres across - the same size anywhere on Earth, because HEALPix cells all have equal area.</p>
+<p>Like every Geosonify code, the words are hierarchical. Drop the last word and you get the larger area that contains the same place, never a different place. Nearby places share their first words, so a familiar area quickly becomes a familiar prefix.</p>
+<p>The three digits at the end are a <strong>checksum</strong>. They catch a word that was misheard or mistyped; they never correct it. If the <strong>📥 RECEIVE</strong> panel suggests a replacement word that fits the sender's checksum, read it back to the sender before relying on it. The <strong>✓</strong> button shows the code one word at a time, with a running checksum after each word for the sender to read out.</p>
+<p>The same words work on the sky: in Sky mode they name a direction among the stars.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
-<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;The details - grid size and entropy - are here</summary>
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;The details - how words become cells - are here</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>A 45×45 grid contains 2025 cells, so each word added to a BIP39 coordinate contributes log₂(2025) ≈ 10.98 bits - roughly the same information as two alphanumeric characters. This is why BIP39 codes reach metre-level precision in only a handful of words. Because the grid is still a recursive subdivision, BIP39 codes remain strictly hierarchical and gracefully truncatable: dropping the final word enlarges the cell rather than moving it.</p>
-<p>The same prefix-sharing structure that makes alphanumeric codes compressible applies to word codes too - delta encoding operates on the token-level suffix of each code, so a NATO or BIP39 delta stream compresses by exactly the same logic as an alphanumeric one; the tokens are longer words but the prefix-sharing property is identical.</p>
+<p>Each word list has 2048 = 2<sup>11</sup> words, so each word carries exactly 11 bits. The first 4 bits pick one of HEALPix's 12 base cells, and every further 2 bits pick one of four equal-area children. Every two words therefore add exactly 11 HEALPix levels, and four words land exactly on HEALPix order 20.</p>
+<p>An odd number of words ends halfway through a level. The region is then an exact equal-area <em>half</em> of the parent cell - two child cells side by side, about twice as long as it is wide - rather than a single child. Dropping a word always gives the containing parent.</p>
+<table>
+  <tr><th>Words</th><th>HEALPix order</th><th>On Earth</th><th>On the sky</th></tr>
+  <tr><td>1</td><td>3½</td><td>576 km</td><td>5.18°</td></tr>
+  <tr><td>2</td><td>9</td><td>12.7 km</td><td>6.87′</td></tr>
+  <tr><td>3</td><td>14½</td><td>281 m</td><td>9.11″</td></tr>
+  <tr><td>4</td><td>20</td><td>6.22 m</td><td>0.201″</td></tr>
+  <tr><td>5</td><td>25½</td><td>13.7 cm</td><td>4.45 mas</td></tr>
+  <tr><td>6</td><td>31</td><td>3.04 mm</td><td>98.3 µas</td></tr>
+</table>
+<p>Sizes are <em>square-equivalent widths</em>: the side of a square with the same area as the cell. HEALPix cells are curved diamonds, not squares, and the odd-word halves are longer than they are wide. Up to eight words are accepted.</p>
+<p>The checksum is <code>(120 + 101·N + Σ w<sub>i</sub>·x<sub>i</sub>) mod 997</code>, where <em>x<sub>i</sub></em> is each word's position in its list, <em>N</em> is the number of words, and the weights <em>w</em> are fixed. It catches every single wrong word unless the slip happens to move the word's position by exactly 997, and it is the same in every language, because it is computed from word positions, not spellings.</p>
+<p>With a <strong>passphrase</strong>, each word is shuffled by the passphrase, so the receiver needs the same passphrase to place it. The checksum covers the words as written, so a matching checksum confirms the words were copied correctly, not that the passphrase is right. With <strong>obfuscation</strong>, every word except the last is re-jumbled by the words after it, so neighbouring places look unrelated. An obfuscated code can't be shortened, and the place appears only once every word is in.</p>
+<p>A single point can be shared as a link such as <code>?hpwen=nice-barely-parrot-need.091</code> (<code>hpwes</code>, <code>hpwja</code> and so on for other languages; an extra <code>j</code> marks an obfuscated code). The words, checksum, passphrase and obfuscation modes and these links are fixed permanently, so a code made today will always mean the same place.</p>
+<p style="margin-top:14px;padding-top:12px;border-top:1px solid var(--ios-separator,#c6c6c8);font-size:13px;color:var(--ios-secondary,#3c3c43);"><strong>Related work.</strong> <a href="https://arxiv.org/abs/2603.29584" target="_blank" rel="noopener">StarHash</a> (T. L. Killestein, 2026) is another open system that names positions with HEALPix cells and words: three English words for each patch of sky about 3.2 arcseconds across. It deliberately scrambles the relationship between neighbouring cells, so nearby objects get unrelated names. Geosonify's word addresses were developed independently and make the opposite choice by default: they are hierarchical, so dropping words gives the containing area, with scrambling available as an option. They also take a variable number of words, come in several languages, work on Earth as well as on the sky, and carry a checksum. We acknowledge StarHash as important related work.</p>
 </div>
 </details>`
           },
 
           {
-            id: 'healpix-bip39-words',
-            q: 'What are the HEALPix BIP39 cards (beta)?',
-            a: `<p>The <strong>HEALPix BIP39</strong> cards write a HEALPix location as words from the <em>official, unmodified</em> 2048-word BIP39 lists (German uses the community <em>de-2048-v1</em> list from dys2p, as there is no official German BIP39 list). 2048 = 2<sup>11</sup>, so each word carries exactly 11 bits: the first 4 bits pick one of HEALPix's 12 base faces and every further 2 bits pick one of four equal-area children. Four words are exactly HEALPix order 20 - a cell about 6.2 m across, the same area everywhere on Earth. Every two words add exactly 11 HEALPix orders.</p>
-<p>An odd number of words ends halfway through a level: the region is an exact equal-area <em>half</em> of the parent cell (two child cells side by side), not a single child. Dropping a word always gives the containing parent, so the codes stay hierarchical.</p>
-<p>The same words work on the sky: in the celestial frame they name a direction in right ascension and declination. Three words ≈ 9 arcseconds, four ≈ 0.2 arcseconds, five ≈ 4.5 milliarcseconds.</p>
-<p>The three digits after the words are a checksum. It detects errors - it never corrects them. If the RECEIVE panel offers a replacement word that fits the sender's checksum, read it back to the sender before relying on it.</p>
-<p><strong>Status:</strong> the format is frozen - the words, the three checksum digits, passphrase and obfuscation modes, and the <code>?hpwen=</code>-style share links: a code made today will always mean the same place. With obfuscation on, every word except the last is re-jumbled by the words after it, so the place can only be shown once the whole code is in, and the code cannot be shortened. The original BIP39 cards (now marked <em>legacy</em>) keep working exactly as before, and every code made with them will always decode. Spoken use in Chinese is not yet validated: many characters share a pronunciation.</p>`
+            id: 'why-bip39',
+            q: 'Where do the words come from?',
+            a: `<p>From the <strong>BIP39</strong> word lists, published as part of a widely used standard for writing down long numbers as words. They suited Geosonify for three reasons. The words were chosen to be easy to tell apart, and in the Latin-script lists no two words share their first four letters, so four letters are always enough to type a word. Each list has exactly 2048 words, which divides HEALPix's levels evenly. And they exist in many languages, openly published and widely tested.</p>
+<p>Geosonify uses the official lists unchanged, in <strong>English, Spanish, French, Italian, Portuguese, Czech, Japanese, Korean, Simplified Chinese and Traditional Chinese</strong>. There is no official German list, so German uses the community list <em>de-2048-v1</em> from dys2p, built to the same rules.</p>
+<p>When Geosonify first opens on a device, it shows the English word card, plus the card for your device's language if there is one, placed first. Every other language is under <strong>+ Add Mode</strong>. The same place has the same position in every list, so a code can be read out in one language and entered in another.</p>
+<p>Chinese has not yet been tested for reading aloud: many characters share a pronunciation, so it works well in writing but may be ambiguous when spoken.</p>`
           },
+
           {
             id: 'checksum',
             q: 'What is the checksum used for?',
             a: `<p>Coordinates are sometimes communicated under difficult conditions. A word may be misheard, a character mistyped, or a location copied incorrectly from one system to another. Many Geosonify coordinate systems include a checksum that allows the recipient to verify that the coordinate arrived intact before attempting to use it. This is particularly useful when coordinates are relayed through multiple people or communicated in noisy environments.</p>`
+          },
+
+          {
+            id: 'legacy-word-cards',
+            q: 'What are the legacy word cards?',
+            a: `<p>Before the HEALPix word cards, Geosonify wrote places with words on a latitude/longitude grid: 2025 words from the BIP39 lists, arranged 45 by 45, in ten languages. Those cards are marked <em>(legacy)</em> under <strong>+ Add Mode</strong> and aren't shown by default. Every code and <code>?bip…</code> link made with them will always decode to the same place.</p>
+<p>The HEALPix word cards replace them because their cells have equal area everywhere, they use the official word lists unchanged, and their checksum is stronger.</p>
+
+<details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
+<summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;The details - the legacy grid - are here</summary>
+<div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
+<p>The legacy cards trim each BIP39 list to 2025 words and arrange them in a 45×45 grid, so each word contributes log₂(2025) ≈ 10.98 bits - roughly the same as two alphanumeric characters. Because the grid divides latitude and longitude evenly, cells are narrower towards the poles. The codes are hierarchical and can be shortened, and their checksum is three digits computed with CRC32C from the word positions.</p>
+</div>
+</details>`
           }
 
         ]
@@ -478,7 +536,7 @@
 
 <h4>What delta encoding doesn't do</h4>
 <p>Delta encoding is <strong>lossless</strong>. Every point in the path is encoded to full precision - nothing is approximated or averaged. The first code carries the full location, and every delta reconstructs the full code for its point. Truncating a delta stream loses the trailing points but leaves the earlier ones intact and fully decodable.</p>
-<p>Delta encoding is also <strong>grid-agnostic</strong>. The same gear-change mechanism works identically for alphanumeric, NATO, emoji, BIP39, or any other grid - it operates on the token-level suffix of each code, whatever those tokens happen to be. A NATO delta stream compresses by the same logic as an alphanumeric one; the tokens are longer words but the prefix-sharing property is identical.</p>
+<p>Delta encoding is also <strong>grid-agnostic</strong>. The same gear-change mechanism works identically for alphanumeric, NATO, emoji, the legacy word grids, or any other vocabulary grid - it operates on the token-level suffix of each code, whatever those tokens happen to be. A NATO delta stream compresses by the same logic as an alphanumeric one; the tokens are longer words but the prefix-sharing property is identical.</p>
 
 <h4>Obfuscation and delta encoding</h4>
 <p>Because each delta's final character is always identical to the final character of the full code it represents - the one character obfuscation never shifts - each delta carries its own de-obfuscation seed and can be processed independently. In practice, the encoder computes all deltas on raw unobfuscated codes, then obfuscates the first code and each delta segment separately as a final step. The receiver reverses each piece independently before reconstructing the path. The gear-change structure is applied to raw codes before obfuscation, so the gear headers themselves are never obfuscated and the decoder can always parse the stream structure.</p>
@@ -530,7 +588,7 @@
 <p>Adding pipeline parameters turns a lookup into a one-shot, end-to-end conversion - fetch, simplify, encode, and deliver - with no clicks in between. The two main controls are how far to run and what to do with the result:</p>
 <ul>
   <li><strong><code>auto</code></strong> - how much to automate. <code>auto=0</code> (the default) just loads the shape and shows a preview for you to adjust; <code>auto=1</code> skips the preview and runs the whole chain immediately; <code>auto=2</code> shows a brief two-second preview, then proceeds on its own.</li>
-  <li><strong><code>grid</code></strong> - which vocabulary to encode into, given as a short code: <code>a</code> alphanumeric, <code>e</code> emoji, <code>n</code> NATO, <code>m</code> music, <code>c</code> ChromaCoord, <code>bip</code> BIP39 English (with <code>bipfr</code>, <code>bipja</code>, and the other languages), and several more. <code>grid=a</code> selects the alphanumeric grid used in the examples.</li>
+  <li><strong><code>grid</code></strong> - which vocabulary to encode into, given as a short code: <code>a</code> alphanumeric, <code>e</code> emoji, <code>n</code> NATO, <code>m</code> music, <code>c</code> ChromaCoord, <code>bip</code> the legacy English word grid (with <code>bipfr</code>, <code>bipja</code> and the other languages), and several more. <code>grid=a</code> selects the alphanumeric grid used in the examples.</li>
   <li><strong><code>result</code></strong> - what to do once the code exists. <code>result=r</code> (the default) redirects to the encoded URL for the full decode experience; <code>result=s</code> stays on the page and shows the output, updating the address bar; <code>result=c</code> copies the share URL to your clipboard.</li>
 </ul>
 <p>The <strong>Manhattan</strong> link instructs Geosonify to find Manhattan, fetch its boundary, encode it in the alphanumeric grid, and display the result on the current page. <strong>Carkfree</strong> runs the identical pipeline on a different name. These use the same machinery as the plain <code>?place=</code> examples, just with the brakes off: The Budapest example stops after importing the shape, whereas the Manhattan example continues through encoding and displays the finished shareable code.</p>
@@ -581,16 +639,16 @@
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">▸&nbsp;Loading parcels from codes, and many at once</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>The plain <code>?address=</code> takes a street address or a <code>lat, lon</code> pair. But a parcel can also be seeded from a Geosonify code in any vocabulary - so a location you already have as alphanumeric, emoji, BIP39 words, MGRS, or a Plus Code can pull its parcel directly, with no address lookup in between.</p>
+<p>The plain <code>?address=</code> takes a street address or a <code>lat, lon</code> pair. But a parcel can also be seeded from a Geosonify code in any vocabulary - so a location you already have as alphanumeric, emoji, legacy words, MGRS, or a Plus Code can pull its parcel directly, with no address lookup in between.</p>
 
 <h4>Seeding from a code</h4>
 <p>Add the format as a suffix on the parameter name. The suffix says how to read the value, so nothing has to be guessed:</p>
 <pre>?address_a=thp9el4j1        (alphanumeric)
 ?address_e=🐊🎲🚝🏁🎏           (emoji)
-?address_bip=word word word…   (BIP39 English)
+?address_bip=word word word…   (legacy English words)
 ?address_mgrs=59GMK1234567     (MGRS)
 ?address_pluscode=4VCH+W9       (Plus Code)</pre>
-<p>The suffix is the same short code used everywhere else in the app: <code>a</code> alphanumeric, <code>e</code> emoji, <code>h</code> hex, <code>n</code> NATO, <code>bip</code> (and <code>bipfr</code>, <code>bipja</code>, …) for BIP39 languages, plus the GIS reference grids by their own names - <code>pluscode</code>, <code>mgrs</code>, <code>geohash</code>, <code>utm</code>, <code>nztm</code>, <code>bng</code>, <code>mga</code>. Geosonify decodes the seed to a point on your own device, then asks the cadastral service which parcel sits there - the reliable point-in-parcel path, the same one a dropped pin uses. Plain <code>?address=</code> (no suffix) still means a free-text address or raw coordinates, exactly as before.</p>
+<p>The suffix is the same short code used everywhere else in the app: <code>a</code> alphanumeric, <code>e</code> emoji, <code>h</code> hex, <code>n</code> NATO, <code>bip</code> (and <code>bipfr</code>, <code>bipja</code>, …) for the legacy word grids, plus the GIS reference grids by their own names - <code>pluscode</code>, <code>mgrs</code>, <code>geohash</code>, <code>utm</code>, <code>nztm</code>, <code>bng</code>, <code>mga</code>. Geosonify decodes the seed to a point on your own device, then asks the cadastral service which parcel sits there - the reliable point-in-parcel path, the same one a dropped pin uses. Plain <code>?address=</code> (no suffix) still means a free-text address or raw coordinates, exactly as before.</p>
 
 <h4>Many parcels in one link</h4>
 <p>Join several seeds with <code>~~~</code> and a single link loads every parcel and combines them into one shape - each parcel its own disjoint piece, ready to encode, sonify or display together:</p>
