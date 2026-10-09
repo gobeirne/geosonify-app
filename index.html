@@ -637,7 +637,7 @@
 -->
 
 <!-- Features -->
-<script src="js/features/map-manager.js?v=20260622"></script>
+<script src="js/features/map-manager.js?v=20260929"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -648,7 +648,10 @@
 <script src="js/ui/piano-roll.js?v=202603173"></script>
 <script src="js/ui/scanner-ui.js?v=20260109"></script>
 <script src="js/lib/gis-grids.js?v=20260622"></script>
-<script src="js/lib/geosonify-healpix.js?v=20260622"></script>
+<script src="js/lib/geosonify-healpix.js?v=20260930b"></script>
+<!-- HEALPix words (healpix-bip39-v1, BETA): official 2048-word BIP39 lists + codec. Must load before card-renderer. -->
+<script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
+<script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
 <script src="js/lib/geosonify-sky.js?v=20260730"></script>
 <script src="js/lib/geosonify-sky-url.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-panel.js?v=20260730"></script>
@@ -672,11 +675,12 @@
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261009b"></script>
+<script src="js/ui/card-renderer.js?v=20261009c"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
-<script src="js/lib/geosonify-bip39-entry.js?v=20260331"></script>
+<script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
+<script src="js/lib/geosonify-hpwords-entry.js?v=20260930b"></script>
 <script src="js/lib/faq-data.js?v=20261009b"></script>
 <script src="js/ui/faq-ui.js?v=20260616a"></script>
   <script>
@@ -2607,7 +2611,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         chs:    { card: 'chessboard',   obf: false },
         chso:   { card: 'chessboard',   obf: true  },
         hpchs:  { card: 'hpchessboard', obf: false },
-        hpchso: { card: 'hpchessboard', obf: true  }
+        hpchso: { card: 'hpchessboard', obf: 'v1'  },   // legacy healpix-pass-v1 obfuscation (decode only)
+        hpchsj: { card: 'hpchessboard', obf: true  }    // healpix-obf-v2
       };
       for (const [paramName, paramValue] of urlParams.entries()) {
         if (!paramValue) continue;
@@ -2653,6 +2658,60 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return;
       }
       
+      // ── HEALPix BIP39 word links (?hpwen=nice-barely-parrot-need.091) ──────
+      // healpix-bip39-v1 (FROZEN core) — one param per word list, like the legacy
+      // bip* params; the language must travel because §6 parsing requires it.
+      //   hpw<lang>    plain / passphrase-permuted words (receiver enters the key)
+      //   hpw<lang>j   obfuscated (healpix-bip39-obf-v1)
+      // Word count comes from the code (1–8 words). Point links only: shapes and
+      // paths with a words card active share as ?r=. Additions only — never repurpose.
+      const HPW_LANG_BY_SUFFIX = { en: 'english', es: 'spanish', fr: 'french', it: 'italian',
+        pt: 'portuguese', cs: 'czech', de: 'german', ja: 'japanese', ko: 'korean',
+        zhs: 'chinese_simplified', zht: 'chinese_traditional' };
+      for (const [paramName, paramValue] of urlParams.entries()) {
+        if (!paramValue) continue;
+        const m = /^hpw(en|es|fr|it|pt|cs|de|ja|ko|zhs|zht)(j?)$/.exec(paramName);
+        if (!m) continue;
+        if (typeof HealpixWords === 'undefined') {
+          setTimeout(() => showToast('HEALPix word support not loaded', 'error'), 200);
+          return;
+        }
+        const hpwCard = HealpixWords.cardKey(HPW_LANG_BY_SUFFIX[m[1]]);
+        const hpwObf = m[2] === 'j';
+        if (!CARD_GRIDS[hpwCard]) {
+          setTimeout(() => showToast('HEALPix word card not available', 'error'), 200);
+          return;
+        }
+        const hpwCoord = decodeCardCode(hpwCard, String(paramValue).trim(), hpwObf);
+        if (!hpwCoord || !Array.isArray(hpwCoord)) {
+          setTimeout(() => showToast('Could not read these HEALPix words (check the words and the 3-digit checksum)', 'error'), 200);
+          return;
+        }
+        const hpwWords = (CardRenderer.getCardState && CardRenderer.getCardState().iterations[hpwCard]) || 4;
+        setTimeout(() => {
+          _suppressURLUpdate = true;
+          currentCardCoord = { lat: hpwCoord[0], lon: hpwCoord[1] };
+          cardState.active = hpwCard;
+          if (!cardState.visible.includes(hpwCard)) cardState.visible.push(hpwCard);
+          if (hpwObf) {
+            obfuscated = true;
+            if (CardRenderer.setObfuscated) CardRenderer.setObfuscated(true);
+          }
+          saveCardState();
+          updateCoordDisplay();
+          updateMapPin();
+          renderCards();
+          if (map && currentCardCoord) {
+            const z = [4, 4, 10, 15, 19, 20, 20, 20, 20][Math.min(hpwWords, 8)];
+            map.setView([currentCardCoord.lat, currentCardCoord.lon], z);
+          }
+          if (hpwCoord.checksumValid === true) showToast('✓ Checksum valid', 'success');
+          switchToTab('home');
+          setTimeout(() => { _suppressURLUpdate = false; }, 500);
+        }, 200);
+        return;
+      }
+
       // ── HEALPix ChromaCoord share params (?hpc=, ?hpco=) ──────
       // Presentation of an order-22 hphex code as an RGB111 swatch. The value is
       // the swatch's INK colour-string (16 letters from KBGCRMYW — URL-safe), the
@@ -2661,7 +2720,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // ?hpco= deobfuscates first. A bare 12-char hex is also accepted.
       const CHROMA_PARAM_MAP = {
         hpc:  { card: 'hpchromacoord', obf: false },
-        hpco: { card: 'hpchromacoord', obf: true  }
+        hpco: { card: 'hpchromacoord', obf: 'v1' },   // legacy healpix-pass-v1 obfuscation (decode only)
+        hpcj: { card: 'hpchromacoord', obf: true  }   // healpix-obf-v2
       };
       for (const [paramName, paramValue] of urlParams.entries()) {
         if (!paramValue) continue;
@@ -2811,12 +2871,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           for (const hk of ['hphex', 'hpquad', 'hp64']) {
             if (paramName === hk || paramName.startsWith(hk)) {
               const suffix = paramName.slice(hk.length);
-              // Valid flags: o (obfuscated), d (delta), r (rhumb), any order,
-              // no repeats. Bare hk (empty suffix) is also valid.
-              if (/^[odrc]{0,4}$/.test(suffix) && new Set(suffix).size === suffix.length) {
+              // Valid flags: j (obfuscated, healpix-obf-v2 — what new links use),
+              // o (obfuscated, LEGACY healpix-pass-v1 — decode only, never emitted
+              // again), d (delta), r (rhumb), c; any order, no repeats, not o+j.
+              // Bare hk (empty suffix) is also valid.
+              if (/^[odrcj]{0,5}$/.test(suffix) && new Set(suffix).size === suffix.length &&
+                  !(suffix.includes('o') && suffix.includes('j'))) {
                 return {
                   grid: hk,
-                  obf: suffix.includes('o'),
+                  obf: suffix.includes('j') ? true : (suffix.includes('o') ? 'v1' : false),
                   delta: suffix.includes('d'),
                   rhumb: suffix.includes('r'),
                   compress: suffix.includes('c')
@@ -2973,7 +3036,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               _suppressURLUpdate = true;
               
               currentCardCoord = { lat: result[0], lon: result[1] };
-              obfuscated = config.obf;
+              obfuscated = !!config.obf;
               document.getElementById('obfuscateBtn').textContent = obfuscated ? '🔀 Obfuscated' : '🔀 Hierarchical';
               document.getElementById('obfWarning').style.display = obfuscated ? 'block' : 'none';
               cardState.active = config.grid;
@@ -3237,11 +3300,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const _activeDef = CARD_GRIDS[gridKey];
       if (_activeDef && _activeDef.display === 'chessboard') {
         let param = (_activeDef.chessOf === 'hphex') ? 'hpchs' : 'chs';
-        if (obfuscated) param += 'o';
+        if (obfuscated) param += (_activeDef.chessOf === 'hphex') ? 'j' : 'o';   // HEALPix: obf-v2
         return param;
       }
       if (_activeDef && _activeDef.display === 'chroma' && _activeDef.chromaOf) {
-        return obfuscated ? 'hpco' : 'hpc';
+        return obfuscated ? 'hpcj' : 'hpc';   // 'hpco' = legacy v1, decode only
       }
       
       // Check built-in grids first
@@ -3271,7 +3334,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // needs a key, by design.)
       if (gridDef && gridDef.healpix) {
         let param = gridDef.healpix;
-        if (obfuscated) param = param + 'o';
+        if (obfuscated) param = param + 'j';   // healpix-obf-v2 ('o' = legacy v1, decode only)
         // HEALPix codes are hierarchical, so they delta-encode like the
         // vocabulary grids — honor the delta flag (and rhumb) so the URL is
         // marked 'hphexd' and the decoder takes the delta path.
@@ -3306,6 +3369,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Use the current compact output (which respects the selected encoding)
       const encoded = document.getElementById('compactOutput').textContent;
       if (encoded && !encoded.startsWith('ERR')) {
+        const hpw = hpwordsPointShare();
+        if (hpw) {
+          window.history.replaceState({}, '', `${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}`);
+          return;
+        }
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
         const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}`;
         window.history.replaceState({}, '', newURL);
@@ -3346,11 +3414,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // shape/delta/multi value (~ or , present) has no single board, left as-is.
     function withChessFEN(param, encoded) {
       try {
-        if ((param === 'chs' || param === 'chso' || param === 'hpchs' || param === 'hpchso') &&
+        if ((param === 'chs' || param === 'chso' || param === 'hpchs' || param === 'hpchso' || param === 'hpchsj') &&
             typeof encoded === 'string' && !encoded.startsWith('ERR') &&
             encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1 &&
             typeof ChessboardLib !== 'undefined') {
-          const fmt = (param === 'hpchs' || param === 'hpchso') ? 'healpix' : 'standard';
+          const fmt = (param === 'hpchs' || param === 'hpchso' || param === 'hpchsj') ? 'healpix' : 'standard';
           const hex = encoded.split('@')[0];   // defensive: drop any stray "@k"
           const fen = ChessboardLib.toFEN(hex, fmt);
           return fen || encoded;
@@ -3367,7 +3435,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // form, so this is purely a prettier emit. ~ or , present → left as-is.
     function withChromaInk(param, encoded) {
       try {
-        if ((param === 'c' || param === 'co' || param === 'hpc' || param === 'hpco') &&
+        if ((param === 'c' || param === 'co' || param === 'hpc' || param === 'hpco' || param === 'hpcj') &&
             typeof encoded === 'string' && !encoded.startsWith('ERR') &&
             encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1 &&
             typeof RGB111Lib !== 'undefined' && RGB111Lib.hexToColorString) {
@@ -3390,6 +3458,28 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
 
     // Build the base shareable URL (shape or encrypted blob) from the current
     // compact output. Returns null with an alert if there's nothing to share.
+    // HEALPix BIP39 point link: ?hpw<lang>[j]=<words.NNN>. Only for a single
+    // point — shapes/paths/points-mode keep the raw ?r= compact output, which the
+    // words card emits for them. Returns {param, value} or null.
+    const HPW_SUFFIX_BY_LANG = { english: 'en', spanish: 'es', french: 'fr', italian: 'it',
+      portuguese: 'pt', czech: 'cs', german: 'de', japanese: 'ja', korean: 'ko',
+      chinese_simplified: 'zhs', chinese_traditional: 'zht' };
+    function hpwordsPointShare() {
+      const gk = cardState.active;
+      const gd = gk && CARD_GRIDS[gk];
+      if (!gd || !gd.hpwords || typeof HealpixWords === 'undefined') return null;
+      if (lastSolution && lastSolution.type && lastSolution.type !== 'point') return null;
+      const c = (lastSolution && lastSolution.centroid) ||
+                (currentCardCoord ? [currentCardCoord.lat, currentCardCoord.lon] : null);
+      if (!c) return null;
+      const n = (CardRenderer.getCardState && CardRenderer.getCardState().iterations[gk]) || gd.defaultIterations;
+      const code = encodeCardCoordinate(gk, c[0], c[1], n);
+      const suffix = HPW_SUFFIX_BY_LANG[gd.hpwords];
+      if (!code || !suffix) return null;
+      const obf = (typeof CardRenderer !== 'undefined' && CardRenderer.isObfuscated) ? CardRenderer.isObfuscated() : obfuscated;
+      return { param: 'hpw' + suffix + (obf ? 'j' : ''), value: code };
+    }
+
     function buildBaseShareURL() {
       const encoded = document.getElementById('compactOutput').textContent;
       if (!encoded || encoded.startsWith('ERR')) {
@@ -3399,6 +3489,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // The compact output already contains the encrypted blob.
         return `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
       }
+      const hpw = hpwordsPointShare();
+      if (hpw) return `${window.location.origin}${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}`;
       const param = getURLParamForActiveCard(_currentOutputIsDelta);
       return `${window.location.origin}${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}`;
     }
