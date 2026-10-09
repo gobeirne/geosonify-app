@@ -42,45 +42,51 @@
  *
  * Among eligible scales THE PLACE CHOOSES, by rendezvous hashing: each scale
  * gets FNV-1a(dice + '|' + scaleId) and the highest wins. The dice is the
- * C-major ('music') candidate's own LEVELS-cell code, so it is a function of
- * the place and of exactly what the ranked codes already show — with a
+ * C-major ('music') candidate's own DICE_LEVELS-cell code (one level deeper
+ * than the scoring, ~170 x 250 m cells), so it is a function of the place
+ * and of exactly what the ranked codes already show — with a
  * passphrase on, it is the permuted code, so it reveals nothing new about the
  * place. Rendezvous hashing keeps the choice stable: if the eligible set
  * changes but the chosen scale is still in it, it stays unless a newcomer
  * outranks it. If nothing is eligible (rare), the smoothest scale here is
  * used.
  *
- * ── WHY 5 LEVELS ─────────────────────────────────────────────────────────
- * Every candidate is scored at the SAME octave depth (fair). The depth sets
- * how local the flavour is, because a region is the overlap of every
- * candidate's LEVELS-deep cell (5- to 12-note grids, so the regions are
- * irregular, not one grid's squares):
- *   depth 3  city-scale: one change per ~60-80 km.
- *   depth 4  neighbourhood: 6.5 km per change, median stretch 4.5 km. Too
- *            coarse in practice — a whole Christchurch ride stayed on one
- *            scale.
- *   depth 5  block-scale (this): see the measurements below. A ride hears a
- *            new scale every few streets.
- * Depth 5 is what makes GPS jitter on a region edge matter, so the CHOICE
- * here stays memoryless (same place, same answer, whichever way you arrive)
- * and the smoothing lives where the motion is: card-renderer holds a winner
- * until the new one has been seen consistently or the fix is clearly inside
- * the new region (regionMarginMetres below), and the audio layer applies a
- * change only between lead phrases.
+ * ── WHY SCORE AT 5, PICK AT 6 ────────────────────────────────────────────
+ * Two depths do two jobs. LEVELS (5) is what is SCORED: every candidate at
+ * the same octave depth (fair), so it decides which scales are smooth enough
+ * here — the ELIGIBLE set, which changes where any candidate's 5-deep cell
+ * ends (a few hundred metres; 5- to 12-note grids, so irregular areas).
+ * DICE_LEVELS (6) is what the place PICKS WITH among those: the C-major code
+ * one level deeper, ~170 x 250 m cells, so the scale moves every couple of
+ * streets while only ever choosing from scales that are smooth here.
+ * Scoring deeper instead would make the eligible set itself street-scale,
+ * but chromatic's 12^6 cells are ~7 m — the choice would follow GPS noise.
+ *   score 4 / dice 4   ~7 km per change: a whole ride on one scale.
+ *   score 5 / dice 5   ~800 m per change, median stretch ~550 m: still a
+ *                      whole suburb on one scale in practice (Hijaz Kar).
+ *   score 5 / dice 6   this: ~250 m per change, median stretch ~175 m.
+ *   score 5 / dice 7   ~50 m per change: twitchy.
+ * The pick is unchanged by the dice depth: at every setting the chosen
+ * scale is smoother (in this model) than ~90% of the other 36 scales at that
+ * place, typically 2nd of 37, ~12% smoother than the place's median scale.
+ * A random scale would beat half of them.
  *
- * Measured at depth 5, no passphrase, 4,000 random places and 750 km of
- * simulated rides (25 x 30 km, 25 m steps), against depth 4:
- *                         depth 4              depth 5
- *   most common scale     Bebop Dominant 8.5%  Bebop Dominant 9.3%,
- *                                              Chromatic 8.6%, Ryukyu 7.6%
- *   scales never chosen   0 of 37              0 of 37 (least: Altered 0.8%)
- *   Dorian; seven modes   1.3%; 10.2%          1.3%; 10.5%
- *   rougher than smoothest  median +2.4%       median +1.5%, p90 +12.5%
- *   along a ride          ~7 km per change     805 m per change, median
- *                                              stretch 550 m, 37 heard
+ * GPS jitter on an edge matters at this scale, so the CHOICE here stays
+ * memoryless (same place, same answer, whichever way you arrive) and the
+ * smoothing lives where the motion is: card-renderer holds a winner until
+ * the new one has been seen consistently or the fix is clearly inside the
+ * new area (makeFollower, regionMarginMetres below), and the audio layer
+ * applies a change only between lead phrases.
+ *
+ * Measured, no passphrase, 3,000 random places and 450 km of simulated
+ * rides (15 x 30 km, 25 m steps), score 5 / dice 6:
+ *   most common scale     Bebop Dominant 9.2%, Chromatic 8.4%
+ *   scales never chosen   0 of 37 (least: Hijaz 0.6%)
+ *   Dorian; seven modes   1.4%; 10.4%
+ *   rougher than smoothest  median +1.3%, p90 +12.2%
+ *   along a ride          255 m per change, median stretch 175 m, 37 heard
  * Fair share would be 2.7% each. (Before the follower below; with it, a
- * ride hears slightly fewer changes, because slivers under 40 m are
- * skipped.)
+ * ride hears ~15% fewer changes, because slivers under ~40 m are skipped.)
  *
  * ── THE THRESHOLDS TABLE ─────────────────────────────────────────────────
  * THRESHOLDS[id] is the OWN_BEST quantile of that scale's score over SAMPLE_N
@@ -102,7 +108,10 @@
 (function (global) {
   'use strict';
 
-  var LEVELS = 5;
+  var LEVELS = 5;           // depth that is SCORED (smoothness, eligibility)
+  var DICE_LEVELS = 6;      // depth of the C-major code the place picks WITH
+  var CODE_LEVELS = Math.max(LEVELS, DICE_LEVELS);   // depth callers encode at
+  var DICE_N = 7;           // the C-major (frozen musicalArray) grid is 7x7
   var PARTIALS = 6;
   var OWN_BEST = 0.25;      // eligible when in the smoothest quarter of its own places
   var SAMPLE_N = 4000;      // random cell paths per scale for THRESHOLDS
@@ -323,7 +332,7 @@
       if (candidates[i].scaleId === 'cmajor') { diceSrc = candidates[i]; break; }
     }
     if (!diceSrc) diceSrc = candidates[0];
-    var dice = cellsOf(diceSrc.code).slice(0, LEVELS).join(',');
+    var dice = cellsOf(diceSrc.code).slice(0, DICE_LEVELS).join(',');
 
     var best = null, bestH = -1;
     eligible.forEach(function (c) {
@@ -337,8 +346,9 @@
 
   /**
    * How far (metres) a point sits inside the region the choice is made on:
-   * the distance to the nearest edge of ANY candidate's LEVELS-deep cell,
-   * since crossing any of those edges can change some candidate's score.
+   * the distance to the nearest edge of ANY candidate's LEVELS-deep cell
+   * (crossing one can change some candidate's score) or of the dice's
+   * DICE_LEVELS-deep C-major cell (crossing one re-rolls the pick).
    * Geometry only — a passphrase permutes which symbol a cell carries, never
    * where the cell is, so this is the same with or without one.
    * @param {number} lat
@@ -348,10 +358,14 @@
   function regionMarginMetres(lat, lon, sizes) {
     var M = 111319.9, best = Infinity;
     var kx = Math.max(1e-9, Math.cos(lat * Math.PI / 180));
-    for (var s = 0; s < sizes.length; s++) {
-      var n = sizes[s];
+    // Scored cells at LEVELS for every grid size, plus the dice's own cell.
+    var edges = [];
+    for (var e = 0; e < sizes.length; e++) edges.push([sizes[e], LEVELS]);
+    edges.push([DICE_N, DICE_LEVELS]);
+    for (var s = 0; s < edges.length; s++) {
+      var n = edges[s][0];
       if (!(n > 1)) continue;
-      var cells = Math.pow(n, LEVELS);
+      var cells = Math.pow(n, edges[s][1]);
       var hLat = 180 / cells, wLon = 360 / cells;
       var fy = (90 - lat) / hLat, fx = (lon + 180) / wLon;
       fy -= Math.floor(fy); fx -= Math.floor(fx);
@@ -375,9 +389,9 @@
    *   - the same new winner has been seen on AGREE consecutive updates
    *     (moving slowly along an edge still resolves in ~10 s at 1 Hz GPS).
    * Measured on 96 km of simulated riding at one fix per 5 m with 5 m GPS
-   * noise: 190 raw switches against 106 real region changes, 95 with the
-   * follower. Parked on a region edge for ten minutes: 289 raw switches per
-   * edge, 0.3 with the follower. Typical delay after a real change ~35 m.
+   * noise: 716 raw switches against 343 real area changes, 291 with the
+   * follower. Parked on an area edge for ten minutes: 294 raw switches per
+   * edge, 0.3 with the follower. Typical delay after a real change ~40 m.
    *
    * The cost: within MARGIN_M of an edge, which scale you hear depends on
    * the direction you arrived from. Away from edges the answer is the same
@@ -424,6 +438,8 @@
 
   global.GeoScaleSuggest = {
     LEVELS: LEVELS,
+    DICE_LEVELS: DICE_LEVELS,
+    CODE_LEVELS: CODE_LEVELS,
     OWN_BEST: OWN_BEST,
     choose: choose,
     rank: rank,
