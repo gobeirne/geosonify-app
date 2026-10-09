@@ -972,6 +972,183 @@ var GeosonifyStarpinFeedback = (function () {
     }, 1400);
   }
 
+  // ── the starpin signature ────────────────────────────────────────────────
+  //
+  // A starpin's sound is WHERE IT IS. Its ground address (dec as latitude, RA
+  // as longitude) is written as a Geosonify Dorian code -- the same recursive
+  // 7x7 grid the Dorian card uses, rows counted down from the north, columns
+  // across from the west, no passphrase -- and EVERY note of that code is
+  // played, coarse step low, fine step high, one octave per step.
+  //
+  //   steps   7  (cells ~24 x 35 m at Christchurch, a third of the 92.8 m
+  //              visit radius; octaves 1..7)
+  //   feel    "straight": every note in quick even 16ths at 112 bpm, the saw
+  //           lead patch, each note panned by where the point lies east-west
+  //           inside that step's cell
+  //   space   ping-pong dotted-eighth echo and a hall, both deterministic
+  //
+  // The source_id seeds ONLY the order of the notes inside each step (rising
+  // most often, sometimes falling or from the middle). Nothing is dropped, so
+  // the code can be read back from the sound. Chosen by ear on the
+  // starpin-signatures test page, 9 Oct 2026.
+  var SIG = { scale: 'dorian', steps: 7, width: 0.85, echo: 0.34, hall: 0.38,
+              gap: 0.6, len: 1.4, gain: 0.42 };
+  // Frozen Dorian card data (geosonify-scales-v1.js). Used only if GeoScales
+  // is not on the page, so the signature never goes silent for want of it.
+  var DORIAN_FALLBACK = {
+    symbols: ['C','D','Eb','F','G','A','Bb'],
+    cents: [0, 200, 300, 500, 700, 900, 1000], tonicPc: 0,
+    grid: [
+      ['CC,','CD,','CEb,','CF,','CG,','CA,','CBb,'],
+      ['CDBb,','DD,','DEb,','DF,','DG,','DA,','DBb,'],
+      ['CEbG,','DEbG,','EbEb,','EbF,','EbG,','EbA,','EbBb,'],
+      ['CFG,','DFG,','EbFG,','FF,','FG,','FA,','FBb,'],
+      ['CDG,','DGBb,','EbGBb,','FGBb,','GG,','GA,','GBb,'],
+      ['CDA,','DFA,','EbFA,','CFA,','CGA,','AA,','ABb,'],
+      ['CEbBb,','DFBb,','EbFBb,','CFBb,','CGBb,','CABb,','BbBb,']
+    ]
+  };
+  function sigScale() {
+    var GS = G.GeoScales, sc = GS && GS.get && GS.get(SIG.scale);
+    if (sc && GS.gridFor(SIG.scale)) return {
+      grid: GS.gridFor(SIG.scale),
+      tokenize: function (t) { return GS.tokenize(SIG.scale, t); },
+      cents: function (sym, oct) { return GS.centsFor(SIG.scale, sym, oct); }
+    };
+    var F = DORIAN_FALLBACK, byLen = F.symbols.slice().sort(function (a, b) { return b.length - a.length; });
+    return {
+      grid: F.grid,
+      tokenize: function (t) {
+        var out = [], i = 0;
+        while (i < t.length) {
+          var hit = null;
+          for (var k = 0; k < byLen.length; k++) if (t.lastIndexOf(byLen[k], i) === i) { hit = byLen[k]; break; }
+          if (!hit) return null;
+          out.push(hit); i += hit.length;
+        }
+        return out;
+      },
+      cents: function (sym, oct) {
+        var pc = (F.tonicPc * 100 + F.cents[F.symbols.indexOf(sym)]) % 1200;
+        return 1200 * (oct + 1) + pc;
+      }
+    };
+  }
+
+  // The Geosonify recursive grid code, as card-renderer.js encodes it.
+  function signatureCode(lat, lon, steps) {
+    var sc = sigScale(), grid = sc.grid, rows = grid.length, cols = grid[0].length;
+    var minLat = -90, maxLat = 90, minLon = -180, maxLon = 180, out = [];
+    for (var i = 0; i < steps; i++) {
+      var dLat = (maxLat - minLat) / rows, dLon = (maxLon - minLon) / cols;
+      var r = Math.max(0, Math.min(rows - 1, Math.floor((maxLat - lat) / (maxLat - minLat) * rows)));
+      var c = Math.max(0, Math.min(cols - 1, Math.floor((lon - minLon) / (maxLon - minLon) * cols)));
+      var tok = String(grid[r][c]).replace(/,$/, '');
+      out.push({ token: tok, symbols: sc.tokenize(tok), row: r, col: c, rows: rows, cols: cols });
+      maxLat = maxLat - dLat * r; minLat = maxLat - dLat;
+      minLon = minLon + dLon * c; maxLon = minLon + dLon;
+    }
+    return out;
+  }
+
+  // Note order inside a step: rising twice as often as anything else.
+  var SIG_ORDERS = { 2: [[0, 1], [0, 1], [1, 0]],
+                     3: [[0, 1, 2], [0, 1, 2], [2, 1, 0], [1, 0, 2], [1, 2, 0], [0, 2, 1]] };
+
+  // Pure: (lat, lon, seed) -> every note, timed and placed. Testable in Node.
+  function composeSignature(lat, lon, seed) {
+    var sc = sigScale(), code = signatureCode(lat, lon, SIG.steps);
+    var rng = seededRng('order:' + seed), e16 = 60 / BPM / 4, notes = [];
+    code.forEach(function (st, i) {
+      var oct = 1 + i;                                   // one octave per step
+      var ps = st.symbols.map(function (sym) {
+        return { sym: sym, step: i, cents: sc.cents(sym, oct),
+                 pan: st.cols > 1 ? (st.col / (st.cols - 1)) * 2 - 1 : 0 };
+      }).sort(function (a, b) { return a.cents - b.cents; });
+      var opts = SIG_ORDERS[ps.length];
+      var ord = opts ? opts[Math.floor(rng() * opts.length)] : ps.map(function (_, k) { return k; });
+      ord.forEach(function (j) { notes.push(ps[j]); });
+    });
+    notes.forEach(function (n, k) {
+      n.t = k * e16 * SIG.gap; n.dur = e16 * SIG.len; n.pan *= SIG.width;
+    });
+    return { code: code.map(function (s) { return s.token; }), notes: notes,
+             seconds: notes.length ? notes[notes.length - 1].t + notes[notes.length - 1].dur : 0 };
+  }
+
+  // The hall's impulse, generated once per audio context from a fixed seed.
+  var hallIr = null, hallCtx = null;
+  function hallImpulse() {
+    if (hallIr && hallCtx === ctx) return hallIr;
+    var len = Math.floor(ctx.sampleRate * 2.6), ir = ctx.createBuffer(2, len, ctx.sampleRate);
+    for (var ch = 0; ch < 2; ch++) {
+      var r = seededRng('starpin-hall-' + ch), data = ir.getChannelData(ch);
+      for (var i = 0; i < len; i++) {
+        var t = i / ctx.sampleRate;
+        data[i] = t < 0.012 ? 0 : (r() * 2 - 1) * Math.pow(1 - i / len, 3.2) * Math.exp(-t * 1.4);
+      }
+    }
+    hallIr = ir; hallCtx = ctx;
+    return ir;
+  }
+
+  function playSignature(lat, lon, seed) {
+    if (!ctx || ctx.state !== 'running') return 0;
+    var plan = composeSignature(lat, lon, seed);
+    var t0 = ctx.currentTime + 0.06;
+    var hzOf = (G.GeoScales && G.GeoScales.centsToHz) ||
+               function (c) { return 440 * Math.pow(2, (c - 6900) / 1200); };
+
+    var comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -14; comp.ratio.value = 3; comp.connect(sink());
+    var master = ctx.createGain(); master.gain.value = 0.85; master.connect(comp);
+
+    var hall = ctx.createConvolver(); hall.buffer = hallImpulse();
+    var hallIn = ctx.createGain(), hallOut = ctx.createGain(), hallTone = ctx.createBiquadFilter();
+    hallTone.type = 'lowpass'; hallTone.frequency.value = 5200;
+    hallOut.gain.value = SIG.hall * 1.6;
+    hallIn.connect(hallTone); hallTone.connect(hall); hall.connect(hallOut); hallOut.connect(master);
+
+    // ping-pong dotted-eighth echo: left repeats return on the right and back
+    var eighth = 60 / BPM / 2;
+    var split = ctx.createChannelSplitter(2), merge = ctx.createChannelMerger(2);
+    var dL = ctx.createDelay(2), dR = ctx.createDelay(2), fbL = ctx.createGain(), fbR = ctx.createGain();
+    var dampL = ctx.createBiquadFilter(), dampR = ctx.createBiquadFilter();
+    [dampL, dampR].forEach(function (f) { f.type = 'lowpass'; f.frequency.value = 2600; });
+    dL.delayTime.value = eighth * 1.5; dR.delayTime.value = eighth * 1.5;
+    fbL.gain.value = 0.42; fbR.gain.value = 0.42;
+    var echoIn = ctx.createGain(), echoOut = ctx.createGain();
+    echoOut.gain.value = SIG.echo * 1.1;
+    echoIn.connect(split); split.connect(dL, 0); split.connect(dR, 1);
+    dL.connect(dampL); dampL.connect(fbL); fbL.connect(dR);
+    dR.connect(dampR); dampR.connect(fbR); fbR.connect(dL);
+    dampL.connect(merge, 0, 0); dampR.connect(merge, 0, 1);
+    merge.connect(echoOut); echoOut.connect(master); echoOut.connect(hallIn);
+
+    var bus = ctx.createGain(); bus.connect(master); bus.connect(echoIn); bus.connect(hallIn);
+
+    plan.notes.forEach(function (n) {
+      var when = t0 + n.t, len = n.dur, hz = hzOf(n.cents);
+      var pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+      if (pan) { pan.pan.value = Math.max(-1, Math.min(1, n.pan)); pan.connect(bus); }
+      var amp = ctx.createGain(); amp.connect(pan || bus);
+      var flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.Q.value = 6; flt.connect(amp);
+      flt.frequency.setValueAtTime(Math.min(9000, hz * 9), when);
+      flt.frequency.exponentialRampToValueAtTime(Math.max(320, hz * 2.4), when + len * 0.7);
+      amp.gain.setValueAtTime(0.0001, when);
+      amp.gain.exponentialRampToValueAtTime(SIG.gain, when + 0.008);
+      amp.gain.exponentialRampToValueAtTime(SIG.gain * 0.45, when + len * 0.45);
+      amp.gain.exponentialRampToValueAtTime(0.0001, when + len);
+      [[0, 'sawtooth', 1], [7, 'sawtooth', 0.85], [-1200, 'square', 0.28]].forEach(function (v) {
+        var o = ctx.createOscillator(), g = ctx.createGain();
+        o.type = v[1]; o.frequency.value = hz; o.detune.value = v[0]; g.gain.value = v[2];
+        o.connect(g); g.connect(flt);
+        o.start(when); o.stop(when + len + 0.3);
+      });
+    });
+    return plan.seconds;
+  }
+
   // ── one sound per find, for the bag AND the replay ────────────────────────
   //
   // fanOf: the fanfare for celebrate() opts. Continuous intensity for
@@ -1001,7 +1178,15 @@ var GeosonifyStarpinFeedback = (function () {
   // seconds/tail say how long it lasts, for the replay's "playing" state.
   function soundOf(opts) {
     opts = opts || {};
+    if (opts.kind === 'starpin' && opts.lat_1e7 != null && opts.lon_1e7 != null) {
+      // The signature: this starpin's place, played. See composeSignature.
+      var lat = opts.lat_1e7 / 1e7, lon = opts.lon_1e7 / 1e7;
+      var seed = opts.digits || opts.name || 'starpin';
+      return { kind: 'signature', lat: lat, lon: lon, seed: seed,
+               seconds: composeSignature(lat, lon, seed).seconds, tail: 3 };
+    }
     if (opts.kind === 'starpin') {
+      // No ground address to hand (an old record): the four-bar Dorian tune.
       // Root pitch from brightness: a bright star sounds lower and grander.
       var mg = (opts.mag == null) ? 13 : opts.mag;
       var semis = Math.max(-12, Math.min(7, Math.round((mg - 11) * 1.5)));
@@ -1018,7 +1203,8 @@ var GeosonifyStarpinFeedback = (function () {
 
   function playSound(spec) {
     if (!spec) return;
-    if (spec.kind === 'lead') playDorianLead(spec.seed, spec.rootHz);
+    if (spec.kind === 'signature') playSignature(spec.lat, spec.lon, spec.seed);
+    else if (spec.kind === 'lead') playDorianLead(spec.seed, spec.rootHz);
     else if (spec.kind === 'ring') ring(spec.digits, spec.order, spec.fan);
     else if (spec.kind === 'run') playCulminationRun(spec.quaternary, spec.scaleId, spec.leadMs);
   }
@@ -1150,6 +1336,8 @@ var GeosonifyStarpinFeedback = (function () {
     composeDorian: composeDorian, playDorianLead: playDorianLead, DORIAN: DORIAN, BPM: BPM,
     composeCulminationRun: composeCulminationRun, playCulminationRun: playCulminationRun,
     fanOf: fanOf, soundOf: soundOf, replay: replay, stopReplay: stopReplay,
+    composeSignature: composeSignature, signatureCode: signatureCode, playSignature: playSignature,
+    SIGNATURE: SIG,
     spacingM: spacingM, COLLECTIBLE_FLOOR: COLLECTIBLE_FLOOR
   };
 })();

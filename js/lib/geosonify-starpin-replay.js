@@ -118,7 +118,8 @@ var GeosonifyStarpinReplay = (function () {
   // ── what a find sounds like ───────────────────────────────────────────────
   //
   // Mirrors the bag-time call sites in starpin-demo.html exactly:
-  //   starpin      F.celebrate({ kind:'starpin', name, mag, digits: source_id })
+  //   starpin      F.celebrate({ kind:'starpin', name, mag, digits: source_id,
+  //                              lat_1e7, lon_1e7 })   -- the ground address
   //   cornerstone  F.celebrate({ kind:'cornerstone', name, order: tierOrder,
   //                              degree, digits: name.replace(/\D/g,'') })
   // If either call site changes, change this with it -- the selftest pins it.
@@ -128,7 +129,9 @@ var GeosonifyStarpinReplay = (function () {
     if (t.starpin) {
       var id = deps.sourceIdOf(t.starpin);
       return { kind: 'starpin', name: 'Gaia DR3 ' + id,
-               mag: t.mag_g != null ? Number(t.mag_g) : null, digits: id };
+               mag: t.mag_g != null ? Number(t.mag_g) : null, digits: id,
+               lat_1e7: t.lat_1e7 != null ? t.lat_1e7 : null,
+               lon_1e7: t.lon_1e7 != null ? t.lon_1e7 : null };
     }
     if (t.cornerstone) {
       var name = deps.csName ? deps.csName(t.cornerstone) : t.cornerstone;
