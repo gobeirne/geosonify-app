@@ -706,7 +706,7 @@
   // ============== SUGGESTED SCALE CARD ==============
   //
   // "Suggested (Dorian)": shows the place in a scale chosen for its
-  // block (a few streets) by GeoScaleSuggest.choose() — one that is at its own best
+  // couple of streets by GeoScaleSuggest.choose() — one that is at its own best
   // here AND in the smoother half of all scales here, with the place itself
   // choosing among those, so every scale gets neighbourhoods of its own
   // without ever sounding rough (rule and measurements in that module's
@@ -767,7 +767,9 @@
     const memo = lat + '|' + lon + '|' + (passphrase || '');
     if (memo === _suggest.memo) return _suggest.key;
 
-    const levels = GeoScaleSuggest.LEVELS;
+    // Deep enough for both the scoring (LEVELS) and the place's dice
+    // (DICE_LEVELS, one deeper); choose() slices what each needs.
+    const levels = GeoScaleSuggest.CODE_LEVELS || GeoScaleSuggest.LEVELS;
     const savedObf = obfuscated;
     let cands;
     obfuscated = false;
@@ -803,8 +805,8 @@
   }
 
   // PLACE SEED for place-locked sound (AudioService.setPlaceSeeds): the
-  // C-major ('music') card's code at depths 4, 5 and 6 — about 8 km, 1.2 km
-  // and 170 m cells — WITH the passphrase permutation and WITHOUT
+  // C-major ('music') card's code at depths 5, 6 and 7 — about 1.2 km,
+  // 170 m and 25 m tall cells — WITH the passphrase permutation and WITHOUT
   // obfuscation, for the same reasons as the Suggested card's scoring above:
   // with a passphrase on, the seed (and so the soundtrack) looks unrelated to
   // the place to anyone without it; obfuscation would change every symbol
@@ -817,9 +819,9 @@
     obfuscated = false;
     try {
       return {
-        n: _encodeCardCoordinateInternal('music', lat, lon, 4),
-        b: _encodeCardCoordinateInternal('music', lat, lon, 5),
-        s: _encodeCardCoordinateInternal('music', lat, lon, 6)
+        n: _encodeCardCoordinateInternal('music', lat, lon, 5),
+        b: _encodeCardCoordinateInternal('music', lat, lon, 6),
+        s: _encodeCardCoordinateInternal('music', lat, lon, 7)
       };
     } finally {
       obfuscated = savedObf;
@@ -7083,7 +7085,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
 
     /**
      * Seed codes for place-locked sound: { n, b, s } = the music card's
-     * passphrase-permuted, un-obfuscated code at depths 4, 5 and 6.
+     * passphrase-permuted, un-obfuscated code at depths 5, 6 and 7.
      */
     placeSeedCodes,
 
