@@ -1,5 +1,13 @@
 /**
- * geosonify-audio-ui.js v3.7
+ * geosonify-audio-ui.js v3.8
+ * 
+ * v3.8 features:
+ * - The Suggested card's scale now changes only BETWEEN lead phrases. When
+ *   the place moves into a new scale's region while the lead is mid-phrase
+ *   (AudioService.isLeadPhrasing), the audio keeps voicing the previous
+ *   scale - its own card's code for the current place - until the lead
+ *   rests, then switches. Drone and lead change together, never an
+ *   old-scale melody over a new-scale drone. Fixed scale cards unaffected.
  * 
  * Audio playback controls for BPM-clock-driven location sonification.
  * 
@@ -456,6 +464,12 @@
   // active card, which is the original single-card behaviour.
   let audioSourceCard = null;
 
+  // The scale card the Suggested card is CURRENTLY voicing, held across a
+  // lead phrase (see updateNotesFromCurrentLocation). null when the audio is
+  // not on the Suggested card.
+  let heldSuggestKey = null;
+  let heldSuggestFrom = null;
+
   function createSpeakerButton(gridKey) {
     injectStyles();
     
@@ -606,8 +620,27 @@
       // The Suggested card has no scale of its own: it voices whichever scale
       // card it is showing for this place, so resolve it to that card before
       // reading the scale off the key. Identity for every other card.
-      const activeCard = (global.CardRenderer && global.CardRenderer.resolveMusicCardKey)
+      const resolved = (global.CardRenderer && global.CardRenderer.resolveMusicCardKey)
         ? global.CardRenderer.resolveMusicCardKey(sourceCard) : sourceCard;
+      // Phrase boundary: if the Suggested card has moved on to a new scale
+      // while the lead is mid-phrase, finish the phrase in the scale it began
+      // in. Any scale card can encode any place, so the held scale still gets
+      // a true code for where we are now. Switch on the first update after
+      // the lead rests (GPS updates ~1 s apart; a phrase is ~20 s).
+      let activeCard = resolved;
+      if (resolved !== sourceCard) {
+        const phrasing = !!(global.AudioService.isLeadPhrasing && global.AudioService.isLeadPhrasing());
+        if (heldSuggestKey && heldSuggestFrom === sourceCard &&
+            heldSuggestKey !== resolved && phrasing) {
+          activeCard = heldSuggestKey;
+        } else {
+          heldSuggestKey = resolved;
+        }
+        heldSuggestFrom = sourceCard;
+      } else {
+        heldSuggestKey = null;
+        heldSuggestFrom = null;
+      }
       const scaleId = activeCard.indexOf('scale_') === 0 ? activeCard.slice(6) : null;
       const cardKey = scaleId ? activeCard : 'music';
       if (global.AudioService.setScale) global.AudioService.setScale(scaleId);
@@ -3318,6 +3351,6 @@
     return btn;
   };
 
-  console.log('[geosonify] audio-ui v3.7 loaded (octave compression toggle)');
+  console.log('[geosonify] audio-ui v3.8 loaded (Suggested scale changes between lead phrases)');
 
 })(typeof window !== 'undefined' ? window : this);

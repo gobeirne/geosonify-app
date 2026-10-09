@@ -706,7 +706,7 @@
   // ============== SUGGESTED SCALE CARD ==============
   //
   // "Suggested (Dorian)": shows the place in a scale chosen for its
-  // neighbourhood by GeoScaleSuggest.choose() — one that is at its own best
+  // block (a few streets) by GeoScaleSuggest.choose() — one that is at its own best
   // here AND in the smoother half of all scales here, with the place itself
   // choosing among those, so every scale gets neighbourhoods of its own
   // without ever sounding rough (rule and measurements in that module's
@@ -732,15 +732,23 @@
   //    less in practice) — the same kind of side detail as the code's length.
   //  - Not the obfuscated code: obfuscation is seeded by the FINAL token, so
   //    every symbol changes whenever the deepest cell does — the suggestion
-  //    would flip every few metres instead of once per neighbourhood.
+  //    would flip every few metres instead of once per block.
   //    Obfuscation is publicly reversible, so the pre-obfuscation tokens
   //    reveal nothing the obfuscated code does not.
   //
   // Iterations: the card keeps its own stepper value, but it resets to the new
   // winner's default whenever the winner changes, because a step count means
   // a different cell size in a 5-note scale than in a 12-note one.
+  //
+  // HOLDING THE WINNER: choose() is memoryless, and at block scale a GPS fix
+  // wobbling across a region edge would flip the card (and the music) every
+  // few seconds. GeoScaleSuggest.makeFollower() holds the current winner
+  // until the fix is ~20 m inside the new region, the new winner has been
+  // seen on 10 updates in a row, or the point jumped (a pin, a pan, a link).
+  // Rule and measurements in that module. A shared link is unaffected: it
+  // names the held scale and carries that scale's own code.
   const SUGGESTED_KEY = 'suggested';
-  const _suggest = { memo: null, key: 'music', scaleId: 'cmajor' };
+  const _suggest = { memo: null, key: 'music', scaleId: 'cmajor', follow: null, sizes: null };
 
   function suggestCandidates() {
     if (typeof GeoScales === 'undefined') return [];
@@ -773,9 +781,22 @@
     }
     const best = cands.length ? GeoScaleSuggest.choose(GeoScales, cands) : null;
     _suggest.memo = memo;
-    if (best && isFinite(best.score) && best.key !== _suggest.key) {
-      _suggest.key = best.key;
-      _suggest.scaleId = best.scaleId;
+    let held = best;
+    if (typeof GeoScaleSuggest.makeFollower === 'function') {
+      if (!_suggest.follow) _suggest.follow = GeoScaleSuggest.makeFollower();
+      if (!_suggest.sizes) {
+        // Distinct grid sizes in play: the region edges the follower measures to.
+        _suggest.sizes = Array.from(new Set(cands.map(c => {
+          const g = CARD_GRIDS[c.key] && CARD_GRIDS[c.key].grid;
+          return g ? g.length : 0;
+        }).filter(Boolean)));
+      }
+      _suggest.follow(best, lat, lon, passphrase || '', _suggest.sizes);
+      held = _suggest.follow.held();
+    }
+    if (held && isFinite(held.score) && held.key !== _suggest.key) {
+      _suggest.key = held.key;
+      _suggest.scaleId = held.scaleId;
       delete cardState.iterations[SUGGESTED_KEY];   // fall back to the new winner's default
     }
     return _suggest.key;
