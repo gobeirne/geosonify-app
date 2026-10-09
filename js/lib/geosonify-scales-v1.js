@@ -274,7 +274,7 @@
   },
 
     egyptian: {
-    id: 'egyptian', name: "Egyptian (suspended)", param: 'megyptian',
+    id: 'egyptian', name: "Suspended Pentatonic", param: 'megyptian',
     tet12: true, tonicPc: 0, tonic: 'C',
     symbols: ['C','D','F','G','Bb'],
     cents: [0, 200, 500, 700, 1000],
@@ -471,26 +471,26 @@
   },
 
     spanish: {
-    id: 'spanish', name: "Spanish", param: 'mspanish',
-    tet12: true, tonicPc: 7, tonic: 'G',
-    symbols: ['G','Gs','As','B','Cs','Ds','E'],
-    cents: [0, 100, 300, 400, 600, 800, 900],
-    render: [['g',null], ['g','#'], ['a','#'], ['b',null], ['c','#'], ['d','#'], ['e',null]],
+    id: 'spanish', name: "Phrygian Dominant (Spanish)", param: 'mspanish',
+    tet12: true, tonicPc: 4, tonic: 'E',
+    symbols: ['E','F','Gs','A','B','C','D'],
+    cents: [0, 100, 400, 500, 700, 800, 1000],
+    render: [['e',null], ['f',null], ['g','#'], ['a',null], ['b',null], ['c',null], ['d',null]],
     iterations: 8,
     staffErrorCents: 0,
     grid: [
-      ['GG,','GGs,','GAs,','GB,','CsG,','DsG,','EG,'],
-      ['GGsB,','GsGs,','GsAs,','GsB,','CsGs,','DsGs,','EGs,'],
-      ['CsGAs,','GsAsB,','AsAs,','AsB,','CsAs,','DsAs,','EAs,'],
-      ['CsGB,','DsGsB,','GAsB,','BB,','CsB,','DsB,','EB,'],
-      ['CsDsG,','CsEGs,','CsGsAs,','CsGsB,','CsCs,','CsDs,','CsE,'],
-      ['DsGGs,','DsGsAs,','DsGAs,','DsGB,','CsDsGs,','DsDs,','DsE,'],
-      ['EGGs,','EGsB,','EGAs,','EGB,','CsEG,','DsEG,','EE,']
+      ['EE,','EF,','EGs,','EA,','EB,','CE,','DE,'],
+      ['EFGs,','FF,','FGs,','FA,','FB,','CF,','DF,'],
+      ['EGsB,','FGsA,','GsGs,','GsA,','GsB,','CGs,','DGs,'],
+      ['EGsA,','CFA,','CGsA,','AA,','AB,','CA,','DA,'],
+      ['EAB,','FAB,','FGsB,','DAB,','BB,','CB,','DB,'],
+      ['CEF,','CFGs,','CEGs,','CEA,','CEB,','CC,','CD,'],
+      ['DEGs,','DFA,','DFGs,','DEA,','DEB,','CDE,','DD,']
     ]
   },
 
     romani: {
-    id: 'romani', name: "Romani (Hungarian minor)", param: 'mromani',
+    id: 'romani', name: "Hungarian Minor", param: 'mromani',
     tet12: true, tonicPc: 0, tonic: 'C',
     symbols: ['C','D','Ds','Fs','G','Gs','B'],
     cents: [0, 200, 300, 600, 700, 800, 1100],
@@ -509,7 +509,7 @@
   },
 
     arabian: {
-    id: 'arabian', name: "Arabian (double harmonic)", param: 'marabian',
+    id: 'arabian', name: "Hijaz Kar (double harmonic)", param: 'marabian',
     tet12: true, tonicPc: 0, tonic: 'C',
     symbols: ['C','Db','E','F','G','Ab','B'],
     cents: [0, 100, 400, 500, 700, 800, 1100],
@@ -528,7 +528,7 @@
   },
 
     persian: {
-    id: 'persian', name: "Persian", param: 'mpersian',
+    id: 'persian', name: "Double Harmonic ♭5", param: 'mpersian',
     tet12: true, tonicPc: 0, tonic: 'C',
     symbols: ['C','Db','E','F','Gb','Ab','B'],
     cents: [0, 100, 400, 500, 600, 800, 1100],
@@ -609,7 +609,7 @@
   },
 
     rast: {
-    id: 'rast', name: "Maqam Rast", param: 'mrast',
+    id: 'rast', name: "Maqam Rast (24-EDO)", param: 'mrast',
     tet12: false, tonicPc: 0, tonic: 'C',
     symbols: ['C','D','Ed','F','G','A','Bd'],
     cents: [0, 200, 350, 500, 700, 900, 1050],
@@ -628,7 +628,7 @@
   },
 
     bayati: {
-    id: 'bayati', name: "Maqam Bayati", param: 'mbayati',
+    id: 'bayati', name: "Maqam Bayati (24-EDO)", param: 'mbayati',
     tet12: false, tonicPc: 2, tonic: 'D',
     symbols: ['D','Ed','F','G','A','Bb','C'],
     cents: [0, 150, 300, 500, 700, 800, 1000],
@@ -647,7 +647,7 @@
   },
 
     saba: {
-    id: 'saba', name: "Maqam Saba", param: 'msaba',
+    id: 'saba', name: "Maqam Saba (24-EDO)", param: 'msaba',
     tet12: false, tonicPc: 2, tonic: 'D',
     symbols: ['D','Ed','F','Gb','A','Bb','C'],
     cents: [0, 150, 300, 400, 700, 800, 1000],
@@ -698,40 +698,6 @@
       ['DGA,','EbGA,','GG,','GA,','GBb,'],
       ['DEbA,','EbABb,','GABb,','AA,','ABb,'],
       ['DEbBb,','EbGBb,','DGBb,','DABb,','BbBb,']
-    ]
-  },
-
-    degung: {
-    id: 'degung', name: "Degung (Sundanese pelog)", param: 'mdegung',
-    tet12: false, tonicPc: 2, tonic: '1',
-    symbols: ['1','2','3','4','5'],
-    cents: [0, 115, 345, 685, 800],
-    render: [['d',null], ['e','b'], ['f',null], ['a',null], ['b','b']],
-    iterations: 10,
-    staffErrorCents: 45,
-    grid: [
-      ['11,','12,','13,','14,','15,'],
-      ['123,','22,','23,','24,','25,'],
-      ['134,','234,','33,','34,','35,'],
-      ['124,','245,','345,','44,','45,'],
-      ['125,','235,','135,','145,','55,']
-    ]
-  },
-
-    slendro: {
-    id: 'slendro', name: "Slendro (Javanese)", param: 'mslendro',
-    tet12: false, tonicPc: 2, tonic: '1',
-    symbols: ['1','2','3','5','6'],
-    cents: [0, 231, 474, 717, 955],
-    render: [['d',null], ['e',null], ['f','+'], ['a',null], ['b','b']],
-    iterations: 10,
-    staffErrorCents: 155,
-    grid: [
-      ['11,','12,','13,','15,','16,'],
-      ['123,','22,','23,','25,','26,'],
-      ['135,','235,','33,','35,','36,'],
-      ['125,','256,','356,','55,','56,'],
-      ['126,','236,','136,','156,','66,']
     ]
   },
 
@@ -796,9 +762,9 @@
   // True when the Western staff would misrepresent this tuning by more than a
   // quarter-tone. Such a card shows its raw token column instead: the staff
   // would not be a rough guide but a wrong one, and a reader following it
-  // would play a different scale. Slendro is the current case — its third
-  // degree sounds 674c where the staff draws 550c, and its fifth sounds 1155c
-  // where the staff draws 1000c.
+  // would play a different scale. NO current scale trips this: the two that
+  // did (degung, slendro) were withdrawn because no defensible tuning for
+  // them could be sourced. The path is kept for the next microtonal card.
   function usesTokenColumn(id) {
     var sc = SCALES[id];
     return !!sc && sc.staffErrorCents > 50;
