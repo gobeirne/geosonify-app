@@ -81,6 +81,12 @@
     const d = HW().cellMetres(n).w;
     if (isSky()) {
       const a = HW().cellArcsec(n);
+      // Same angle ladder as the card's own readout, so a size reads identically.
+      try {
+        const U = global.GeosonifySkyUnits;
+        const s = U && U.formatAngle ? U.formatAngle(a) : null;
+        if (s) return s;
+      } catch (e) {}
       return a >= 3600 ? (a / 3600).toFixed(2) + '°' : a >= 60 ? (a / 60).toFixed(2) + '′'
            : a >= 1 ? a.toFixed(2) + '″' : a >= 1e-3 ? (a * 1e3).toFixed(2) + ' mas' : (a * 1e6).toFixed(2) + ' µas';
     }
@@ -184,12 +190,14 @@
     entry.className = 'bip39-entry hpwords-entry';
     entry.style.cssText = 'display:none; padding:8px;';
 
-    const beta = document.createElement('div');
-    beta.style.cssText = 'font-size:10px; color:#fbbf24; font-weight:600; margin-bottom:6px; line-height:1.4;';
-    const zh = /^chinese/.test(lang(gridKey));
-    beta.textContent = 'Frozen format: words, checksum, passphrase, obfuscation and links will always mean the same place' +
-      (zh ? ' · not yet validated for voice in Chinese' : '');
-    entry.appendChild(beta);
+    // Chinese only: many characters share a pronunciation, so spoken use has not
+    // been validated. (The format guarantee lives in the FAQ, not on this panel.)
+    if (/^chinese/.test(lang(gridKey))) {
+      const zhNote = document.createElement('div');
+      zhNote.style.cssText = 'font-size:10px; color:#fbbf24; font-weight:600; margin-bottom:6px; line-height:1.4;';
+      zhNote.textContent = 'Not yet validated for reading aloud in Chinese: many characters share a pronunciation.';
+      entry.appendChild(zhNote);
+    }
     if (obfActive()) {
       const ob = document.createElement('div');
       ob.style.cssText = 'font-size:11px; color:#e9d5ff; background:#2e1065; border:1px solid #a78bfa; border-radius:4px; padding:5px 8px; margin-bottom:6px; font-weight:600; line-height:1.4;';

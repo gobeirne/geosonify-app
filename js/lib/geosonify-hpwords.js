@@ -531,7 +531,9 @@ const HealpixWords = (function () {
     const defs = {};
     for (const [lang, cfg] of Object.entries(LANGS)) {
       defs[cardKey(lang)] = {
-        name: `HEALPix BIP39 ${cfg.tag}`,
+        // Display name only (never in codes or links): the same address as the
+        // other HEALPix cards, written in another alphabet. Keys stay hpbip39*.
+        name: `HEALPix · words ${cfg.tag}`,
         hpwords: lang,
         grid: null,
         defaultIterations: DEFAULT_WORDS,
