@@ -1,4 +1,14 @@
 /**
+ * geosonify-audio-service.js v6.13
+ *
+ * v6.13 changes:
+ * - Lead trails no longer cut off: a voice/effect change RETIRES the old
+ *   chain (nothing new is sent to it; it is disposed after LEAD_TAIL_MS)
+ *   instead of disposing it at once, which chopped the reverb/delay tail
+ *   whenever place lock or auto-pair changed the voice at the start of a rest.
+ * - Place-lock tempo is now relative: the user's own tempo +/-10% (was a
+ *   fixed 84-112 BPM, which could sit 30% below a 120 BPM preset).
+ *
  * geosonify-audio-service.js v6.12
  *
  * v6.12 changes:
@@ -774,7 +784,8 @@
   //   pattern, misc     next bar line
   //   drums + kit       next bar line (kit changes only when the
   //                     neighbourhood does, every few km)
-  //   tempo             next bar line, then ramps over PLACE_TEMPO_RAMP_BARS
+  //   tempo             next bar line, then ramps over PLACE_TEMPO_RAMP_BARS,
+  //                     within +/-10% of the user's own tempo
   //   lead, leadpair    next bar the lead is silent (intro or rest)
   // Standing still, the piece keeps unfolding from the moment you arrived;
   // the lead re-seeds at the end of each A A' B A'' tune, so it loops.
@@ -786,7 +797,10 @@
   // restored when place lock is switched off. Not a code format: nothing here
   // is encoded, shared or decoded.
   const PLACE_LAYER_OF = { lead: 's', pattern: 's', misc: 's', leadpair: 'b', drums: 'n', drumkit: 'n', tempo: 'n' };
-  const PLACE_TEMPO_MIN = 84, PLACE_TEMPO_MAX = 112, PLACE_TEMPO_RAMP_BARS = 6;
+  // Tempo stays within +/-PLACE_TEMPO_SPREAD of the user's own tempo (their
+  // preset's BPM), so a place can nudge it but never drag it somewhere
+  // unrecognisable: at 120 BPM the range is 108-132.
+  const PLACE_TEMPO_SPREAD = 0.10, PLACE_TEMPO_RAMP_BARS = 6;
   let placeLockOn = false;
   let placeSeeds = { n: null, b: null, s: null };
   let placeStreams = {};          // name -> { code, next }
@@ -1594,7 +1608,10 @@
 
   async function buildLeadChain() {
     if (typeof Tone === 'undefined' || Tone === null) return;
-    disposeLeadChain();
+    // RETIRE the old voice rather than dispose it: its reverb and delay keep
+    // ringing out through the master for LEAD_TAIL_MS, so a voice/effect
+    // change never chops the last phrase's trail. Nothing new is sent to it.
+    retireLeadChain();
     const engine = LEAD_ENGINES[settings.leadEngine] || LEAD_ENGINES.fm;
     leadSynth = engine.make();
     leadHp = new Tone.Filter(120, 'highpass');
@@ -1612,6 +1629,19 @@
     }
     await leadReverb.ready;
     console.log('[AudioService] Built lead chain:', settings.leadEngine, '| fx:', leadEffect);
+  }
+
+  // Long enough for the 3.5 s reverb and the dotted-8th delay (feedback 0.38)
+  // to fall well below audibility before the nodes are freed.
+  const LEAD_TAIL_MS = 9000;
+  function retireLeadChain() {
+    const old = [leadSynth, leadHp, leadLp, leadFx, leadReverb, leadVolume];
+    leadSynth = leadHp = leadLp = leadFx = leadReverb = leadVolume = null;
+    if (!old.some(Boolean)) return;
+    try { old[0] && old[0].releaseAll && old[0].releaseAll(); } catch (e) {}
+    setTimeout(() => {
+      for (const nd of old) { try { nd && nd.dispose(); } catch (e) {} }
+    }, LEAD_TAIL_MS);
   }
 
   function disposeLeadChain() {
@@ -2751,7 +2781,10 @@
   function placeBarTick() {
     if (placeLockOn && placeSeeds.n != null && placeTempoApplied !== placeSeeds.n) {
       placeTempoApplied = placeSeeds.n;
-      const target = PLACE_TEMPO_MIN + placePick('tempo', PLACE_TEMPO_MAX - PLACE_TEMPO_MIN + 1);
+      const base = userBPM();
+      const steps = 21;   // -10%, -9%, ... +10% in 1% steps
+      const target = Math.round(base * (1 - PLACE_TEMPO_SPREAD +
+        2 * PLACE_TEMPO_SPREAD * placePick('tempo', steps) / (steps - 1)));
       const now = placeTempo ? placeTempo.now : userBPM();
       placeTempo = { now, from: now, to: target, left: PLACE_TEMPO_RAMP_BARS, release: false };
     }
@@ -5647,6 +5680,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.12 loaded (place-locked sound)');
+  console.log('[geosonify] audio-service v6.13 loaded (lead trails ring out; relative place tempo)');
 
 })(typeof window !== 'undefined' ? window : this);
