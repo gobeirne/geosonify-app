@@ -299,8 +299,16 @@
   // ============== INTERNAL STATE ==============
   
   let cardState = {
-    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'bip39english', 'hphex'],
-    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl', 'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
+    // Word cards: HEALPix words in English by default; autoAddWordCardsByLanguage()
+    // adds the device-language list in front of it. The legacy 45×45 BIP39 cards
+    // stay available (and decodable forever) via "+ Add Mode", but are not shown
+    // by default.
+    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'hpbip39english', 'hphex'],
+    order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl',
+      'hpbip39english', 'hpbip39spanish', 'hpbip39french', 'hpbip39italian', 'hpbip39portuguese',
+      'hpbip39czech', 'hpbip39german', 'hpbip39japanese', 'hpbip39korean',
+      'hpbip39chinesesimplified', 'hpbip39chinesetraditional',
+      'bip39english', 'bip39spanish', 'bip39french', 'bip39italian', 'bip39portuguese', 'bip39czech', 'bip39japanese', 'bip39korean', 'bip39chinesesimplified', 'bip39chinesetraditional', 'hexbyte', 'nato', 'base64', 'hphex', 'hpquad', 'hp64', 'hpmatrix', 'chessboard', 'hpchessboard'],
     iterations: {},
     active: 'alphanumeric',
     checksumEnabled: {}  // Track which grids have checksum enabled (currently just bip39english)
@@ -524,24 +532,28 @@
 
   // ============== STATE PERSISTENCE ==============
   
-  // Language code to BIP39 grid mapping
-  const LANG_TO_BIP39 = {
-    'en': 'bip39english',
-    'es': 'bip39spanish',
-    'fr': 'bip39french',
-    'it': 'bip39italian',
-    'pt': 'bip39portuguese',
-    'cs': 'bip39czech',
-    'ja': 'bip39japanese',
-    'ko': 'bip39korean',
-    'zh': 'bip39chinesesimplified',  // Default Chinese to simplified
-    'zh-CN': 'bip39chinesesimplified',
-    'zh-TW': 'bip39chinesetraditional',
-    'zh-HK': 'bip39chinesetraditional',
-    'zh-Hans': 'bip39chinesesimplified',
-    'zh-Hant': 'bip39chinesetraditional',
+  // Device-language tag (BCP 47, e.g. "es-ES", "zh-Hant-HK") → HEALPix-words
+  // card key, or null when no list exists for that language. Chinese is decided
+  // by SCRIPT first (Hant/Hans), then by region (TW, HK, MO use Traditional), so
+  // a tag like "zh-Hant-HK" or "zh-MO" never falls back to Simplified.
+  const LANG_TO_HPWORDS = {
+    en: 'hpbip39english', es: 'hpbip39spanish', fr: 'hpbip39french', it: 'hpbip39italian',
+    pt: 'hpbip39portuguese', cs: 'hpbip39czech', de: 'hpbip39german',
+    ja: 'hpbip39japanese', ko: 'hpbip39korean'
   };
-  
+  function hpWordsKeyForLanguage(tag) {
+    const parts = String(tag || '').replace(/_/g, '-').toLowerCase().split('-').filter(Boolean);
+    if (!parts.length) return null;
+    const base = parts[0];
+    if (base === 'zh') {
+      if (parts.includes('hant')) return 'hpbip39chinesetraditional';
+      if (parts.includes('hans')) return 'hpbip39chinesesimplified';
+      if (parts.some(p => p === 'tw' || p === 'hk' || p === 'mo')) return 'hpbip39chinesetraditional';
+      return 'hpbip39chinesesimplified';
+    }
+    return LANG_TO_HPWORDS[base] || null;
+  }
+
   /**
    * Auto-add BIP39 card based on device language (first load only)
    */
@@ -635,6 +647,18 @@
 
   // ℹ️ for hpwords: reuse the shared resolution popup (GISGrids renderer), one
   // level per word count. Odd counts are labelled ½ and are two-cell half-levels.
+  // Size of an n-word cell for display: an ANGLE in the sky frame (via the
+  // shared GeosonifySkyUnits ladder, which takes arcseconds), a LENGTH on Earth.
+  // Square-equivalent width either way: the side of a square of equal area.
+  function hpWordsSizeText(n) {
+    if (typeof GeosonifySkyUnits !== 'undefined' && GeosonifySkyUnits.isSky && GeosonifySkyUnits.isSky()
+        && GeosonifySkyUnits.formatAngle) {
+      const a = GeosonifySkyUnits.formatAngle(HealpixWords.cellArcsec(n));
+      if (a) return a;
+    }
+    return formatLength(HealpixWords.cellMetres(n).w);
+  }
+
   function showHpWordsInfo(gridKey, n, uncertaintyLine) {
     const gd = CARD_GRIDS[gridKey];
     if (!gd || !currentCardCoord || typeof GISGrids === 'undefined' || !GISGrids.renderResolutionPopup) return;
@@ -644,24 +668,28 @@
       levels.push({
         label: `${k} word${k > 1 ? 's' : ''} · ${HealpixWords.orderLabel(k)}`,
         code: HealpixWords.encode(lat, lon, k, gd.hpwords, hpWordsOpt(false)),
-        dims: `${formatLength(HealpixWords.cellMetres(k).w)} cell (equal-area)`,
+        dims: `${hpWordsSizeText(k)} cell (equal-area)`,
         here: k === n
       });
     }
+    const listNote = gd.hpwords === 'german'
+      ? 'the 2048-word German list de-2048-v1 (dys2p; there is no official German BIP39 list)'
+      : 'the official 2048-word BIP39 list';
     GISGrids.renderResolutionPopup({
       title: gd.name,
-      note: 'HEALPix NESTED address written as 11-bit words from the official BIP39 ' +
-        'list: 4 bits of base face + 2 bits per level. Every two words add exactly 11 ' +
+      note: 'A HEALPix NESTED address written as 11-bit words from ' + listNote + ': ' +
+        '4 bits of base face + 2 bits per level. Every two words add exactly 11 ' +
         'HEALPix orders (4 words = order 20). Odd word counts end halfway through a ' +
-        'level: an exact equal-area half cell (two child cells), never a single child. ' +
-        'Dropping a word always gives the containing parent. ' +
+        'level: an exact equal-area half cell (two child cells side by side, roughly 1:2), ' +
+        'never a single child. Sizes are square-equivalent widths (the side of a square of ' +
+        'the same area). Dropping a word always gives the containing parent. ' +
         (passphrase ? 'PASSPHRASE ACTIVE: each word is shuffled by your key (the receiver needs the ' +
           'same passphrase). The checksum covers the shown words, so a valid checksum does NOT ' +
           'confirm the passphrase. ' : '') +
         (obfuscated ? 'OBFUSCATED: every word except the last is re-jumbled by the words after it, so ' +
           'neighbouring places look unrelated; the rows above cannot be shortened into each other. ' : '') +
-        'The plain code format (words and checksum) is frozen: codes will always mean the same place. ' +
-        'The format is frozen — words, checksum, passphrase, obfuscation and ?hpw links.',
+        'The words, checksum, passphrase and obfuscation modes and ?hpw links are frozen: ' +
+        'a code will always mean the same place.',
       uncertaintyLine: uncertaintyLine || null,
       levels,
       detail: null,
@@ -1053,60 +1081,48 @@
     } catch (e) { /* private mode */ }
   }
 
-  function autoAddBIP39ByLanguage() {    const STORAGE_KEY = 'geosonify_bip39_lang_checked';
-    
-    // Only run once per device
-    if (localStorage.getItem(STORAGE_KEY)) {
-      return;
-    }
-    
+  /*
+    One-time word-card setup per device: HEALPix words in English, plus the
+    device-language list placed directly in front of it when that language has
+    one. Uses the phone's LANGUAGE SETTING, never its location.
+
+    Runs for new and existing users alike (its own flag, so devices that already
+    ran the old legacy-BIP39 auto-add get this too). It only ADDS: legacy cards a
+    user already shows stay where they are, and a card hidden after this has run
+    is never re-added. Needs registerHpWordsCards() to have run first.
+  */
+  function autoAddWordCardsByLanguage() {
+    const STORAGE_KEY = 'geosonify_hpwords_lang_checked';
     try {
-      const lang = navigator.language || navigator.userLanguage || '';
-      
-      // Try exact match first (e.g., "zh-CN")
-      let bip39Key = LANG_TO_BIP39[lang];
-      
-      // Try base language (e.g., "es" from "es-ES")
-      if (!bip39Key && lang.includes('-')) {
-        const baseLang = lang.split('-')[0];
-        bip39Key = LANG_TO_BIP39[baseLang];
+      if (localStorage.getItem(STORAGE_KEY)) return;
+    } catch (e) { return; }                          // private mode: defaults only
+    const EN = 'hpbip39english';
+    if (!CARD_GRIDS[EN]) return;                     // HealpixWords not loaded: retry next time
+    try {
+      const prefs = (navigator.languages && navigator.languages.length)
+        ? navigator.languages : [navigator.language || navigator.userLanguage || ''];
+      let local = null;
+      for (const tag of prefs) {
+        local = hpWordsKeyForLanguage(tag);
+        if (local) break;
       }
-      
-      // Also check navigator.languages for preferences
-      if (!bip39Key && navigator.languages) {
-        for (const l of navigator.languages) {
-          bip39Key = LANG_TO_BIP39[l];
-          if (bip39Key) break;
-          if (l.includes('-')) {
-            bip39Key = LANG_TO_BIP39[l.split('-')[0]];
-            if (bip39Key) break;
-          }
-        }
-      }
-      
-      // If we found a matching BIP39 grid and it's not already visible, add it
-      if (bip39Key && CARD_GRIDS[bip39Key] && !cardState.visible.includes(bip39Key)) {
-        cardState.visible.push(bip39Key);
-        // Add to order if not present
-        if (!cardState.order.includes(bip39Key)) {
-          // Insert after bip39english if present, otherwise at start of BIP39 section
-          const enIdx = cardState.order.indexOf('bip39english');
-          if (enIdx >= 0) {
-            cardState.order.splice(enIdx + 1, 0, bip39Key);
-          } else {
-            cardState.order.push(bip39Key);
-          }
-        }
-        saveCardState();
-        console.log(`[CardRenderer] Auto-added ${bip39Key} based on device language: ${lang}`);
-      }
-      
-      // Mark as checked so we don't run again
-      localStorage.setItem(STORAGE_KEY, 'true');
+      const want = (local && local !== EN && CARD_GRIDS[local]) ? [local, EN] : [EN];
+      // Position: the local card directly in front of English, both where the
+      // English card already sits in the order (or at the end if it is absent).
+      want.forEach(k => {
+        const i = cardState.order.indexOf(k);
+        if (i >= 0) cardState.order.splice(i, 1);
+      });
+      let at = cardState.order.indexOf('bip39english');
+      if (at < 0) at = cardState.order.length;
+      cardState.order.splice(at, 0, ...want);
+      want.forEach(k => { if (!cardState.visible.includes(k)) cardState.visible.push(k); });
+      saveCardState();
+      localStorage.setItem(STORAGE_KEY, '1');
+      console.log('[CardRenderer] Word cards for device language:', want.join(', '));
     } catch (e) {
-      console.warn('[CardRenderer] Failed to auto-add BIP39 by language:', e);
-      // Still mark as checked to avoid repeated errors
-      localStorage.setItem(STORAGE_KEY, 'true');
+      console.warn('[CardRenderer] Word-card language setup failed:', e);
+      try { localStorage.setItem(STORAGE_KEY, '1'); } catch (_) {}
     }
   }
   
@@ -7130,8 +7146,8 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       // Engine fix landed (session 8): bishops vary, all 9 gates green, maxHex now 23.
       surfaceChessboardDefault();
 
-      // Auto-add BIP39 card based on device language (first load only)
-      autoAddBIP39ByLanguage();
+      // One-time: HEALPix word cards in English + the device language
+      autoAddWordCardsByLanguage();
       
       // Initialize UI elements
       initCardUIHandlers();
