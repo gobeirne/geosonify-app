@@ -1,5 +1,13 @@
 /**
- * geosonify-audio-ui.js v3.8
+ * geosonify-audio-ui.js v3.9
+ * 
+ * v3.9 features:
+ * - 📍 Place-locked sound toggle in every music card header (OFF by
+ *   default, remembered: localStorage 'geosonify-place-lock' {on}). When on,
+ *   each position update hands AudioService the place seeds
+ *   (CardRenderer.placeSeedCodes) so tempo, drums, lead voice and melody
+ *   follow where you are. Works with any music card; with Suggested the
+ *   scale follows the place too.
  * 
  * v3.8 features:
  * - The Suggested card's scale now changes only BETWEEN lead phrases. When
@@ -362,6 +370,18 @@
       filter: none;
       background: rgba(255, 255, 255, 0.12);
     }
+    
+    /* Place-locked sound toggle in the music card header */
+    .audio-speaker-btn.place-lock-toggle {
+      opacity: 0.35;
+      filter: grayscale(1);
+    }
+    
+    .audio-speaker-btn.place-lock-toggle.active {
+      opacity: 1;
+      filter: none;
+      background: rgba(255, 255, 255, 0.12);
+    }
   `;
 
   // Inject styles
@@ -453,6 +473,83 @@
     // Mark as mounted once it is in the page, so a later rebuild can prune it.
     setTimeout(() => { btn._mounted = true; }, 0);
     updateOctaveCompressionButtons();
+    return btn;
+  }
+
+  // ============== PLACE-LOCKED SOUND ==============
+
+  // When ON, the soundtrack is a function of place rather than time
+  // (AudioService.setPlaceLock): same spot, same tempo, kit, lead voice and
+  // tune; same passphrase, same piece for everyone. OFF by default; the
+  // choice is remembered. Sonification only: it never changes a code.
+  const PLACE_LOCK_KEY = 'geosonify-place-lock';
+  let placeLock = loadPlaceLockPref();
+  const placeLockButtons = new Set();
+
+  function loadPlaceLockPref() {
+    try {
+      const raw = global.localStorage && global.localStorage.getItem(PLACE_LOCK_KEY);
+      if (raw) return { on: JSON.parse(raw).on === true };
+    } catch (e) {}
+    return { on: false };
+  }
+
+  function savePlaceLockPref() {
+    try { global.localStorage && global.localStorage.setItem(PLACE_LOCK_KEY, JSON.stringify(placeLock)); } catch (e) {}
+  }
+
+  // Seeds first, then the lock, so the engine never seeds from a stale place.
+  function applyPlaceLockPref() {
+    const AS = global.AudioService;
+    if (!AS || !AS.setPlaceLock) return;
+    if (placeLock.on) pushPlaceSeeds();
+    AS.setPlaceLock(placeLock.on);
+  }
+
+  // Hand AudioService the seed codes for the current position.
+  function pushPlaceSeeds() {
+    const AS = global.AudioService;
+    if (!AS || !AS.setPlaceSeeds || !state) return;
+    const CR = global.CardRenderer;
+    if (!CR || typeof CR.placeSeedCodes !== 'function') return;
+    const coord = state.get('coordinate');
+    if (!coord || coord.lat === null || coord.lat === undefined) return;
+    const seeds = CR.placeSeedCodes(coord.lat, coord.lon);
+    if (seeds) AS.setPlaceSeeds(seeds);
+  }
+
+  function updatePlaceLockButtons() {
+    for (const btn of placeLockButtons) {
+      if (!btn.isConnected && btn._mounted) { placeLockButtons.delete(btn); continue; }
+      btn.classList.toggle('active', placeLock.on);
+      btn.setAttribute('aria-pressed', placeLock.on ? 'true' : 'false');
+      btn.title = placeLock.on
+        ? 'Place-locked sound: ON. Tempo, drums, lead voice and melody follow where you are. Tap to free them.'
+        : 'Place-locked sound: OFF. Tap to make the music a function of where you are.';
+    }
+  }
+
+  function setPlaceLockEnabled(on) {
+    placeLock.on = !!on;
+    savePlaceLockPref();
+    applyPlaceLockPref();
+    updatePlaceLockButtons();
+  }
+
+  function createPlaceLockToggle() {
+    injectStyles();
+    const btn = document.createElement('button');
+    btn.className = 'audio-speaker-btn place-lock-toggle';
+    btn.innerHTML = '📍';
+    btn.setAttribute('aria-label', 'Place-locked sound');
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setPlaceLockEnabled(!placeLock.on);
+    };
+    placeLockButtons.add(btn);
+    setTimeout(() => { btn._mounted = true; }, 0);
+    updatePlaceLockButtons();
     return btn;
   }
 
@@ -613,6 +710,9 @@
     // grid and voice the lead in that scale's tuning. Otherwise fall back to
     // the 'music' card with the legacy name-based pitch path, exactly as
     // before — setScale(null) restores the original behaviour byte for byte.
+    // Place lock: tell the engine where it is before the notes change.
+    if (placeLock.on) pushPlaceSeeds();
+
     if (typeof global.encodeCardCoordinate === 'function') {
       const cs = (global.CardRenderer && global.CardRenderer.getCardState)
         ? global.CardRenderer.getCardState() : null;
@@ -3158,6 +3258,7 @@
       injectStyles();
       state = appState;
       applyOctaveCompressionPref();   // remembered choice; ON by default
+      applyPlaceLockPref();           // remembered choice; OFF by default
       
       if (state) {
         state.subscribe('coordinate', () => {
@@ -3271,6 +3372,19 @@
     setOctaveCompressionEnabled,
 
     /**
+     * 📍 button for a music card header: toggles place-locked sound for the
+     * whole app (OFF by default, remembered). Every button stays in sync.
+     * @returns {HTMLButtonElement}
+     */
+    createPlaceLockToggle,
+
+    /** @returns {{on: boolean}} the remembered place-lock preference */
+    getPlaceLock() { return { on: placeLock.on }; },
+
+    /** @param {boolean} on */
+    setPlaceLockEnabled,
+
+    /**
      * Switch music card between VexFlow staff and piano roll
      * @param {'staff'|'roll'} view
      */
@@ -3351,6 +3465,6 @@
     return btn;
   };
 
-  console.log('[geosonify] audio-ui v3.8 loaded (Suggested scale changes between lead phrases)');
+  console.log('[geosonify] audio-ui v3.9 loaded (place-locked sound toggle)');
 
 })(typeof window !== 'undefined' ? window : this);

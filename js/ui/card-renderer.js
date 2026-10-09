@@ -802,6 +802,30 @@
     return _suggest.key;
   }
 
+  // PLACE SEED for place-locked sound (AudioService.setPlaceSeeds): the
+  // C-major ('music') card's code at depths 4, 5 and 6 — about 8 km, 1.2 km
+  // and 170 m cells — WITH the passphrase permutation and WITHOUT
+  // obfuscation, for the same reasons as the Suggested card's scoring above:
+  // with a passphrase on, the seed (and so the soundtrack) looks unrelated to
+  // the place to anyone without it; obfuscation would change every symbol
+  // whenever the last cell does. No passphrase = the public grid, so a place
+  // has one public soundtrack. Sonification only: nothing is encoded or
+  // shared with these codes.
+  function placeSeedCodes(lat, lon) {
+    if (!isFinite(lat) || !isFinite(lon) || !CARD_GRIDS.music || !CARD_GRIDS.music.grid) return null;
+    const savedObf = obfuscated;
+    obfuscated = false;
+    try {
+      return {
+        n: _encodeCardCoordinateInternal('music', lat, lon, 4),
+        b: _encodeCardCoordinateInternal('music', lat, lon, 5),
+        s: _encodeCardCoordinateInternal('music', lat, lon, 6)
+      };
+    } finally {
+      obfuscated = savedObf;
+    }
+  }
+
   // Resolve a music-family card key to the concrete card that encodes it.
   // Identity for everything except the suggested card. Exported for audio-ui,
   // map-manager and the inline share code, which key off the concrete scale.
@@ -4304,6 +4328,15 @@
             titleEl.appendChild(compBtn);
           }
 
+          // 📍 Place-locked sound (OFF by default, remembered, app-wide): the
+          // tempo, drums, lead voice, effect and melody become a function of
+          // where you are rather than of time. Lives in AudioUI, like 🗜️.
+          if (typeof AudioUI.createPlaceLockToggle === 'function') {
+            const placeBtn = AudioUI.createPlaceLockToggle();
+            placeBtn.style.marginLeft = '4px';
+            titleEl.appendChild(placeBtn);
+          }
+
           // Piano roll toggle button (▦ / 🎼)
           if (typeof PianoRoll !== 'undefined') {
             const rollToggle = document.createElement('button');
@@ -7047,6 +7080,12 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
      * and the main share URL use this to work with the real scale.
      */
     resolveMusicCardKey,
+
+    /**
+     * Seed codes for place-locked sound: { n, b, s } = the music card's
+     * passphrase-permuted, un-obfuscated code at depths 4, 5 and 6.
+     */
+    placeSeedCodes,
 
     /**
      * Initialize the card renderer
