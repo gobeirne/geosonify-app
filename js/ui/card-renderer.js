@@ -5508,7 +5508,52 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     }
   }
   
+  /*
+    Frame parameters for a link built here. A sky code and an Earth code are
+    the same digits, so a link made while the sky is showing must say so, or
+    the receiver lands on Earth with no error. Earth adds nothing, ever: absent
+    frame means earth, so every existing link stays byte-identical. Mirrors
+    getFrameShareParams() in index.html (the Output tab's share link).
+  */
+  function frameShareSuffix() {
+    try {
+      if (typeof AppState === 'undefined' || !AppState.get || typeof GeosonifySkyUrl === 'undefined') return '';
+      const f = AppState.get('frame');
+      if (!f || f.sphere !== 'sky') return '';
+      const out = GeosonifySkyUrl.serialize(f.key, f.epoch || null);
+      return Object.keys(out).map(k => '&' + k + '=' + encodeURIComponent(out[k])).join('');
+    } catch (e) { return ''; }
+  }
+
+  // HEALPix-words link suffix per list (?hpw<suffix>[j]=). Same table as
+  // index.html's HPW_LANG_BY_SUFFIX, read the other way.
+  const HPW_SUFFIX = { english: 'en', spanish: 'es', french: 'fr', italian: 'it', portuguese: 'pt',
+    czech: 'cs', german: 'de', japanese: 'ja', korean: 'ko',
+    chinese_simplified: 'zhs', chinese_traditional: 'zht' };
+
+  function shareURLOut(url) {
+    if (navigator.share) {
+      navigator.share({ title: 'Geosonify Location', url })
+        .catch(() => navigator.clipboard.writeText(url).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed')));
+    } else {
+      navigator.clipboard.writeText(url).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed'));
+    }
+  }
+
   function shareCard(gridKey, code) {
+    // HEALPix words: a point link in the card's own list, ?hpwen=words.NNN
+    // (j = obfuscated). Without this branch the words fell through to the raw
+    // fallback below and produced ?r=nice-barely-parrot-need.091, which cannot
+    // be opened.
+    {
+      const wd = CARD_GRIDS[gridKey];
+      const sfx = wd && wd.hpwords ? HPW_SUFFIX[wd.hpwords] : null;
+      if (sfx) {
+        const base = window.location.origin + window.location.pathname;
+        shareURLOut(`${base}?hpw${sfx}${obfuscated ? 'j' : ''}=${encodeURIComponent(code)}${frameShareSuffix()}`);
+        return;
+      }
+    }
     // GIS reference cards: the code is itself a portable, universal location
     // reference (that's the point of these standards), so share/copy the code.
     const gd = CARD_GRIDS[gridKey];
@@ -5591,7 +5636,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       } catch (e) {}
       let hpPrefix = hp + (obfuscated ? 'o' : '');
       const hpBase = window.location.origin + window.location.pathname;
-      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}`;
+      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}${frameShareSuffix()}`;
       if (navigator.share) {
         navigator.share({ title: 'Geosonify Location', url: hpURL })
           .catch(() => navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed')));
@@ -5618,7 +5663,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     }
     
     const baseURL = window.location.origin + window.location.pathname;
-    const shareURL = `${baseURL}?${prefix}=${encodeURIComponent(code)}`;
+    const shareURL = `${baseURL}?${prefix}=${encodeURIComponent(code)}${frameShareSuffix()}`;
     
     if (navigator.share) {
       navigator.share({

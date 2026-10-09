@@ -17,7 +17,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.0';
+  const __FAQ_UI_VER__ = 'v1.1';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -349,16 +349,21 @@
       parts.push(`</div>`);
     }
 
-    // ── Basemap / imagery — between examples and credits ──
+    // ── Map imagery — between examples and credits ──
+    // Sky is the fourth choice. It is NOT imagery: it changes what the codes
+    // mean (the same digits name a direction in the sky), so unlike the other
+    // three it travels in share links as ?frame=icrs. The note says so.
     parts.push(`
 <div class="card">
   <div class="card-header">Map imagery</div>
   <div class="card-body">
-    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Aerial is satellite/aerial imagery; Standard is the plain street map. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL. This is your own viewing preference — it isn't baked into a normal share link. When you build a display link from the Output tab, your basemap choice travels with it so the viewer sees the same imagery. Eventually you could also look to the <a href="#" id="skyRevealLink" role="button" style="color:inherit; text-decoration:none; cursor:inherit;">skies</a>.</p>
+    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Standard is the plain street map, Aerial is satellite imagery, and Topographic shows terrain. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
+    <p class="basemap-note" style="margin-bottom:12px;"><strong>Sky</strong> reads the same codes on the celestial sphere instead of the Earth: declination stands in for latitude and right ascension for longitude, so a code names a direction in the sky. Because that changes what a code means, links you share while Sky is on say so, and open in Sky for whoever receives them.</p>
     <div class="basemap-presets" id="basemapPresets">
       <button class="basemap-chip active" data-basemap="osm">Standard</button>
       <button class="basemap-chip" data-basemap="aerial">Aerial</button>
       <button class="basemap-chip" data-basemap="topo">Topographic</button>
+      <button class="basemap-chip" data-basemap="sky">Sky</button>
     </div>
     <div class="basemap-paste-row">
       <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
@@ -367,24 +372,6 @@
     <p class="basemap-warn" id="basemapWarn"></p>
   </div>
 </div>`);
-
-    // ── Sky — hidden until revealed via the link in the imagery note ──
-    // Rendered only when already enabled, so the FAQ looks untouched to anyone
-    // who has not found the door. Revealing re-renders and this appears.
-    if (typeof GeosonifySkyPanel !== 'undefined' && GeosonifySkyPanel.isEnabled && GeosonifySkyPanel.isEnabled()) {
-      parts.push(`
-<div class="card" id="skyModeCard">
-  <div class="card-header">Sky</div>
-  <div class="card-body">
-    <p class="basemap-note" style="margin-bottom:12px;">The same HEALPix cell address, read on the celestial sphere instead of the Earth. Nothing is converted &mdash; declination stands in for latitude and right ascension for longitude, so a code means a direction in the sky rather than a place on the ground. Experimental, and read-only for now: nothing here is shared or encoded.</p>
-    <div class="basemap-presets" id="skyModePresets">
-      <button class="basemap-chip active" data-skymode="earth">Earth</button>
-      <button class="basemap-chip" data-skymode="sky">Sky</button>
-    </div>
-    <p class="basemap-warn" id="skyModeWarn" style="margin-top:10px;">A read-only Sky panel also sits under the coordinate readout on the Map tab. <a href="#" id="skyHideLink">Hide sky mode</a> to put everything back.</p>
-  </div>
-</div>`);
-    }
 
     if (data.credits && data.credits.lines && data.credits.lines.length) {
       parts.push(`
@@ -430,66 +417,29 @@
     // ── Example links: let them navigate normally (href handles it) ──
     // Native <a href> navigation works without JS intervention.
 
-    // ── Basemap control wiring ──
+    // ── Basemap + Sky control wiring ──
     wireBasemapControl(rootEl);
-
-    // ── Sky: the reveal link, and the Earth/Sky switch once revealed ──
-    wireSkyControl(rootEl);
   }
 
-  // ── Sky: reveal link + Earth/Sky switch ────────────────────────────────────
-  // The reveal link is the only way in on mobile, where GeosonifySkyPanel.enable()
-  // cannot be typed. It is unstyled on purpose; finding it should feel like
-  // finding something, not like clicking a button someone left lying about.
-  function wireSkyControl(rootEl) {
-    const reveal = rootEl.querySelector('#skyRevealLink');
-    if (reveal) {
-      reveal.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        if (typeof GeosonifySkyPanel === 'undefined') return;
-        const already = GeosonifySkyPanel.isEnabled && GeosonifySkyPanel.isEnabled();
-        if (!already) {
-          GeosonifySkyPanel.enable();
-          if (typeof showToast === 'function') showToast('Sky mode revealed');
-        }
-        renderFAQ(rootEl, global.GEOSONIFY_FAQ);   // the Sky card appears
-        const card = document.getElementById('skyModeCard');
-        if (card && card.scrollIntoView) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-    }
+  // ── Sky: open / close the sky view ──────────────────────────────────────────
+  // Always through GeosonifySkyView, never by setting the frame directly:
+  // open()/close() call setFrame(), which is what tells the word-entry modules
+  // to stop sending positions to the street geocoder, gates the Earth-only
+  // cards, and makes share links carry ?frame=.
 
-    const presets = rootEl.querySelector('#skyModePresets');
-    if (presets) {
-      presets.querySelectorAll('[data-skymode]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const wantSky = btn.dataset.skymode === 'sky';
-          presets.querySelectorAll('[data-skymode]').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          if (!wantSky) {
-            if (typeof GeosonifySkyView !== 'undefined') GeosonifySkyView.close();
-            return;
-          }
-          if (typeof GeosonifySkyView === 'undefined' || !GeosonifySkyView.isAvailable()) {
-            if (typeof showToast === 'function') showToast('Sky view not loaded', 'error');
-            presets.querySelector('[data-skymode="earth"]').classList.add('active');
-            btn.classList.remove('active');
-            return;
-          }
-          GeosonifySkyView.open();
-        });
-      });
-    }
+  function skyIsOpen() {
+    return typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isOpen && GeosonifySkyView.isOpen();
+  }
 
-    const hide = rootEl.querySelector('#skyHideLink');
-    if (hide) {
-      hide.addEventListener('click', (ev) => {
-        ev.preventDefault();
-        if (typeof GeosonifySkyView !== 'undefined') GeosonifySkyView.close();
-        if (typeof GeosonifySkyPanel !== 'undefined') GeosonifySkyPanel.disable();
-        if (typeof showToast === 'function') showToast('Sky mode hidden');
-        renderFAQ(rootEl, global.GEOSONIFY_FAQ);
-      });
+  function openSky() {
+    if (typeof GeosonifySkyView === 'undefined' || !GeosonifySkyView.isAvailable || !GeosonifySkyView.isAvailable()) {
+      return { ok: false, error: 'Sky view could not load.' };
     }
+    return { ok: !!GeosonifySkyView.open() };
+  }
+
+  function closeSky() {
+    if (skyIsOpen()) GeosonifySkyView.close();
   }
 
   // ── Basemap: shared apply logic, used by UI and by URL param ───────────────
@@ -509,6 +459,23 @@
     return res;
   }
 
+  // Which chip should look active: Sky while the sky view is showing, otherwise
+  // the Earth imagery in use (a pasted URL lights no chip).
+  function syncChips(presets, input) {
+    if (!presets) return;
+    const chips = presets.querySelectorAll('.basemap-chip');
+    chips.forEach(c => c.classList.remove('active'));
+    let want = 'osm';
+    if (skyIsOpen()) {
+      want = 'sky';
+    } else if (global.__GEOSONIFY_BASEMAP_ACTIVE) {
+      want = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    }
+    let matched = false;
+    chips.forEach(c => { if (c.dataset.basemap === want) { c.classList.add('active'); matched = true; } });
+    if (!matched && input && want !== 'sky') input.value = want;
+  }
+
   function wireBasemapControl(rootEl) {
     const presets = rootEl.querySelector('#basemapPresets');
     const input = rootEl.querySelector('#basemapPasteInput');
@@ -517,8 +484,7 @@
     if (!presets || !input || !applyBtn) return;
     const ui = { warn };
 
-    const clearActive = () => presets.querySelectorAll('.basemap-chip').forEach(c => c.classList.remove('active'));
-    const setWarn = (msg, kind) => {
+    const setWarn = (msg) => {
       if (!warn) return;
       if (!msg) { warn.classList.remove('show'); warn.textContent = ''; return; }
       warn.textContent = msg;
@@ -528,42 +494,65 @@
     presets.querySelectorAll('.basemap-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const source = chip.dataset.basemap;
+        if (source === 'sky') {
+          const res = openSky();
+          if (!res.ok) { setWarn(res.error); syncChips(presets, input); return; }
+          setWarn('');
+          syncChips(presets, input);
+          return;
+        }
+        // Any Earth imagery: leave the sky first, then apply.
+        closeSky();
         const attrib = chip.dataset.attrib || '';
         const res = _applyBasemap(source, attrib, ui);
-        if (!res.ok) { setWarn(res.error); return; }
-        clearActive();
-        chip.classList.add('active');
+        if (!res.ok) { setWarn(res.error); syncChips(presets, input); return; }
         setWarn('');
         input.value = '';
         _writeBasemapParam(source === 'osm' ? null : source);
+        syncChips(presets, input);
       });
     });
 
     const applyPasted = () => {
       const source = input.value.trim();
       if (!source) { setWarn('Paste an imagery URL first.'); return; }
+      closeSky();
       const res = _applyBasemap(source, '', ui);
       if (!res.ok) { setWarn(res.error); return; }
-      clearActive();
       if (_basemapHasSecret(source)) {
         setWarn('Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.');
       } else {
         setWarn('');
       }
       _writeBasemapParam(source);
+      syncChips(presets, input);
     };
     applyBtn.addEventListener('click', applyPasted);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
 
-    // Reflect any basemap already chosen via URL param into the UI.
-    if (global.__GEOSONIFY_BASEMAP_ACTIVE) {
-      const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
-      let matched = false;
-      presets.querySelectorAll('.basemap-chip').forEach(chip => {
-        if (chip.dataset.basemap === active) { clearActive(); chip.classList.add('active'); matched = true; }
-      });
-      if (!matched) { clearActive(); input.value = active; }
-    }
+    // Reflect the current state (a basemap from a display link, or a sky link
+    // that opened the sky view) into the chips.
+    syncChips(presets, input);
+  }
+
+  /*
+    Keep the chips honest when the sky is opened or closed from somewhere else:
+    the sky view's own close button, Escape, or a ?frame=icrs link. Every one of
+    those goes through setFrame(), so watching the frame catches them all.
+    Subscribed once for the page; finds the chips by id each time because the
+    FAQ re-renders.
+  */
+  let _frameWatch = false;
+  function watchFrame() {
+    if (_frameWatch) return;
+    try {
+      if (global.AppState && global.AppState.subscribe) {
+        global.AppState.subscribe('frame', () => {
+          syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
+        });
+        _frameWatch = true;
+      }
+    } catch (e) {}
   }
 
   // Record the active basemap in memory only. It is intentionally NOT written
@@ -571,6 +560,7 @@
   // preference, not part of the shareable state. It becomes URL-relevant only
   // when the user builds a display link, where the display-link builder reads
   // __GEOSONIFY_BASEMAP_ACTIVE and emits ?basemap=. null = back to default.
+  // (Sky is never recorded here: it is a frame, carried as ?frame=.)
   function _writeBasemapParam(source) {
     global.__GEOSONIFY_BASEMAP_ACTIVE = source || null;
   }
@@ -611,6 +601,7 @@
     }
     const data = global.GEOSONIFY_FAQ;
     renderFAQ(rootEl, data);
+    watchFrame();
   }
 
   global.GeosonifyFAQ = { init, version: __FAQ_UI_VER__ };
