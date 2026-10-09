@@ -1,5 +1,15 @@
 /**
- * geosonify-audio-service.js v6.11
+ * geosonify-audio-service.js v6.12
+ *
+ * v6.12 changes:
+ * - PLACE-LOCKED SOUND (setPlaceLock / setPlaceSeeds / getPlaceState, off by
+ *   default). All 47 Math.random calls (on 45 lines) now go through rnd(name),
+ *   one stream per subsystem. OFF: rnd() is Math.random(), same calls in the
+ *   same order, so behaviour is unchanged. ON: streams are seeded from the
+ *   place (neighbourhood/block/street seed codes) and reseeded at safe
+ *   boundaries; tempo 84-112 BPM ramps over 6 bars; kit, lead voice/variant/
+ *   style/effect and melody follow the place. Persisted settings untouched.
+ *   See the PLACE-LOCKED SOUND block for the full design.
  *
  * v6.11 changes:
  * - isLeadPhrasing(): true while the lead is sounding a phrase (not intro,
@@ -711,8 +721,8 @@
     try {
       localStorage.setItem(LEAD_SETTINGS_KEY, JSON.stringify({
         enabled: !!settings.leadEnabled,
-        engine: settings.leadEngine,
-        style: settings.leadStyle,
+        engine: (placeLockOn && placeSnap) ? placeSnap.leadEngine : settings.leadEngine,
+        style: (placeLockOn && placeSnap) ? placeSnap.leadStyle : settings.leadStyle,
         phraseBars: settings.leadPhraseBars,
         restBars: settings.leadRestBars,
         introBars: settings.leadIntroBars,
@@ -739,6 +749,99 @@
     'sine', 'triangle', 'sawtooth', 'square',
     'fatsine', 'fattriangle', 'fatsawtooth', 'fatsquare'
   ];
+
+  // ============== PLACE-LOCKED SOUND ==============
+  // With place lock ON, every random choice the engine makes is drawn from a
+  // stream seeded by WHERE YOU ARE instead of Math.random, so the soundtrack
+  // becomes a function of place: the same spot gives the same tempo, kit,
+  // lead voice, effect and tune, and the same passphrase gives everyone the
+  // same piece. With it OFF, rnd() IS Math.random(), called in exactly the
+  // same places and order as before - behaviour is unchanged.
+  //
+  // SEEDS come from AudioUI via setPlaceSeeds({ n, b, s }): the music card's
+  // passphrase-permuted, un-obfuscated code at depths 4, 5 and 6
+  // (CardRenderer.placeSeedCodes) - about 8 km, 1.2 km and 170 m cells.
+  //   n  neighbourhood: tempo, drum kit, drum variation
+  //   b  block:         lead voice + variant + style, lead effect
+  //   s  street:        melody, background patterns, stagger, misc
+  //
+  // STREAMS are per subsystem (rnd('lead'), rnd('pattern'), ...), each
+  // mulberry32 seeded by FNV-1a('geosonify-place-v1|' + name + '|' + code),
+  // so an extra draw in one subsystem never reshuffles another. A stream is
+  // RESEEDED only at a safe boundary after its layer's code changes:
+  //   pattern, misc     next bar line
+  //   drums + kit       next bar line (kit changes only when the
+  //                     neighbourhood does, every few km)
+  //   tempo             next bar line, then ramps over PLACE_TEMPO_RAMP_BARS
+  //   lead, leadpair    next bar the lead is silent (intro or rest)
+  // Standing still, the piece keeps unfolding from the moment you arrived;
+  // the lead re-seeds at the end of each A A' B A'' tune, so it loops.
+  // "Same place, same material", not sample-identical audio: WHEN a boundary
+  // falls depends on when you arrived relative to the bar clock.
+  //
+  // Persisted settings are never overwritten: engine/style/kit are runtime
+  // overrides (placeSnap remembers the user's own and is what gets saved),
+  // restored when place lock is switched off. Not a code format: nothing here
+  // is encoded, shared or decoded.
+  const PLACE_LAYER_OF = { lead: 's', pattern: 's', misc: 's', leadpair: 'b', drums: 'n', drumkit: 'n', tempo: 'n' };
+  const PLACE_TEMPO_MIN = 84, PLACE_TEMPO_MAX = 112, PLACE_TEMPO_RAMP_BARS = 6;
+  let placeLockOn = false;
+  let placeSeeds = { n: null, b: null, s: null };
+  let placeStreams = {};          // name -> { code, next }
+  let placeSnap = null;           // the user's own engine/style/kit/effect, restored on unlock
+  let placeBlockApplied = null;   // block code the lead pair was last set from
+  let placeKitApplied = null;     // neighbourhood code the kit was last set from
+  let placeTempoApplied = null;   // neighbourhood code the tempo target was last set from
+  let placeTempo = null;          // { now, from, to, left, release } while overriding BPM
+  let placeVariant = null;        // runtime variant override for the current engine
+  let placeRestorePending = false;// lead voice to restore at the next rest after unlock
+
+  function placeHash(str) {
+    let h = 0x811c9dc5;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h >>> 0;
+  }
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      let t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function placeCodeFor(name) {
+    const c = placeSeeds[PLACE_LAYER_OF[name] || 's'];
+    return c == null ? '' : String(c);
+  }
+
+  function seedPlaceStream(name) {
+    const code = placeCodeFor(name);
+    placeStreams[name] = { code, next: mulberry32(placeHash('geosonify-place-v1|' + name + '|' + code)) };
+    return placeStreams[name];
+  }
+
+  // The engine's one source of randomness. OFF: exactly Math.random().
+  function rnd(name) {
+    if (!placeLockOn) return Math.random();
+    return (placeStreams[name] || seedPlaceStream(name)).next();
+  }
+
+  // True when a stream's layer has moved on since it was seeded.
+  function placeStale(name) {
+    const st = placeStreams[name];
+    return !st || st.code !== placeCodeFor(name);
+  }
+
+  // A pure function of the layer's current code: reseed, then draw.
+  function placePick(name, n) {
+    seedPlaceStream(name);
+    return Math.floor(placeStreams[name].next() * n);
+  }
 
   // ============== HELPERS ==============
 
@@ -839,7 +942,7 @@
    * Returns true if should use A's time signature, false for B's
    */
   function shouldUseTimeSignatureA() {
-    return Math.random() > crossfade;
+    return rnd('misc') > crossfade;
   }
 
   /**
@@ -1116,11 +1219,11 @@
       if (octaveChains[oct]) candidates.push(oct);
     }
     if (candidates.length === 0) return;
-    const octave = candidates[Math.floor(Math.random() * candidates.length)];
+    const octave = candidates[Math.floor(rnd('misc') * candidates.length)];
     const normal = resolveOctavePreset(octave);
     const options = OCTAVE_SWAP_PRESETS.filter(p => p !== normal && octaveSwapChains[p]);
     if (options.length === 0) return;
-    const preset = options[Math.floor(Math.random() * options.length)];
+    const preset = options[Math.floor(rnd('misc') * options.length)];
     octaveSwap = { octave, preset };
     octaveSwapBarsLeft = Math.max(1, settings.octaveSwapDurationBars | 0);
   }
@@ -1298,7 +1401,7 @@
     const rest = LEAD_AUTO_PAIRS.filter(p =>
       !(p.engine === LEAD_OPENING_FIRST.engine && p.style === LEAD_OPENING_FIRST.style));
     for (let i = rest.length - 1; i > 0; i--) {   // Fisher-Yates
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(rnd('leadpair') * (i + 1));
       const t = rest[i]; rest[i] = rest[j]; rest[j] = t;
     }
     return [LEAD_OPENING_FIRST].concat(rest);
@@ -1320,7 +1423,7 @@
     const options = LEAD_AUTO_PAIRS.filter(p =>
       !(p.engine === settings.leadEngine && p.style === settings.leadStyle));
     const pool = options.length ? options : LEAD_AUTO_PAIRS;
-    return pool[Math.floor(Math.random() * pool.length)];
+    return pool[Math.floor(rnd('leadpair') * pool.length)];
   }
 
   // Place round 1 (theremin/sparse/straight) as the OPENING VOICE, before any
@@ -1329,6 +1432,7 @@
   // while the opening is armed.
   function applyLeadOpeningVoice() {
     if (!leadOpeningArmed) return;
+    if (placeLockOn) return;           // the place chooses the voice
     if (!settings.leadAutoPair || !settings.leadEnabled) return;
     leadOpeningArmed = false;
     applyLeadPair(leadOpeningQueue ? leadOpeningQueue[0] : LEAD_OPENING_FIRST);
@@ -1339,7 +1443,8 @@
   }
   function leadVariantMakeFor(engine) {
     const variants = LEAD_ENGINE_VARIANTS[engine] || LEAD_ENGINE_VARIANTS.fm;
-    const name = leadEngineVariant[engine] || 'default';
+    const name = (placeLockOn && placeVariant && variants[placeVariant])
+      ? placeVariant : (leadEngineVariant[engine] || 'default');
     return variants[name] || variants.default;
   }
 
@@ -1482,7 +1587,7 @@
     const base = inNoStraightWindow ? LEAD_EFFECT_POOL_NOSTRAIGHT : LEAD_EFFECT_POOL;
     const pool = base.filter(e => e !== leadEffect);
     const src = pool.length ? pool : base;
-    return src[Math.floor(Math.random() * src.length)];
+    return src[Math.floor(rnd('leadpair') * src.length)];
   }
 
   async function buildLeadChain() {
@@ -1699,13 +1804,13 @@
     let leapUsed = false, prevMove = 0;
     for (let i = 1; i < len; i++) {
       let move;
-      if (!leapUsed && Math.random() < style.leap) {
-        move = (Math.random() < 0.5 ? -1 : 1) * (2 + Math.floor(Math.random() * 2)); // 2-3 rung leap
+      if (!leapUsed && rnd('lead') < style.leap) {
+        move = (rnd('lead') < 0.5 ? -1 : 1) * (2 + Math.floor(rnd('lead') * 2)); // 2-3 rung leap
         leapUsed = true;
       } else if (Math.abs(prevMove) >= 2) {
         move = prevMove > 0 ? -1 : 1;                            // gap fill after the leap
       } else {
-        move = (Math.random() < 0.85 ? 1 : 0) * (Math.random() < 0.5 ? -1 : 1); // step, rarely repeat
+        move = (rnd('lead') < 0.85 ? 1 : 0) * (rnd('lead') < 0.5 ? -1 : 1); // step, rarely repeat
       }
       degrees.push(degrees[degrees.length - 1] + move);
       prevMove = move;
@@ -1720,7 +1825,7 @@
    */
   function leadVaryCell(cell) {
     const out = cell.slice();
-    if (out.length >= 3 && Math.random() < 0.5) {
+    if (out.length >= 3 && rnd('lead') < 0.5) {
       let bi = 0, bsum = Infinity;
       for (let i = 0; i + 1 < out.length; i++) {
         if (out[i] + out[i + 1] < bsum) { bsum = out[i] + out[i + 1]; bi = i; }
@@ -1749,29 +1854,29 @@
     const style = LEAD_STYLES[settings.leadStyle] || LEAD_STYLES.flowing;
     const maxSpan = Math.max(2, lad.rungs.length - 1);
     const degrees = leadRandomMotif(style, maxSpan);
-    const family = style.rhythms[Math.floor(Math.random() * style.rhythms.length)];
+    const family = style.rhythms[Math.floor(rnd('lead') * style.rhythms.length)];
     const cells = RHYTHM_PHRASES[family] || RHYTHM_PHRASES.straight;
-    const cell = cells[Math.floor(Math.random() * cells.length)];
-    const contour = style.contours[Math.floor(Math.random() * style.contours.length)];
+    const cell = cells[Math.floor(rnd('lead') * cells.length)];
+    const contour = style.contours[Math.floor(rnd('lead') * style.contours.length)];
 
     // Developments for the later sections.
     const inversion = degrees.map(d => -d);
     const retro = degrees.slice().reverse().map(d => d - degrees[degrees.length - 1]);
-    const dev1 = Math.random() < 0.5
+    const dev1 = rnd('lead') < 0.5
       ? { label: "A'",  degrees: inversion, cell, contour, lift: 0 }               // melodic inversion
       : { label: "A'",  degrees, cell: leadVaryCell(cell), contour, lift: 0 };     // rhythmic variation
     // Contrast section: fresh motif, different contour, different rhythm family.
     const bContourPool = Object.keys(LEAD_CONTOURS).filter(c => c !== contour);
-    const bContour = bContourPool[Math.floor(Math.random() * bContourPool.length)];
+    const bContour = bContourPool[Math.floor(rnd('lead') * bContourPool.length)];
     const bFams = style.rhythms.filter(f => f !== family);
-    const bFam = bFams.length ? bFams[Math.floor(Math.random() * bFams.length)] : family;
+    const bFam = bFams.length ? bFams[Math.floor(rnd('lead') * bFams.length)] : family;
     const bCells = RHYTHM_PHRASES[bFam] || RHYTHM_PHRASES.straight;
     const bSection = { label: 'B', degrees: leadRandomMotif(style, maxSpan),
-                       cell: bCells[Math.floor(Math.random() * bCells.length)],
+                       cell: bCells[Math.floor(rnd('lead') * bCells.length)],
                        contour: bContour, lift: 0 };
     // Return: the original motif lifted one rung (sequence up - arrival), or
     // its retrograde coming back home.
-    const dev2 = Math.random() < 0.6
+    const dev2 = rnd('lead') < 0.6
       ? { label: "A''", degrees, cell, contour, lift: 1 }
       : { label: "A''", degrees: retro, cell, contour, lift: 0 };
 
@@ -1826,8 +1931,8 @@
       const finalCadence = bar === bars - 1;
       let cell;
       if (finalCadence || halfCadence) {
-        cell = LEAD_CADENCE_CELLS[Math.floor(Math.random() * LEAD_CADENCE_CELLS.length)];
-      } else if (bar === 0 || Math.random() > style.varProb) {
+        cell = LEAD_CADENCE_CELLS[Math.floor(rnd('lead') * LEAD_CADENCE_CELLS.length)];
+      } else if (bar === 0 || rnd('lead') > style.varProb) {
         cell = sec.cell;
       } else {
         cell = leadVaryCell(sec.cell);
@@ -1862,7 +1967,7 @@
       const anchorRaw = lo + Math.round(contourF(t) * range) + (sec.lift || 0);
       const anchor = clampIdx(anchorRaw);
       const inCadenceBar = s.halfCadence || s.finalCadence;
-      if (!inCadenceBar && (i === 0 || Math.random() < 0.75)) {
+      if (!inCadenceBar && (i === 0 || rnd('lead') < 0.75)) {
         // State the motif (as much of it as fits before the next cadence
         // bar), anchored so its interval shape stays intact in the window.
         const a = anchorFit(anchorRaw);
@@ -1882,7 +1987,7 @@
         if (prevIdx === null) idx = target;
         else {
           const dirTo = Math.sign(target - prevIdx);
-          idx = prevIdx + (dirTo !== 0 ? dirTo : (Math.random() < 0.5 ? -1 : 1));
+          idx = prevIdx + (dirTo !== 0 ? dirTo : (rnd('lead') < 0.5 ? -1 : 1));
         }
         idx = clampIdx(idx);
         notes.push({ idx, slot: s, ornament: !s.strong && s.durBeats <= 0.5 && !inCadenceBar });
@@ -1896,7 +2001,7 @@
     const thinned = notes.filter((n, j) => {
       if (j === 0 || n.slot.finalCadence || n.slot.halfCadence) return true;
       const p = n.slot.strong ? style.restProb * 0.5 : style.restProb;
-      return Math.random() >= p;
+      return rnd('lead') >= p;
     });
     const line = thinned.length >= 2 ? thinned : notes;
 
@@ -1909,7 +2014,7 @@
     if (bars >= 4) {
       const q = lastInBar(half - 1);
       if (q >= 0) {
-        let idx = clampIdx(lad.tonicIdx + (Math.random() < 0.5 ? 1 : 2));
+        let idx = clampIdx(lad.tonicIdx + (rnd('lead') < 0.5 ? 1 : 2));
         if (idx === lad.tonicIdx) idx = clampIdx(lad.tonicIdx - 1);
         line[q].idx = idx;
         line[q].ornament = false;
@@ -2009,7 +2114,12 @@
   function advanceLeadSection() {
     if (leadTune) {
       leadTune.pos++;
-      if (leadTune.pos >= leadTune.plan.length) leadTune = null;
+      if (leadTune.pos >= leadTune.plan.length) {
+        leadTune = null;
+        // Place lock: start this street's tune again from the top, so
+        // standing still the melody loops instead of wandering.
+        if (placeLockOn) seedPlaceStream('lead');
+      }
     }
     composeLeadPhrase();
   }
@@ -2111,6 +2221,7 @@
       applyLeadPair(leadPendingPair);
       leadPendingPair = null;
     }
+    if (leadFormState !== 'playing') placeLeadAtRest();
 
     if (leadFormState === 'intro') {
       leadFormBar++;
@@ -2451,7 +2562,7 @@
   function pickDifferentKit() {
     const names = Object.keys(DRUM_KITS).filter(k => k !== settings.drumKit);
     if (names.length === 0) return settings.drumKit;
-    return names[Math.floor(Math.random() * names.length)];
+    return names[Math.floor(rnd('drums') * names.length)];
   }
 
   /**
@@ -2499,7 +2610,7 @@
     // Floor hard when stationary (past the fade-start threshold)
     if (Date.now() - lastCoordChangeTime > stationaryFadeStartMs) return false;
     const density = Math.max(0, Math.min(1, 0.5 + getAcceleration() * settings.accelerationSensitivity));
-    return Math.random() < density;
+    return rnd('drums') < density;
   }
 
   /**
@@ -2564,7 +2675,9 @@
           // Dropout just ended. In randomize mode, switch to a different kit so
           // the return is re-voiced; in fixed mode keep the chosen kit. Then
           // start a tapering fill (drumFillStart extra hats/bar, -1/bar to 0).
-          if (settings.drumKitSelection === 'randomize') {
+          if (placeLockOn) {
+            drumMutations = new Set();   // kit is the neighbourhood's (placeBarTick)
+          } else if (settings.drumKitSelection === 'randomize') {
             const nextKit = pickDifferentKit();
             if (nextKit !== settings.drumKit) {
               settings.drumKit = nextKit;
@@ -2581,7 +2694,7 @@
           // ringing note (a click). Instead we QUEUE the switch and let leadBar
           // apply it at the next rest, when nothing is sounding. If the lead is
           // already silent (resting/intro), apply it right away.
-          if (settings.leadAutoPair && settings.leadEnabled) {
+          if (settings.leadAutoPair && settings.leadEnabled && !placeLockOn) {
             const pair = pickNextLeadPair();
             if (leadFormState === 'playing') {
               leadPendingPair = pair;            // defer to the next phrase boundary
@@ -2604,7 +2717,7 @@
         if (drumDropoutCounter >= Math.max(4, settings.drumDropoutBars | 0)) {
           drumDropoutCounter = 0;
           if (!shouldSkipEvolution()) {
-            drumDropoutBarsLeft = 1 + Math.floor(Math.random() * 2); // 1 or 2 bars
+            drumDropoutBarsLeft = 1 + Math.floor(rnd('drums') * 2); // 1 or 2 bars
           }
         }
       }
@@ -2618,7 +2731,7 @@
           if (!shouldSkipEvolution()) {
             const optionalHits = kit.hits.filter(h => h.optional);
             if (optionalHits.length > 0) {
-              const pick = optionalHits[Math.floor(Math.random() * optionalHits.length)];
+              const pick = optionalHits[Math.floor(rnd('drums') * optionalHits.length)];
               const key = pick.inst + ':' + pick.bar + ':' + pick.beat;
               if (drumMutations.has(key)) drumMutations.delete(key);
               else drumMutations.add(key);
@@ -2626,6 +2739,80 @@
           }
         }
       }
+    }
+  }
+
+  // ============== PLACE LOCK: BOUNDARY HANDLERS ==============
+
+  // Called on every bar line (drone clock and BPM clock). Tempo ramps, the
+  // background's streams reseed, and the neighbourhood's kit is applied.
+  function placeBarTick() {
+    if (placeLockOn && placeSeeds.n != null && placeTempoApplied !== placeSeeds.n) {
+      placeTempoApplied = placeSeeds.n;
+      const target = PLACE_TEMPO_MIN + placePick('tempo', PLACE_TEMPO_MAX - PLACE_TEMPO_MIN + 1);
+      const now = placeTempo ? placeTempo.now : userBPM();
+      placeTempo = { now, from: now, to: target, left: PLACE_TEMPO_RAMP_BARS, release: false };
+    }
+    // The ramp also runs after unlock, easing back to the user's tempo.
+    if (placeTempo && placeTempo.left > 0) {
+      placeTempo.left--;
+      placeTempo.now = placeTempo.to +
+        (placeTempo.from - placeTempo.to) * (placeTempo.left / PLACE_TEMPO_RAMP_BARS);
+      if (placeTempo.left === 0 && placeTempo.release) placeTempo = null;
+    }
+    if (!placeLockOn) return;
+    if (placeStale('pattern')) seedPlaceStream('pattern');
+    if (placeStale('misc')) seedPlaceStream('misc');
+    // Kit: the neighbourhood's, so it changes only every few km. Applied on a
+    // bar line outside a drop-out; the previous bar's hits have decayed.
+    if (placeSeeds.n != null && placeKitApplied !== placeSeeds.n && drumDropoutBarsLeft === 0) {
+      placeKitApplied = placeSeeds.n;
+      const names = Object.keys(DRUM_KITS);
+      const kit = names[placePick('drumkit', names.length)];
+      seedPlaceStream('drums');
+      if (kit !== settings.drumKit) {
+        settings.drumKit = kit;
+        drumMutations = new Set();
+        if (settings.drumEnabled) buildDrums();
+      }
+    }
+  }
+
+  // Called from leadBar on bars where the lead is SILENT (intro or rest), so
+  // a voice rebuild never cuts a ringing note. Applies the block's voice,
+  // variant, style and effect, starts the street's tune, and after unlock
+  // restores the user's own voice.
+  function placeLeadAtRest() {
+    if (!placeLockOn) {
+      if (!placeRestorePending) return;
+      placeRestorePending = false;
+      if (placeSnap) {
+        settings.leadEngine = placeSnap.leadEngine;
+        settings.leadStyle = placeSnap.leadStyle;
+        leadEffect = placeSnap.leadEffect;
+        placeSnap = null;
+      }
+      placeVariant = null;
+      leadTune = null;
+      if (settings.leadEnabled) buildLeadChain();
+      return;
+    }
+    if (placeStale('lead')) { seedPlaceStream('lead'); leadTune = null; }
+    if (placeSeeds.b != null && placeBlockApplied !== placeSeeds.b) {
+      placeBlockApplied = placeSeeds.b;
+      seedPlaceStream('leadpair');
+      const pair = LEAD_AUTO_PAIRS[Math.floor(rnd('leadpair') * LEAD_AUTO_PAIRS.length)];
+      const vnames = leadVariantNames(pair.engine);
+      const variant = vnames[Math.floor(rnd('leadpair') * vnames.length)];
+      const fx = LEAD_FORCE_DELAY_STYLES.has(pair.style) ? 'delay'
+        : LEAD_EFFECT_POOL[Math.floor(rnd('leadpair') * LEAD_EFFECT_POOL.length)];
+      const rebuild = pair.engine !== settings.leadEngine || variant !== placeVariant || fx !== leadEffect;
+      settings.leadEngine = pair.engine;      // runtime only: saveLeadSettings writes placeSnap's
+      settings.leadStyle = pair.style;
+      placeVariant = variant;
+      leadEffect = fx;
+      leadTune = null;
+      if (rebuild && settings.leadEnabled) buildLeadChain();
     }
   }
 
@@ -2728,12 +2915,12 @@
       let mode = base.mode;
       if (mode === 'random') {
         const modes = ['single', 'chord', 'arpeggio'];
-        mode = modes[Math.floor(Math.random() * modes.length)];
+        mode = modes[Math.floor(rnd('misc') * modes.length)];
       }
       
       let duration = base.duration;
       if (duration === 'random') {
-        duration = Math.floor(Math.random() * 4) + 1;
+        duration = Math.floor(rnd('misc') * 4) + 1;
       }
       
       octaveBehaviors[oct] = { mode, duration };
@@ -2748,10 +2935,18 @@
     }
   }
 
-  function getCurrentBPM() {
+  // The user's tempo: preset A/B blended by the crossfade.
+  function userBPM() {
     const bpmA = settings.A.bpm || 100;
     const bpmB = settings.B.bpm || 100;
     return Math.round(lerp(bpmA, bpmB, crossfade));
+  }
+
+  // While place lock is on (and for a few bars after, ramping home) the
+  // place's tempo stands in for the user's.
+  function getCurrentBPM() {
+    if (placeTempo) return Math.round(placeTempo.now);
+    return userBPM();
   }
 
   function getCurrentHumanize() {
@@ -2778,7 +2973,7 @@
       
       // Apply humanization as slight timing offset
       const humanize = getCurrentHumanize();
-      const humanizedOffset = humanize * 0.1 * (Math.random() - 0.5);
+      const humanizedOffset = humanize * 0.1 * (rnd('misc') - 0.5);
       
       // Play the beat with humanized timing
       playBeat(currentBeat, beatsPerBar, time + humanizedOffset);
@@ -2787,12 +2982,13 @@
       if (currentBeat >= beatsPerBar) {
         currentBeat = 0;
         currentBar++;
+        placeBarTick();
         barsUntilRefresh--;
         
         if (barsUntilRefresh <= 0) {
           randomizeOctaveBehaviors();
           if (settings.patternRefreshRandom) {
-            barsUntilRefresh = Math.floor(Math.random() * 
+            barsUntilRefresh = Math.floor(rnd('misc') * 
               (settings.patternRefreshMax - settings.patternRefreshMin + 1)) + 
               settings.patternRefreshMin;
           } else {
@@ -2844,14 +3040,14 @@
       const updateFraction = octaveSettings.updateFraction || 2;
       
       // Probability check
-      if (Math.random() > (1 / updateFraction)) continue;
+      if (rnd('misc') > (1 / updateFraction)) continue;
       
       // Get notes to play
       let notesToPlay = [];
       const baseOctave = compressOctave(octave) + settings.transpose;
       
       if (behavior.mode === 'single') {
-        const note = octaveNotes[Math.floor(Math.random() * octaveNotes.length)];
+        const note = octaveNotes[Math.floor(rnd('misc') * octaveNotes.length)];
         notesToPlay = [scaleNoteFor(note, baseOctave)];
       } else if (behavior.mode === 'chord') {
         notesToPlay = octaveNotes.slice(0, 3).map(n => scaleNoteFor(n, baseOctave));
@@ -3174,8 +3370,8 @@
       if (isIdleOctave(oct) && !staggerActive.includes(oct)) eligible.push(oct);
     }
     if (eligible.length > 0) {
-      const oct = eligible[Math.floor(Math.random() * eligible.length)];
-      staggerOffsets[oct] = STAGGER_OFFSET_POOL[Math.floor(Math.random() * STAGGER_OFFSET_POOL.length)];
+      const oct = eligible[Math.floor(rnd('pattern') * eligible.length)];
+      staggerOffsets[oct] = STAGGER_OFFSET_POOL[Math.floor(rnd('pattern') * STAGGER_OFFSET_POOL.length)];
       staggerActive.push(oct);
     }
     // Demote oldest until within the count limit
@@ -3261,7 +3457,7 @@
       for (let k = 0; k < target; k++) rotateStagger();
       applyStaggerToIdleOctaves(); // rebuild the seeded octaves with their offsets
     }
-    lastChangedOctave = Math.floor(Math.random() * 10); // Start with random octave
+    lastChangedOctave = Math.floor(rnd('pattern') * 10); // Start with random octave
     evolutionBarCounter = 0;
     pendingPatternChange = null;
     melodicOctaveQueue = []; // Clear the melodic queue
@@ -3286,7 +3482,7 @@
    * Generate a random duration name
    */
   function randomDuration() {
-    return DURATION_NAMES[Math.floor(Math.random() * DURATION_NAMES.length)];
+    return DURATION_NAMES[Math.floor(rnd('pattern') * DURATION_NAMES.length)];
   }
 
   /**
@@ -3306,7 +3502,7 @@
     
     // 1. SELECT NOTE ORDER
     // Roll 1-6: 1=ascending, 2=descending, 3-6=random
-    const orderRoll = Math.floor(Math.random() * 6) + 1;
+    const orderRoll = Math.floor(rnd('pattern') * 6) + 1;
     let noteOrder;
     let randomNoteMapping = null;
     
@@ -3320,7 +3516,7 @@
       randomNoteMapping = Array.from({ length: slotCount }, (_, i) => i);
       // Fisher-Yates shuffle
       for (let i = randomNoteMapping.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rnd('pattern') * (i + 1));
         [randomNoteMapping[i], randomNoteMapping[j]] = [randomNoteMapping[j], randomNoteMapping[i]];
       }
     }
@@ -3330,7 +3526,7 @@
     let isTriplet = false;
     
     if (slotCount === 3 && maxBars >= 2) {
-      const layoutRoll = Math.random();
+      const layoutRoll = rnd('pattern');
       if (layoutRoll < 0.5) {
         layoutStyle = 'spread';    // 50%: spread across 3 bars (or whatever fits)
       } else if (layoutRoll < 0.8) {
@@ -3395,7 +3591,7 @@
     let extendPattern = false;
     if (maxBars > 3 && layoutStyle !== 'compact') {
       // 1/maxBars probability of extension
-      if (Math.floor(Math.random() * maxBars) === 0) {
+      if (Math.floor(rnd('pattern') * maxBars) === 0) {
         extendPattern = true;
       }
     }
@@ -3429,7 +3625,7 @@
       allSlots = [...noteSlots, ...restSlots];
       // Shuffle all slots together
       for (let i = allSlots.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
+        const j = Math.floor(rnd('pattern') * (i + 1));
         [allSlots[i], allSlots[j]] = [allSlots[j], allSlots[i]];
       }
     } else {
@@ -3494,11 +3690,11 @@
     const totalOctaves = Object.keys(octavePatterns).length;
     
     if (settings.octaveSelectionMode === 'random' || lastChangedOctave === null) {
-      return Math.floor(Math.random() * totalOctaves);
+      return Math.floor(rnd('pattern') * totalOctaves);
     }
     
     // Adjacent mode: pick +1 or -1 from last changed, with wraparound
-    const direction = Math.random() < 0.5 ? -1 : 1;
+    const direction = rnd('pattern') < 0.5 ? -1 : 1;
     let next = lastChangedOctave + direction;
     
     if (next < 0) next = totalOctaves - 1;
@@ -3696,6 +3892,7 @@
         if (droneBeatCount >= 4) {
           droneBeatCount = 0;
           droneCurrentBar++;
+          placeBarTick();
           
           // Apply any pending pattern change at bar boundary
           if (settings.patternEvolutionEnabled) {
@@ -4644,6 +4841,7 @@
       }
       drumMutations = new Set(); // fresh phasing on kit change
       drumEvolveCounter = 0;
+      if (placeLockOn && placeSnap) placeSnap.drumKit = settings.drumKit;   // restored on unlock
       saveDrumSettings();
       if (settings.drumEnabled) buildDrums(); // rebuild voicing for the current kit
     },
@@ -4740,6 +4938,7 @@
     async setLeadEngine(engine) {
       if (!LEAD_ENGINES[engine]) return;
       settings.leadEngine = engine;
+      if (placeLockOn && placeSnap) placeSnap.leadEngine = engine;   // the user's own choice
       saveLeadSettings();
       if (settings.leadEnabled) await buildLeadChain(); // rebuild the voice
     },
@@ -4799,6 +4998,7 @@
     setLeadStyle(style) {
       if (!LEAD_STYLES[style]) return;
       settings.leadStyle = style;
+      if (placeLockOn && placeSnap) placeSnap.leadStyle = style;     // the user's own choice
       leadTune = null;             // new character = new tune
       composeLeadPhrase();
       if (settings.leadEnabled) {  // audible within a bar, not at the next entry
@@ -4840,6 +5040,78 @@
         tonicIdx: lad.tonicIdx,
         signature: lad.signature
       } : null;
+    },
+
+    // ===== PLACE-LOCKED SOUND =====
+
+    /**
+     * Turn place lock on/off. ON: tempo, kit, lead voice/variant/style/effect,
+     * melody and background patterns become a function of the place seeds
+     * (setPlaceSeeds), each applied at its next safe boundary. OFF: the
+     * engine returns to Math.random; tempo eases home over a few bars, the
+     * user's kit returns now and their lead voice at the next rest.
+     * Persisted settings are never touched by the lock.
+     */
+    setPlaceLock(enabled) {
+      const on = !!enabled;
+      if (on === placeLockOn) return on;
+      if (on) {
+        placeSnap = { leadEngine: settings.leadEngine, leadStyle: settings.leadStyle,
+                      leadEffect: leadEffect, drumKit: settings.drumKit };
+        placeStreams = {};
+        placeBlockApplied = placeKitApplied = placeTempoApplied = null;
+        placeRestorePending = false;
+        leadPendingPair = null;          // the place, not auto-pair, picks the voice now
+        placeLockOn = true;
+      } else {
+        placeLockOn = false;
+        placeStreams = {};
+        if (placeTempo) {
+          placeTempo.from = placeTempo.now;
+          placeTempo.to = userBPM();
+          placeTempo.left = PLACE_TEMPO_RAMP_BARS;
+          placeTempo.release = true;
+        }
+        if (placeSnap && placeSnap.drumKit !== settings.drumKit) {
+          settings.drumKit = placeSnap.drumKit;
+          drumMutations = new Set();
+          if (settings.drumEnabled && drumKick) buildDrums();
+        }
+        placeRestorePending = true;
+        // Silent now? Restore the voice immediately; otherwise at the next rest.
+        if (!(leadActive() && leadFormState === 'playing')) placeLeadAtRest();
+      }
+      return on;
+    },
+
+    getPlaceLock() { return placeLockOn; },
+
+    /**
+     * Where the music is: { n, b, s } seed codes (CardRenderer.placeSeedCodes).
+     * Cheap; call on every position update. Changes take effect at the next
+     * safe boundary for each layer, never mid-phrase.
+     */
+    setPlaceSeeds(seeds) {
+      if (!seeds) return;
+      placeSeeds = {
+        n: seeds.n == null ? null : String(seeds.n),
+        b: seeds.b == null ? null : String(seeds.b),
+        s: seeds.s == null ? null : String(seeds.s)
+      };
+    },
+
+    /** Debug / UI: what the place has chosen right now. */
+    getPlaceState() {
+      return {
+        on: placeLockOn,
+        bpm: getCurrentBPM(),
+        targetBpm: placeTempo ? placeTempo.to : null,
+        kit: settings.drumKit,
+        engine: settings.leadEngine,
+        variant: placeVariant,
+        style: settings.leadStyle,
+        effect: leadEffect
+      };
     },
 
     /**
@@ -5373,6 +5645,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.11 loaded (isLeadPhrasing for phrase-safe scale changes)');
+  console.log('[geosonify] audio-service v6.12 loaded (place-locked sound)');
 
 })(typeof window !== 'undefined' ? window : this);
