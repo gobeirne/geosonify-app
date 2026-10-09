@@ -759,8 +759,10 @@
   // same places and order as before - behaviour is unchanged.
   //
   // SEEDS come from AudioUI via setPlaceSeeds({ n, b, s }): the music card's
-  // passphrase-permuted, un-obfuscated code at depths 4, 5 and 6
-  // (CardRenderer.placeSeedCodes) - about 8 km, 1.2 km and 170 m cells.
+  // passphrase-permuted, un-obfuscated code at depths 5, 6 and 7
+  // (CardRenderer.placeSeedCodes) - cells about 1.2 km, 170 m and 25 m tall.
+  // Kept local on purpose: a ride should hear the tempo and kit move every
+  // km or so and the lead every couple of streets.
   //   n  neighbourhood: tempo, drum kit, drum variation
   //   b  block:         lead voice + variant + style, lead effect
   //   s  street:        melody, background patterns, stagger, misc
