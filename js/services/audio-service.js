@@ -1,4 +1,12 @@
 /**
+ * geosonify-audio-service.js v6.11
+ *
+ * v6.11 changes:
+ * - isLeadPhrasing(): true while the lead is sounding a phrase (not intro,
+ *   not resting). audio-ui uses it to hold the Suggested card's scale until
+ *   the lead rests, so a scale change never lands mid-phrase (old-scale
+ *   melody over a new-scale drone). Read-only; no behaviour change here.
+ *
  * geosonify-audio-service.js v6.10
  *
  * v6.10 changes:
@@ -4834,6 +4842,15 @@
       } : null;
     },
 
+    /**
+     * True while the lead is sounding a phrase. False during the intro, a
+     * rest, or when the lead is off or yielding to a journey/crossfade - the
+     * moments when a scale change cannot cut across a melody.
+     */
+    isLeadPhrasing() {
+      return !!(leadActive() && leadFormState === 'playing');
+    },
+
     /** Which section of the tune's plan is current (e.g. A, A', B, A''). */
     getLeadSection() {
       if (!leadTune) return null;
@@ -5356,6 +5373,6 @@
 
   global.AudioService = AudioService;
 
-  console.log('[geosonify] audio-service v6.10 loaded (auto-pair on by default; drop-aware phrase fitting; effect selector)');
+  console.log('[geosonify] audio-service v6.11 loaded (isLeadPhrasing for phrase-safe scale changes)');
 
 })(typeof window !== 'undefined' ? window : this);
