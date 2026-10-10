@@ -143,7 +143,7 @@
           {
             id: 'map-imagery',
             q: 'Can I change what the map shows underneath my codes?',
-            a: `<p>Yes. The <strong>Map imagery</strong> panel in the <strong>FAQ</strong> tab has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>).</p>
+            a: `<p>Yes. The <strong>Map imagery</strong> panel in the <strong>FAQ</strong> tab has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>). Sky is also on the map itself, as the <strong>Sky</strong> button in the corner.</p>
 <p>Standard, Aerial and Topographic are a personal viewing preference, so an ordinary share link opens in whatever map the recipient is already using. A <strong>display link</strong> built on the Output tab is the exception: it carries your imagery, so the viewer sees what you chose. Sky is different again, because it changes what a code means, so every link made in Sky says so.</p>
 <p>Shapes change colour to stay visible: purple on the street and topographic maps, and a high-contrast yellow on aerial photography, where purple tends to vanish. That happens automatically.</p>
 
@@ -181,7 +181,8 @@
             id: 'sky-mode',
             q: 'What is Sky mode?',
             a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>
-<p>Choose <strong>Sky</strong> in the Map imagery panel and the map is replaced by a view of the sky at your current coordinate, with the active card's cell drawn on it. Tap anywhere in the sky to move there, and the cards follow, just as they do on the map. Close the view, or pick an Earth map, to come back.</p>
+<p>Press <strong>Sky</strong> in the corner of the map, or choose Sky in the Map imagery panel. The map turns over: its streets, coastlines and borders flip as though you were looking up at them from underneath, and the stars with the same coordinates appear beneath them. Then the streets fade, leaving the sky, with the active card's cell drawn on it. Tap anywhere in the sky to move there, and the cards follow, just as they do on the map. <strong>Earth</strong> turns it back, to the place and zoom you left.</p>
+<p>Seen from below, east and west swap places, so the sky is the map's mirror image: with north at the top, east is on the left. To explore how streets and stars line up, try <a href="starpin-flip.html" target="_blank" rel="noopener">Starpin</a>, a companion app built around exactly that.</p>
 <p>Cards that only make sense on Earth - Plus Codes, MGRS, UTM, the national grids - are hidden while the sky is showing. Cards made for the sky take their place under <strong>+ Add Mode</strong>: <strong>RA / Dec</strong>, the <strong>IAU designation</strong>, and the <strong>MOC</strong> and <strong>NUNIQ</strong> forms used by astronomy software. They are for copying into other tools.</p>
 <p>A link made while the sky is showing carries <code>frame=icrs</code>, so whoever opens it lands in Sky mode too. Without it, the same code would quietly name a place on Earth.</p>
 
@@ -196,7 +197,9 @@
 ?moc=...      a MOC token, order/index
 ?nuniq=...    a NUNIQ integer</pre>
 <p><code>radec=</code> and <code>desig=</code> can only mean the sky, so they open in Sky mode by themselves. <code>moc=</code> and <code>nuniq=</code> are HEALPix cells that could be on either sphere, so like every other code they follow <code>frame=</code> and mean Earth without it. An IAU designation names a small box rather than a point, so it opens at the centre of that box.</p>
-<p>Sizes are shown as angles while the sky is showing. At HEALPix order 22 a cell is about 0.05 arcseconds across; four HEALPix words are about 0.2 arcseconds.</p>
+<p>Sizes are shown as angles while the sky is showing. At HEALPix order 22 a cell is about 0.05 arcseconds across; four HEALPix words are about 0.2 arcseconds. The scale bar gives both readings: the angle, and the distance the same angle spans on the ground (one arcsecond of latitude is about 31 metres).</p>
+<p>The turn keeps the scale: an arcsecond of sky takes up the same space on screen as an arcsecond of latitude did on the map, so each street lands on its own patch of sky. If that is finer than the sky photography can show sharply, the view then eases back to three times the survey's own pixel, about 0.27 arcseconds per screen pixel for the Digitized Sky Survey. Zooming in further still works; the picture just gets softer.</p>
+<p>The streets shown during the turn are OpenStreetMap data served by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>, kept on your device for 30 days, so turning over the same area again needs no download. Fetching them tells OpenFreeMap which area you are looking at, in the same way the map's own tiles tell their provider. When the view is wider than about 60 degrees, or your device asks for reduced motion, the map and the sky simply crossfade.</p>
 <p>Privacy works as it does on Earth. With a passphrase or obfuscation on, the sky view and the sky cards hide the position, because RA / Dec and MOC are the position in plain text.</p>
 </div>
 </details>`
@@ -1137,6 +1140,8 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
         '<strong>Music Notation</strong> - <a href="https://www.vexflow.com/" target="_blank">VexFlow</a> (MIT)',
         '<strong>SHA3-512</strong> - <a href="https://github.com/emn178/js-sha3" target="_blank">js-sha3</a> by Yi-Cyuan Chen',
         '<strong>Map Tiles</strong> - <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
+        '<strong>Street vectors</strong> (the turn to Sky) - <a href="https://openfreemap.org/" target="_blank">OpenFreeMap</a>, OpenMapTiles schema, © OpenStreetMap contributors',
+        '<strong>Sky imagery</strong> - <a href="https://aladin.cds.unistra.fr/" target="_blank">Aladin Lite</a> (CDS, Strasbourg; LGPL), showing the Digitized Sky Survey (STScI)',
         '<strong>Palette</strong> - <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
 		'<strong>German (DE-2048) word list</strong> - <a href="https://github.com/dys2p/wordlists-de" target="_blank">dys2p/wordlists-de</a> by <a href="https://github.com/dys2p" target="_blank">dys2p</a> (Unlicense / CC0 / BSD-3)',

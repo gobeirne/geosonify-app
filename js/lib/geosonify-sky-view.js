@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.2  — the in-app sky view
+  geosonify-sky-view.js  v0.3  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -21,6 +21,13 @@
   view now follows the frame: whenever the frame becomes the sky (a ?frame=icrs
   link, a ?radec= link), the view opens, so a received sky link lands in Sky.
 
+  v0.3: the view can be opened hidden and centred somewhere other than the
+  pin, so geosonify-sky-flip.js can turn the map over into it; it reports its
+  renderer and its moves to listeners (on('view'), on('renderer')); closing can
+  leave the map's scale to the caller (close({skipZoomMatch:true})). It has its
+  own "Earth" button and a scale bar in arcseconds and metres. The close
+  button and Escape go back through the turn when that module is loaded.
+
   PRIVACY: the view shows the true cell of the current pin, so it redacts under
   passphrase or obfuscation exactly as the sky cards do. Same rule, same
   reason, and it is the whole reason a "just show the sky" view cannot skip it.
@@ -28,7 +35,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.2';
+  var VERSION = 'v0.3';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -48,6 +55,29 @@
   var READOUT_FLAG = 'geosonify_sky_readout_card_added';
 
   var host = null, renderer = null, els = null, styleTag = null;
+
+  // Who wants to know when the view moves or the renderer changes. Used by
+  // geosonify-sky-flip.js to keep its street lines on the stars.
+  var _listeners = { view: [], renderer: [] };
+  function emit(evt) {
+    (_listeners[evt] || []).slice().forEach(function (fn) { try { fn(); } catch (e) {} });
+  }
+  function on(evt, fn) {
+    if (!_listeners[evt] || typeof fn !== 'function') return function () {};
+    _listeners[evt].push(fn);
+    return function () { _listeners[evt] = _listeners[evt].filter(function (f) { return f !== fn; }); };
+  }
+
+  // Leave the sky: through the turn when it is loaded, directly otherwise.
+  function requestClose() {
+    var Flip = global.GeosonifySkyFlip;
+    if (Flip && Flip.toEarth && Flip.isAvailable && Flip.isAvailable()) {
+      if (Flip.isBusy && Flip.isBusy()) return;
+      Flip.toEarth();
+      return;
+    }
+    closeView();
+  }
   var order = 16;
   var provenance = null;          // what the last click actually justified
   var shapes = [];                // drawn shapes, in sky coordinates
@@ -337,6 +367,39 @@
     zoomBox.appendChild(zIn); zoomBox.appendChild(zOut);
     canvasWrap.appendChild(zoomBox);
 
+    /*
+      Back to Earth, in the same place and the same shape as the map's Sky
+      button, so the way out is where the way in was.
+    */
+    var earthBtn = el('button',
+      'position:absolute; left:10px; bottom:10px; z-index:10; display:flex; align-items:center; ' +
+      'gap:6px; height:34px; padding:0 13px 0 10px; border:none; border-radius:17px; ' +
+      'background:#e5e7eb; color:#0b0f19; font:600 13px/1 ui-sans-serif,system-ui,-apple-system,' +
+      '"Segoe UI",sans-serif; box-shadow:0 1px 5px rgba(0,0,0,.65); cursor:pointer;');
+    earthBtn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ' +
+      'stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
+      '<path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9M12 3c-2.6 2.6-3.8 5.6-3.8 9s1.2 6.4 3.8 9"/></svg>' +
+      '<span>Earth</span>';
+    earthBtn.setAttribute('aria-label', 'Earth: turn back to the map');
+    earthBtn.title = 'Turn back to the map';
+    canvasWrap.appendChild(earthBtn);
+
+    /*
+      Scale bar. Two numbers because sky mode has two readings: the angle on
+      the sky, and the ground distance the same code spans on Earth (one
+      arcsecond of latitude is 30.9 m). Measured from the renderer, like the
+      cells, so it cannot disagree with what is drawn.
+    */
+    var scaleBox = el('div', 'position:absolute; right:10px; bottom:10px; z-index:10; ' +
+      'pointer-events:none; text-align:right; color:#e5e7eb; ' +
+      'font:11px/1.25 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; ' +
+      'text-shadow:0 0 3px #000,0 0 3px #000;');
+    var scaleTxt = el('div', 'white-space:nowrap;');
+    var scaleBar = el('div', 'height:5px; margin-top:3px; margin-left:auto; border:1.5px solid #e5e7eb; ' +
+      'border-top:none; box-shadow:0 1px 2px rgba(0,0,0,.8);');
+    scaleBox.appendChild(scaleTxt); scaleBox.appendChild(scaleBar);
+    canvasWrap.appendChild(scaleBox);
+
     // ── readouts ──
     var foot = el('div', 'flex:0 0 auto; border-top:1px solid #1f2937; padding:8px 12px; ' +
                          'display:flex; flex-wrap:wrap; gap:4px 18px; align-items:baseline;');
@@ -358,7 +421,8 @@
       posTxt: posTxt, quadTxt: quadTxt, mocTxt: mocTxt, sizeTxt: sizeTxt, legTxt: legTxt,
       cardTxt: cardTxt,
       provTxt: provTxt, attrib: attrib,
-      minus: minus, plus: plus, close: close, zIn: zIn, zOut: zOut
+      minus: minus, plus: plus, close: close, zIn: zIn, zOut: zOut,
+      earthBtn: earthBtn, scaleTxt: scaleTxt, scaleBar: scaleBar
     };
 
     zIn.onclick = function (ev) {
@@ -376,7 +440,74 @@
 
     minus.onclick = function () { orderIsManual = true; order = Math.max(MIN_ORDER, order - 1); draw(); };
     plus.onclick = function () { orderIsManual = true; order = Math.min(MAX_ORDER, order + 1); draw(); };
-    close.onclick = function () { closeView(); };
+    close.onclick = function () { requestClose(); };
+    earthBtn.onclick = function (ev) { ev.stopPropagation(); requestClose(); };
+
+    /*
+      A pinch is a zoom the PERSON made, like the buttons and the wheel. Without
+      this, on a phone (where pinching is the only way to zoom) the way back to
+      Earth ignored the zoom entirely.
+    */
+    canvasWrap.addEventListener('touchmove', function (ev) {
+      if (ev.touches && ev.touches.length > 1) userZoomed = true;
+    }, { capture: true, passive: true });
+  }
+
+  /*
+    Arcseconds per CSS pixel, measured: project the centre and a point a known
+    angle north of it. null when the renderer cannot say.
+  */
+  function measuredAsp() {
+    if (!renderer) return null;
+    try {
+      var c = renderer.getCenter();
+      var d = Math.max(1e-10, Math.min(1, renderer.getFovDeg() * 0.05));
+      var dec2 = c[1] + (c[1] > 0 ? -d : d);
+      var p0 = renderer.project(c[0], c[1]), p1 = renderer.project(c[0], dec2);
+      if (!p0 || !p1) return null;
+      var px = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+      return px > 0 ? d * 3600 / px : null;
+    } catch (e) { return null; }
+  }
+
+  var M_PER_ARCSEC = 111319.9 / 3600;
+  function niceAngle(arcsec) {
+    // 1-2-5 steps, in whichever unit reads naturally.
+    var e = Math.pow(10, Math.floor(Math.log(arcsec) / Math.LN10)), f = arcsec / e;
+    return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * e;
+  }
+  function angleLabel(a) {
+    var U = global.GeosonifySkyUnits;
+    if (U && U.formatAngle) {
+      try { var t = U.formatAngle(a); if (typeof t === 'string' && t) return t; } catch (e) {}
+    }
+    if (a >= 3600) return +(a / 3600).toPrecision(3) + '\u00B0';
+    if (a >= 60) return +(a / 60).toPrecision(3) + '\u2032';
+    if (a >= 1) return +a.toPrecision(3) + '\u2033';
+    if (a >= 1e-3) return +(a * 1e3).toPrecision(3) + ' mas';
+    return +(a * 1e6).toPrecision(3) + ' \u00B5as';
+  }
+  function metresLabel(m) {
+    if (m >= 1000) return +(m / 1000).toPrecision(3) + ' km';
+    if (m >= 1) return +m.toPrecision(3) + ' m';
+    if (m >= 0.01) return +(m * 100).toPrecision(3) + ' cm';
+    return +(m * 1000).toPrecision(3) + ' mm';
+  }
+  // Snap to the unit boundaries too, so a bar reads 1' rather than 60".
+  function snapAngle(a) {
+    if (a >= 3600) return niceAngle(a / 3600) * 3600;
+    if (a >= 60) return niceAngle(a / 60) * 60;
+    return niceAngle(a);
+  }
+  function drawScale() {
+    if (!els || !els.scaleTxt) return;
+    var asp = measuredAsp();
+    if (!asp || !isFinite(asp)) { els.scaleTxt.textContent = ''; els.scaleBar.style.width = '0'; return; }
+    var a = snapAngle(asp * 90);
+    var px = a / asp;
+    if (px > 140) { a = snapAngle(a / 2.5); px = a / asp; }
+    els.scaleBar.style.width = Math.round(px) + 'px';
+    els.scaleTxt.textContent = angleLabel(a) + ' \u00B7 ' + metresLabel(a * M_PER_ARCSEC) + ' on Earth';
   }
 
   /*
@@ -710,6 +841,7 @@
 
   function draw() {
     if (!renderer || !els) return;
+    drawScale();
     var Sky = _Sky(), Overlay = _Overlay(), HP = _HP();
     var g = renderer.overlayGroup();
     while (g.firstChild) g.removeChild(g.firstChild);
@@ -844,6 +976,9 @@
     moment it is on screen, not before.
   */
   function attachRenderer(r) {
+    r.on('move', function () { emit('view'); });
+    r.on('zoom', function () { emit('view'); });
+    r.on('resize', function () { emit('view'); });
     r.on('move', draw);
     r.on('zoom', function () {
       if (provenance) {
@@ -923,7 +1058,7 @@
         Aladin lands somewhere else, the loop corrects it; if Aladin refuses to
         move, the log says so rather than the scale silently drifting.
       */
-      if (global.GeosonifySkyZoom && global.__geosonifyMap &&
+      if (!opts.noRematch && global.GeosonifySkyZoom && global.__geosonifyMap &&
           global.GeosonifySkyZoom.matchCellEarthToSky &&
           global.GeosonifySkyZoom.REMATCH_AFTER_IMAGERY) {
         try {
@@ -933,6 +1068,7 @@
       }
       showAttribution();
       draw();
+      emit('renderer');
       return true;
     }).catch(function (err) {
       try { candidate.destroy(); } catch (e) {}
@@ -976,9 +1112,21 @@
     if (opts.order) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, opts.order)); orderIsManual = true; }
 
     build();
+    /*
+      Hidden: laid out at full size (so the renderer measures its box) but
+      invisible and untouchable, for geosonify-sky-flip.js to reveal after the
+      turn. Whoever asks for hidden is responsible for showing it.
+    */
+    if (opts.hidden) { host.style.opacity = '0'; host.style.pointerEvents = 'none'; }
 
+    // The view can look somewhere other than the pin (the turn centres it on
+    // the middle of the map); the pin and the cards stay where they are.
+    var ctrRa = mark.ra, ctrDec = mark.dec;
+    if (opts.centre && isFinite(opts.centre.ra) && isFinite(opts.centre.dec)) {
+      ctrRa = ((opts.centre.ra % 360) + 360) % 360; ctrDec = opts.centre.dec;
+    }
     renderer = _RendererLib().createBuiltInRenderer(els.canvasWrap, {
-      ra: mark.ra, dec: mark.dec, fovDeg: opts.fovDeg || 1.5, background: '#0b0f19'
+      ra: ctrRa, dec: ctrDec, fovDeg: opts.fovDeg || 1.5, background: '#0b0f19'
     });
     renderer.init();
     rendererKind = 'builtin';
@@ -1076,9 +1224,11 @@
     return true;
   }
 
-  function onKey(ev) { if (ev.key === 'Escape') closeView(); }
+  function onKey(ev) { if (ev.key === 'Escape') requestClose(); }
 
-  function closeView() {
+  function closeView(closeOpts) {
+    closeOpts = closeOpts || {};
+    if (!host) return true;
     document.removeEventListener('keydown', onKey);
     /*
       And the reverse: draw Orion, hit Earth, and Orion is laid across the globe.
@@ -1095,7 +1245,7 @@
       opens showing the same latitude span. Read BEFORE the teardown below
       destroys the renderer.
     */
-    if (global.GeosonifySkyZoom && global.__geosonifyMap && renderer) {
+    if (!closeOpts.skipZoomMatch && global.GeosonifySkyZoom && global.__geosonifyMap && renderer) {
       try {
         global.GeosonifySkyZoom.matchCellSkyToEarth(
           renderer, global.__geosonifyMap, mark.dec, mark.ra, order,
@@ -1156,7 +1306,14 @@
     isAvailable: isAvailable,
     open: openView,
     close: closeView,
+    requestClose: requestClose,
     isOpen: isOpen,
+    on: on,
+    getRenderer: function () { return renderer; },
+    getHost: function () { return host; },
+    getCanvasWrap: function () { return els ? els.canvasWrap : null; },
+    isUserZoomed: function () { return userZoomed; },
+    measuredAsp: measuredAsp,
     redraw: draw,
     setOrder: function (k) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, k)); draw(); },
     pushCoordinate: pushCoordinate,
@@ -1220,6 +1377,7 @@
       attachRenderer(renderer);
       showAttribution();
       draw();
+      emit('renderer');
       return true;
     }
   };
