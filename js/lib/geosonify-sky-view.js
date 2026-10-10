@@ -25,7 +25,8 @@
   pin, so geosonify-sky-flip.js can turn the map over into it; it reports its
   renderer and its moves to listeners (on('view'), on('renderer')); closing can
   leave the map's scale to the caller (close({skipZoomMatch:true})). It has its
-  own "Earth" button and a scale bar in arcseconds and metres. The close
+  own "Earth" button (tap: back; hold: the streets over the sky) and a scale
+  bar in angle. It emits on("open") and on("close") too. The close
   button and Escape go back through the turn when that module is loaded.
 
   PRIVACY: the view shows the true cell of the current pin, so it redacts under
@@ -58,7 +59,7 @@
 
   // Who wants to know when the view moves or the renderer changes. Used by
   // geosonify-sky-flip.js to keep its street lines on the stars.
-  var _listeners = { view: [], renderer: [] };
+  var _listeners = { view: [], renderer: [], open: [], close: [] };
   function emit(evt) {
     (_listeners[evt] || []).slice().forEach(function (fn) { try { fn(); } catch (e) {} });
   }
@@ -380,15 +381,12 @@
       'stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="9"/>' +
       '<path d="M3 12h18M12 3c2.6 2.6 3.8 5.6 3.8 9s-1.2 6.4-3.8 9M12 3c-2.6 2.6-3.8 5.6-3.8 9s1.2 6.4 3.8 9"/></svg>' +
       '<span>Earth</span>';
-    earthBtn.setAttribute('aria-label', 'Earth: turn back to the map');
-    earthBtn.title = 'Turn back to the map';
     canvasWrap.appendChild(earthBtn);
 
     /*
-      Scale bar. Two numbers because sky mode has two readings: the angle on
-      the sky, and the ground distance the same code spans on Earth (one
-      arcsecond of latitude is 30.9 m). Measured from the renderer, like the
-      cells, so it cannot disagree with what is drawn.
+      Scale bar, in angle on the sky: this is the sky, so sky distances only.
+      Measured from the renderer, like the cells, so it cannot disagree with
+      what is drawn.
     */
     var scaleBox = el('div', 'position:absolute; right:10px; bottom:10px; z-index:10; ' +
       'pointer-events:none; text-align:right; color:#e5e7eb; ' +
@@ -441,7 +439,52 @@
     minus.onclick = function () { orderIsManual = true; order = Math.max(MIN_ORDER, order - 1); draw(); };
     plus.onclick = function () { orderIsManual = true; order = Math.min(MAX_ORDER, order + 1); draw(); };
     close.onclick = function () { requestClose(); };
-    earthBtn.onclick = function (ev) { ev.stopPropagation(); requestClose(); };
+    /*
+      TAP to go back to Earth; HOLD to see the Earth's streets over the sky
+      without leaving it (they fade in, and out again on release). The hold is
+      geosonify-sky-flip.js's; without it the button is a plain tap.
+
+      Pointer events, not click: a hold must not also count as a tap. click
+      is still handled for the keyboard (Enter / Space), which has no hold.
+    */
+    var HOLD_MS = 280;
+    var holdTimer = null, held = false, viaPointer = false;
+    function canPeek() {
+      var F = global.GeosonifySkyFlip;
+      return !!(F && F.peek && F.isAvailable && F.isAvailable());
+    }
+    function endHold(go) {
+      if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+      if (held) { held = false; global.GeosonifySkyFlip.peek(false); return; }
+      if (go) requestClose();
+    }
+    earthBtn.style.touchAction = 'none';
+    earthBtn.style.userSelect = 'none';
+    earthBtn.style.webkitUserSelect = 'none';
+    earthBtn.style.webkitTouchCallout = 'none';
+    earthBtn.addEventListener('pointerdown', function (ev) {
+      if (ev.button !== undefined && ev.button !== 0) return;
+      ev.stopPropagation();
+      viaPointer = true;
+      held = false;
+      try { earthBtn.setPointerCapture(ev.pointerId); } catch (e) {}
+      if (!canPeek()) return;
+      holdTimer = setTimeout(function () {
+        holdTimer = null; held = true;
+        global.GeosonifySkyFlip.peek(true);
+      }, HOLD_MS);
+    });
+    earthBtn.addEventListener('pointerup', function (ev) { ev.stopPropagation(); endHold(true); });
+    earthBtn.addEventListener('pointercancel', function () { endHold(false); });
+    earthBtn.addEventListener('lostpointercapture', function () { if (held || holdTimer) endHold(false); });
+    earthBtn.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    earthBtn.onclick = function (ev) {
+      ev.stopPropagation();
+      if (viaPointer) { viaPointer = false; return; }   // already handled on pointerup
+      requestClose();
+    };
+    earthBtn.title = 'Tap: back to the Earth map. Hold: see its streets over the sky';
+    earthBtn.setAttribute('aria-label', 'Earth: back to the Earth map (hold to see its streets over the sky)');
 
     /*
       A pinch is a zoom the PERSON made, like the buttons and the wheel. Without
@@ -470,28 +513,19 @@
     } catch (e) { return null; }
   }
 
-  var M_PER_ARCSEC = 111319.9 / 3600;
   function niceAngle(arcsec) {
     // 1-2-5 steps, in whichever unit reads naturally.
     var e = Math.pow(10, Math.floor(Math.log(arcsec) / Math.LN10)), f = arcsec / e;
     return (f >= 5 ? 5 : f >= 2 ? 2 : 1) * e;
   }
+  // Short, for a scale bar: 20″, 5′, 2°, 500 mas.
   function angleLabel(a) {
-    var U = global.GeosonifySkyUnits;
-    if (U && U.formatAngle) {
-      try { var t = U.formatAngle(a); if (typeof t === 'string' && t) return t; } catch (e) {}
-    }
-    if (a >= 3600) return +(a / 3600).toPrecision(3) + '\u00B0';
-    if (a >= 60) return +(a / 60).toPrecision(3) + '\u2032';
-    if (a >= 1) return +a.toPrecision(3) + '\u2033';
-    if (a >= 1e-3) return +(a * 1e3).toPrecision(3) + ' mas';
-    return +(a * 1e6).toPrecision(3) + ' \u00B5as';
-  }
-  function metresLabel(m) {
-    if (m >= 1000) return +(m / 1000).toPrecision(3) + ' km';
-    if (m >= 1) return +m.toPrecision(3) + ' m';
-    if (m >= 0.01) return +(m * 100).toPrecision(3) + ' cm';
-    return +(m * 1000).toPrecision(3) + ' mm';
+    function r(x) { return String(+x.toPrecision(3)); }
+    if (a >= 3600) return r(a / 3600) + '\u00B0';
+    if (a >= 60) return r(a / 60) + '\u2032';
+    if (a >= 1) return r(a) + '\u2033';
+    if (a >= 1e-3) return r(a * 1e3) + ' mas';
+    return r(a * 1e6) + ' \u00B5as';
   }
   // Snap to the unit boundaries too, so a bar reads 1' rather than 60".
   function snapAngle(a) {
@@ -507,7 +541,7 @@
     var px = a / asp;
     if (px > 140) { a = snapAngle(a / 2.5); px = a / asp; }
     els.scaleBar.style.width = Math.round(px) + 'px';
-    els.scaleTxt.textContent = angleLabel(a) + ' \u00B7 ' + metresLabel(a * M_PER_ARCSEC) + ' on Earth';
+    els.scaleTxt.textContent = angleLabel(a);
   }
 
   /*
@@ -1221,6 +1255,7 @@
     } catch (e) {}
 
     watchCoordinate();      // GPS fixes and card-code edits move the sphere too
+    emit('open');
     return true;
   }
 
@@ -1261,6 +1296,7 @@
     host = null; els = null; mapEl = null;
     provenance = null; orderIsManual = false; shapes = [];
     rendererKind = 'builtin';
+    emit('close');
     return true;
   }
 

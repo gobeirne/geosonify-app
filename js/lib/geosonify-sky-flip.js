@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-flip.js  v0.1  — the turn from the ground to the sky, and back
+  geosonify-sky-flip.js  v0.2  — the turn from the ground to the sky, and back
 
   Press "Sky" on the map and the ground turns over:
 
@@ -56,13 +56,20 @@
   the PERSON did in the sky. Aladin quantises and settles by itself, and
   reading that as a user zoom compounds on every flip.
 
+  SKY MODE (v0.2). The Sky button appears on the map only in Sky mode, chosen
+  in the FAQ tab's Map imagery panel (or arrived at through a sky link); the
+  normal map modes take it away again. Sky mode also switches on the HEALPix
+  lattice on both faces (geosonify-healpix-lattice.js). In the sky, HOLDING
+  the Earth button fades the Earth's streets in over the sky, and releasing it
+  fades them out; a tap still turns back to Earth.
+
   NOTHING HERE TOUCHES A CODE, A URL OR A FROZEN FORMAT. Opening and closing go
   through GeosonifySkyView, which owns the frame (and so ?frame=icrs).
 */
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var BG = '#0b0f19';                       // the sky view's own background
@@ -84,7 +91,8 @@
   var TURN_MAX_FOV_DEG = 60;
 
   var MS = {
-    tilesWait: 900,       // the longest we hold the start for street tiles
+    tilesWait: 900,       // how long we hold the start for ALL the street tiles
+    tilesGiveUp: 2500,    // ...and for ANY, before settling for a crossfade
     crossIn: 380,         // streets in, imagery out (and Mercator -> orthographic)
     turn: 560,
     starsIn: 650,
@@ -159,6 +167,7 @@
   var lineScale = 1;
   var savedBg = null;
   var mapBtn = null;
+  var lastUp = null;         // what the last way up decided (for tests)
 
   // ── geometry ──────────────────────────────────────────────────────────────
 
@@ -444,10 +453,13 @@
     var t0 = Date.now();
     return new Promise(function (resolve) {
       (function poll() {
+        // All of them: go. Some, after a short wait: go, and the rest draw as
+        // they land. None: keep waiting a little longer (a busy page can
+        // starve the fetches), then settle for a crossfade.
         var all = vis.every(function (t) { return store.has(t.z, t.x, t.y); });
-        if (all || Date.now() - t0 >= MS.tilesWait) {
-          return resolve(vis.some(function (t) { return !!store.peek(t.z, t.x, t.y); }));
-        }
+        var some = vis.some(function (t) { return !!store.peek(t.z, t.x, t.y); });
+        var el = Date.now() - t0;
+        if (all || (some && el >= MS.tilesWait) || el >= MS.tilesGiveUp) return resolve(some);
         setTimeout(poll, 60);
       })();
     });
@@ -687,7 +699,9 @@
     cv.style.pointerEvents = 'auto';           // the map holds still while it turns
     var ready = tryTurn ? prepareTiles(ll.lat, ll.lng, asp0, g, zoom) : Promise.resolve(false);
 
+    var tWait = Date.now();
     return ready.then(function (haveStreets) {
+      lastUp = { tryTurn: tryTurn, haveStreets: haveStreets, fov: fov, waitMs: Date.now() - tWait };
       if (!haveStreets) return crossUp();
       mode = 'merc'; morphK = 0; frozenA = null; lineScale = 1;
       draw();
@@ -775,6 +789,7 @@
     var sv = SV(), m = lmap(), F = SF();
     if (!sv || !sv.isOpen()) return Promise.resolve(true);
     if (busy) return Promise.resolve(false);
+    if (peeking) { peeking = false; if (peekOff) { peekOff(); peekOff = null; } }
     cancelTail();
     var A = liveAffine();
     if (!A || !F || !m) { sv.close(); anchor = null; return Promise.resolve(true); }
@@ -974,15 +989,101 @@
     mapBtn.addTo(m);
     return true;
   }
+  function removeMapButton() {
+    if (!mapBtn) return;
+    try { mapBtn.remove(); } catch (e) {}
+    mapBtn = null;
+  }
+
+  // ── Sky mode ──────────────────────────────────────────────────────────────
+  //
+  // Chosen in the FAQ tab's Map imagery panel. While it is on, the map carries
+  // the Sky button (the sky view its Earth button) and the HEALPix lattice is
+  // drawn on both faces. The normal map modes turn it off again, and that
+  // also leaves the sky. A sky link (?frame=icrs, ?radec=) turns it on, since
+  // it lands in the sky. Held in memory, like the basemap choice.
+  var skyMode = false;
+  function setSkyMode(on) {
+    on = !!on;
+    var sv = SV(), Lat = global.GeosonifyHealpixLattice;
+    if (on === skyMode) { if (on) installWhenReady(); return skyMode; }
+    skyMode = on;
+    if (on) {
+      installWhenReady();
+    } else {
+      removeMapButton();
+      if (prefetchBound) { try { prefetchBound.off('moveend', prefetchOnMove); } catch (e) {} prefetchBound = null; }
+      if (sv && sv.isOpen()) toEarth({ instant: true });
+    }
+    if (Lat && Lat.setEnabled) { try { Lat.setEnabled(on); } catch (e) {} }
+    try { global.dispatchEvent(new CustomEvent('geosonify:skymode', { detail: { on: on } })); } catch (e) {}
+    return skyMode;
+  }
+  // The map is created by the page's own start-up; wait for it if need be.
+  var installTries = 0, prefetchBound = null;
+  // In Sky mode a turn is likely, so the street tiles for wherever the map
+  // settles are fetched ahead of it (only in Sky mode: elsewhere nobody
+  // should pay for tiles they will not see).
+  function prefetchOnMove() {
+    var sv = SV();
+    if (skyMode && !busy && !(sv && sv.isOpen())) prefetch();
+  }
+  function installWhenReady() {
+    if (!skyMode) return;
+    var m = lmap();
+    if (m && prefetchBound !== m) { m.on('moveend', prefetchOnMove); prefetchBound = m; prefetch(); }
+    if (installMapButton()) {
+      var Lat = global.GeosonifyHealpixLattice;
+      if (Lat && Lat.isEnabled && !Lat.isEnabled()) { try { Lat.setEnabled(true); } catch (e) {} }
+      return;
+    }
+    if (++installTries > 120) return;
+    setTimeout(installWhenReady, 250);
+  }
+
+  // ── hold Earth: the streets over the sky ─────────────────────────────────
+  //
+  // While the sky view's Earth button is held, the Earth's streets fade in
+  // over the sky, in the sky's own projection (seen from below, so mirrored),
+  // and fade out again on release. Same canvas and drawing as the turn.
+  var peeking = false, peekOff = null;
+  function peek(on) {
+    var sv = SV(), F = SF();
+    if (on) {
+      if (busy || peeking || !sv || !sv.isOpen() || !F || !VT()) return false;
+      cancelTail();
+      var A = liveAffine();
+      if (!A) return false;
+      peeking = true;
+      ensureCanvas();
+      var mid = pixelToSky(A, A.g.cx, A.g.cy);
+      var lat = clamp(mid[1], -85, 85), lon = F.wrapNear(mid[0], 0);
+      var asp = affineAsp(A);
+      var zoom = clamp(F.zoomForAsp(asp, lat), 0, 22);
+      prepareTiles(lat, lon, asp, A.g, zoom);          // draws as tiles arrive
+      mode = 'sky'; frozenA = null; lineScale = 1;
+      draw();
+      fade(cv, 1, reducedMotion() ? 0 : 260);
+      if (peekOff) peekOff();
+      peekOff = sv.on ? sv.on('view', schedule) : null;
+      return true;
+    }
+    if (!peeking) return false;
+    peeking = false;
+    if (peekOff) { peekOff(); peekOff = null; }
+    fade(cv, 0, reducedMotion() ? 0 : 320);
+    setTimeout(function () { if (!peeking && !busy && !tailActive) dropCanvas(); }, 340);
+    return true;
+  }
 
   function boot() {
-    var tries = 0;
-    (function poll() {
-      if (installMapButton() || ++tries > 120) return;
-      setTimeout(poll, 250);
-    })();
     var sv = SV();
-    if (sv && sv.on) sv.on('renderer', onRendererSwap);
+    if (sv && sv.on) {
+      sv.on('renderer', onRendererSwap);
+      // However the sky opened (a link, the chip, the button), it is Sky mode.
+      sv.on('open', function () { setSkyMode(true); });
+      if (sv.isOpen && sv.isOpen()) setSkyMode(true);
+    }
   }
 
   var API = {
@@ -992,6 +1093,10 @@
     toEarth: toEarth,
     flip: flip,
     isBusy: function () { return busy; },
+    setSkyMode: setSkyMode,
+    isSkyMode: function () { return skyMode; },
+    peek: peek,
+    isPeeking: function () { return peeking; },
     STARPIN_URL: STARPIN_URL,
     _test: {
       anchor: function () { return anchor; },
@@ -1009,7 +1114,8 @@
       pixelToSky: pixelToSky,
       setTimings: function (o) { for (var k in o) if (k in MS) MS[k] = o[k]; },
       tileCount: function () { return tileList.length; },
-      FLOOR_ASP: FLOOR_ASP
+      FLOOR_ASP: FLOOR_ASP,
+      lastUp: function () { return lastUp; }
     }
   };
   global.GeosonifySkyFlip = API;
