@@ -431,15 +431,30 @@
     return typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isOpen && GeosonifySkyView.isOpen();
   }
 
+  // Through the turn (geosonify-sky-flip.js) when it is loaded: it animates
+  // when the map is on screen and switches straight over when it is not, and
+  // either way keeps the map's scale for the way back.
+  function _flip() {
+    const F = global.GeosonifySkyFlip;
+    return (F && F.isAvailable && F.isAvailable()) ? F : null;
+  }
+
   function openSky() {
     if (typeof GeosonifySkyView === 'undefined' || !GeosonifySkyView.isAvailable || !GeosonifySkyView.isAvailable()) {
       return { ok: false, error: 'Sky view could not load.' };
     }
+    const F = _flip();
+    if (F) { F.toSky(); return { ok: true }; }
     return { ok: !!GeosonifySkyView.open() };
   }
 
+  // Straight over, never animated: the chip goes on to change the imagery
+  // underneath at once.
   function closeSky() {
-    if (skyIsOpen()) GeosonifySkyView.close();
+    if (!skyIsOpen()) return;
+    const F = _flip();
+    if (F) { F.toEarth({ instant: true }); return; }
+    GeosonifySkyView.close();
   }
 
   // ── Basemap: shared apply logic, used by UI and by URL param ───────────────
