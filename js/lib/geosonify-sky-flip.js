@@ -75,8 +75,10 @@
   var BG = '#0b0f19';                       // the sky view's own background
   var MAP_ID = 'mapContainerMobile';
 
-  // Where the streets-and-stars idea lives in full.
-  var STARPIN_URL = 'starpin-flip.html';
+  // Where the streets-and-stars idea lives in full. The pointer to it is OFF
+  // until Starpin is public at starpin.org: set STARPIN_HINT_ON to true then.
+  var STARPIN_URL = 'https://starpin.org/';
+  var STARPIN_HINT_ON = false;
   var HINT_KEY = 'geosonify_skyflip_starpin_hint_count';
   var HINT_MAX = 3;                        // the first few flips on a device
 
@@ -590,6 +592,7 @@
   // ── the Starpin pointer ──────────────────────────────────────────────────
 
   function showStarpinHint() {
+    if (!STARPIN_HINT_ON) return;
     var n = 0;
     try { n = parseInt(global.localStorage.getItem(HINT_KEY) || '0', 10) || 0; } catch (e) { return; }
     if (n >= HINT_MAX) return;
