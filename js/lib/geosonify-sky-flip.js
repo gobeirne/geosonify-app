@@ -82,9 +82,15 @@
   var HINT_KEY = 'geosonify_skyflip_starpin_hint_count';
   var HINT_MAX = 3;                        // the first few flips on a device
 
-  // Past three times a survey's native pixel the sky stops reading as a
-  // photograph, so after the turn it eases back to that (Starpin's limit).
-  // DSS2 is what geosonify-sky-aladin.js shows: 0.8 arcsec per pixel.
+  // THE SCALE IS KEPT. The sky arrives, and stays, at exactly the map's scale:
+  // a street block covers the same pixels before and after the turn, as in
+  // Starpin. Close in, the photography is softer than the map (DSS2 is 0.8
+  // arcsec per pixel, ~25 m of ground), and that is shown honestly as
+  // softness rather than by zooming out behind the person's back.
+  //
+  // PULL_BACK = true restores the older behaviour: after the turn, ease out
+  // to three times the survey's native pixel. Off by default.
+  var PULL_BACK = false;
   var NATIVE_ASP = 0.8, UPSAMPLE_LIMIT = 3;
   var FLOOR_ASP = NATIVE_ASP / UPSAMPLE_LIMIT;
 
@@ -523,6 +529,7 @@
   // only once: a deliberate deep link is left where it was put).
   function pullBackIfNeeded(withStreets) {
     var sv = SV();
+    if (!PULL_BACK) return Promise.resolve();
     if (!anchor || anchor.pulled || !sv || !sv.isOpen() || sv.getRendererKind() !== 'aladin') return Promise.resolve();
     if (sv.isUserZoomed && sv.isUserZoomed()) return Promise.resolve();
     var a0 = affineAsp(liveAffine());
