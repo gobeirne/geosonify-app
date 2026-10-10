@@ -444,17 +444,24 @@
       return { ok: false, error: 'Sky view could not load.' };
     }
     const F = _flip();
-    if (F) { F.toSky(); return { ok: true }; }
+    // Sky mode: the map gains its Sky / Earth button and the HEALPix lattice,
+    // and the map turns over into the sky.
+    if (F) { F.setSkyMode(true); F.toSky(); return { ok: true }; }
     return { ok: !!GeosonifySkyView.open() };
   }
 
-  // Straight over, never animated: the chip goes on to change the imagery
-  // underneath at once.
+  // Leaving Sky mode: the button and the lattice go, and if the sky is
+  // showing it switches straight back (never animated: the chip goes on to
+  // change the imagery underneath at once).
   function closeSky() {
-    if (!skyIsOpen()) return;
     const F = _flip();
-    if (F) { F.toEarth({ instant: true }); return; }
-    GeosonifySkyView.close();
+    if (F) { F.setSkyMode(false); return; }
+    if (skyIsOpen()) GeosonifySkyView.close();
+  }
+
+  function skyModeOn() {
+    const F = _flip();
+    return !!(F && F.isSkyMode && F.isSkyMode());
   }
 
   // ── Basemap: shared apply logic, used by UI and by URL param ───────────────
@@ -474,14 +481,14 @@
     return res;
   }
 
-  // Which chip should look active: Sky while the sky view is showing, otherwise
+  // Which chip should look active: Sky in Sky mode (either face), otherwise
   // the Earth imagery in use (a pasted URL lights no chip).
   function syncChips(presets, input) {
     if (!presets) return;
     const chips = presets.querySelectorAll('.basemap-chip');
     chips.forEach(c => c.classList.remove('active'));
     let want = 'osm';
-    if (skyIsOpen()) {
+    if (skyIsOpen() || skyModeOn()) {
       want = 'sky';
     } else if (global.__GEOSONIFY_BASEMAP_ACTIVE) {
       want = global.__GEOSONIFY_BASEMAP_ACTIVE;
@@ -563,6 +570,10 @@
     try {
       if (global.AppState && global.AppState.subscribe) {
         global.AppState.subscribe('frame', () => {
+          syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
+        });
+        // Sky mode can stay on while the Earth face is showing.
+        global.addEventListener('geosonify:skymode', () => {
           syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
         });
         _frameWatch = true;
