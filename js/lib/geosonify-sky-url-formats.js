@@ -1,7 +1,19 @@
 /*
   geosonify-sky-url-formats.js  v0.2  — sky formats as URL parameters
 
-  v0.2: HealpixGrids is found through the scope chain, not window. It is a bare
+  v0.2: `moc` WAS ALREADY TAKEN, so it is claimed only by its value. The
+  code-param matcher reads a name as a grid prefix plus flags from [odrc], and
+  `m` + `o` + `c` is music, obfuscated, octave-compressed: ?moc=<music code>
+  has been valid grammar since the `c` flag was added. v0.1 claimed every
+  ?moc= and ABORTED on a value it could not parse, which broke those links,
+  while the music decoder also read every MOC link and reported "Invalid code
+  in URL". The two never overlap by value: a MOC is digits/digits, and a music
+  code is note letters and commas, never a slash. So `moc` is read as a MOC
+  only when isMocValue() says so; anything else is left to the music decoder,
+  untouched, and index.html skips a moc= that this module has claimed.
+  (nuniq, radec and desig collide with nothing; checked against the matcher.)
+
+  Also v0.2: HealpixGrids is found through the scope chain, not window. It is a bare
   top-level `const` in geosonify-healpix.js, which is NOT a property of window,
   so the v0.1 lookup (global.HealpixGrids) was undefined in every browser and
   every ?moc= / ?nuniq= link failed with "HealpixGrids is needed to place a
@@ -71,6 +83,10 @@
   var FRAME_FOLLOWING = ['moc', 'nuniq'];
   var SKY_IMPLYING = ['radec', 'desig'];
   var PARAMS = FRAME_FOLLOWING.concat(SKY_IMPLYING);
+
+  // order/ipix, e.g. 12/130176548. Never matches a music code (no '/', no digits-only).
+  var MOC_VALUE = /^\s*\d{1,2}\s*\/\s*\d+\s*$/;
+  function isMocValue(raw) { return raw !== null && raw !== undefined && MOC_VALUE.test(String(raw)); }
 
   function _Sky() {
     try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
@@ -150,6 +166,8 @@
       var key = PARAMS[i];
       var raw = urlParams.get(key);
       if (raw === null || raw === undefined || raw === '') continue;
+      // ?moc= also means music (m + o + c flags). Only a MOC-shaped value is ours.
+      if (key === 'moc' && !isMocValue(raw)) continue;
 
       var sphere = (SKY_IMPLYING.indexOf(key) !== -1) ? 'sky' : (frameSphere || 'earth');
 
@@ -260,7 +278,8 @@
     build: build,
     parseDesignation: parseDesignation,
     buildDesignation: buildDesignation,
-    checkParamName: checkParamName
+    checkParamName: checkParamName,
+    isMocValue: isMocValue
   };
 
   global.GeosonifySkyUrlFormats = API;

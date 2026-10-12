@@ -29,6 +29,11 @@
   bar in angle. It emits on("open") and on("close") too. The close
   button and Escape go back through the turn when that module is loaded.
 
+  v0.5: shapes with long sides (a constellation, a target list) no longer
+  break up or vanish when zoomed in. Each side is filled in along its great
+  circle near the view (see viewRuns), so the overlay's wrap test, which splits
+  any jump over half the screen, never mistakes a real side for a seam.
+
   v0.4: the first open no longer makes the RA / Dec card visible. The coord bar
   already reads RA / Dec in the sky (where it read lat / lon on Earth), so the
   card repeated it; it stays one tap away in "+ Add Mode". And a click on the
@@ -43,7 +48,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.4';
+  var VERSION = 'v0.5';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -698,16 +703,101 @@
     }
   }
 
+  /*
+    LONG SIDES, SEEN UP CLOSE.
+
+    A path's vertices can be tens of degrees apart (Gacrux to the Pointers),
+    while a zoomed-in view spans a fraction of a degree. Projected, one side
+    then jumps far more than half the screen between its two ends, and the
+    overlay -- correctly, for cells, which are densely sampled -- reads that as
+    a projection wrap and drops it. So the line broke up or vanished on zoom.
+
+    So each side is resampled along its great circle, but only where it passes
+    near the view: a coarse pass (at most COARSE samples a side) finds which
+    stretches come within reach of the field, and only those are filled in
+    finely (about FINE_PER_FOV samples per field width). The cost is bounded at
+    any zoom, and what is far away is simply not drawn. The result is a list of
+    runs of [dec, ra]; each is projected and drawn on its own.
+  */
+  var COARSE = 256, FINE_PER_FOV = 24;
+  function _vec(dec, ra) {
+    var d = dec * Math.PI / 180, r = ra * Math.PI / 180, c = Math.cos(d);
+    return [c * Math.cos(r), c * Math.sin(r), Math.sin(d)];
+  }
+  function _ll(v) {
+    var n = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]) || 1;
+    var dec = Math.asin(Math.max(-1, Math.min(1, v[2] / n))) * 180 / Math.PI;
+    var ra = Math.atan2(v[1], v[0]) * 180 / Math.PI;
+    return [dec, ((ra % 360) + 360) % 360];
+  }
+  function _ang(a, b) {        // radians, haversine-stable via the chord
+    var dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return 2 * Math.asin(Math.min(1, Math.sqrt(dx * dx + dy * dy + dz * dz) / 2));
+  }
+  function _slerp(a, b, om, t) {
+    if (om < 1e-12) return a.slice();
+    var s = Math.sin(om), k0 = Math.sin((1 - t) * om) / s, k1 = Math.sin(t * om) / s;
+    return [k0 * a[0] + k1 * b[0], k0 * a[1] + k1 * b[1], k0 * a[2] + k1 * b[2]];
+  }
+  function viewRuns(vertices, closed, centreRaDec, fovDeg) {
+    var pts = vertices.slice();
+    if (closed && pts.length > 2) pts.push(pts[0]);
+    if (pts.length < 2) return [];
+    var C = _vec(centreRaDec[1], centreRaDec[0]);
+    var fov = Math.max(1e-9, fovDeg) * Math.PI / 180;
+    var reach = fov * 1.2;                      // half-diagonal plus margin
+    var fine = fov / FINE_PER_FOV;
+    var runs = [], cur = [];
+    function flush() { if (cur.length > 1) runs.push(cur); cur = []; }
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var A = _vec(pts[i][0], pts[i][1]), B = _vec(pts[i + 1][0], pts[i + 1][1]);
+      var om = _ang(A, B);
+      // Short side, or a field wide enough to hold it: keep it as it is.
+      if (om <= fine * 4) {
+        if (!cur.length) cur.push(pts[i]);
+        cur.push(pts[i + 1]);
+        continue;
+      }
+      var nC = Math.min(COARSE, Math.max(2, Math.ceil(om / fine)));
+      var step = om / nC, slack = step;         // a coarse step can skip the view
+      var near = [];
+      for (var j = 0; j <= nC; j++) near.push(_ang(_slerp(A, B, om, j / nC), C) <= reach + slack);
+      for (var j2 = 0; j2 < nC; j2++) {
+        if (!(near[j2] || near[j2 + 1])) { flush(); continue; }
+        var t0 = j2 / nC, t1 = (j2 + 1) / nC;
+        var nF = Math.max(1, Math.ceil(step / fine));
+        if (!cur.length) cur.push(_ll(_slerp(A, B, om, t0)));
+        for (var f = 1; f <= nF; f++) cur.push(_ll(_slerp(A, B, om, t0 + (t1 - t0) * f / nF)));
+      }
+    }
+    flush();
+    return runs;
+  }
+
   function drawShapes(g) {
     var Overlay = _Overlay();
     if (!shapes.length || !Overlay) return;
     var vp = renderer.getSize();
+    var centre = null, fovDeg = null;
+    try { centre = renderer.getCenter(); fovDeg = renderer.getFovDeg(); } catch (e) {}
     shapes.forEach(function (spec) {
       var ring = shapeRing(spec);
       if (!ring || ring.length < 2) return;
+      var vertexShape = (spec.type === 'path' || spec.type === 'polygon');
+      var runs = (vertexShape && centre && isFinite(fovDeg))
+        ? viewRuns(ring, spec.type === 'polygon', centre, fovDeg) : null;
+      if (runs) {
+        runs.forEach(function (run) { drawRun(g, spec, Overlay, run, vp); });
+        return;
+      }
+      drawRun(g, spec, Overlay, ring, vp, spec.type !== 'path');
+    });
+  }
+
+  function drawRun(g, spec, Overlay, ring, vp, close) {
       var pr = Overlay.projectRing(ring, renderer.project, { viewport: vp });
       if (!pr.visible) return;
-      var d = Overlay.ringToPath(pr, { close: spec.type !== 'path' });
+      var d = Overlay.ringToPath(pr, { close: !!close });
       if (!d) return;
       var p = document.createElementNS(SVGNS, 'path');
       p.setAttribute('d', d);
@@ -718,7 +808,6 @@
       p.setAttribute('stroke-linecap', 'round');
       if (spec.dash) p.setAttribute('stroke-dasharray', spec.dash);
       g.appendChild(p);
-    });
   }
 
   function boundaryOf(cell) {
@@ -1365,6 +1454,7 @@
     frameOn: frameOn,
     clearShapes: clearShapes,
     getShapes: function () { return shapes.slice(); },
+    _viewRuns: viewRuns,
     shapeRing: shapeRing,
     /* Draw a named figure and frame it. The figures are stick diagrams, not
        catalogue data — see geosonify-sky-figures.js for the caveat. */

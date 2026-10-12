@@ -59,7 +59,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.3';
+  var VERSION = 'v0.4';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -246,12 +246,31 @@
 
         aladin = A.aladin(inner, options);
 
+        /*
+          A DRAG IS NOT A CLICK. Aladin raises 'click' on pointer-up even after
+          a pan, so the end of every drag moved the pin there. A click counts
+          only if the pointer stayed within DRAG_PX of where it went down and
+          Aladin did not report a drag in between. Capture phase, so Aladin's
+          own handlers cannot stop us seeing the pointer.
+        */
+        var DRAG_PX = 6, downAt = null, dragged = false;
+        inner.addEventListener('pointerdown', function (ev) {
+          downAt = [ev.clientX, ev.clientY]; dragged = false;
+        }, true);
+        inner.addEventListener('pointermove', function (ev) {
+          if (downAt && !dragged &&
+              Math.hypot(ev.clientX - downAt[0], ev.clientY - downAt[1]) > DRAG_PX) dragged = true;
+        }, true);
         aladin.on('positionChanged', function (p) {
+          if (p && p.dragging && downAt) dragged = true;
           emit('move', { ra: p && p.ra, dec: p && p.dec, dragging: !!(p && p.dragging) });
         });
         aladin.on('zoomChanged', function () { emit('zoom', { fovDeg: getFovDeg() }); });
         aladin.on('resizeChanged', function () { syncOverlaySize(); emit('resize', size()); });
         aladin.on('click', function (e) {
+          var wasDrag = dragged;
+          downAt = null; dragged = false;
+          if (wasDrag) return;
           // Aladin's click payload varies by version; derive from pixels, which
           // is stable, rather than trusting a field name.
           var c = null;
