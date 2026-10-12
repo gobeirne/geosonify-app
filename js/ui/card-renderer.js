@@ -58,8 +58,9 @@
       defaultIterations: 9, 
       maxIterations: 21, 
       // DISPLAY ONLY: shown in groups of three (thp-9da-hrg) for reading aloud
-      // and remembering. The code itself, the URL and the copy are unchanged,
-      // and decode accepts the grouped form (see normaliseGroupedInput).
+      // and remembering. The code itself and share URLs are unchanged; Copy
+      // follows the a-b switch; every decode path strips the hyphens first
+      // (see normaliseGroupedInput).
       displayGroup: 3,
       isEmoji: false 
     },
@@ -1305,13 +1306,40 @@
     code, so URLs, copies, checksums and every frozen derivation see the bare
     string exactly as before.
   */
-  function groupedCodeHTML(gridDef, code) {
+  /*
+    The a-b button on a grouped card turns the hyphens off and on, for every
+    grouped card at once, remembered across visits. On by default. Copy
+    follows the screen (what you see is what you paste); share links and
+    every frozen derivation always use the bare code.
+  */
+  const CODE_GROUPS_KEY = 'geosonify_code_groups';
+  function codeGroupsOn() {
+    try { return localStorage.getItem(CODE_GROUPS_KEY) !== 'off'; } catch (e) { return true; }
+  }
+  function setCodeGroupsOn(on) {
+    try { localStorage.setItem(CODE_GROUPS_KEY, on ? 'on' : 'off'); } catch (e) { /* this session only */ }
+  }
+  // Whether this code would be shown grouped (setting aside the a-b switch).
+  function groupable(gridDef, code) {
     const n = gridDef && gridDef.displayGroup;
     const str = String(code == null ? '' : code);
-    if (!n || str.length < 2 * n || /[^0-9A-Za-z]/.test(str)) return str;
-    const parts = [];
+    return !!n && str.length >= 2 * n && !/[^0-9A-Za-z]/.test(str);
+  }
+  function codeGroups(gridDef, code) {
+    const n = gridDef.displayGroup, str = String(code), parts = [];
     for (let i = 0; i < str.length; i += n) parts.push(str.slice(i, i + n));
-    return parts.join('<span class="code-group-sep" aria-hidden="true" style="opacity:0.4;padding:0 0.08em;">-</span>');
+    return parts;
+  }
+  function groupedCodeHTML(gridDef, code) {
+    const str = String(code == null ? '' : code);
+    if (!groupable(gridDef, str) || !codeGroupsOn()) return str;
+    return codeGroups(gridDef, str).join('<span class="code-group-sep" aria-hidden="true" style="opacity:0.4;padding:0 0.08em;">-</span>');
+  }
+  // The same, as plain text, for Copy.
+  function groupedCodeText(gridDef, code) {
+    const str = String(code == null ? '' : code);
+    if (!groupable(gridDef, str) || !codeGroupsOn()) return str;
+    return codeGroups(gridDef, str).join('-');
   }
   // The other half: a grouped code typed or pasted back in (thp-9da-hrg,
   // "thp 9da hrg", THP9DAHRG) decodes to the same cell. Only for grids that
@@ -4011,6 +4039,11 @@
       
       const chessActions = '';
 
+      const groupsShown = codeGroupsOn();
+      const groupBtn = groupable(gridDef, code) ? `
+        <button class="card-btn group-btn ${groupsShown ? 'group-active' : ''}" aria-pressed="${groupsShown}" title="${groupsShown ? 'Hide the hyphens' : 'Show the hyphens'}">a-b</button>
+      ` : '';
+
       const checksumBtn = supportsChecksum ? `
         <button class="card-btn checksum-btn ${checksumOn ? 'checksum-active' : ''}" title="Toggle checksum word">✓</button>
       ` : '';
@@ -4026,6 +4059,7 @@
           <div class="card-title">${lockIcon}${obfIcon}${gridDef.name}${linkIcon}</div>
           <div class="card-actions">
             ${(gridDef.readOnly || gridDef.noStar) ? '' : `<button class="card-btn active-btn ${isActive ? 'active-indicator' : ''}" title="Set active">★</button>`}
+            ${groupBtn}
             ${chromaActions}
             ${barcodeActions}
             ${chessActions}
@@ -4246,7 +4280,7 @@
             return;
           }
         }
-        navigator.clipboard.writeText(plainCodeWithChecksum);
+        navigator.clipboard.writeText(groupedCodeText(gridDef, plainCodeWithChecksum));
         showToast('Copied!');
       };
       
@@ -4258,6 +4292,16 @@
         shareCard(gridKey, plainCodeWithChecksum);
       };
       
+      // a-b: hyphens off/on on every grouped card (display and Copy only).
+      const groupBtnEl = card.querySelector('.group-btn');
+      if (groupBtnEl) {
+        groupBtnEl.onclick = () => {
+          setCodeGroupsOn(!codeGroupsOn());
+          renderCards();
+          if (callbacks.onCompactUpdate) callbacks.onCompactUpdate();
+        };
+      }
+
       // Checksum toggle button (BIP39 only)
       const checksumBtnEl = card.querySelector('.checksum-btn');
       if (checksumBtnEl) {
@@ -7376,6 +7420,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     // Stamp provenance from a decoded code (paste or URL), set basis "decoded code",
     // and re-run Match if active. Call after the coordinate is set from a URL code.
     stampDecodedProvenance: stampDecodedProvenance,
+    normaliseGroupedInput: normaliseGroupedInput,
 
     // --- Precision control surface (used by the PRECISION control + gates) ---
     // Pure math (exposed for the precision round-trip gate):
