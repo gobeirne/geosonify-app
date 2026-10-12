@@ -195,6 +195,13 @@
             </div>
           </div>
         </div>
+
+        <!-- Map imagery: Standard / Aerial / Topographic / Sky (sibling of Precision).
+             The body is filled by js/ui/faq-ui.js, which owns the imagery and Sky logic. -->
+        <div class="card collapsible-card" data-collapse-key="imagery" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
+          <div class="card-header">Map imagery<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
+          <div class="card-body" id="mapImageryMount"></div>
+        </div>
       </div>
       
       <!-- Cards container -->
@@ -671,25 +678,26 @@
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261010c"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261012a"></script>
+<script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
-<script src="js/lib/geosonify-healpix-lattice.js?v=20261010a"></script>
+<script src="js/lib/geosonify-healpix-lattice.js?v=20261012b"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261010d"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261010a"></script>
+<script src="js/ui/card-renderer.js?v=20261012a"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261010e"></script>
-<script src="js/ui/faq-ui.js?v=20261010b"></script>
+<script src="js/lib/faq-data.js?v=20261012b"></script>
+<script src="js/ui/faq-ui.js?v=20261012b"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
