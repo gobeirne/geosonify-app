@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-flip.js  v0.2  — the turn from the ground to the sky, and back
+  geosonify-sky-flip.js  v0.3  — the turn from the ground to the sky, and back
 
   Press "Sky" on the map and the ground turns over:
 
@@ -57,11 +57,21 @@
   reading that as a user zoom compounds on every flip.
 
   SKY MODE (v0.2). The Sky button appears on the map only in Sky mode, chosen
-  in the FAQ tab's Map imagery panel (or arrived at through a sky link); the
-  normal map modes take it away again. Sky mode also switches on the HEALPix
-  lattice on both faces (geosonify-healpix-lattice.js). In the sky, HOLDING
-  the Earth button fades the Earth's streets in over the sky, and releasing it
-  fades them out; a tap still turns back to Earth.
+  in the Map imagery panel on the main screen (or arrived at through a sky
+  link); the normal map modes take it away again. Sky mode also switches on
+  the HEALPix lattice on both faces (geosonify-healpix-lattice.js). In the sky,
+  HOLDING the Earth button fades the Earth's streets in over the sky, and
+  releasing it fades them out; a tap still turns back to Earth.
+
+  NORTH UP FIRST (v0.3). The Earth map is always north-up, but Aladin lets the
+  person rotate the sky (and the streets follow, because the projection is
+  measured). On the way down the sky is turned back to north-up FIRST, before
+  any street fades in, so the descent is the way up played backwards rather
+  than a turn and a rotation at once. It goes through the renderer's optional
+  getRotationDeg / setRotationDeg (geosonify-sky-aladin.js v0.3), and the
+  direction is MEASURED from the projection, never assumed from Aladin's sign
+  convention. A renderer without rotation (the built-in one) cannot be rotated,
+  so there is nothing to undo.
 
   NOTHING HERE TOUCHES A CODE, A URL OR A FROZEN FORMAT. Opening and closing go
   through GeosonifySkyView, which owns the frame (and so ?frame=icrs).
@@ -69,7 +79,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.2';
+  var VERSION = 'v0.3';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var BG = '#0b0f19';                       // the sky view's own background
@@ -98,6 +108,9 @@
   // view of the ground stops looking like a map: crossfade instead.
   var TURN_MAX_FOV_DEG = 60;
 
+  // Below this (degrees) the sky counts as north-up: no rotation is played.
+  var ROT_EPS_DEG = 0.2;
+
   var MS = {
     tilesWait: 900,       // how long we hold the start for ALL the street tiles
     tilesGiveUp: 2500,    // ...and for ANY, before settling for a crossfade
@@ -108,6 +121,8 @@
     pull: 850,
     hold: 1200,           // streets on the stars, before they go
     streetsOut: 3000,
+    unrotateMin: 250,     // back down: north-up first, 4 ms per degree,
+    unrotateMax: 800,     //   within these bounds
     retrace: 750,         // back down: the sky returns to the ground's scale
     streetsInBack: 420,
     skyOut: 320,
@@ -158,6 +173,7 @@
     node.style.opacity = String(to);
   }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function wrap180(d) { return ((d + 180) % 360 + 360) % 360 - 180; }
 
   // ── state ─────────────────────────────────────────────────────────────────
   var busy = false;
@@ -176,6 +192,7 @@
   var savedBg = null;
   var mapBtn = null;
   var lastUp = null;         // what the last way up decided (for tests)
+  var lastUnrotate = null;   // what the last north-up step did (for tests)
 
   // ── geometry ──────────────────────────────────────────────────────────────
 
@@ -214,6 +231,11 @@
              bx: (pn[0] - p0[0]) / e, by: (pn[1] - p0[1]) / e, g: g };
   }
   function affineAsp(A) { return A ? RAD_ARCSEC / Math.hypot(A.ax, A.ay) : null; }
+
+  // How far north is turned from straight up, in degrees (0 = north up,
+  // positive = north leans to the right). Read off the projection, so it is
+  // true whatever the renderer's own rotation convention is.
+  function northTilt(A) { return A ? Math.atan2(A.bx, -A.by) / D2R : 0; }
 
   // The sky position under a pixel (map-container px), by inverting the affine.
   function pixelToSky(A, x, y) {
@@ -596,6 +618,71 @@
     })();
   }
 
+  // The sky view's own drawing (its cell, its card cell, the lattice) is
+  // redrawn on renderer events; a rotation set from here may not raise one,
+  // so they are asked directly.
+  function redrawSkyDecor() {
+    var sv = SV();
+    try { if (sv && sv.redraw) sv.redraw(); } catch (e) {}
+    var Lat = global.GeosonifyHealpixLattice;
+    try { if (Lat && Lat.refresh) Lat.refresh(); } catch (e) {}
+  }
+
+  /*
+    North up, before the way down. Resolves when the sky is north-up (or as
+    near as the renderer allows), or at once if it already is, or if the
+    renderer cannot rotate.
+
+    THE DIRECTION IS MEASURED. Aladin keeps an angle; whether increasing it
+    turns the picture clockwise or anticlockwise is its own convention, and
+    the streets have taught this module not to assume a renderer's conventions.
+    So: nudge the angle by one degree, read the tilt off the projection, put it
+    back, and from that learn which way (and by how much) the angle has to go.
+    The shorter way round is taken. A last measured correction catches any
+    residue (Aladin applies a change only once it has drawn, hence the frames).
+  */
+  function unrotate(animate) {
+    var r = renderer();
+    lastUnrotate = null;
+    if (!r || typeof r.getRotationDeg !== 'function' || typeof r.setRotationDeg !== 'function') {
+      return Promise.resolve(false);
+    }
+    var tilt0 = northTilt(liveAffine());
+    var R0 = r.getRotationDeg();
+    if (Math.abs(tilt0) < ROT_EPS_DEG || R0 === null || !isFinite(R0)) return Promise.resolve(false);
+
+    r.setRotationDeg(R0 + 1);
+    return frames(2).then(function () {
+      var probe = northTilt(liveAffine());
+      r.setRotationDeg(R0);
+      var gain = wrap180(probe - tilt0);              // tilt change per +1 degree of angle
+      if (!(Math.abs(gain) > 0.2)) gain = 1;          // unreadable: assume the plain sign
+      gain = gain > 0 ? 1 : -1;
+      var delta = wrap180(-tilt0 / gain);             // angle change that zeroes the tilt
+      var ms = (animate && !reducedMotion())
+        ? clamp(Math.abs(delta) * 4, MS.unrotateMin, MS.unrotateMax) : 0;
+      lastUnrotate = { tilt: tilt0, from: R0, gain: gain, delta: delta, ms: ms };
+      return tween(ms, function (t) {
+        r.setRotationDeg(R0 + delta * ease(t));
+        redrawSkyDecor();
+      });
+    }).then(function () { return frames(2); }).then(function () {
+      var rest = northTilt(liveAffine());
+      if (Math.abs(rest) >= ROT_EPS_DEG) {
+        var now = r.getRotationDeg();
+        if (now !== null && isFinite(now)) {
+          // Same measured direction as above: undo the residue directly.
+          r.setRotationDeg(now - rest / (lastUnrotate ? lastUnrotate.gain : 1));
+        }
+        return frames(2);
+      }
+    }).then(function () {
+      redrawSkyDecor();
+      if (lastUnrotate) lastUnrotate.after = northTilt(liveAffine());
+      return true;
+    }).catch(function () { return false; });
+  }
+
   // ── the Starpin pointer ──────────────────────────────────────────────────
 
   function showStarpinHint() {
@@ -794,6 +881,7 @@
 
   // ── down ──────────────────────────────────────────────────────────────────
 
+  // The way down: north-up first (if the sky was rotated), then the descent.
   function toEarth(o) {
     o = o || {};
     var sv = SV(), m = lmap(), F = SF();
@@ -801,6 +889,20 @@
     if (busy) return Promise.resolve(false);
     if (peeking) { peeking = false; if (peekOff) { peekOff(); peekOff = null; } }
     cancelTail();
+    var animate = !o.instant && canAnimate();
+    if (!animate || !F || !m || !liveAffine()) return descend(o);
+    setBusy(true);
+    return unrotate(true).catch(function () {}).then(function () {
+      setBusy(false);
+      return descend(o);
+    });
+  }
+
+  function descend(o) {
+    o = o || {};
+    var sv = SV(), m = lmap(), F = SF();
+    if (!sv || !sv.isOpen()) return Promise.resolve(true);
+    if (busy) return Promise.resolve(false);
     var A = liveAffine();
     if (!A || !F || !m) { sv.close(); anchor = null; return Promise.resolve(true); }
     setBusy(true);
@@ -1007,11 +1109,11 @@
 
   // ── Sky mode ──────────────────────────────────────────────────────────────
   //
-  // Chosen in the FAQ tab's Map imagery panel. While it is on, the map carries
-  // the Sky button (the sky view its Earth button) and the HEALPix lattice is
-  // drawn on both faces. The normal map modes turn it off again, and that
-  // also leaves the sky. A sky link (?frame=icrs, ?radec=) turns it on, since
-  // it lands in the sky. Held in memory, like the basemap choice.
+  // Chosen in the Map imagery panel on the main screen. While it is on, the
+  // map carries the Sky button (the sky view its Earth button) and the HEALPix
+  // lattice is drawn on both faces. The normal map modes turn it off again,
+  // and that also leaves the sky. A sky link (?frame=icrs, ?radec=) turns it
+  // on, since it lands in the sky. Held in memory, like the basemap choice.
   var skyMode = false;
   function setSkyMode(on) {
     on = !!on;
@@ -1112,6 +1214,9 @@
       anchor: function () { return anchor; },
       liveAffine: liveAffine,
       affineAsp: affineAsp,
+      northTilt: northTilt,
+      unrotate: unrotate,
+      lastUnrotate: function () { return lastUnrotate; },
       mode: function () { return mode; },
       project: function (lat, lon, asMode) {
         var keep = mode, keepK = morphK;

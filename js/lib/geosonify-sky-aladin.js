@@ -1,11 +1,20 @@
 /*
-  geosonify-sky-aladin.js  v0.1  — Aladin Lite as a backend viewport
+  geosonify-sky-aladin.js  v0.3  — Aladin Lite as a backend viewport
 
   Implements the SAME contract as the built-in renderer (geosonify-sky-renderer.js),
   so nothing above the seam knows or cares which one is live. Aladin supplies sky
   imagery and answers "where on screen is this (ra, dec)?". Geosonify keeps the
   layout, the chrome, the cards, the URL grammar, the encryption, the sonification
   and — importantly — draws its own cells into its own SVG layer on top.
+
+  v0.3: two OPTIONAL methods beyond the contract, getRotationDeg() and
+  setRotationDeg(deg), wrapping Aladin's own getRotation() / setRotation()
+  (verified in the shipped 3.9.0-beta bundle; the older names
+  getViewCenter2NorthPoleAngle / setViewCenter2NorthPoleAngle are aliases of
+  the same functions). Aladin lets the person rotate the sky; these let
+  geosonify-sky-flip.js turn it back to north-up before the way down to Earth.
+  Callers must test for them (the built-in renderer cannot rotate and has
+  neither) and must MEASURE the result rather than assume the sign convention.
 
   WHY WE DO NOT USE aladin.addMOC()
   ---------------------------------
@@ -29,6 +38,8 @@
       viewport announces itself as a foreign panel.
     * Events: positionChanged {ra, dec, dragging}, zoomChanged, resizeChanged,
       click, plus fifteen others we do not use.
+    * `setRotation(deg)` / `getRotation()` exist on the instance; setRotation
+      ignores a non-number with a console warning.
 
   LICENSING
   ---------
@@ -48,7 +59,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.2';
+  var VERSION = 'v0.3';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -353,6 +364,19 @@
             aladin.setFoV(Math.min(180, want / (ratio || 1)));    // capital V
           } catch (e) {}
         }
+      },
+      /*
+        OPTIONAL (not in the contract): the sky's rotation, in degrees, as
+        Aladin keeps it. null / false when Aladin is not ready or lacks the
+        method. The sign convention is Aladin's; callers measure the effect.
+      */
+      getRotationDeg: function () {
+        if (!aladin || typeof aladin.getRotation !== 'function') return null;
+        try { var v = +aladin.getRotation(); return isFinite(v) ? v : null; } catch (e) { return null; }
+      },
+      setRotationDeg: function (d) {
+        if (!aladin || typeof aladin.setRotation !== 'function' || !isFinite(d)) return false;
+        try { aladin.setRotation(+d); return true; } catch (e) { return false; }
       },
       getSize: size,
       on: function (evt, cb) { if (listeners[evt]) listeners[evt].push(cb); },
