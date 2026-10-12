@@ -1,5 +1,13 @@
 /*
-  geosonify-sky-url-formats.js  v0.1  — sky formats as URL parameters
+  geosonify-sky-url-formats.js  v0.2  — sky formats as URL parameters
+
+  v0.2: HealpixGrids is found through the scope chain, not window. It is a bare
+  top-level `const` in geosonify-healpix.js, which is NOT a property of window,
+  so the v0.1 lookup (global.HealpixGrids) was undefined in every browser and
+  every ?moc= / ?nuniq= link failed with "HealpixGrids is needed to place a
+  MOC/NUNIQ cell". The Node tests passed because they set globalThis by hand.
+  Same probe as geosonify-sky.js, geosonify-sky-card-defs.js and
+  geosonify-precision.js.
 
   A URL IS NOT A SHARE LINK. IT IS A CONVERSION.
   ---------------------------------------------
@@ -58,7 +66,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
 
   var FRAME_FOLLOWING = ['moc', 'nuniq'];
   var SKY_IMPLYING = ['radec', 'desig'];
@@ -67,6 +75,17 @@
   function _Sky() {
     try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
     return (global && global.GeosonifySky) || null;
+  }
+
+  // HealpixGrids: bare top-level const in the browser (NOT window.*); a global
+  // set by hand in Node tests. Ask GeosonifySky first, which owns the probe.
+  function _HP() {
+    var S = _Sky();
+    if (S && typeof S.getEngine === 'function') {
+      try { var e = S.getEngine(); if (e) return e; } catch (err) {}
+    }
+    try { if (typeof HealpixGrids !== 'undefined' && HealpixGrids) return HealpixGrids; } catch (err) {}
+    return (global && global.HealpixGrids) || null;
   }
 
   /*
@@ -177,8 +196,7 @@
     if (!S) return null;
     switch (cardKey) {
       case 'skymoc': {
-        if (!S.nestIndexFor && !global.HealpixGrids) return null;
-        var HP = global.HealpixGrids;
+        var HP = _HP();
         if (!HP) return null;
         var ipix = HP.nestIndex(decDeg, raDeg, order);
         // Order 30 is never emitted: mocpy accepts it WITHOUT error and
@@ -187,7 +205,7 @@
         return { moc: order + '/' + ipix.toString() };
       }
       case 'skynuniq': {
-        var HP2 = global.HealpixGrids;
+        var HP2 = _HP();
         if (!HP2) return null;
         var ip = HP2.nestIndex(decDeg, raDeg, order);
         return { nuniq: S.nuniq(order, ip).toString() };
@@ -210,7 +228,7 @@
     path the rest of the app uses. Returns [dec, ra].
   */
   function centreOf(cell) {
-    var HP = global.HealpixGrids;
+    var HP = _HP();
     if (!HP || !HP.nestCentre || !HP.pathToNest) {
       throw new Error('HealpixGrids is needed to place a MOC/NUNIQ cell');
     }
