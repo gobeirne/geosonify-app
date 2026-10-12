@@ -24,6 +24,51 @@
 <link rel="manifest" href="/site.webmanifest" />
 <link rel="stylesheet" href="css/geosonify-styles.css?v=20260819" />
   <style>
+    /* a-b (hyphens) toggle on grouped cards: a fixed label; lit = hyphens shown */
+    .card-btn.group-btn {
+      width: auto;
+      padding: 0 6px;
+      font-family: 'SF Mono', ui-monospace, monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      opacity: 0.45;
+      transition: opacity 0.2s;
+    }
+    .card-btn.group-btn.group-active { opacity: 1; }
+
+    /* Collapsible control cards (mobile/tablet). A collapsed header carries a
+       short summary of its setting, so nothing is hidden by collapsing; a
+       one-time chevron dip on first visit shows they open. */
+    .collapse-summary { display: none; }
+    @media (max-width: 1023px) {
+      .collapsible-card > .card-header { gap: 8px; }
+      .collapsible-card > .card-header:active { opacity: 0.7; }
+      .collapsible-card.is-collapsed > .card-header .collapse-summary {
+        display: inline;
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        text-align: right;
+        text-transform: none;
+        letter-spacing: 0;
+        font-weight: 500;
+        opacity: 0.65;
+      }
+      .collapsible-card.collapse-hint > .card-header .collapse-chevron {
+        animation: collapse-hint-dip 0.9s ease-in-out 2;
+      }
+    }
+    @keyframes collapse-hint-dip {
+      0%, 100% { transform: rotate(-90deg) translateX(0); }
+      50%      { transform: rotate(-90deg) translateX(-3px); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .collapsible-card.collapse-hint > .card-header .collapse-chevron { animation: none; }
+    }
+
     /* Checksum button styles */
     .checksum-btn {
       opacity: 0.4;
@@ -174,7 +219,7 @@
       <div class="collapse-row" style="display:flex; gap:12px; flex-wrap:wrap; align-items:stretch;">
         <!-- Encoding mode controls -->
         <div class="card collapsible-card" data-collapse-key="encoding" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Encoding Mode<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
+          <div class="card-header">Encoding Mode<span class="collapse-summary"></span><span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body">
             <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
               <button class="btn btn-secondary" id="obfuscateBtn" style="flex:0 0 auto;">🔀 Hierarchical</button>
@@ -185,7 +230,7 @@
 
         <!-- Precision controls (sibling of Encoding Mode) -->
         <div class="card collapsible-card" data-collapse-key="precision" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Precision<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
+          <div class="card-header">Precision<span class="collapse-summary"></span><span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body">
             <div style="display:flex; gap:8px; align-items:center;">
               <button class="btn btn-secondary" id="precisionModeBtn" style="flex:0 0 auto;" title="Match = track the measurement precision (redraws as your pin/fix refines) · Human = fixed human-scale presets · Custom = per-card steppers">🎯 Custom</button>
@@ -199,7 +244,7 @@
         <!-- Map imagery: Standard / Aerial / Topographic / Sky (sibling of Precision).
              The body is filled by js/ui/faq-ui.js, which owns the imagery and Sky logic. -->
         <div class="card collapsible-card" data-collapse-key="imagery" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
-          <div class="card-header">Map imagery<span class="collapse-chevron" aria-hidden="true">⌄</span></div>
+          <div class="card-header">Map imagery<span class="collapse-summary"></span><span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body" id="mapImageryMount"></div>
         </div>
       </div>
@@ -667,13 +712,13 @@
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261010a"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261012a"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-frames.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
-<script src="js/lib/geosonify-sky-url-formats.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-url-formats.js?v=20261013a"></script>
 <script src="js/lib/geosonify-sky-carry.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
@@ -685,18 +730,18 @@
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261012b"></script>
-<script src="js/lib/geosonify-sky-flip.js?v=20261010d"></script>
+<script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261012a"></script>
+<script src="js/ui/card-renderer.js?v=20261012c"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261012c"></script>
+<script src="js/lib/faq-data.js?v=20261012d"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -966,6 +1011,8 @@
     // Detect which grid type a code belongs to based on its format
     function detectGridFromCode(code) {
       if (!code) return null;
+      // A choice already made for this input (the typed-code chooser below).
+      if (window._typedGridChoice && CARD_GRIDS[window._typedGridChoice]) return window._typedGridChoice;
       
       // Emoji (Unicode emoji characters)
       if (/^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1FA00}-\u{1FAFF}]+$/u.test(code)) {
@@ -1042,6 +1089,128 @@
       return null;
     }
     
+    /*
+      Typed codes that could be Alphanumeric OR Base64 (the Shape tab's Redraw
+      box only; links keep the detection above, unchanged, because the URL
+      grammar is a public contract).
+
+      Both alphabets share a-z and 0-9, so a code of only those characters,
+      or only their capitals, is valid in both and decodes to two unrelated
+      places. Decided like this, on the first code of the input:
+
+        Thp9ljld9 (capital, then lower case)   Alphanumeric: a phone capitalised it
+        thp-9lj-ld9 (groups of three)          Alphanumeric: the card's own grouping
+        thp9ljld9 / THP9LJLD9                  the starred card, if it is one of the
+                                                two; otherwise ask, naming both places
+        anything with '_' or mixed case         Base64, as before
+
+      Alphanumeric is chosen by rewriting the first code to the bare lower-case
+      form the path parser expects; the choice is held for the one redraw only.
+    */
+    function typedCodeCandidates(first) {
+      if (!first || first.indexOf(',') !== -1) return null;
+      if (/^[A-Z][a-z0-9]{5,}$/.test(first) && /[a-z]/.test(first)) {
+        return { pick: 'alphanumeric', code: first.toLowerCase() };
+      }
+      if (/^([a-z0-9]{3}-)+[a-z0-9]{1,3}$/i.test(first)) {
+        return { pick: 'alphanumeric', code: first.replace(/-/g, '').toLowerCase() };
+      }
+      const lower = /^[a-z0-9]{6,}$/.test(first), upper = /^[A-Z0-9]{6,}$/.test(first) && /[A-Z]/.test(first);
+      if (!lower && !upper) return null;
+      // Leave anything the detector already reads as something else (hex, words…).
+      const det = detectGridFromCode(first);
+      if (det && det !== 'alphanumeric' && det !== 'base64') return null;
+      return { ask: true, alpha: first.toLowerCase(), b64: first };
+    }
+
+    function placeLine(ll) {
+      const a = Math.abs(ll[0]).toFixed(2) + '\u00B0 ' + (ll[0] < 0 ? 'S' : 'N');
+      const b = Math.abs(ll[1]).toFixed(2) + '\u00B0 ' + (ll[1] < 0 ? 'W' : 'E');
+      return a + ', ' + b;
+    }
+
+    // Place names make the question answerable at a glance, but asking for
+    // them sends both positions to OpenStreetMap's Nominatim, so not while a
+    // passphrase or obfuscation is on: then the question shows coordinates only.
+    function reverseName(ll) {
+      const url = 'https://nominatim.openstreetmap.org/reverse?' + new URLSearchParams({
+        lat: ll[0].toFixed(4), lon: ll[1].toFixed(4), format: 'json', zoom: '10'
+      });
+      return fetch(url).then(r => r.ok ? r.json() : null).then(j => {
+        if (!j || !j.address) return (j && j.display_name) || null;
+        const A = j.address;
+        const town = A.city || A.town || A.village || A.municipality || A.county || A.state;
+        return [town, A.country].filter(Boolean).join(', ') || j.display_name || null;
+      }).catch(() => null);
+    }
+
+    function askWhichCode(alphaLL, b64LL) {
+      return new Promise(resolve => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const btn = 'display:block;width:100%;text-align:left;padding:12px 14px;margin:0 0 10px 0;border:1px solid #ccc;border-radius:10px;background:#f7f7f9;color:#222;cursor:pointer;font-size:15px;line-height:1.35;';
+        overlay.innerHTML = `
+          <div style="background:white;border-radius:12px;padding:20px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+            <h3 style="margin:0 0 6px 0;color:#333;">Which place did you mean?</h3>
+            <p style="margin:0 0 14px 0;color:#555;font-size:13px;">That code works as an Alphanumeric code and as a Base64 code, and they point to different places.</p>
+            <button data-g="alphanumeric" style="${btn}"><strong class="tc-name">${placeLine(alphaLL)}</strong><br><span style="font-size:12px;color:#666;">as Alphanumeric</span></button>
+            <button data-g="base64" style="${btn}"><strong class="tc-name">${placeLine(b64LL)}</strong><br><span style="font-size:12px;color:#666;">as Base64</span></button>
+            <button data-g="" style="padding:8px 16px;background:#6c757d;color:white;border:none;border-radius:6px;cursor:pointer;font-size:14px;">Cancel</button>
+          </div>`;
+        document.body.appendChild(overlay);
+        const done = g => { overlay.remove(); resolve(g || null); };
+        overlay.querySelectorAll('button').forEach(b => { b.onclick = () => done(b.getAttribute('data-g')); });
+        overlay.onclick = e => { if (e.target === overlay) done(null); };
+
+        if (!passphrase && !obfuscated) {
+          const names = overlay.querySelectorAll('.tc-name');
+          // One request, then the other a little later (Nominatim asks for <= 1 per second).
+          reverseName(alphaLL).then(n => { if (n && names[0].isConnected) names[0].textContent = n; });
+          setTimeout(() => {
+            if (!overlay.isConnected) return;
+            reverseName(b64LL).then(n => { if (n && names[1].isConnected) names[1].textContent = n; });
+          }, 1100);
+        }
+      });
+    }
+
+    // Resolves to the input to redraw and the grid to hold for it, or null to
+    // leave the input to the ordinary detection (or cancelled: { cancel: true }).
+    function resolveTypedCode(input) {
+      if (window._pathGridHint || !input || input.indexOf('~~~') !== -1) return Promise.resolve(null);
+      const tilde = input.indexOf('~');
+      const first = (tilde < 0 ? input : input.slice(0, tilde)).trim();
+      const rest = tilde < 0 ? '' : input.slice(tilde);
+      const c = typedCodeCandidates(first);
+      if (!c) return Promise.resolve(null);
+      if (c.pick) return Promise.resolve({ input: c.code + rest, grid: c.pick });
+      const star = (typeof CardRenderer !== 'undefined' && CardRenderer.getActiveGridKey) ? CardRenderer.getActiveGridKey() : null;
+      if (star === 'alphanumeric') return Promise.resolve({ input: c.alpha + rest, grid: 'alphanumeric' });
+      if (star === 'base64') return Promise.resolve({ input: c.b64 + rest, grid: 'base64' });
+      const A = decodeCardCode('alphanumeric', c.alpha, obfuscated);
+      const B = decodeCardCode('base64', c.b64, obfuscated);
+      const okA = A && isFinite(A[0]) && isFinite(A[1]), okB = B && isFinite(B[0]) && isFinite(B[1]);
+      if (okA && !okB) return Promise.resolve({ input: c.alpha + rest, grid: 'alphanumeric' });
+      if (okB && !okA) return Promise.resolve({ input: c.b64 + rest, grid: 'base64' });
+      if (!okA && !okB) return Promise.resolve(null);
+      return askWhichCode(A, B).then(g => g === 'alphanumeric' ? { input: c.alpha + rest, grid: g }
+                                        : g === 'base64' ? { input: c.b64 + rest, grid: g }
+                                        : { cancel: true });
+    }
+
+    function redrawTyped() {
+      const el = document.getElementById('redrawString');
+      return resolveTypedCode(el.value.trim()).then(r => {
+        if (r && r.cancel) return;
+        if (!r) { redrawFromString(); return; }
+        el.value = r.input;
+        window._pathGridHint = r.grid;
+        window._typedGridChoice = r.grid;
+        try { redrawFromString(); }
+        finally { window._pathGridHint = null; window._typedGridChoice = null; }
+      });
+    }
+
     // Initialize CardRenderer after DOM is ready
     function initCardRendererBridge() {
       if (typeof CardRenderer === 'undefined') {
@@ -1604,29 +1773,94 @@
 
     // ── Collapsible cards (mobile/tablet only) ────────────────────
     // Header tap collapses a card's body to claw back vertical space so the
-    // card of interest sits closer to the map on small screens. Default is
-    // expanded; a per-card "collapsed" flag persists in localStorage. Purely
-    // presentational — the CSS keeps everything expanded at >=1024px regardless
+    // card of interest sits closer to the map on small screens. Purely
+    // presentational: the CSS keeps everything expanded at >=1024px regardless
     // of the class, so desktop is untouched.
+    //
+    // Default is COLLAPSED on the stacked layout, with the setting summarised
+    // in the header (Precision · Custom), so the front page starts minimal and
+    // nothing is hidden. A per-card choice, once made, persists in localStorage
+    // and wins. The first time the defaults apply, the chevrons dip once to
+    // show the headers open (not at all with reduced motion).
     document.addEventListener('DOMContentLoaded', function() {
       var COLLAPSE_KEY_PREFIX = 'geosonify-collapse-';
+      var HINT_KEY = 'geosonify-collapse-hinted';
+      var stacked = !(window.matchMedia && window.matchMedia('(min-width: 1024px)').matches);
+
+      function get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+      function set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* this session only */ } }
+      function stripIcon(t) { return String(t || '').replace(/^[^A-Za-z0-9]+/, '').trim(); }
+
+      // What each header says when collapsed, read from the controls themselves.
+      var SUMMARY = {
+        encoding: function () {
+          var o = document.getElementById('obfuscateBtn');
+          var p = document.getElementById('passphraseBtn');
+          var s = stripIcon(o && o.textContent);
+          if (p && p.textContent.indexOf('\uD83D\uDD11') !== -1) s += (s ? ' \u00B7 ' : '') + 'Passphrase';
+          return s;
+        },
+        precision: function () {
+          var b = document.getElementById('precisionModeBtn');
+          return stripIcon(b && b.textContent);
+        },
+        imagery: function () {
+          var c = document.querySelector('#mapImageryMount .basemap-chip.active');
+          if (c) return c.textContent.trim();
+          return document.querySelector('#mapImageryMount .basemap-chip') ? 'Your own' : '';
+        }
+      };
+      var WATCH = {
+        encoding: ['obfuscateBtn', 'passphraseBtn'],
+        precision: ['precisionModeBtn'],
+        imagery: ['mapImageryMount']
+      };
+
+      var hinted = [];
       document.querySelectorAll('.collapsible-card').forEach(function(card) {
         var key = card.getAttribute('data-collapse-key');
         var header = card.querySelector('.card-header');
         if (!key || !header) return;
 
         var storageKey = COLLAPSE_KEY_PREFIX + key;
-        var stored;
-        try { stored = localStorage.getItem(storageKey); } catch (e) { stored = null; }
-        if (stored === 'collapsed') card.classList.add('is-collapsed');
+        var stored = get(storageKey);
+        if (stored === 'collapsed' || (stored === null && stacked)) card.classList.add('is-collapsed');
+        if (stored === null && stacked) hinted.push(card);
+
+        var summary = header.querySelector('.collapse-summary');
+        var fn = SUMMARY[key];
+        if (summary && fn) {
+          var refresh = function () { try { summary.textContent = fn() || ''; } catch (e) {} };
+          refresh();
+          if (window.MutationObserver) {
+            var mo = new MutationObserver(refresh);
+            (WATCH[key] || []).forEach(function (id) {
+              var el = document.getElementById(id);
+              if (el) mo.observe(el, { childList: true, characterData: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+            });
+          }
+        }
 
         header.addEventListener('click', function() {
           var collapsed = card.classList.toggle('is-collapsed');
-          try {
-            localStorage.setItem(storageKey, collapsed ? 'collapsed' : 'expanded');
-          } catch (e) { /* storage unavailable - collapse still works this session */ }
+          card.classList.remove('collapse-hint');
+          set(storageKey, collapsed ? 'collapsed' : 'expanded');
+          set(HINT_KEY, '1');
         });
       });
+
+      // One dip, staggered, a moment after the page has settled. Only the
+      // chevrons move; the layout never does.
+      if (hinted.length && !get(HINT_KEY)) {
+        set(HINT_KEY, '1');
+        hinted.forEach(function (card, i) {
+          setTimeout(function () {
+            if (!card.classList.contains('is-collapsed')) return;
+            card.classList.add('collapse-hint');
+            setTimeout(function () { card.classList.remove('collapse-hint'); }, 2000);
+          }, 1200 + i * 150);
+        });
+      }
     });
   </script>
   <script>
@@ -2041,7 +2275,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.getElementById('calcBtn').addEventListener('click', processInput);
       document.getElementById('antipodeBtn').addEventListener('click', showAntipode);
       document.getElementById('clearBtn').addEventListener('click', clearMap);
-      document.getElementById('redrawBtn').addEventListener('click', () => { _suppressURLUpdate = false; redrawFromString(); });
+      document.getElementById('redrawBtn').addEventListener('click', () => { _suppressURLUpdate = false; redrawTyped(); });
       
       // Load saved codec preference from localStorage
       const savedCodec = localStorage.getItem('geosonify-codec');
@@ -2543,6 +2777,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               });
             } catch (e) {}
           }
+          if (skyFmt.sphere === 'sky') {
+            openSkyAt({ sphere: 'sky' }, skyFmt.lat, skyFmt.lon, skyFmt.order);
+          }
           if (skyFmt.exact === false && skyFmt.boxArcsec) {
             setTimeout(() => showToast(
               'Designations name a box, not a point — this one is ' +
@@ -2722,6 +2959,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           }
           if (hpwCoord.checksumValid === true) showToast('✓ Checksum valid', 'success');
           switchToTab('home');
+          // With frame=icrs these words are a direction among the stars: open
+          // the sky on it, as the other code links do. (Before this the frame
+          // was recorded and ignored, so a sky word link opened on land.)
+          openSkyAt(urlFrame, hpwCoord[0], hpwCoord[1], null);
           setTimeout(() => { _suppressURLUpdate = false; }, 500);
         }, 200);
         return;
@@ -3027,7 +3268,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             }
             
             const hasTilde = tildeIdx > 0;
-            const centroidCode = hasTilde ? decoded.substring(0, tildeIdx) : decoded;
+            let centroidCode = hasTilde ? decoded.substring(0, tildeIdx) : decoded;
+            // A grouped code pasted into a link by hand (?a=thp-9lj-ld9): strip
+            // the hyphens once, here, so the decode, the precision inference and
+            // the exact-point stamp below all see the bare code. Grouped grids
+            // only (alphanumeric), whose alphabet has no '-'; base64 is untouched.
+            if (typeof CardRenderer !== 'undefined' && CardRenderer.normaliseGroupedInput) {
+              centroidCode = CardRenderer.normaliseGroupedInput(CARD_GRIDS[config.grid], centroidCode);
+            }
             const shapeSuffix = hasTilde ? decoded.substring(tildeIdx + separatorLen) : '';
             
             // Check if this is a delta-encoded path (signaled by 'd' suffix on URL param)
@@ -3166,9 +3414,23 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               if (urlFrame && urlFrame.sphere === 'sky' &&
                   typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isAvailable()) {
                 try {
-                  const skyPts = decoded.split('~').filter(Boolean)
-                    .map(part => decodeCardCode(config.grid, part, config.obf))
-                    .filter(Boolean)
+                  /*
+                    The sky draws the SAME vertices the map just drew. Splitting
+                    the link on '~' and decoding each piece as a full code was
+                    only right for a list of full codes: a delta path's pieces
+                    are suffixes, so variable-width deltas decoded to unrelated
+                    places (the Southern Cross drew nonsense) and gear segments
+                    ("d9AA...") decoded to nothing (no line until a flip redrew
+                    the map's copy). redrawFromString() has already run, above,
+                    and left the decoded vertices in lastSolution.points.
+                    Anything else (a point, a rectangle or circle payload) is
+                    shown as its centre only, which is what it is.
+                  */
+                  const solPts = (hasTilde && shapeSuffix && lastSolution &&
+                    Array.isArray(lastSolution.points) && lastSolution.points.length > 1)
+                    ? lastSolution.points : [result];
+                  const skyPts = solPts
+                    .filter(r => Array.isArray(r) && isFinite(r[0]) && isFinite(r[1]))
                     .map(r => [r[0], ((r[1] % 360) + 360) % 360]);
                   if (skyPts.length) {
                     GeosonifySkyView.open({ dec: skyPts[0][0], ra: skyPts[0][1] });
@@ -3562,6 +3824,25 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     */
     // The address bar is a share link too (people copy it), so it carries the
     // frame as well. Empty on Earth.
+    /*
+      Open the sky view on a direction, for a link that carries a sky frame.
+      Deferred past the URL handler's own setTimeouts so the cards and map have
+      settled first; does nothing on Earth or if the sky modules are missing.
+      openView() is idempotent (an already-open view is left as it is).
+    */
+    function openSkyAt(frame, dec, ra, order) {
+      if (!frame || frame.sphere !== 'sky' || !isFinite(dec) || !isFinite(ra)) return;
+      setTimeout(() => {
+        try {
+          if (typeof GeosonifySkyView === 'undefined' || !GeosonifySkyView.isAvailable()) return;
+          const o = { dec: dec, ra: ((ra % 360) + 360) % 360 };
+          if (order) o.order = order;
+          GeosonifySkyView.open(o);
+          GeosonifySkyView.redraw();
+        } catch (e) { console.warn('[geosonify] could not open the sky for this link:', e); }
+      }, 300);
+    }
+
     function frameQuerySuffix() {
       const f = getFrameShareParams();
       return f.length ? '&' + f.join('&') : '';
