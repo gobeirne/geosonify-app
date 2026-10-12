@@ -741,7 +741,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261012d"></script>
+<script src="js/lib/faq-data.js?v=20261013a"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -5850,7 +5850,12 @@ function encodeRaw(sol) {
       // If hard encryption is on, encrypt the output and URL
       if (encryptURL && encryptPassphrase && s && !s.startsWith('ERR')) {
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
-        const plainQuery = `${param}=${s}`;
+        // The frame goes INSIDE the encrypted text: everything outside ?enc= is
+        // dropped on decryption (FROZEN-AES-URL-V1 §2), so a sky link encrypted
+        // without it decrypted as an Earth link and opened on land. The
+        // plaintext is a query string, so this is an added parameter, not a
+        // format change; older blobs decrypt exactly as before.
+        const plainQuery = `${param}=${s}` + frameQuerySuffix();
         encryptQueryString(plainQuery, encryptPassphrase).then(blob => {
           out.textContent = blob;
           out.title = 'Hard encrypted — original code hidden';
