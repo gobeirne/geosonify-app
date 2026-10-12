@@ -21,13 +21,20 @@
   Mode and Precision. If that mount is missing they fall back to a card in the
   FAQ pane, so nothing is lost on an older index.html.
 
+  v1.4: the main-screen card is the four chips and nothing else (minimalism:
+  the explanation is in the FAQ's Sky and Map imagery answers). Pasting your
+  own imagery URL is a small card at the bottom of the FAQ pane. Choosing
+  Standard, Aerial or Topographic while the sky is showing turns back down to
+  Earth with the same animation as the Earth button, with the chosen imagery
+  already loading underneath, so the ground arrives in it.
+
   No external dependencies.
 */
 
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.3';
+  const __FAQ_UI_VER__ = 'v1.4';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -314,22 +321,6 @@
     display: none;
   }
   .basemap-warn.show { display: block; }
-  .basemap-own { margin: 0 0 4px; }
-  .basemap-own > summary {
-    cursor: pointer;
-    font-size: 12.5px;
-    color: var(--kereru-teal, #325756);
-    margin: 0 0 8px;
-    list-style: none;
-  }
-  .basemap-own > summary::-webkit-details-marker { display: none; }
-  .basemap-own > summary::before { content: '▸ '; }
-  .basemap-own[open] > summary::before { content: '▾ '; }
-  .basemap-more {
-    background: none; border: none; padding: 0;
-    font: inherit; color: var(--kereru-teal, #325756);
-    text-decoration: underline; cursor: pointer;
-  }
   @media (prefers-color-scheme: dark) {
     .basemap-warn { color: #ffcf80; background: #3a2e12; }
   }
@@ -401,24 +392,28 @@
 
   const IMAGERY_MOUNT_ID = 'mapImageryMount';
 
-  function imageryPanelHTML() {
+  // The main-screen card: the four chips, and a warning line that is empty
+  // (and takes no space) unless something fails.
+  function imageryChipsHTML() {
     return `
-    <div class="basemap-presets" id="basemapPresets">
+    <div class="basemap-presets" id="basemapPresets" style="margin:0;">
       <button class="basemap-chip active" data-basemap="osm">Standard</button>
       <button class="basemap-chip" data-basemap="aerial">Aerial</button>
       <button class="basemap-chip" data-basemap="topo">Topographic</button>
       <button class="basemap-chip" data-basemap="sky">Sky</button>
     </div>
-    <p class="basemap-note" style="margin-bottom:10px;"><strong>Sky</strong> reads the same codes as directions among the stars, and links you share while it is on open in Sky. <button type="button" class="basemap-more" data-faq-open="sky-mode">More about Sky</button></p>
-    <details class="basemap-own">
-      <summary>Your own imagery</summary>
-      <div class="basemap-paste-row">
-        <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
-        <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
-      </div>
-      <p class="basemap-note">Any XYZ tile URL or ArcGIS hosted-tile URL. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab. <button type="button" class="basemap-more" data-faq-open="map-imagery">More</button></p>
-    </details>
     <p class="basemap-warn" id="basemapWarn"></p>`;
+  }
+
+  // In the FAQ pane: paste your own tile source.
+  function ownImageryHTML() {
+    return `
+    <div class="basemap-paste-row">
+      <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
+      <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
+    </div>
+    <p class="basemap-note">Any XYZ tile URL, or an ArcGIS hosted-tile URL ending in /MapServer. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
+    <p class="basemap-warn" id="basemapPasteWarn"></p>`;
   }
 
   // Open one FAQ answer from elsewhere in the app: switch to the FAQ tab and
@@ -475,15 +470,20 @@
       }
     }
 
-    // Map imagery: on the main screen when its mount exists (see init);
-    // otherwise here, above the credits.
+    // The chips live on the main screen when its mount exists (see init);
+    // otherwise they come here. Pasting your own imagery is always here.
     if (!document.getElementById(IMAGERY_MOUNT_ID)) {
       parts.push(`
 <div class="card">
   <div class="card-header">Map imagery</div>
-  <div class="card-body">${imageryPanelHTML()}</div>
+  <div class="card-body">${imageryChipsHTML()}</div>
 </div>`);
     }
+    parts.push(`
+<div class="card" id="faq-own-imagery">
+  <div class="card-header">Your own map imagery</div>
+  <div class="card-body">${ownImageryHTML()}</div>
+</div>`);
 
     if (data.credits && data.credits.lines && data.credits.lines.length) {
       parts.push(`
@@ -587,13 +587,34 @@
     return { ok: !!GeosonifySkyView.open() };
   }
 
-  // Leaving Sky mode: the button and the lattice go, and if the sky is
-  // showing it switches straight back (never animated: the chip goes on to
-  // change the imagery underneath at once).
-  function closeSky() {
+  /*
+    Leave Sky mode for an Earth imagery choice.
+
+    `apply` sets the new imagery. If the sky is showing, the imagery is set
+    FIRST (the map is hidden behind the sky, so nothing visibly changes) and
+    then the view turns back down to Earth with the same animation as the
+    Earth button: the tiles load during the turn and the ground arrives in the
+    chosen imagery. Sky mode (its map button, its lattice) is switched off once
+    the turn has finished. If the sky is not showing, or the turn is busy or
+    unavailable, it simply switches straight over, as before.
+
+    Returns apply()'s result immediately, so the caller can report an error.
+  */
+  function leaveSkyThen(apply) {
     const F = _flip();
-    if (F) { F.setSkyMode(false); return; }
-    if (skyIsOpen()) GeosonifySkyView.close();
+    const open = skyIsOpen();
+    if (F && open && !(F.isBusy && F.isBusy()) && F.toEarth) {
+      const res = apply();
+      if (res && res.ok === false) return res;          // bad URL: stay in the sky
+      Promise.resolve(F.toEarth()).catch(() => {}).then(() => {
+        try { F.setSkyMode(false); } catch (e) {}
+        _resyncChips();
+      });
+      return res;
+    }
+    if (F) { try { F.setSkyMode(false); } catch (e) {} }
+    else if (open) GeosonifySkyView.close();
+    return apply();
   }
 
   function skyModeOn() {
@@ -635,66 +656,73 @@
     if (!matched && input && want !== 'sky') input.value = want;
   }
 
-  function wireBasemapControl(rootEl) {
-    const presets = rootEl.querySelector('#basemapPresets');
-    const input = rootEl.querySelector('#basemapPasteInput');
-    const applyBtn = rootEl.querySelector('#basemapApplyBtn');
-    const warn = rootEl.querySelector('#basemapWarn');
-    if (!presets || !input || !applyBtn) return;
-    const ui = { warn };
+  function _resyncChips() {
+    syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
+  }
 
-    const setWarn = (msg) => {
-      if (!warn) return;
-      if (!msg) { warn.classList.remove('show'); warn.textContent = ''; return; }
-      warn.textContent = msg;
-      warn.classList.add('show');
+  function _warner(el) {
+    return (msg) => {
+      if (!el) return;
+      if (!msg) { el.classList.remove('show'); el.textContent = ''; return; }
+      el.textContent = msg;
+      el.classList.add('show');
     };
+  }
+
+  // The four chips (main screen, or the FAQ fallback).
+  function wireChips(scope) {
+    const presets = scope.querySelector('#basemapPresets');
+    if (!presets) return;
+    const warn = scope.querySelector('#basemapWarn');
+    const setWarn = _warner(warn);
+    const ui = { warn };
 
     presets.querySelectorAll('.basemap-chip').forEach(chip => {
       chip.addEventListener('click', () => {
         const source = chip.dataset.basemap;
         if (source === 'sky') {
           const res = openSky();
-          if (!res.ok) { setWarn(res.error); syncChips(presets, input); return; }
-          setWarn('');
-          syncChips(presets, input);
+          setWarn(res.ok ? '' : res.error);
+          _resyncChips();
           return;
         }
-        // Any Earth imagery: leave the sky first, then apply.
-        closeSky();
-        const attrib = chip.dataset.attrib || '';
-        const res = _applyBasemap(source, attrib, ui);
-        if (!res.ok) { setWarn(res.error); syncChips(presets, input); return; }
+        // Earth imagery: back down from the sky first (animated), then show it.
+        const res = leaveSkyThen(() => _applyBasemap(source, chip.dataset.attrib || '', ui));
+        if (!res.ok) { setWarn(res.error); _resyncChips(); return; }
         setWarn('');
-        input.value = '';
+        const input = document.getElementById('basemapPasteInput');
+        if (input) input.value = '';
         _writeBasemapParam(source === 'osm' ? null : source);
-        syncChips(presets, input);
+        // Light the chosen chip now; the sky one goes off when the turn ends.
+        presets.querySelectorAll('.basemap-chip').forEach(c => c.classList.toggle('active', c === chip));
+        if (!skyIsOpen()) _resyncChips();
       });
     });
+    _resyncChips();
+  }
+
+  // The paste-your-own card in the FAQ pane.
+  function wirePaste(scope) {
+    const input = scope.querySelector('#basemapPasteInput');
+    const applyBtn = scope.querySelector('#basemapApplyBtn');
+    if (!input || !applyBtn) return;
+    const warn = scope.querySelector('#basemapPasteWarn');
+    const setWarn = _warner(warn);
+    const ui = { warn };
 
     const applyPasted = () => {
       const source = input.value.trim();
       if (!source) { setWarn('Paste an imagery URL first.'); return; }
-      closeSky();
-      const res = _applyBasemap(source, '', ui);
+      const res = leaveSkyThen(() => _applyBasemap(source, '', ui));
       if (!res.ok) { setWarn(res.error); return; }
-      if (_basemapHasSecret(source)) {
-        setWarn('Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.');
-      } else {
-        setWarn('');
-      }
+      setWarn(_basemapHasSecret(source)
+        ? 'Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.'
+        : 'Applied. The map now shows this imagery.');
       _writeBasemapParam(source);
-      syncChips(presets, input);
+      _resyncChips();
     };
-    rootEl.querySelectorAll('[data-faq-open]').forEach(b => {
-      b.addEventListener('click', e => { e.stopPropagation(); openFaqItem(b.dataset.faqOpen); });
-    });
     applyBtn.addEventListener('click', applyPasted);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
-
-    // Reflect the current state (a basemap from a display link, or a sky link
-    // that opened the sky view) into the chips.
-    syncChips(presets, input);
   }
 
   /*
@@ -709,13 +737,9 @@
     if (_frameWatch) return;
     try {
       if (global.AppState && global.AppState.subscribe) {
-        global.AppState.subscribe('frame', () => {
-          syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
-        });
+        global.AppState.subscribe('frame', _resyncChips);
         // Sky mode can stay on while the Earth face is showing.
-        global.addEventListener('geosonify:skymode', () => {
-          syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
-        });
+        global.addEventListener('geosonify:skymode', _resyncChips);
         _frameWatch = true;
       }
     } catch (e) {}
@@ -768,9 +792,10 @@
     const data = global.GEOSONIFY_FAQ;
     // Main-screen imagery card first, so renderFAQ knows not to add its own.
     const mount = document.getElementById(IMAGERY_MOUNT_ID);
-    if (mount && !mount.querySelector('#basemapPresets')) mount.innerHTML = imageryPanelHTML();
+    if (mount && !mount.querySelector('#basemapPresets')) mount.innerHTML = imageryChipsHTML();
     renderFAQ(rootEl, data);
-    wireBasemapControl(mount && mount.querySelector('#basemapPresets') ? mount : rootEl);
+    wireChips(mount && mount.querySelector('#basemapPresets') ? mount : rootEl);
+    wirePaste(rootEl);
     watchFrame();
   }
 
@@ -779,6 +804,8 @@
     version: __FAQ_UI_VER__,
     // For other code that wants to send the reader to one side (e.g. a future
     // "see an example" link from an answer).
+    // Open one answer from elsewhere in the app (switches to the FAQ tab).
+    openItem: openFaqItem,
     showSubtab: function (which, rootId) {
       const rootEl = document.getElementById(rootId || 'faq-root');
       if (rootEl) showSubtab(rootEl, which);
