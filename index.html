@@ -723,7 +723,7 @@
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261013a"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261013b"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
@@ -3843,7 +3843,22 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           const o = { dec: dec, ra: ((ra % 360) + 360) % 360 };
           if (order) o.order = order;
           GeosonifySkyView.open(o);
-          GeosonifySkyView.redraw();
+          /*
+            A link that names a CELL (a MOC) opens framed on that cell, so it
+            fills about a fifth of the view. Without this an order-26 cell,
+            3 milliarcseconds across, opened in the default 1.5-degree field,
+            two million times wider, and took a dozen zooms to find.
+          */
+          let framed = false;
+          if (order && typeof HealpixGrids !== 'undefined' && typeof GeosonifySky !== 'undefined' &&
+              GeosonifySky.cellBoundary && GeosonifySkyView.frameOn) {
+            try {
+              const ip = HealpixGrids.nestIndex(dec, o.ra, order);
+              const ring = GeosonifySky.cellBoundary(order, ip, { step: 2, close: false, frame: 'sky' });
+              if (ring && ring.length > 2) framed = GeosonifySkyView.frameOn(ring, { pad: 5 });
+            } catch (e) { console.warn('[geosonify] could not frame the linked cell:', e); }
+          }
+          if (!framed) GeosonifySkyView.redraw();
         } catch (e) { console.warn('[geosonify] could not open the sky for this link:', e); }
       }, 300);
     }
