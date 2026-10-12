@@ -29,6 +29,11 @@
   bar in angle. It emits on("open") and on("close") too. The close
   button and Escape go back through the turn when that module is loaded.
 
+  v0.6: the swap to sky imagery no longer nudges the view. Aladin's own centre
+  sits ~16 px off the middle of its box, so the swap moved the picture and the
+  flip module moved it back a moment later. The imagery is now placed by
+  measurement while still invisible, over the old chart, and only then shown.
+
   v0.5: shapes with long sides (a constellation, a target list) no longer
   break up or vanish when zoomed in. Each side is filled in along its great
   circle near the view (see viewRuns), so the overlay's wrap test, which splits
@@ -48,7 +53,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.5';
+  var VERSION = 'v0.6';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -1126,8 +1131,13 @@
       ra: centre[0], dec: centre[1], fovDeg: fov,
       background: '#0b0f19', src: opts.aladinSrc
     });
+    // The candidate's own DOM, so it can be kept invisible until it is placed.
+    var wrapBefore = Array.prototype.slice.call(els.canvasWrap.children);
     return candidate.init().then(function () {
       if (!host) { candidate.destroy(); return false; }   // view closed while loading
+      var layers = Array.prototype.slice.call(els.canvasWrap.children)
+        .filter(function (n) { return wrapBefore.indexOf(n) === -1; });
+      layers.forEach(function (n) { n.style.opacity = '0'; });
 
       /*
         RE-READ THE VIEW AT SWAP TIME, NOT AT REQUEST TIME.
@@ -1154,14 +1164,67 @@
       */
       var liveCentre = renderer ? renderer.getCenter() : centre;
       var liveFov = renderer ? renderer.getFovDeg() : fov;
+      // The sky point in the middle of the old chart: the one that must stay put.
+      var mid = null;
+      try {
+        var os = renderer.getSize();
+        mid = renderer.unproject(os.width / 2, os.height / 2);
+      } catch (e) { mid = null; }
 
-      if (renderer) { try { renderer.destroy(); } catch (e) {} }
-      renderer = candidate;
-      rendererKind = 'aladin';
-      attachRenderer(renderer);
-      renderer.setCenter(liveCentre[0], liveCentre[1]);
-      renderer.setFovDeg(liveFov);
+      candidate.setCenter(liveCentre[0], liveCentre[1]);
+      candidate.setFovDeg(liveFov);
 
+      // Place it by measurement while invisible: Aladin applies a move only
+      // once it has drawn, so measure across frames, at most a few rounds.
+      return placeHidden(candidate, mid).then(function () {
+        if (!host) { candidate.destroy(); return false; }
+        var old = renderer;
+        renderer = candidate;
+        rendererKind = 'aladin';
+        attachRenderer(renderer);
+        layers.forEach(function (n) { n.style.opacity = ''; });
+        if (old) { try { old.destroy(); } catch (e) {} }
+        return afterSwap();
+      });
+    }).catch(function (err) {
+      try { candidate.destroy(); } catch (e) {}
+      console.warn('[geosonify] sky imagery unavailable, staying on the built-in renderer:',
+                   err && err.message);
+      return false;
+    });
+  }
+
+  function _frames(n) {
+    return new Promise(function (resolve) {
+      (function next(k) {
+        if (k <= 0 || !global.requestAnimationFrame) return resolve();
+        global.requestAnimationFrame(function () { next(k - 1); });
+      })(n);
+    });
+  }
+
+  // Move r until `mid` sits in the middle of its box (within half a pixel).
+  function placeHidden(r, mid) {
+    if (!mid) return _frames(2);
+    var rounds = 0;
+    function round() {
+      return _frames(2).then(function () {
+        var sz = r.getSize(), p = r.project(mid[0], mid[1]);
+        if (!p || !sz) return;
+        var dx = p[0] - sz.width / 2, dy = p[1] - sz.height / 2;
+        if (Math.hypot(dx, dy) < 0.5 || ++rounds > 4) return;
+        var c = r.getCenter(), q = r.project(c[0], c[1]);
+        var to = q ? r.unproject(q[0] + dx, q[1] + dy) : null;
+        if (!to) return;
+        r.setCenter(to[0], to[1]);
+        return round();
+      });
+    }
+    return round();
+  }
+
+  // After the imagery is on screen: the scale re-match, then tell listeners.
+  function afterSwap() {
       /*
         Re-match against Aladin by MEASUREMENT.
 
@@ -1184,12 +1247,6 @@
       draw();
       emit('renderer');
       return true;
-    }).catch(function (err) {
-      try { candidate.destroy(); } catch (e) {}
-      console.warn('[geosonify] sky imagery unavailable, staying on the built-in renderer:',
-                   err && err.message);
-      return false;
-    });
   }
 
   function showAttribution() {
