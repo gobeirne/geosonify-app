@@ -57,6 +57,10 @@
       grid: typeof alphanumericArray !== 'undefined' ? alphanumericArray : null, 
       defaultIterations: 9, 
       maxIterations: 21, 
+      // DISPLAY ONLY: shown in groups of three (thp-9da-hrg) for reading aloud
+      // and remembering. The code itself, the URL and the copy are unchanged,
+      // and decode accepts the grouped form (see normaliseGroupedInput).
+      displayGroup: 3,
       isEmoji: false 
     },
     emoji: { 
@@ -1065,19 +1069,39 @@
     } catch (e) { /* private mode */ }
   }
 
-  // One-time: surface the standard Chessboard card by default for existing users whose saved
-  // state predates it. New users get it from the default `visible` array above. HEALPix
-  // Chessboard stays add-on only ("+ Add Mode").
+  // One-time: surface the HEALPix Chessboard by default (the square, HexByte-backed
+  // Chessboard is now add-on only, via "+ Add Mode").
+  //
+  // Devices that already ran the older one-time default were given the SQUARE board
+  // automatically (flag 'geosonify_chessboard_default_added'). For them the square
+  // board is swapped for the HEALPix one IN PLACE, so it keeps its slot in the deck.
+  // That cannot tell an auto-added square board from one the person chose to keep,
+  // so it runs once only: re-adding the square board afterwards sticks. New devices
+  // just get the HEALPix board. Display only: no code, URL or format is involved.
   function surfaceChessboardDefault() {
     if (typeof ChessboardLib === 'undefined') return;
     try {
-      if (!localStorage.getItem('geosonify_chessboard_default_added')) {
-        if (CARD_GRIDS.chessboard && !cardState.visible.includes('chessboard')) {
-          cardState.visible.push('chessboard');
+      if (localStorage.getItem('geosonify_hpchessboard_default_added')) return;
+      if (!CARD_GRIDS.hpchessboard) return;               // not registered yet: next load
+      const hadOldDefault = !!localStorage.getItem('geosonify_chessboard_default_added');
+      const sq = cardState.visible.indexOf('chessboard');
+      if (!cardState.visible.includes('hpchessboard')) {
+        if (hadOldDefault && sq >= 0) {
+          cardState.visible.splice(sq, 1, 'hpchessboard');
+          const oi = cardState.order.indexOf('chessboard');
+          const hi = cardState.order.indexOf('hpchessboard');
+          if (oi >= 0 && hi >= 0) {
+            cardState.order.splice(hi, 1);
+            cardState.order.splice(cardState.order.indexOf('chessboard'), 0, 'hpchessboard');
+          }
+          if (cardState.active === 'chessboard') cardState.active = 'hpchessboard';
+        } else {
+          cardState.visible.push('hpchessboard');
         }
-        localStorage.setItem('geosonify_chessboard_default_added', '1');
-        saveCardState();
       }
+      localStorage.setItem('geosonify_chessboard_default_added', '1');   // retire the old default
+      localStorage.setItem('geosonify_hpchessboard_default_added', '1');
+      saveCardState();
     } catch (e) { /* private mode */ }
   }
 
@@ -1272,6 +1296,32 @@
   //   chromaOf → HEALPix ChromaCoord (RGB111 swatch view of an hphex code)
   // The standard ChromaCoord is NOT a presentation — it's a real hexByte encoder;
   // only the HEALPix one borrows hphex via chromaOf.
+  /*
+    Grouped display (gridDef.displayGroup = n): split a code into runs of n
+    characters, counted from the LEFT, so the groups never shift when the code
+    is truncated or extended — the start of the code is the coarse part, and it
+    keeps its shape at every precision. Codes shorter than two full groups are
+    left alone. Display only: the separator is a styled span, never part of the
+    code, so URLs, copies, checksums and every frozen derivation see the bare
+    string exactly as before.
+  */
+  function groupedCodeHTML(gridDef, code) {
+    const n = gridDef && gridDef.displayGroup;
+    const str = String(code == null ? '' : code);
+    if (!n || str.length < 2 * n || /[^0-9A-Za-z]/.test(str)) return str;
+    const parts = [];
+    for (let i = 0; i < str.length; i += n) parts.push(str.slice(i, i + n));
+    return parts.join('<span class="code-group-sep" aria-hidden="true" style="opacity:0.4;padding:0 0.08em;">-</span>');
+  }
+  // The other half: a grouped code typed or pasted back in (thp-9da-hrg,
+  // "thp 9da hrg", THP9DAHRG) decodes to the same cell. Only for grids that
+  // display grouped, whose symbols are all single lowercase characters with
+  // no '-' or space among them, so nothing valid can be misread.
+  function normaliseGroupedInput(gridDef, code) {
+    if (!gridDef || !gridDef.displayGroup || typeof code !== 'string') return code;
+    return code.replace(/[\s\-\u2010-\u2015\u00B7]+/g, '').toLowerCase();
+  }
+
   function presentationOf(gridDef) {
     if (!gridDef) return null;
     // Suggested music card: a presentation of whichever scale card wins for
@@ -1445,6 +1495,7 @@
     }
     const baseGrid = gridDef?.grid;
     if (!baseGrid || !code) return null;
+    code = normaliseGroupedInput(gridDef, code);
     
     const rows = baseGrid.length;
     const cols = baseGrid[0].length;
@@ -1556,6 +1607,7 @@
     const cols = baseGrid[0].length;
     
     try {
+      code = normaliseGroupedInput(gridDef, code);
       // Handle checksum if present (BIP39 codes with .ChecksumWord)
       let workingCode = code;
       let checksumValidation = null;
@@ -3770,8 +3822,8 @@
             : isWordBased 
             ? `<span>${formatCodeForDisplay(code, gridKey, checksumValue)}</span>`
             : (checksumValue 
-                ? `${code}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>` 
-                : code);
+                ? `${groupedCodeHTML(gridDef, code)}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>` 
+                : groupedCodeHTML(gridDef, code));
           el.innerHTML = newHTML;
         }
       }
@@ -3790,8 +3842,36 @@
     });
   }
 
+  /*
+    Show the HEALPix lattice on the map while a HEALPix card is starred.
+
+    "HEALPix card" is read from the definitions, through presentations: hphex,
+    hpquad, hp64, the HEALPix words cards, and the presentations of hphex (the
+    HEALPix Chessboard, Data Matrix and ChromaCoord). The lattice keeps its own
+    reasons (GeosonifyHealpixLattice.setReason), so this never turns off the
+    lattice Sky mode asked for, and Sky mode never turns off this one.
+    Display only: nothing here touches a code.
+  */
+  function isHealpixFamily(key) {
+    let def = CARD_GRIDS[key], guard = 0;
+    while (def && guard++ < 4) {
+      if (def.healpix || def.hpwords) return true;
+      const sib = presentationOf(def);
+      if (!sib || !CARD_GRIDS[sib]) return false;
+      def = CARD_GRIDS[sib];
+    }
+    return false;
+  }
+  function syncHealpixLattice() {
+    try {
+      if (typeof GeosonifyHealpixLattice === 'undefined' || !GeosonifyHealpixLattice.setReason) return;
+      GeosonifyHealpixLattice.setReason('starred', !!(cardState.active && isHealpixFamily(cardState.active)));
+    } catch (e) { /* a decoration must never cost the cards */ }
+  }
+
   function renderCards() {
     const container = document.getElementById('cardsContainer');
+    syncHealpixLattice();
     if (!container || !currentCardCoord) return;
 
     // Settle the suggested card's winner first: its iterations, name and
@@ -3840,8 +3920,8 @@
       
       // Format display with grey checksum (smaller font)
       const codeWithChecksum = checksumValue 
-        ? `${code}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
-        : code;
+        ? `${groupedCodeHTML(gridDef, code)}<span style="font-size:0.85em;opacity:0.5">.${checksumValue}</span>`
+        : groupedCodeHTML(gridDef, code);
       const plainCodeWithChecksum = checksumValue ? `${code}.${checksumValue}` : code;
       
       // For word-based grids, use formatted HTML with line breaks
@@ -5750,6 +5830,9 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     dialog.querySelector('#decodeBtn').onclick = () => {
       let code = input.value.trim();
       if (!code) return;
+      // A grouped code (thp-9da-hrg) is the same code: strip the grouping
+      // here, before provenance counts its characters as precision.
+      code = normaliseGroupedInput(CARD_GRIDS[gridKey], code);
       // Music codes use comma-delimited, prefix-ambiguous tokens (F, FG, FGB…);
       // a trailing comma closes off the final token. Normalize so the user
       // doesn't have to remember to type it.
@@ -5990,37 +6073,73 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     setTimeout(() => banner.remove(), 12000);  // Extended to 12s since it now has useful actions
   }
   
+  /*
+    "+ Add Mode" picker, in views.
+
+    The flat list grew past forty entries (scales, GIS schemes, two generations
+    of word cards), so it now opens on the everyday cards with sub-menus for the
+    families people go looking for on purpose. Each sub-menu has a Back button.
+
+    Grouping reads each definition's own flags, never a list of keys, so a new
+    scale, GIS scheme or legacy grid files itself:
+      music  : display === 'music'  (the C-major card, Suggested, every scale_*)
+      gis    : def.gis               (external standards; no privacy features)
+      legacy : def.prefixLength      (the original 45x45 BIP39 cards; decodable
+                                      forever, superseded by the HEALPix words)
+    Everything else is on the main view. Selection behaviour is unchanged.
+  */
+  const ADD_MODE_GROUPS = [
+    { id: 'music',  title: 'Music',  blurb: 'Scales, modes and the suggested scale',
+      test: def => def.display === 'music' },
+    { id: 'gis',    title: 'GIS',    blurb: 'Plus Codes, MGRS, UTM, national grids',
+      test: def => !!def.gis },
+    { id: 'legacy', title: 'Legacy', blurb: 'Original BIP39 word grids (still decode)',
+      test: def => !!def.prefixLength }
+  ];
+  function addModeGroupOf(def) {
+    for (const g of ADD_MODE_GROUPS) { if (g.test(def)) return g.id; }
+    return 'main';
+  }
+
   function showAddFormatModal() {
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;';
     
     const panel = document.createElement('div');
     panel.style.cssText = 'background:#1c1c1e;border-radius:16px;padding:20px;max-width:320px;width:100%;max-height:80vh;overflow-y:auto;';
-    
-    let html = '<div style="font-size:18px;font-weight:600;margin-bottom:16px;color:white;">Add Mode</div>';
-    html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
-    
-    Object.entries(CARD_GRIDS).forEach(([key, def]) => {
-      /*
-        `!def.sky` was the missing clause. Sky-only cards (RA/Dec, IAU
-        designation, MOC, NUNIQ, Sky neighbours) carry no `grid`, no `gis`, no
-        `healpix` and no presentation sibling — their value comes from a
-        formatter, not a vocabulary array — so every one of them was filtered
-        out of this list and could never be enabled. Registration was working;
-        the picker simply never showed them.
-      */
-      if ((!def.grid && !def.gis && !def.healpix && !def.hpwords && !def.sky && !presentationOf(def)) || def.deprecated) return;
+    modal.appendChild(panel);
+    document.body.appendChild(modal);
 
-      /*
-        And only offer what the CURRENT frame can actually display. Enabling a
-        card here that the frame gate then hides would look like the toggle was
-        broken. GeosonifySkyFrames.worksIn() answers from each definition's own
-        capability, so this needs no list. Absent module: everything is offered,
-        which is the pre-sky behaviour.
-      */
-      if (typeof GeosonifySkyFrames !== 'undefined' &&
-          !GeosonifySkyFrames.worksIn(key)) return;
+    const TAG = t => ' <span style="font-size:11px;opacity:0.5;">(' + t + ')</span>';
 
+    // The cards the picker can offer at all, in CARD_GRIDS order.
+    function offerable() {
+      const out = [];
+      Object.entries(CARD_GRIDS).forEach(([key, def]) => {
+        /*
+          `!def.sky` was the missing clause. Sky-only cards (RA/Dec, IAU
+          designation, MOC, NUNIQ, Sky neighbours) carry no `grid`, no `gis`, no
+          `healpix` and no presentation sibling — their value comes from a
+          formatter, not a vocabulary array — so every one of them was filtered
+          out of this list and could never be enabled. Registration was working;
+          the picker simply never showed them.
+        */
+        if ((!def.grid && !def.gis && !def.healpix && !def.hpwords && !def.sky && !presentationOf(def)) || def.deprecated) return;
+        /*
+          And only offer what the CURRENT frame can actually display. Enabling a
+          card here that the frame gate then hides would look like the toggle was
+          broken. GeosonifySkyFrames.worksIn() answers from each definition's own
+          capability, so this needs no list. Absent module: everything is offered,
+          which is the pre-sky behaviour.
+        */
+        if (typeof GeosonifySkyFrames !== 'undefined' &&
+            !GeosonifySkyFrames.worksIn(key)) return;
+        out.push([key, def]);
+      });
+      return out;
+    }
+
+    function optionHtml(key, def, inGroup) {
       const isVisible = cardState.visible.includes(key);
       const isCustom = !!def.isCustom;
       const isGis = !!def.gis;
@@ -6029,94 +6148,128 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       // A presentation card backed by an hphex sibling (the HEALPix ChromaCoord)
       // reads as HEALPix to the user; tag it that way, not "(Chess)".
       const isHpPresentation = !isChess && def.chromaOf === 'hphex';
-      // The music family: the base 'music' card (C major) plus every scale_*
-      // card registered from GeoScales.cardDefs(). display:'music' is the only
-      // thing they share and nothing else uses it, so test the flag rather than
-      // the key prefix — new scales then tag themselves with no edit here.
       const isMusic = def.display === 'music';
       const isSky = !!def.sky;
-      const tag = def.hpwords ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
-                : def.prefixLength ? ' <span style="font-size:11px;opacity:0.5;">(legacy)</span>'
-                : isCustom ? ' <span style="font-size:11px;opacity:0.5;">(custom)</span>'
-                : isSky ? ' <span style="font-size:11px;opacity:0.5;">(Sky)</span>'
-                : isGis ? ' <span style="font-size:11px;opacity:0.5;">(GIS)</span>'
-                : isChess ? ' <span style="font-size:11px;opacity:0.5;">(Chess)</span>'
-                : (isHealpix || isHpPresentation) ? ' <span style="font-size:11px;opacity:0.5;">(HEALPix)</span>'
-                : isMusic ? ' <span style="font-size:11px;opacity:0.5;">(Music)</span>' : '';
+      // Inside a sub-menu the family tag is the heading, so it is not repeated.
+      const tag = def.hpwords ? TAG('HEALPix')
+                : def.prefixLength ? (inGroup ? '' : TAG('legacy'))
+                : isCustom ? TAG('custom')
+                : isSky ? TAG('Sky')
+                : isGis ? (inGroup ? '' : TAG('GIS'))
+                : isChess ? (def.chessOf === 'hphex' ? TAG('HEALPix') : TAG('Chess'))
+                : (isHealpix || isHpPresentation) ? TAG('HEALPix')
+                : isMusic ? (inGroup ? '' : TAG('Music')) : '';
       const label = (def.listName || def.name) + tag;
-      html += `
+      return `
         <div class="format-option" data-key="${key}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:${isVisible ? 'rgba(0,255,255,0.1)' : 'rgba(255,255,255,0.05)'};border-radius:8px;cursor:pointer;border:1px solid ${isVisible ? 'rgba(0,255,255,0.3)' : 'transparent'};">
           <span style="color:white;">${label}</span>
           <span style="display:flex;align-items:center;gap:8px;">
             ${isCustom ? `<span class="custom-delete-btn" data-key="${key}" style="color:#dc3545;font-size:18px;padding:0 4px;cursor:pointer;" title="Delete custom grid">×</span>` : ''}
             <span class="vis-indicator" style="color:${isVisible ? 'cyan' : '#666'};">${isVisible ? '✓' : ''}</span>
           </span>
-        </div>
-      `;
-    });
-    
-    html += '<button id="closeAddFormat" style="width:100%;margin-top:16px;padding:12px;border-radius:8px;border:none;background:#333;color:white;font-size:15px;cursor:pointer;">Done</button>';
-    
-    panel.innerHTML = html;
-    modal.appendChild(panel);
-    document.body.appendChild(modal);
-    
-    panel.querySelectorAll('.format-option').forEach(opt => {
-      opt.onclick = (e) => {
-        // Don't toggle visibility if clicking the delete button
-        if (e.target.classList.contains('custom-delete-btn')) return;
-        
-        const key = opt.dataset.key;
-        const isVisible = cardState.visible.includes(key);
-        const visInd = opt.querySelector('.vis-indicator');
-        if (isVisible) {
-          cardState.visible = cardState.visible.filter(k => k !== key);
-          opt.style.background = 'rgba(255,255,255,0.05)';
-          opt.style.borderColor = 'transparent';
-          if (visInd) { visInd.textContent = ''; visInd.style.color = '#666'; }
-        } else {
-          cardState.visible.push(key);
-          /*
-            renderCards() iterates cardState.ORDER and filters by visible, so a
-            key absent from order can be ticked here and still never render —
-            which is exactly how it looks: the checkmark appears, the deck does
-            not change. Every register* function above pushes to order for this
-            reason; this is the backstop for any that forgets.
-          */
-          if (!cardState.order.includes(key)) cardState.order.push(key);
-          opt.style.background = 'rgba(0,255,255,0.1)';
-          opt.style.borderColor = 'rgba(0,255,255,0.3)';
-          if (visInd) { visInd.textContent = '✓'; visInd.style.color = 'cyan'; }
-        }
-        saveCardState();
-        renderCards();
-      };
-    });
-    
-    // Custom grid delete buttons
-    panel.querySelectorAll('.custom-delete-btn').forEach(btn => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        const key = btn.dataset.key;
-        const def = CARD_GRIDS[key];
-        if (!def) return;
-        if (confirm('Delete custom grid "' + def.name + '"?')) {
-          // Use CardRenderer's own unregisterGrid to clean everything up
-          CardRenderer.unregisterGrid(key);
-          // Also remove from CustomGridLoader's localStorage if available
-          if (typeof CustomGridLoader !== 'undefined' && CustomGridLoader.unregisterGrid) {
-            CustomGridLoader.unregisterGrid(key);
+        </div>`;
+    }
+
+    function render(view) {
+      const all = offerable();
+      const group = ADD_MODE_GROUPS.find(g => g.id === view) || null;
+      let html = '';
+      if (group) {
+        html += `<button class="addmode-back" type="button" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:cyan;font-size:15px;padding:0 0 12px;cursor:pointer;">‹ Back</button>`;
+        html += `<div style="font-size:18px;font-weight:600;margin-bottom:4px;color:white;">${group.title}</div>`;
+        html += `<div style="font-size:13px;color:#888;margin-bottom:12px;">${group.blurb}</div>`;
+        all.filter(([, d]) => addModeGroupOf(d) === group.id)
+           .forEach(([k, d]) => { html += optionHtml(k, d, true); });
+      } else {
+        html += '<div style="font-size:18px;font-weight:600;margin-bottom:16px;color:white;">Add Mode</div>';
+        html += '<div style="font-size:13px;color:#888;margin-bottom:12px;">Select formats to display:</div>';
+        all.filter(([, d]) => addModeGroupOf(d) === 'main')
+           .forEach(([k, d]) => { html += optionHtml(k, d, false); });
+        // Sub-menu rows: only for families that have something to offer here
+        // (in Sky, for example, GIS offers nothing and its row is left out).
+        ADD_MODE_GROUPS.forEach(g => {
+          const members = all.filter(([, d]) => addModeGroupOf(d) === g.id);
+          if (!members.length) return;
+          const on = members.filter(([k]) => cardState.visible.includes(k)).length;
+          html += `
+        <div class="addmode-group" data-group="${g.id}" style="display:flex;align-items:center;justify-content:space-between;padding:12px;margin:4px 0;background:rgba(255,255,255,0.05);border-radius:8px;cursor:pointer;border:1px solid rgba(255,255,255,0.12);">
+          <span style="color:white;">${g.title}<span style="display:block;font-size:11px;color:#888;margin-top:2px;">${g.blurb}</span></span>
+          <span style="display:flex;align-items:center;gap:8px;color:#888;font-size:13px;white-space:nowrap;">${on ? `<span style="color:cyan;">${on} on</span>` : ''}<span style="font-size:20px;line-height:1;">›</span></span>
+        </div>`;
+        });
+      }
+      html += '<button id="closeAddFormat" style="width:100%;margin-top:16px;padding:12px;border-radius:8px;border:none;background:#333;color:white;font-size:15px;cursor:pointer;">Done</button>';
+      panel.innerHTML = html;
+      panel.scrollTop = 0;
+      bind(view);
+    }
+
+    function bind(view) {
+      panel.querySelectorAll('.format-option').forEach(opt => {
+        opt.onclick = (e) => {
+          // Don't toggle visibility if clicking the delete button
+          if (e.target.classList.contains('custom-delete-btn')) return;
+          
+          const key = opt.dataset.key;
+          const isVisible = cardState.visible.includes(key);
+          const visInd = opt.querySelector('.vis-indicator');
+          if (isVisible) {
+            cardState.visible = cardState.visible.filter(k => k !== key);
+            opt.style.background = 'rgba(255,255,255,0.05)';
+            opt.style.borderColor = 'transparent';
+            if (visInd) { visInd.textContent = ''; visInd.style.color = '#666'; }
+          } else {
+            cardState.visible.push(key);
+            /*
+              renderCards() iterates cardState.ORDER and filters by visible, so a
+              key absent from order can be ticked here and still never render —
+              which is exactly how it looks: the checkmark appears, the deck does
+              not change. Every register* function above pushes to order for this
+              reason; this is the backstop for any that forgets.
+            */
+            if (!cardState.order.includes(key)) cardState.order.push(key);
+            opt.style.background = 'rgba(0,255,255,0.1)';
+            opt.style.borderColor = 'rgba(0,255,255,0.3)';
+            if (visInd) { visInd.textContent = '✓'; visInd.style.color = 'cyan'; }
           }
-          // Remove the option from the modal
-          const optEl = btn.closest('.format-option');
-          if (optEl) optEl.remove();
-          showToast('"' + def.name + '" removed');
-        }
-      };
-    });
-    
-    panel.querySelector('#closeAddFormat').onclick = () => modal.remove();
+          saveCardState();
+          renderCards();
+        };
+      });
+
+      panel.querySelectorAll('.addmode-group').forEach(row => {
+        row.onclick = () => render(row.dataset.group);
+      });
+      const back = panel.querySelector('.addmode-back');
+      if (back) back.onclick = () => render('main');
+      
+      // Custom grid delete buttons
+      panel.querySelectorAll('.custom-delete-btn').forEach(btn => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const key = btn.dataset.key;
+          const def = CARD_GRIDS[key];
+          if (!def) return;
+          if (confirm('Delete custom grid "' + def.name + '"?')) {
+            // Use CardRenderer's own unregisterGrid to clean everything up
+            CardRenderer.unregisterGrid(key);
+            // Also remove from CustomGridLoader's localStorage if available
+            if (typeof CustomGridLoader !== 'undefined' && CustomGridLoader.unregisterGrid) {
+              CustomGridLoader.unregisterGrid(key);
+            }
+            // Remove the option from the modal
+            const optEl = btn.closest('.format-option');
+            if (optEl) optEl.remove();
+            showToast('"' + def.name + '" removed');
+          }
+        };
+      });
+      
+      panel.querySelector('#closeAddFormat').onclick = () => modal.remove();
+    }
+
     modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    render('main');
   }
   
   // Decode a chess board (FEN placement field OR the ASCII board form) back to its hex code,

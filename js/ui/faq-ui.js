@@ -11,14 +11,26 @@
     - This script and faq-content.js (or translation) loaded before DOMContentLoaded fires,
       OR call GeosonifyFAQ.init() after load.
 
+  v1.2: two sub-tabs at the top, FAQ and Examples. FAQ holds the questions,
+  then the credits; Examples holds the example buttons. The last sub-tab
+  chosen is remembered on the device. A link to a question (#faq-<id>)
+  always opens the FAQ sub-tab.
+
+  v1.3: the Map imagery controls (Standard / Aerial / Topographic / Sky) live
+  on the main screen, in the collapsible card #mapImageryMount beside Encoding
+  Mode and Precision. If that mount is missing they fall back to a card in the
+  FAQ pane, so nothing is lost on an older index.html.
+
   No external dependencies.
 */
 
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.1';
+  const __FAQ_UI_VER__ = 'v1.3';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
+
+  const SUBTAB_KEY = 'geosonify_faq_subtab';
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -38,6 +50,39 @@
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
     color: var(--ios-text, #000);
   }
+
+  /* ── Sub-tabs (FAQ | Examples) ── */
+  .faq-subtabs {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    gap: 2px;
+    margin: 12px 16px 4px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--ios-light-gray, #f2f2f7);
+    box-shadow: 0 0 0 0.5px var(--ios-separator, #c6c6c8);
+  }
+  .faq-subtab {
+    flex: 1 1 0;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--ios-secondary, #3c3c43);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .faq-subtab[aria-selected="true"] {
+    background: var(--ios-card, #fff);
+    color: var(--kereru-teal, #325756);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+  }
+  .faq-subtab:focus-visible { outline: 2px solid var(--kereru-teal, #325756); outline-offset: 1px; }
+  .faq-pane[hidden] { display: none; }
 
   /* ── Section headings ── */
   .faq-section-heading {
@@ -269,6 +314,22 @@
     display: none;
   }
   .basemap-warn.show { display: block; }
+  .basemap-own { margin: 0 0 4px; }
+  .basemap-own > summary {
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--kereru-teal, #325756);
+    margin: 0 0 8px;
+    list-style: none;
+  }
+  .basemap-own > summary::-webkit-details-marker { display: none; }
+  .basemap-own > summary::before { content: '▸ '; }
+  .basemap-own[open] > summary::before { content: '▾ '; }
+  .basemap-more {
+    background: none; border: none; padding: 0;
+    font: inherit; color: var(--kereru-teal, #325756);
+    text-decoration: underline; cursor: pointer;
+  }
   @media (prefers-color-scheme: dark) {
     .basemap-warn { color: #ffcf80; background: #3a2e12; }
   }
@@ -297,6 +358,83 @@
 
   const CHEVRON = `<svg class="faq-chevron" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="5 8 10 13 15 8"/></svg>`;
 
+  // ── Sub-tabs ───────────────────────────────────────────────────────────────
+
+  function readSubtab() {
+    // A link to a question always means the FAQ.
+    try { if (/^#faq-/.test(global.location.hash || '')) return 'faq'; } catch (e) {}
+    try { return localStorage.getItem(SUBTAB_KEY) === 'examples' ? 'examples' : 'faq'; } catch (e) { return 'faq'; }
+  }
+
+  function showSubtab(rootEl, which) {
+    which = which === 'examples' ? 'examples' : 'faq';
+    rootEl.querySelectorAll('.faq-subtab').forEach(b => {
+      const on = b.dataset.subtab === which;
+      b.setAttribute('aria-selected', String(on));
+      b.tabIndex = on ? 0 : -1;
+    });
+    rootEl.querySelectorAll('.faq-pane').forEach(p => { p.hidden = p.dataset.pane !== which; });
+    try { localStorage.setItem(SUBTAB_KEY, which); } catch (e) {}
+  }
+
+  function wireSubtabs(rootEl) {
+    const tabs = Array.from(rootEl.querySelectorAll('.faq-subtab'));
+    tabs.forEach((b, i) => {
+      b.addEventListener('click', () => showSubtab(rootEl, b.dataset.subtab));
+      // Arrow keys move between tabs, as tablists do.
+      b.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
+        showSubtab(rootEl, next.dataset.subtab);
+        next.focus();
+      });
+    });
+    showSubtab(rootEl, readSubtab());
+  }
+
+  // ── Map imagery panel ──────────────────────────────────────────────────────
+  // Sky is the fourth choice. It is NOT imagery: it changes what the codes
+  // mean (the same digits name a direction in the sky), so unlike the other
+  // three it travels in share links as ?frame=icrs. The note says so; the
+  // full explanation is one tap away in the FAQ.
+
+  const IMAGERY_MOUNT_ID = 'mapImageryMount';
+
+  function imageryPanelHTML() {
+    return `
+    <div class="basemap-presets" id="basemapPresets">
+      <button class="basemap-chip active" data-basemap="osm">Standard</button>
+      <button class="basemap-chip" data-basemap="aerial">Aerial</button>
+      <button class="basemap-chip" data-basemap="topo">Topographic</button>
+      <button class="basemap-chip" data-basemap="sky">Sky</button>
+    </div>
+    <p class="basemap-note" style="margin-bottom:10px;"><strong>Sky</strong> reads the same codes as directions among the stars, and links you share while it is on open in Sky. <button type="button" class="basemap-more" data-faq-open="sky-mode">More about Sky</button></p>
+    <details class="basemap-own">
+      <summary>Your own imagery</summary>
+      <div class="basemap-paste-row">
+        <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
+        <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
+      </div>
+      <p class="basemap-note">Any XYZ tile URL or ArcGIS hosted-tile URL. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab. <button type="button" class="basemap-more" data-faq-open="map-imagery">More</button></p>
+    </details>
+    <p class="basemap-warn" id="basemapWarn"></p>`;
+  }
+
+  // Open one FAQ answer from elsewhere in the app: switch to the FAQ tab and
+  // sub-tab, expand the answer and bring it into view.
+  function openFaqItem(id) {
+    try { if (typeof switchToTab === 'function') switchToTab('examples'); } catch (e) {}
+    const rootEl = document.getElementById('faq-root');
+    if (rootEl) showSubtab(rootEl, 'faq');
+    const item = document.getElementById('faq-' + id);
+    if (!item) return;
+    item.classList.add('open');
+    const q = item.querySelector('.faq-question');
+    if (q) q.setAttribute('aria-expanded', 'true');
+    setTimeout(() => { try { item.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) {} }, 60);
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   function renderFAQ(rootEl, data) {
@@ -305,12 +443,20 @@
       return;
     }
 
+    const hasExamples = !!(data.examples && data.examples.length);
     const parts = [];
 
-    // ── FAQ sections ──
-    if (data.sections && data.sections.length) {
-      parts.push(`<p class="faq-section-heading">FAQ</p>`);
+    if (hasExamples) {
+      parts.push(`
+<div class="faq-subtabs" role="tablist" aria-label="FAQ and examples">
+  <button class="faq-subtab" role="tab" id="faq-subtab-faq" data-subtab="faq" aria-controls="faq-pane-faq" aria-selected="true">FAQ</button>
+  <button class="faq-subtab" role="tab" id="faq-subtab-examples" data-subtab="examples" aria-controls="faq-pane-examples" aria-selected="false" tabindex="-1">Examples</button>
+</div>`);
     }
+
+    // ════ FAQ pane: questions, then Map imagery, then credits ════
+    parts.push(`<div class="faq-pane" data-pane="faq" id="faq-pane-faq" role="tabpanel" aria-labelledby="faq-subtab-faq">`);
+
     for (const section of (data.sections || [])) {
       parts.push(`<p class="faq-section-heading" id="faq-sec-${esc(section.id)}">${esc(section.title)}</p>`);
       for (const item of (section.items || [])) {
@@ -329,49 +475,15 @@
       }
     }
 
-    // ── Examples — wrapped in own container so .card:nth-child() colour selectors
-    //    in geosonify-styles.css fire correctly (count resets inside the wrapper) ──
-    if (data.examples && data.examples.length) {
-      parts.push(`<div class="examples-section">`);
-      for (const cat of data.examples) {
-        parts.push(`
-<div class="card">
-  <div class="card-header">${esc(cat.category)}</div>
-  <div class="card-body">
-    <div class="examples-grid">`);
-        for (const ex of cat.items) {
-          parts.push(`      <a class="example-link" href="${esc(ex.href)}">${esc(ex.label)}<code>${esc(ex.code)}</code></a>`);
-        }
-        parts.push(`    </div>
-  </div>
-</div>`);
-      }
-      parts.push(`</div>`);
-    }
-
-    // ── Map imagery — between examples and credits ──
-    // Sky is the fourth choice. It is NOT imagery: it changes what the codes
-    // mean (the same digits name a direction in the sky), so unlike the other
-    // three it travels in share links as ?frame=icrs. The note says so.
-    parts.push(`
+    // Map imagery: on the main screen when its mount exists (see init);
+    // otherwise here, above the credits.
+    if (!document.getElementById(IMAGERY_MOUNT_ID)) {
+      parts.push(`
 <div class="card">
   <div class="card-header">Map imagery</div>
-  <div class="card-body">
-    <p class="basemap-note" style="margin-bottom:12px;">Choose what the map shows underneath your codes. Standard is the plain street map, Aerial is satellite imagery, and Topographic shows terrain. You can also paste any XYZ tile URL or ArcGIS hosted-tile URL. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
-    <p class="basemap-note" style="margin-bottom:12px;"><strong>Sky</strong> reads the same codes on the celestial sphere instead of the Earth: declination stands in for latitude and right ascension for longitude, so a code names a direction in the sky. Because that changes what a code means, links you share while Sky is on say so, and open in Sky for whoever receives them.</p>
-    <div class="basemap-presets" id="basemapPresets">
-      <button class="basemap-chip active" data-basemap="osm">Standard</button>
-      <button class="basemap-chip" data-basemap="aerial">Aerial</button>
-      <button class="basemap-chip" data-basemap="topo">Topographic</button>
-      <button class="basemap-chip" data-basemap="sky">Sky</button>
-    </div>
-    <div class="basemap-paste-row">
-      <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
-      <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
-    </div>
-    <p class="basemap-warn" id="basemapWarn"></p>
-  </div>
+  <div class="card-body">${imageryPanelHTML()}</div>
 </div>`);
+    }
 
     if (data.credits && data.credits.lines && data.credits.lines.length) {
       parts.push(`
@@ -393,7 +505,34 @@
 </div>`);
     }
 
+    parts.push(`</div>`);   // end FAQ pane
+
+    // ════ Examples pane ════
+    // Wrapped in its own container so .card:nth-child() colour selectors in
+    // geosonify-styles.css fire correctly (count resets inside the wrapper).
+    if (hasExamples) {
+      parts.push(`<div class="faq-pane" data-pane="examples" id="faq-pane-examples" role="tabpanel" aria-labelledby="faq-subtab-examples" hidden>`);
+      parts.push(`<div class="examples-section">`);
+      for (const cat of data.examples) {
+        parts.push(`
+<div class="card">
+  <div class="card-header">${esc(cat.category)}</div>
+  <div class="card-body">
+    <div class="examples-grid">`);
+        for (const ex of cat.items) {
+          parts.push(`      <a class="example-link" href="${esc(ex.href)}">${esc(ex.label)}<code>${esc(ex.code)}</code></a>`);
+        }
+        parts.push(`    </div>
+  </div>
+</div>`);
+      }
+      parts.push(`</div>`);
+      parts.push(`</div>`);   // end Examples pane
+    }
+
     rootEl.innerHTML = parts.join('\n');
+
+    if (hasExamples) wireSubtabs(rootEl);
 
     // ── Wire up accordions ──
     rootEl.querySelectorAll('.faq-question').forEach(btn => {
@@ -417,8 +556,6 @@
     // ── Example links: let them navigate normally (href handles it) ──
     // Native <a href> navigation works without JS intervention.
 
-    // ── Basemap + Sky control wiring ──
-    wireBasemapControl(rootEl);
   }
 
   // ── Sky: open / close the sky view ──────────────────────────────────────────
@@ -549,6 +686,9 @@
       _writeBasemapParam(source);
       syncChips(presets, input);
     };
+    rootEl.querySelectorAll('[data-faq-open]').forEach(b => {
+      b.addEventListener('click', e => { e.stopPropagation(); openFaqItem(b.dataset.faqOpen); });
+    });
     applyBtn.addEventListener('click', applyPasted);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
 
@@ -626,11 +766,24 @@
       return;
     }
     const data = global.GEOSONIFY_FAQ;
+    // Main-screen imagery card first, so renderFAQ knows not to add its own.
+    const mount = document.getElementById(IMAGERY_MOUNT_ID);
+    if (mount && !mount.querySelector('#basemapPresets')) mount.innerHTML = imageryPanelHTML();
     renderFAQ(rootEl, data);
+    wireBasemapControl(mount && mount.querySelector('#basemapPresets') ? mount : rootEl);
     watchFrame();
   }
 
-  global.GeosonifyFAQ = { init, version: __FAQ_UI_VER__ };
+  global.GeosonifyFAQ = {
+    init,
+    version: __FAQ_UI_VER__,
+    // For other code that wants to send the reader to one side (e.g. a future
+    // "see an example" link from an answer).
+    showSubtab: function (which, rootId) {
+      const rootEl = document.getElementById(rootId || 'faq-root');
+      if (rootEl) showSubtab(rootEl, which);
+    }
+  };
   global.GeosonifyBasemap = { applyFromURL: applyFromURL };
 
 })(typeof window !== 'undefined' ? window : this);
