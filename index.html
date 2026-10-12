@@ -712,18 +712,18 @@
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261012a"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261013a"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-frames.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
-<script src="js/lib/geosonify-sky-url-formats.js?v=20261013a"></script>
+<script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
 <script src="js/lib/geosonify-sky-carry.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261012a"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261013a"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
@@ -3193,6 +3193,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Try each URL param
       for (const [paramName, paramValue] of urlParams.entries()) {
         if (paramName === 'enc' || paramName === 'r') continue; // Already handled above
+        // ?moc=12/130176548 is a sky MOC, already handled above by
+        // GeosonifySkyUrlFormats. The same name also means music + o + c flags,
+        // so only a MOC-shaped value is skipped; a music code still decodes here.
+        if (paramName === 'moc' && typeof GeosonifySkyUrlFormats !== 'undefined' &&
+            GeosonifySkyUrlFormats.isMocValue && GeosonifySkyUrlFormats.isMocValue(paramValue)) continue;
         const config = parseURLParam(paramName);
         
         // Check for unknown custom grid (z.GridName param that didn't match any loaded grid)
