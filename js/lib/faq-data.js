@@ -110,7 +110,7 @@
             q: 'The Shape tab',
             a: `<p>The Shape tab is where you build anything more than a single point: a rectangle, a graticule, a path, a polygon, or a set of separate points. It is also where you bring real-world boundaries and routes into Geosonify.</p>
 <p>At the top is a row of shape modes: <strong>Rectangle</strong>, <strong>Graticule</strong>, <strong>Path</strong>, and <strong>Points</strong>. Choose one, then click on the map to add corners or waypoints. A rectangle needs three corners and completes the fourth for you; a path or polygon takes as many points as you like, and a path becomes a polygon when you close it by returning to the first point. You can choose whether path segments follow <strong>geodesic</strong> lines (the shortest path on the globe) or <strong>rhumb</strong> lines (a constant bearing, straight on a Mercator map). When you are happy, press <strong>Calculate</strong> to encode the shape, or <strong>Clear</strong> to start again.</p>
-<p>If you would rather not draw by hand, the same tab can import shapes. As described in detail below, you can search for a place by name, or use the File, URL, Wikidata, and OSM ID options to pull in a GeoJSON, KML, or GPX file, a Wikidata entity, or an OpenStreetMap relation. Imported routes can be played back as sound from here too (see the route-playback entry under Music &amp; Sonification). There are also boxes for pasting coordinates directly (one latitude, longitude pair per line) and for pasting a compact code to decode and redraw it.</p>`
+<p>If you would rather not draw by hand, the same tab can import shapes. As described in detail below, you can search for a place by name, or use the File, URL, Wikidata, and OSM ID options to pull in a GeoJSON, KML, or GPX file, a Wikidata entity, or an OpenStreetMap relation. Imported routes can be played back as sound from here too (see the route-playback entry under Music &amp; Sonification). There are also boxes for pasting coordinates directly (one latitude, longitude pair per line) and for pasting a compact code to decode and redraw it. Some codes are valid both as Alphanumeric and as Base64 (only lower-case letters and digits, say) and point to different places; if the starred card doesn't settle it, Geosonify asks which place you meant, naming both. Finding those names sends the two positions to OpenStreetMap's Nominatim, so with a passphrase or obfuscation on it shows coordinates instead.</p>`
           },
 
           {
@@ -1088,6 +1088,17 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
           { label: 'Central Park',    href: '?r=40.782419,-73.965552~3BN4.36H',                code: '3BN4.36H' },
           { label: 'Brooklyn Bridge', href: '?r=40.706254,-73.997051~136.4deg_1834m_26m',      code: '1834×26m' },
           { label: 'Liberty Island',  href: '?r=40.689938,-74.045241~🌼🧩🍥',                 code: '🌼🧩🍥' },
+          { label: 'Aotearoa (emoji)', href: '?r=-41.618972,173.070043~⚓🍰🍏🥔', code: '⚓🍰🍏🥔' },
+          { label: 'Iceland',     href: '?r=64.969091,-18.952600~🐴🦁🛀💒',  code: '🐴🦁🛀💒' },
+          { label: 'Egypt',       href: '?r=26.852797,31.023946~🧺🍰🧸😚',   code: '🧺🍰🧸😚' },
+          { label: 'Montenegro',  href: '?r=42.730933,19.199956~🍆🧒💺🎲',   code: '🍆🧒💺🎲' },
+          { label: 'Nigeria',     href: '?r=9.036059,8.627316~🧺🍰👅👟',     code: '🧺🍰👅👟' },
+          { label: 'Ireland',     href: '?r=53.406288,-8.147845~🏀🦁💭🧷',   code: '🏀🦁💭🧷' },
+          { label: 'Singapore',   href: '?r=1.352223,103.808784~🔰🧙🎽🤠',   code: '🔰🧙🎽🤠' },
+          { label: 'Switzerland', href: '?r=46.827204,8.234257~💼💾💟🧓',    code: '💼💾💟🧓' },
+          { label: 'Panama',      href: '?r=8.417324,-80.099379~🌿🦁🦦🥰',   code: '🌿🦁🦦🥰' },
+          { label: 'Cuba',        href: '?r=21.555788,-79.369509~🤰🍰🌊👃',  code: '🤰🍰🌊👃' },
+          { label: 'Turkey',      href: '?r=38.956099,35.595855~🧻🍰🦮🚃',   code: '🧻🍰🦮🚃' },
         ]
       },
       {
@@ -1102,22 +1113,6 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
     ]
       },
       {
-        category: 'Countries',
-        items: [
-          { label: 'Aotearoa',    href: '?r=-41.618972,173.070043~⚓🍰🍏🥔', code: '⚓🍰🍏🥔' },
-          { label: 'Iceland',     href: '?r=64.969091,-18.952600~🐴🦁🛀💒',  code: '🐴🦁🛀💒' },
-          { label: 'Egypt',       href: '?r=26.852797,31.023946~🧺🍰🧸😚',   code: '🧺🍰🧸😚' },
-          { label: 'Montenegro',  href: '?r=42.730933,19.199956~🍆🧒💺🎲',   code: '🍆🧒💺🎲' },
-          { label: 'Nigeria',     href: '?r=9.036059,8.627316~🧺🍰👅👟',     code: '🧺🍰👅👟' },
-          { label: 'Ireland',     href: '?r=53.406288,-8.147845~🏀🦁💭🧷',   code: '🏀🦁💭🧷' },
-          { label: 'Singapore',   href: '?r=1.352223,103.808784~🔰🧙🎽🤠',   code: '🔰🧙🎽🤠' },
-          { label: 'Switzerland', href: '?r=46.827204,8.234257~💼💾💟🧓',    code: '💼💾💟🧓' },
-          { label: 'Panama',      href: '?r=8.417324,-80.099379~🌿🦁🦦🥰',   code: '🌿🦁🦦🥰' },
-          { label: 'Cuba',        href: '?r=21.555788,-79.369509~🤰🍰🌊👃',  code: '🤰🍰🌊👃' },
-          { label: 'Turkey',      href: '?r=38.956099,35.595855~🧻🍰🦮🚃',   code: '🧻🍰🦮🚃' },
-        ]
-      },
-      {
         category: 'Shape Import',
         items: [
           { label: 'Budapest',       href: '?place=Budapest',                                   code: 'Place name' },
@@ -1127,6 +1122,22 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
           { label: 'Stockholm',      href: '?osmrelation=54391',                                code: 'OSM Relation' },
           { label: 'Manhattan',      href: '?place=Manhattan,%20New%20York&auto=1&grid=a&result=s', code: 'Auto pipeline' },
           { label: 'Carkfree',       href: '?place=Carkfree&auto=1&grid=a&result=s',            code: 'Auto pipeline' },
+        ]
+      },
+      {
+        category: 'Sky',
+        items: [
+          { label: "Southern Cross & Pointers", href: "?hphexd=A885D1959FBD~06E5236548~17A1CF2BC~1B94F679CF~2D970CB85F7~323EA2B82AF&frame=icrs&epoch=J2000", code: "6 stars" },
+          { label: "Matariki", href: "?hphexd=01DA08C76E9C~d9AA1C745BB8B95D1A4F8B25B5402~dACFDD8560CD~d8F66EF94CC916E2214FEA8545E53BC70E&frame=icrs&epoch=J2000", code: "9 stars" },
+          { label: "Big Dipper", href: "?hphexd=29EBDA955ED2~B65FAB4A723~BC257F7545E~BB916D04625~17EE8A93258E~17C2EEF32B49~15FFAEEB4719~BB916D04625&frame=icrs&epoch=J2000", code: "8 stars" },
+          { label: "Cassiopeia", href: "?hphexd=0BBDBB514403~dBB9DFDA4154EBD6E1594137E29393B40D0E35CC3A815A&frame=icrs&epoch=J2000", code: "5 stars" },
+          { label: "Mars turns back, 2024–25", href: "?hphexd=5D7E8C23A25C~dC18221398D253~dB80C9C8149A8810323527EC2BC08338F60~dAB549648407C92292B4F8C4B0AC9FDD6F91A496077887A84FCC7851EAF31373B8B135F2791F8B940C7B11170FACD05FA1DAA7D2AD747A8ACFB809D6CFEC023732D2~dB8406624BF4B~dA1D2ED276443172A7E64832E826EF4D2F15575237~d9ED89DA327EB9791963E9A862850E1DA0CD79C7483E93B742CF2E1C~dA1A9C9814D313BEB19A18144296810D~dB2BD457DB10E2CBA0CC14102C63C2B7F0026DF8094B7D2710EB362702566AE409F40FDDC52C06C18B98EE71BC184CC2DE3FA&frame=icrs&epoch=J2000", code: "41 nights" },
+          { label: "Barnard's Star, 1900–2100", href: "?hphexd=7C2511AA8778~d73395D723E5CF67C0B3566C97A764E507D61F2CEF4AFE2954A~d83574071D608DDD16~d72434F1327FB5103B925AE964F7A9C8A6DA2E16BEF5ED084DBFAB56D2~d8C537CCC4C5F11E6AD20DA437&frame=icrs&epoch=J2000", code: "21 decades" },
+          { label: "Barnard's Star's Gaia cell", href: "?moc=12/130176548&frame=icrs&epoch=J2000", code: "MOC 12/130176548" },
+          { label: "3C 273 to 3 milliarcseconds", href: "?moc=26/28909272840397966&frame=icrs&epoch=J2000", code: "MOC order 26" },
+          { label: "A night's targets", href: "?hphexd=B7FCFBF264D9~dC410F558CF7238229E42E8F6B820FBED37B948146D8A88CCC53BFA948593C&frame=icrs&epoch=J2000", code: "6 targets" },
+          { label: "Camera footprint on M51", href: "?hphexd=2B138AE52A4E~d7B0A0DE3B4DEE9DBB43541AE52A4E&frame=icrs&epoch=J2000", code: "4 corners" },
+          { label: "M87* in four words", href: "?hpwen=hockey-question-magnet-tail.271&frame=icrs&epoch=J2000", code: "hockey-question-magnet-tail.271" },
         ]
       },
     ],
