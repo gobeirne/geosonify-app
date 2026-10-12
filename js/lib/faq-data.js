@@ -158,7 +158,7 @@
 <pre>?address_a=thp9el4j1&amp;auto=1&amp;display&amp;basemap=aerial</pre>
 
 <h4>Pasting your own imagery</h4>
-<p>Under <strong>Your own imagery</strong>, the Map imagery panel also has a paste field for any tile source of your own. Two URL shapes work:</p>
+<p>The <strong>Your own map imagery</strong> card at the bottom of the FAQ tab has a paste field for any tile source of your own. Two URL shapes work:</p>
 <ul>
   <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
   <li>An <strong>ArcGIS hosted-tile URL</strong> - one ending in <code>/MapServer</code>; Geosonify appends the tile path for you.</li>
@@ -182,7 +182,7 @@
             q: 'What is Sky mode?',
             a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>
 <p>Choose <strong>Sky</strong> in the Map imagery panel and the map turns over: its streets, coastlines and borders flip as though you were looking up at them from underneath, and the stars with the same coordinates appear beneath them. Then the streets fade, leaving the sky, with the active card's cell drawn on it. Tap anywhere in the sky to move there, and the cards follow, just as they do on the map.</p>
-<p>In Sky mode the map keeps a <strong>Sky</strong> button in its corner, and the sky an <strong>Earth</strong> button, so you can turn back and forth. Tap <strong>Earth</strong> to go back to the place and zoom you left, or hold it to see the Earth's streets over the sky until you let go. Choosing Standard, Aerial or Topographic leaves Sky mode.</p>
+<p>In Sky mode the map keeps a <strong>Sky</strong> button in its corner, and the sky an <strong>Earth</strong> button, so you can turn back and forth. Tap <strong>Earth</strong> to go back to the place and zoom you left, or hold it to see the Earth's streets over the sky until you let go. Choosing Standard, Aerial or Topographic leaves Sky mode, turning back down to Earth in that map.</p>
 <p>Sky mode also draws the HEALPix grid, on the map and on the sky alike. (So does starring any HEALPix card, in any map mode.) Several levels show at once, and the coarsest boundary on screen is drawn heaviest, because it is the rarest. It is one grid: a cell on the ground and the patch of sky with the same code are bounded by the same lines, mirrored.</p>
 <p>Tap a star, galaxy or nebula and a small panel says what it is: its name, its type, its brightness and a link to its SIMBAD page. In the <strong>Shape</strong> tab, the search box finds objects instead of places while the sky is showing: try <em>Vega</em>, <em>M31</em> or <em>Orion Nebula</em>.</p>
 <p>Seen from below, east and west swap places, so the sky is the map's mirror image: with north at the top, east is on the left.</p>
