@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.3  — the in-app sky view
+  geosonify-sky-view.js  v0.4  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -17,9 +17,9 @@
 
   v0.2: Sky is a public mode, chosen beside Standard / Aerial / Topographic in
   the Map imagery panel. Opening it no longer opens the separate read-only Sky
-  panel; the first time, it shows the ordinary RA / Dec card instead. And the
-  view now follows the frame: whenever the frame becomes the sky (a ?frame=icrs
-  link, a ?radec= link), the view opens, so a received sky link lands in Sky.
+  panel. And the view now follows the frame: whenever the frame becomes the sky
+  (a ?frame=icrs link, a ?radec= link), the view opens, so a received sky link
+  lands in Sky.
 
   v0.3: the view can be opened hidden and centred somewhere other than the
   pin, so geosonify-sky-flip.js can turn the map over into it; it reports its
@@ -29,6 +29,13 @@
   bar in angle. It emits on("open") and on("close") too. The close
   button and Escape go back through the turn when that module is loaded.
 
+  v0.4: the first open no longer makes the RA / Dec card visible. The coord bar
+  already reads RA / Dec in the sky (where it read lat / lon on Earth), so the
+  card repeated it; it stays one tap away in "+ Add Mode". And a click on the
+  sky is now reported to listeners as on('click', {ra, dec, radiusArcsec}),
+  where radiusArcsec is a few screen pixels at the current zoom: what
+  geosonify-sky-lookup.js asks the catalogue about.
+
   PRIVACY: the view shows the true cell of the current pin, so it redacts under
   passphrase or obfuscation exactly as the sky cards do. Same rule, same
   reason, and it is the whole reason a "just show the sky" view cannot skip it.
@@ -36,7 +43,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.3';
+  var VERSION = 'v0.4';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -50,18 +57,17 @@
 
   var MAP_CONTAINER_ID = 'mapContainerMobile';
 
-  // One-time: the first time Sky opens on a device, show the RA / Dec card.
-  // It carries what the old Sky panel led with, as an ordinary card.
-  var READOUT_CARD_KEY = 'sexagesimal';
-  var READOUT_FLAG = 'geosonify_sky_readout_card_added';
+  // How far from a click counts as "on" an object, in screen pixels.
+  var CLICK_PICK_PX = 12;
 
   var host = null, renderer = null, els = null, styleTag = null;
 
   // Who wants to know when the view moves or the renderer changes. Used by
-  // geosonify-sky-flip.js to keep its street lines on the stars.
-  var _listeners = { view: [], renderer: [], open: [], close: [] };
-  function emit(evt) {
-    (_listeners[evt] || []).slice().forEach(function (fn) { try { fn(); } catch (e) {} });
+  // geosonify-sky-flip.js to keep its street lines on the stars, and by
+  // geosonify-sky-lookup.js to identify what was clicked.
+  var _listeners = { view: [], renderer: [], open: [], close: [], click: [] };
+  function emit(evt, payload) {
+    (_listeners[evt] || []).slice().forEach(function (fn) { try { fn(payload); } catch (e) {} });
   }
   function on(evt, fn) {
     if (!_listeners[evt] || typeof fn !== 'function') return function () {};
@@ -177,34 +183,14 @@
   }
 
   /*
-    The first time Sky opens on a device, make the RA / Dec card visible.
-
-    This replaces auto-opening the read-only Sky panel, which was a block of
-    chrome unlike any card. What it led with -- the position in RA and Dec -- is
-    already an ordinary card, so that is what appears. MOC, NUNIQ and the IAU
-    designation stay one tap away in "+ Add Mode".
-
-    Once per device, like the other one-time defaults in card-renderer.js: a
-    card the user hides afterwards stays hidden.
+    (v0.4) surfaceReadoutCard() used to live here: the first time Sky opened on
+    a device it made the RA / Dec card visible. Removed, because the coord bar
+    already shows RA / Dec in the sky, in the place lat / lon is shown on Earth,
+    so the card was a second copy of the same line. The card itself is
+    unchanged and still in "+ Add Mode". The old one-time flag
+    (geosonify_sky_readout_card_added) is simply no longer read; a device that
+    already has the card visible keeps it.
   */
-  function surfaceReadoutCard() {
-    try {
-      if (localStorage.getItem(READOUT_FLAG)) return;
-    } catch (e) { return; }
-    var CR = global.CardRenderer;
-    if (!CR || !CR.getCardState) return;
-    try {
-      if (global.GeosonifySkyCardDefs) global.GeosonifySkyCardDefs.register();
-      var st = CR.getCardState();
-      var grids = CR.getGridDefinitions ? CR.getGridDefinitions() : null;
-      if (!st || (grids && !grids[READOUT_CARD_KEY])) return;   // not registered yet: try next open
-      if (st.order && st.order.indexOf(READOUT_CARD_KEY) === -1) st.order.push(READOUT_CARD_KEY);
-      if (st.visible && st.visible.indexOf(READOUT_CARD_KEY) === -1) st.visible.push(READOUT_CARD_KEY);
-      if (CR.saveCardState) CR.saveCardState();
-      if (CR.render) CR.render();
-      localStorage.setItem(READOUT_FLAG, '1');
-    } catch (e) {}
-  }
 
   var _mapRO = null;
 
@@ -521,11 +507,11 @@
   // Short, for a scale bar: 20″, 5′, 2°, 500 mas.
   function angleLabel(a) {
     function r(x) { return String(+x.toPrecision(3)); }
-    if (a >= 3600) return r(a / 3600) + '\u00B0';
-    if (a >= 60) return r(a / 60) + '\u2032';
-    if (a >= 1) return r(a) + '\u2033';
+    if (a >= 3600) return r(a / 3600) + '°';
+    if (a >= 60) return r(a / 60) + '′';
+    if (a >= 1) return r(a) + '″';
     if (a >= 1e-3) return r(a * 1e3) + ' mas';
-    return r(a * 1e6) + ' \u00B5as';
+    return r(a * 1e6) + ' µas';
   }
   // Snap to the unit boundaries too, so a bar reads 1' rather than 60".
   function snapAngle(a) {
@@ -1034,6 +1020,11 @@
       if (!orderIsManual) order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, provenance.order));
       draw();
       pushCoordinate(p.dec, p.ra);
+      // Tell listeners what was clicked, with a pick radius of a few screen
+      // pixels at this zoom (what "on" an object means to a finger).
+      var asp = measuredAsp();
+      emit('click', { ra: p.ra, dec: p.dec,
+                      radiusArcsec: (asp && isFinite(asp)) ? asp * CLICK_PICK_PX : null });
     });
   }
 
@@ -1177,10 +1168,6 @@
     document.addEventListener('keydown', onKey);
     gateEarthOnlyCards(true);
     setFrame('icrs', 'sky');
-
-    // Numbers live on ordinary cards, not in a separate panel: the first time,
-    // show the RA / Dec card. Canvas above, cards below.
-    surfaceReadoutCard();
 
     draw();
 
@@ -1349,6 +1336,7 @@
     getHost: function () { return host; },
     getCanvasWrap: function () { return els ? els.canvasWrap : null; },
     isUserZoomed: function () { return userZoomed; },
+    isPrivacyOn: _privacyOn,
     measuredAsp: measuredAsp,
     redraw: draw,
     setOrder: function (k) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, k)); draw(); },

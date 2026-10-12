@@ -1,9 +1,13 @@
 /*
-  geosonify-healpix-lattice.js  v0.1  — the HEALPix lattice, on the Earth map and on the sky
+  geosonify-healpix-lattice.js  v0.2  — the HEALPix lattice, on the Earth map and on the sky
 
-  Shown in Sky mode (chosen in the FAQ tab's Map imagery panel), on both
+  Shown in Sky mode (chosen in the Map imagery panel on the main screen), on both
   faces: over the Earth map, and over the sky view. Off again in the normal
   map modes. geosonify-sky-flip.js switches it.
+
+  v0.2: also shown while a HEALPix card is the starred card (card-renderer.js
+  asks for it), in any map mode. The switches are kept apart as reasons, so
+  neither can turn off what the other asked for (see the switch section).
 
   THE DRAWING IS STARPIN'S (geosonify-starpin-map.js), generalised from one
   Leaflet map to any projection, so the same loop draws the ground and the sky:
@@ -34,7 +38,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var M_PER_ARCSEC = 111319.9 / 3600;
@@ -286,12 +290,27 @@
   }
 
   // ── switch ────────────────────────────────────────────────────────────────
+  //
+  // (v0.2) The lattice is shown for REASONS, and stays while any holds:
+  //   'sky'      Sky mode (geosonify-sky-flip.js), through setEnabled()
+  //   'starred'  a HEALPix card is the starred card (card-renderer.js)
+  // Each switch only answers for itself, so un-starring a HEALPix card cannot
+  // take the lattice away from Sky mode, and leaving Sky mode cannot take it
+  // away from a starred HEALPix card. setEnabled / isEnabled keep meaning
+  // exactly what they did for sky-flip: Sky mode's own switch.
 
-  var enabled = false;
-  function setEnabled(on) {
-    on = !!on;
-    if (on && !available()) return false;
-    enabled = on;
+  var reasons = {};
+  var shown = false;
+  var mapWait = null;
+
+  function anyReason() {
+    for (var k in reasons) if (reasons[k]) return true;
+    return false;
+  }
+
+  function apply() {
+    var on = anyReason() && available();
+    shown = on;
     var map = global.__geosonifyMap, L = global.L, sv = SV();
     // Ground
     if (on && map && L) {
@@ -300,6 +319,17 @@
     } else if (earthLayer && earthMap) {
       try { earthMap.removeLayer(earthLayer); } catch (e) {}
       earthMap = null;
+    }
+    // The map is made by the page's own start-up, which can finish after a
+    // saved starred card asks for the lattice. Wait for it, briefly.
+    if (on && !map && !mapWait) {
+      var tries = 0;
+      mapWait = setInterval(function () {
+        if (global.__geosonifyMap || ++tries > 120 || !anyReason()) {
+          clearInterval(mapWait); mapWait = null;
+          if (global.__geosonifyMap && anyReason()) apply();
+        }
+      }, 250);
     }
     // Sky
     skyOn = on;
@@ -314,12 +344,29 @@
     } else {
       scheduleSky();
     }
-    return enabled;
+    return shown;
+  }
+
+  function setReason(key, on) {
+    key = String(key || '');
+    if (!key) return shown;
+    on = !!on;
+    if (!!reasons[key] === on) return shown;      // nothing changed: no redraw
+    if (on) reasons[key] = true; else delete reasons[key];
+    return apply();
+  }
+
+  // Sky mode's switch (unchanged meaning for geosonify-sky-flip.js).
+  function setEnabled(on) {
+    on = !!on;
+    if (on && !available()) return false;
+    setReason('sky', on);
+    return !!reasons.sky;
   }
 
   // The ground palette follows the imagery: redraw after a basemap change.
   function refresh() {
-    if (!enabled) return;
+    if (!shown) return;
     if (earthLayer && earthLayer._render) earthLayer._render();
     scheduleSky();
   }
@@ -328,7 +375,10 @@
     VERSION: VERSION,
     isAvailable: available,
     setEnabled: setEnabled,
-    isEnabled: function () { return enabled; },
+    isEnabled: function () { return !!reasons.sky; },
+    setReason: setReason,
+    isShowing: function () { return shown; },
+    reasons: function () { return Object.keys(reasons); },
     refresh: refresh,
     _draw: draw,
     MAX_ORDER: MAX_ORDER

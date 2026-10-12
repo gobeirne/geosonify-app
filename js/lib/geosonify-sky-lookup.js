@@ -1,0 +1,471 @@
+/*
+  geosonify-sky-lookup.js  v0.1  — what is that star? where is Vega?
+
+  Two things, both only while the sky view is open:
+
+    1. CLICK TO IDENTIFY. Click the sky and a small panel says what is there:
+       the catalogued object nearest the click (brighter objects preferred
+       when several are close), its type, its V magnitude, how far it is from
+       the click, and a link to its SIMBAD page. If the click falls inside a
+       large object (M31, the Orion Nebula) that is said too, since the nearest
+       catalogue POINT to a click on a galaxy's disc is usually a field star.
+
+    2. SEARCH BY NAME. The Shape tab's search box finds places on Earth with
+       Nominatim. In the sky it finds objects instead: "Vega", "M31",
+       "NGC 7000", "Betelgeuse", or a position such as "05 35 17 -05 23 28".
+       The view moves there and the cards follow, as a click would.
+
+  WHERE THE ANSWERS COME FROM
+  ---------------------------
+  SIMBAD (CDS, Strasbourg), through its TAP service, for identification; the
+  Sesame name resolver (CDS) for names. Both are free and keyless, which is the
+  project's rule for any outside service. When Aladin is the live renderer and
+  Sesame cannot be reached, Aladin's own gotoObject() is the fallback, which
+  uses the same resolver by its own route. Typed positions never leave the
+  device: they are parsed by GeosonifySky.parsePosition.
+
+  PRIVACY. In Geosonify the sky position IS the Earth position (Dec = lat,
+  RA = lon), so sending a click to SIMBAD sends a location. That is fine for a
+  click the person made on a star, and is why nothing is sent automatically
+  (not on open, not on GPS ticks). Under passphrase or obfuscation nothing is
+  sent at all, the same rule the sky view uses to redact its readouts. A name
+  search sends only the typed name.
+
+  Display only. It reads no code, writes no URL and changes no format.
+*/
+(function (global) {
+  'use strict';
+
+  var VERSION = 'v0.1';
+  var TAP_URL = 'https://simbad.cds.unistra.fr/simbad/sim-tap/sync';
+  var SESAME_URL = 'https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/~SNV?';
+  var SIMBAD_ID_URL = 'https://simbad.cds.unistra.fr/simbad/sim-id?Ident=';
+  var TIMEOUT_MS = 9000;
+
+  // Pick radius bounds (arcsec): below 2" SIMBAD's own astrometry is the limit;
+  // above 30' a "nearest object" stops meaning anything.
+  var MIN_R = 2, MAX_R = 1800;
+  // Extended objects: how far out to look for something the click sits INSIDE.
+  var EXT_SEARCH_DEG = 3;
+
+  var PANEL_ID = 'gs-sky-lookup';
+  var SEARCH_INPUT = 'placeNameInput';
+  var SEARCH_BTN = 'placeNameLoad';
+
+  function SV() { return global.GeosonifySkyView || null; }
+  function Sky() {
+    try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
+    return global.GeosonifySky || null;
+  }
+  function skyOpen() { var sv = SV(); return !!(sv && sv.isOpen && sv.isOpen()); }
+  function privacyOn() { var sv = SV(); return !!(sv && sv.isPrivacyOn && sv.isPrivacyOn()); }
+  function toast(msg, kind) { if (global.showToast) { try { global.showToast(msg, kind); } catch (e) {} } }
+
+  // ── names ────────────────────────────────────────────────────────────────
+
+  // SIMBAD's main identifiers are terse ("* alf Lyr", "M  31", "NAME Orion
+  // Nebula"). Tidy them for reading; the SIMBAD link keeps the real one.
+  var GREEK = {
+    alf: 'α', bet: 'β', gam: 'γ', del: 'δ', eps: 'ε', zet: 'ζ', eta: 'η', tet: 'θ',
+    iot: 'ι', kap: 'κ', lam: 'λ', mu: 'μ', nu: 'ν', ksi: 'ξ', omi: 'ο', pi: 'π',
+    rho: 'ρ', sig: 'σ', tau: 'τ', ups: 'υ', phi: 'φ', chi: 'χ', psi: 'ψ', ome: 'ω'
+  };
+  function prettyId(id) {
+    var s = String(id || '').trim();
+    s = s.replace(/^NAME\s+/, '').replace(/^\*{1,2}\s+/, '').replace(/\s{2,}/g, ' ');
+    var m = s.match(/^([a-z]{2,3})(\d{0,2})\s+(\w{3})$/);         // "alf Lyr", "tet01 Ori"
+    if (m && GREEK[m[1]]) {
+      var sup = m[2] ? m[2].replace(/^0/, '').replace(/\d/g, function (d) { return '⁰¹²³⁴⁵⁶⁷⁸⁹'[d]; }) : '';
+      s = GREEK[m[1]] + sup + ' ' + m[3];
+    }
+    return s;
+  }
+
+  // A fallback for when the otypedef table cannot be read: the commonest
+  // SIMBAD object types. Anything else is shown as its code.
+  var OTYPE = {
+    '*': 'Star', '**': 'Double or multiple star', 'PM*': 'High proper-motion star',
+    'V*': 'Variable star', 'EB*': 'Eclipsing binary', 'SB*': 'Spectroscopic binary',
+    'RG*': 'Red giant', 'Y*O': 'Young stellar object', 'WD*': 'White dwarf',
+    'Ce*': 'Cepheid', 'RR*': 'RR Lyrae variable', 'C*': 'Carbon star',
+    'G': 'Galaxy', 'GiG': 'Galaxy in group', 'GiC': 'Galaxy in cluster', 'AGN': 'Active galactic nucleus',
+    'QSO': 'Quasar', 'Sy1': 'Seyfert 1 galaxy', 'Sy2': 'Seyfert 2 galaxy', 'SBG': 'Starburst galaxy',
+    'GlC': 'Globular cluster', 'OpC': 'Open cluster', 'Cl*': 'Star cluster',
+    'PN': 'Planetary nebula', 'HII': 'HII region', 'RNe': 'Reflection nebula',
+    'SNR': 'Supernova remnant', 'MoC': 'Molecular cloud', 'DNe': 'Dark nebula',
+    'ClG': 'Cluster of galaxies', 'X': 'X-ray source', 'Rad': 'Radio source', 'IR': 'Infrared source',
+    'Psr': 'Pulsar', 'BH': 'Black hole', 'No*': 'Nova', 'SN*': 'Supernova'
+  };
+  function typeText(code, desc) {
+    if (desc) return desc.charAt(0).toUpperCase() + desc.slice(1);
+    return OTYPE[code] || (code ? 'Type ' + code : 'Object');
+  }
+
+  function fmtArcsec(a) {
+    if (!isFinite(a)) return '';
+    if (a >= 3600) return (a / 3600).toFixed(a >= 36000 ? 0 : 1) + '°';
+    if (a >= 60) return (a / 60).toFixed(a >= 600 ? 0 : 1) + '′';
+    if (a >= 1) return a.toFixed(a >= 10 ? 0 : 1) + '″';
+    return (a * 1000).toFixed(0) + ' mas';
+  }
+
+  // ── network ──────────────────────────────────────────────────────────────
+
+  function fetchWithTimeout(url, signal) {
+    var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, TIMEOUT_MS);
+    if (signal && ctl) {
+      if (signal.aborted) ctl.abort();
+      else signal.addEventListener('abort', function () { ctl.abort(); });
+    }
+    return fetch(url, ctl ? { signal: ctl.signal } : {}).then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r;
+    }, function (e) { clearTimeout(timer); throw e; });
+  }
+
+  // SIMBAD TAP, JSON out. The response is {metadata:[{name}], data:[[...]]};
+  // rows are returned as objects keyed by column name, so a column added or
+  // reordered upstream cannot shift a value into the wrong field.
+  function tap(adql, signal) {
+    var url = TAP_URL + '?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(adql);
+    return fetchWithTimeout(url, signal).then(function (r) { return r.json(); }).then(function (j) {
+      var cols = (j && j.metadata || []).map(function (m) { return String(m.name || '').toLowerCase(); });
+      return (j && j.data || []).map(function (row) {
+        var o = {};
+        cols.forEach(function (c, i) { o[c] = row[i]; });
+        return o;
+      });
+    });
+  }
+
+  function num(x) { return x === null || x === undefined || x === '' ? null : +x; }
+  function lit(x) { return Number(x).toFixed(9); }   // ADQL numeric literal, never exponent form
+
+  // Objects within r arcsec of (ra, dec), nearest first. Tries the full query
+  // (type description and V magnitude) and falls back to the bare one, so an
+  // upstream schema change costs detail, not the answer.
+  function coneQuery(ra, dec, rArcsec, signal) {
+    var P = "POINT('ICRS', b.ra, b.dec)", C = "POINT('ICRS', " + lit(ra) + ', ' + lit(dec) + ')';
+    var where = "CONTAINS(" + P + ", CIRCLE('ICRS', " + lit(ra) + ', ' + lit(dec) + ', ' + lit(rArcsec / 3600) + ')) = 1';
+    var full = 'SELECT TOP 12 b.oid, b.main_id, b.ra, b.dec, b.otype, d.description, f.V, ' +
+               'DISTANCE(' + P + ', ' + C + ') AS dist ' +
+               'FROM basic AS b LEFT JOIN otypedef AS d ON d.otype = b.otype ' +
+               'LEFT JOIN allfluxes AS f ON f.oidref = b.oid WHERE ' + where + ' ORDER BY dist';
+    var bare = 'SELECT TOP 12 b.oid, b.main_id, b.ra, b.dec, b.otype, ' +
+               'DISTANCE(' + P + ', ' + C + ') AS dist FROM basic AS b WHERE ' + where + ' ORDER BY dist';
+    return tap(full, signal).catch(function (e) {
+      if (e && e.name === 'AbortError') throw e;
+      return tap(bare, signal);
+    });
+  }
+
+  // Large objects whose catalogued extent contains (ra, dec): the galaxy or
+  // nebula the click is ON, even when its centre is far away.
+  function containingQuery(ra, dec, signal) {
+    var P = "POINT('ICRS', b.ra, b.dec)", C = "POINT('ICRS', " + lit(ra) + ', ' + lit(dec) + ')';
+    var q = 'SELECT TOP 3 b.oid, b.main_id, b.otype, b.galdim_majaxis, ' +
+            'DISTANCE(' + P + ', ' + C + ') AS dist FROM basic AS b ' +
+            "WHERE CONTAINS(" + P + ", CIRCLE('ICRS', " + lit(ra) + ', ' + lit(dec) + ', ' + EXT_SEARCH_DEG + ')) = 1 ' +
+            'AND b.galdim_majaxis > 2 ' +
+            'AND DISTANCE(' + P + ', ' + C + ') < b.galdim_majaxis / 120.0 ' +
+            'ORDER BY b.galdim_majaxis DESC';
+    return tap(q, signal).catch(function () { return []; });
+  }
+
+  function commonName(oid, signal) {
+    if (oid === null || oid === undefined) return Promise.resolve(null);
+    var q = "SELECT TOP 1 id FROM ident WHERE oidref = " + Math.round(+oid) + " AND id LIKE 'NAME %'";
+    return tap(q, signal).then(function (rows) {
+      return rows.length ? String(rows[0].id).replace(/^NAME\s+/, '') : null;
+    }).catch(function () { return null; });
+  }
+
+  // Nearest isn't always what was meant: a click near Vega would otherwise
+  // name a 17th-magnitude field star 3" closer. Distance (as a fraction of the
+  // pick radius) plus a brightness term; unknown magnitude counts as faint.
+  function rank(rows, rArcsec) {
+    return rows.map(function (o) {
+      var d = num(o.dist) * 3600, v = num(o.v);
+      var faint = v === null ? 1 : Math.max(0, Math.min(1, (v + 1) / 16));
+      return { o: o, d: d, v: v, score: d / rArcsec + 0.9 * faint };
+    }).sort(function (a, b) { return a.score - b.score; });
+  }
+
+  // ── the panel ────────────────────────────────────────────────────────────
+
+  var CSS_ID = 'gs-sky-lookup-css';
+  var CSS = [
+    '#' + PANEL_ID + '{position:absolute;top:10px;right:10px;z-index:11;max-width:min(270px,calc(100% - 64px));',
+    '  background:rgba(11,15,25,.92);border:1px solid #1f2937;border-radius:8px;padding:9px 30px 9px 11px;',
+    '  color:#e5e7eb;font:12.5px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;',
+    '  box-shadow:0 2px 10px rgba(0,0,0,.5)}',
+    '#' + PANEL_ID + ' .t{font-weight:600;font-size:14px;color:#f8fafc}',
+    '#' + PANEL_ID + ' .s{color:#94a3b8}',
+    '#' + PANEL_ID + ' .in{margin-top:6px;padding-top:6px;border-top:1px solid #1f2937;color:#cbd5e1}',
+    '#' + PANEL_ID + ' .alt{margin-top:6px;padding-top:6px;border-top:1px solid #1f2937;color:#94a3b8;font-size:11.5px}',
+    '#' + PANEL_ID + ' a{color:#93c5fd;text-decoration:none}',
+    '#' + PANEL_ID + ' a:hover{text-decoration:underline}',
+    '#' + PANEL_ID + ' button.x{position:absolute;top:5px;right:5px;border:none;background:transparent;',
+    '  color:#94a3b8;font-size:13px;line-height:1;padding:4px;cursor:pointer}'
+  ].join('\n');
+
+  function injectCss() {
+    if (document.getElementById(CSS_ID)) return;
+    var st = document.createElement('style');
+    st.id = CSS_ID; st.textContent = CSS;
+    document.head.appendChild(st);
+  }
+
+  function esc(s) {
+    return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function panel() {
+    var sv = SV(), wrap = sv && sv.getCanvasWrap ? sv.getCanvasWrap() : null;
+    if (!wrap) return null;
+    injectCss();
+    var p = document.getElementById(PANEL_ID);
+    if (!p || p.parentNode !== wrap) {
+      if (p && p.parentNode) p.parentNode.removeChild(p);
+      p = document.createElement('div');
+      p.id = PANEL_ID;
+      p.setAttribute('role', 'status');
+      p.setAttribute('aria-live', 'polite');
+      // Clicks on the panel must not fall through to the sky (a new lookup).
+      ['click', 'pointerdown', 'mousedown', 'touchstart'].forEach(function (t) {
+        p.addEventListener(t, function (ev) { ev.stopPropagation(); }, { passive: true });
+      });
+      wrap.appendChild(p);
+    }
+    return p;
+  }
+  function show(html) {
+    var p = panel();
+    if (!p) return;
+    p.innerHTML = html + '<button class="x" type="button" aria-label="Close">✕</button>';
+    p.querySelector('button.x').onclick = function () { hide(); };
+  }
+  function hide() {
+    var p = document.getElementById(PANEL_ID);
+    if (p && p.parentNode) p.parentNode.removeChild(p);
+  }
+
+  function link(id, text) {
+    return '<a href="' + SIMBAD_ID_URL + encodeURIComponent(id) + '" target="_blank" rel="noopener">' + esc(text) + '</a>';
+  }
+
+  function render(best, alts, inside, name, rArcsec) {
+    if (!best && !inside.length) {
+      show('<div class="t">Nothing catalogued here</div>' +
+           '<div class="s">No SIMBAD object within ' + esc(fmtArcsec(rArcsec)) +
+           ' of your click. Zoom in on a star and try again.</div>');
+      return;
+    }
+    var h = '';
+    if (best) {
+      var o = best.o, title = name || prettyId(o.main_id);
+      h += '<div class="t">' + esc(title) + '</div>';
+      var bits = [typeText(o.otype, o.description)];
+      if (name && prettyId(o.main_id) !== name) bits.push(prettyId(o.main_id));
+      h += '<div>' + esc(bits.join(' · ')) + '</div>';
+      var s = [];
+      if (best.v !== null) s.push('V ' + best.v.toFixed(2));
+      s.push(fmtArcsec(best.d) + ' from your click');
+      h += '<div class="s">' + esc(s.join(' · ')) + ' · ' + link(o.main_id, 'SIMBAD') + '</div>';
+    }
+    inside.forEach(function (x) {
+      var nm = x.name || prettyId(x.main_id);
+      if (best && x.main_id === best.o.main_id) return;
+      h += '<div class="in">Inside ' + link(x.main_id, nm) + ' <span class="s">(' +
+           esc(typeText(x.otype, null)) + ', ' + esc(fmtArcsec(num(x.galdim_majaxis) * 60)) + ' across)</span></div>';
+    });
+    if (alts.length) {
+      h += '<div class="alt">Also near: ' + alts.map(function (a) {
+        return link(a.o.main_id, prettyId(a.o.main_id)) + ' (' + esc(fmtArcsec(a.d)) + ')';
+      }).join(', ') + '</div>';
+    }
+    h += '<div class="alt">Data: SIMBAD, CDS Strasbourg</div>';
+    show(h);
+  }
+
+  // ── identify ─────────────────────────────────────────────────────────────
+
+  var inflight = null;
+
+  function identify(ra, dec, rArcsec, opts) {
+    opts = opts || {};
+    if (!skyOpen()) return Promise.resolve(null);
+    if (privacyOn()) {
+      show('<div class="t">Object lookup is off</div>' +
+           '<div class="s">Privacy mode is active, so the sky position (your location) is not sent anywhere.</div>');
+      return Promise.resolve(null);
+    }
+    if (typeof fetch !== 'function') return Promise.resolve(null);
+    var r = Math.max(MIN_R, Math.min(MAX_R, rArcsec || 30));
+    if (inflight) { try { inflight.abort(); } catch (e) {} }
+    var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    inflight = ctl;
+    var sig = ctl ? ctl.signal : undefined;
+    show('<div class="s">Looking up what is here…</div>');
+
+    return Promise.all([coneQuery(ra, dec, r, sig), containingQuery(ra, dec, sig)])
+      .then(function (res) {
+        if (inflight !== ctl) return null;                    // a newer click took over
+        var ranked = rank(res[0], r);
+        var best = ranked[0] || null;
+        var alts = ranked.slice(1, 3);
+        var inside = res[1] || [];
+        var names = [best ? commonName(best.o.oid, sig) : Promise.resolve(null)]
+          .concat(inside.map(function (x) { return commonName(x.oid, sig); }));
+        return Promise.all(names).then(function (n) {
+          if (inflight !== ctl) return null;
+          inside.forEach(function (x, i) { x.name = n[i + 1]; });
+          render(best, alts, inside, opts.name || n[0], r);
+          return best ? best.o : null;
+        });
+      })
+      .catch(function (e) {
+        if (e && e.name === 'AbortError' && inflight !== ctl) return null;
+        show('<div class="t">Couldn’t reach SIMBAD</div>' +
+             '<div class="s">The object lookup needs a network connection to CDS. ' +
+             esc(e && e.message ? e.message : '') + '</div>');
+        return null;
+      });
+  }
+
+  // ── search by name ───────────────────────────────────────────────────────
+
+  function sesame(name) {
+    return fetchWithTimeout(SESAME_URL + encodeURIComponent(name)).then(function (r) { return r.text(); })
+      .then(function (txt) {
+        var doc = new DOMParser().parseFromString(txt, 'text/xml');
+        var res = doc.getElementsByTagName('Resolver');
+        for (var i = 0; i < res.length; i++) {
+          var ra = res[i].getElementsByTagName('jradeg')[0], de = res[i].getElementsByTagName('jdedeg')[0];
+          if (!ra || !de) continue;
+          var on = res[i].getElementsByTagName('oname')[0], ot = res[i].getElementsByTagName('otype')[0];
+          return { ra: +ra.textContent, dec: +de.textContent,
+                   oname: on ? on.textContent.trim() : null, otype: ot ? ot.textContent.trim() : null };
+        }
+        return null;
+      });
+  }
+
+  // Aladin's own resolver, when Aladin is on screen and Sesame was not reachable.
+  function viaAladin(name) {
+    var sv = SV(), r = sv && sv.getRenderer ? sv.getRenderer() : null;
+    var al = r && r._aladin ? r._aladin() : null;
+    if (!al || typeof al.gotoObject !== 'function') return Promise.resolve(null);
+    return new Promise(function (resolve) {
+      var done = false;
+      setTimeout(function () { if (!done) { done = true; resolve(null); } }, TIMEOUT_MS);
+      try {
+        al.gotoObject(name, {
+          success: function (rd) { if (done) return; done = true; resolve(rd ? { ra: +rd[0], dec: +rd[1] } : null); },
+          error: function () { if (done) return; done = true; resolve(null); }
+        });
+      } catch (e) { done = true; resolve(null); }
+    });
+  }
+
+  function typedPosition(text) {
+    var S = Sky();
+    if (!S || !S.parsePosition) return null;
+    try { var p = S.parsePosition(text); return { ra: p.raDeg, dec: p.decDeg }; } catch (e) { return null; }
+  }
+
+  function lookupName(text) {
+    var q = String(text || '').trim();
+    if (!q) { toast('Type a star, galaxy or nebula — e.g. Vega, M31', 'error'); return Promise.resolve(false); }
+    var sv = SV();
+    if (!skyOpen()) return Promise.resolve(false);
+    var pos = typedPosition(q);
+    if (pos) {
+      sv.goTo(pos.ra, pos.dec);
+      return identify(pos.ra, pos.dec, 30).then(function () { return true; });
+    }
+    show('<div class="s">Finding “' + esc(q) + '”…</div>');
+    return sesame(q).catch(function () { return null; })
+      .then(function (hit) { return hit || viaAladin(q); })
+      .then(function (hit) {
+        if (!hit || !isFinite(hit.ra) || !isFinite(hit.dec)) {
+          show('<div class="t">Not found</div><div class="s">No object called “' + esc(q) +
+               '” in SIMBAD, NED or VizieR. Try a catalogue name such as M42 or HD 172167.</div>');
+          return false;
+        }
+        sv.goTo(hit.ra, hit.dec);
+        // A name search is the person asking about this object, so identify
+        // it (tight radius: Sesame already gave the exact position).
+        return identify(hit.ra, hit.dec, 5, { name: hit.oname ? prettyId(hit.oname) : q })
+          .then(function () { return true; });
+      });
+  }
+
+  // ── the Shape tab's search box, in the sky ───────────────────────────────
+
+  var savedPlaceholder = null;
+  function updateSearchBox() {
+    var input = document.getElementById(SEARCH_INPUT);
+    if (!input) return;
+    if (savedPlaceholder === null) savedPlaceholder = input.getAttribute('placeholder') || '';
+    input.setAttribute('placeholder', skyOpen()
+      ? 'Search the sky — e.g. Vega, M31, Orion Nebula, 05 35 17 -05 23 28'
+      : savedPlaceholder);
+  }
+
+  // Capture phase on the document runs BEFORE the button's own listener in
+  // index.html (the Nominatim search), so in the sky that one never runs and
+  // no celestial query is ever sent to Nominatim. On Earth this does nothing.
+  // Enter in the box calls button.click(), which comes through here too.
+  function onSearchClick(ev) {
+    var t = ev.target;
+    if (!t || !t.closest || !t.closest('#' + SEARCH_BTN) || !skyOpen()) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
+    var btn = document.getElementById(SEARCH_BTN), input = document.getElementById(SEARCH_INPUT);
+    if (!btn || btn.disabled) return;
+    var label = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Searching...';
+    lookupName(input ? input.value : '').then(function (ok) {
+      if (!ok) toast('Not found in the sky catalogues', 'error');
+    }).catch(function () {}).then(function () {
+      btn.disabled = false; btn.textContent = label;
+    });
+  }
+
+  function boot() {
+    var sv = SV();
+    if (!sv || !sv.on) return;
+    sv.on('click', function (p) {
+      if (!p || !isFinite(p.ra) || !isFinite(p.dec)) return;
+      identify(p.ra, p.dec, p.radiusArcsec);
+    });
+    sv.on('open', updateSearchBox);
+    sv.on('close', function () {
+      if (inflight) { try { inflight.abort(); } catch (e) {} inflight = null; }
+      updateSearchBox();
+    });
+    document.addEventListener('click', onSearchClick, true);
+    updateSearchBox();
+  }
+
+  var API = {
+    VERSION: VERSION,
+    identify: identify,
+    lookupName: lookupName,
+    hide: hide,
+    _test: { prettyId: prettyId, rank: rank, typeText: typeText, fmtArcsec: fmtArcsec }
+  };
+  global.GeosonifySkyLookup = API;
+
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  }
+  if (typeof module !== 'undefined' && module.exports) module.exports = API;
+})(typeof window !== 'undefined' ? window : globalThis);

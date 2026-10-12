@@ -143,7 +143,7 @@
           {
             id: 'map-imagery',
             q: 'Can I change what the map shows underneath my codes?',
-            a: `<p>Yes. The <strong>Map imagery</strong> panel in the <strong>FAQ</strong> tab has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>). While Sky is chosen, a <strong>Sky</strong> button in the corner of the map turns between the two.</p>
+            a: `<p>Yes. The <strong>Map imagery</strong> panel on the main screen, beside Encoding Mode and Precision, has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>). While Sky is chosen, a <strong>Sky</strong> button in the corner of the map turns between the two.</p>
 <p>Standard, Aerial and Topographic are a personal viewing preference, so an ordinary share link opens in whatever map the recipient is already using. A <strong>display link</strong> built on the Output tab is the exception: it carries your imagery, so the viewer sees what you chose. Sky is different again, because it changes what a code means, so every link made in Sky says so.</p>
 <p>Shapes change colour to stay visible: purple on the street and topographic maps, and a high-contrast yellow on aerial photography, where purple tends to vanish. That happens automatically.</p>
 
@@ -158,7 +158,7 @@
 <pre>?address_a=thp9el4j1&amp;auto=1&amp;display&amp;basemap=aerial</pre>
 
 <h4>Pasting your own imagery</h4>
-<p>The Map imagery panel also has a paste field for any tile source of your own. Two URL shapes work:</p>
+<p>Under <strong>Your own imagery</strong>, the Map imagery panel also has a paste field for any tile source of your own. Two URL shapes work:</p>
 <ul>
   <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
   <li>An <strong>ArcGIS hosted-tile URL</strong> - one ending in <code>/MapServer</code>; Geosonify appends the tile path for you.</li>
@@ -183,7 +183,8 @@
             a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>
 <p>Choose <strong>Sky</strong> in the Map imagery panel and the map turns over: its streets, coastlines and borders flip as though you were looking up at them from underneath, and the stars with the same coordinates appear beneath them. Then the streets fade, leaving the sky, with the active card's cell drawn on it. Tap anywhere in the sky to move there, and the cards follow, just as they do on the map.</p>
 <p>In Sky mode the map keeps a <strong>Sky</strong> button in its corner, and the sky an <strong>Earth</strong> button, so you can turn back and forth. Tap <strong>Earth</strong> to go back to the place and zoom you left, or hold it to see the Earth's streets over the sky until you let go. Choosing Standard, Aerial or Topographic leaves Sky mode.</p>
-<p>Sky mode also draws the HEALPix grid, on the map and on the sky alike. Several levels show at once, and the coarsest boundary on screen is drawn heaviest, because it is the rarest. It is one grid: a cell on the ground and the patch of sky with the same code are bounded by the same lines, mirrored.</p>
+<p>Sky mode also draws the HEALPix grid, on the map and on the sky alike. (So does starring any HEALPix card, in any map mode.) Several levels show at once, and the coarsest boundary on screen is drawn heaviest, because it is the rarest. It is one grid: a cell on the ground and the patch of sky with the same code are bounded by the same lines, mirrored.</p>
+<p>Tap a star, galaxy or nebula and a small panel says what it is: its name, its type, its brightness and a link to its SIMBAD page. In the <strong>Shape</strong> tab, the search box finds objects instead of places while the sky is showing: try <em>Vega</em>, <em>M31</em> or <em>Orion Nebula</em>.</p>
 <p>Seen from below, east and west swap places, so the sky is the map's mirror image: with north at the top, east is on the left.</p>
 <p>Cards that only make sense on Earth - Plus Codes, MGRS, UTM, the national grids - are hidden while the sky is showing. Cards made for the sky take their place under <strong>+ Add Mode</strong>: <strong>RA / Dec</strong>, the <strong>IAU designation</strong>, and the <strong>MOC</strong> and <strong>NUNIQ</strong> forms used by astronomy software. They are for copying into other tools.</p>
 <p>A link made while the sky is showing carries <code>frame=icrs</code>, so whoever opens it lands in Sky mode too. Without it, the same code would quietly name a place on Earth.</p>
@@ -202,6 +203,7 @@
 <p>Sizes are shown as angles while the sky is showing. At HEALPix order 22 a cell is about 0.05 arcseconds across; four HEALPix words are about 0.2 arcseconds. In the sky the scale bar is an angle; one arcsecond of declination corresponds to about 31 metres of latitude on the ground.</p>
 <p>The turn keeps the scale: an arcsecond of sky takes up the same space on screen as an arcsecond of latitude did on the map, so each street lands on its own patch of sky, and the sky stays at that scale until you zoom it yourself. Close in, the sky photography is softer than the map, because the Digitized Sky Survey records about 0.8 arcseconds (roughly 25 metres of latitude) per pixel.</p>
 <p>The streets shown during the turn are OpenStreetMap data served by <a href="https://openfreemap.org/" target="_blank" rel="noopener">OpenFreeMap</a>, kept on your device for 30 days, so turning over the same area again needs no download. Fetching them tells OpenFreeMap which area you are looking at, in the same way the map's own tiles tell their provider. When the view is wider than about 60 degrees, or your device asks for reduced motion, the map and the sky simply crossfade.</p>
+<p>Object lookups use <a href="https://simbad.cds.unistra.fr/" target="_blank" rel="noopener">SIMBAD</a> and the Sesame name resolver (CDS, Strasbourg). A tap sends the tapped position to SIMBAD; because a sky position and an Earth position are the same numbers, that is also a place on Earth. Nothing is sent until you tap, and nothing at all while a passphrase or obfuscation is on. A name search sends only the name you typed.</p>
 <p>Privacy works as it does on Earth. With a passphrase or obfuscation on, the sky view and the sky cards hide the position, because RA / Dec and MOC are the position in plain text.</p>
 </div>
 </details>`
@@ -225,7 +227,7 @@
           {
             id: 'gis-reference-grids',
             q: 'Can I see my location as a Plus Code, MGRS, UTM or national grid reference?',
-            a: `<p>Yes - and they sit right alongside Geosonify's own codes as cards, so you can compare them directly. Add them from <strong>+ Add Mode</strong> on the Output tab. Each is a real, standards-compliant reference you can paste into other GIS tools, read over the radio, or type back in to jump to that spot.</p>
+            a: `<p>Yes - and they sit right alongside Geosonify's own codes as cards, so you can compare them directly. Add them from <strong>+ Add Mode → GIS</strong>. Each is a real, standards-compliant reference you can paste into other GIS tools, read over the radio, or type back in to jump to that spot.</p>
 <p>The global ones work anywhere: <strong>Plus Codes</strong> (Open Location Code), <strong>MGRS</strong> (the NATO military grid), <strong>Geohash</strong>, and <strong>UTM</strong> eastings/northings. The national ones appear where they apply: <strong>NZTM2000</strong> in New Zealand, <strong>OS grid references</strong> in Great Britain, and <strong>MGA2020</strong> in Australia. There's also a <strong>Local Grid</strong> card that automatically shows whichever national grid fits your current location, falling back to UTM elsewhere.</p>
 <p>Two of these are close cousins of Geosonify codes. A Plus Code is base-20 and hierarchical - every two characters refine the location 20x, exactly the principle Geosonify uses. An OS grid reference works the same way: the letters name a 100 km square and each pair of figures zooms in 10x. So the +/- buttons on those cards do the same job as Geosonify's iteration stepper - more characters, finer cell. On the plain easting/northing cards (UTM, NZTM, MGA) the +/- buttons change the rounding instead, from 10 km down to the millimetre.</p>
 <p>The information button on each card shows the cell size at every precision level for that scheme <em>and</em> the cell size of your currently-active Geosonify card, side by side - so you can see exactly how, say, an 8-digit Plus Code (around 14 m) compares to your alphanumeric code at a given number of iterations.</p>
@@ -352,7 +354,7 @@
           {
             id: 'legacy-word-cards',
             q: 'What are the legacy word cards?',
-            a: `<p>Before the HEALPix word cards, Geosonify wrote places with words on a latitude/longitude grid: 2025 words from the BIP39 lists, arranged 45 by 45, in ten languages. Those cards are marked <em>(legacy)</em> under <strong>+ Add Mode</strong> and aren't shown by default. Every code and <code>?bip…</code> link made with them will always decode to the same place.</p>
+            a: `<p>Before the HEALPix word cards, Geosonify wrote places with words on a latitude/longitude grid: 2025 words from the BIP39 lists, arranged 45 by 45, in ten languages. Those cards are under <strong>+ Add Mode → Legacy</strong> and aren't shown by default. Every code and <code>?bip…</code> link made with them will always decode to the same place.</p>
 <p>The HEALPix word cards replace them because their cells have equal area everywhere, they use the official word lists unchanged, and their checksum is stronger.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
@@ -933,7 +935,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
           {
             id: 'suggested-scale',
             q: 'What does the Suggested music card do?',
-            a: `<p>Geosonify can play a place in many scales - major and minor modes, pentatonics, blues scales, maqams and more - and each has its own music card under <strong>+ Add Mode</strong>. The <strong>Suggested</strong> card picks one for the few streets you are in, and names it in brackets: <em>Suggested (Dorian)</em>.</p>
+            a: `<p>Geosonify can play a place in many scales - major and minor modes, pentatonics, blues scales, maqams and more - and each has its own music card under <strong>+ Add Mode → Music</strong>. The <strong>Suggested</strong> card picks one for the few streets you are in, and names it in brackets: <em>Suggested (Dorian)</em>.</p>
 <p>As you walk or cycle across town the scale changes every 700 to 900 metres or so - every two or three minutes on a bike - so each stretch has its own sound without the key changing under you every few streets. Every scale gets places of its own, and the card only ever picks a scale that sounds smooth at that spot, never a rough one.</p>
 <p>It is a suggestion, not a new kind of code: the card shows that scale's own code, and a shared link names the scale, so whoever opens it hears exactly what you heard.</p>
 <p>While you are playing, a change of scale waits for the lead melody to finish its phrase, so a tune never switches key halfway through.</p>
@@ -1144,6 +1146,7 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
         '<strong>Map Tiles</strong> - <a href="https://www.openstreetmap.org/" target="_blank">OpenStreetMap</a>',
         '<strong>Street vectors</strong> (the turn to Sky) - <a href="https://openfreemap.org/" target="_blank">OpenFreeMap</a>, OpenMapTiles schema, © OpenStreetMap contributors',
         '<strong>Sky imagery</strong> - <a href="https://aladin.cds.unistra.fr/" target="_blank">Aladin Lite</a> (CDS, Strasbourg; LGPL), showing the Digitized Sky Survey (STScI)',
+        '<strong>Sky object names</strong> - <a href="https://simbad.cds.unistra.fr/" target="_blank">SIMBAD</a> and Sesame (CDS, Strasbourg)',
         '<strong>Palette</strong> - <a href="https://g-thomson.github.io/Manu/" target="_blank">Kererū</a> by Geoffrey Thomson',
         '<strong>BIP39 word lists</strong> from the <a href="https://github.com/bitcoin/bips/blob/master/bip-0039" target="_blank">BIP-39 specification</a>.',
 		'<strong>German (DE-2048) word list</strong> - <a href="https://github.com/dys2p/wordlists-de" target="_blank">dys2p/wordlists-de</a> by <a href="https://github.com/dys2p" target="_blank">dys2p</a> (Unlicense / CC0 / BSD-3)',
