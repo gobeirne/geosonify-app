@@ -132,6 +132,21 @@
     .geosonify-viewer-tag a { color: #1a6ebd; text-decoration: none; }
     .geosonify-viewer-tag a:hover { text-decoration: underline; }
     .geosonify-viewer-area { color: #333; font-weight: 600; }
+    /* In a Sky display link the tag sits top right, clear of the sky's own
+       zoom buttons (top left) and readouts (bottom). */
+    .geosonify-viewer-tag.geosonify-viewer-tag--sky {
+      top: 56px; bottom: auto; left: auto; right: 8px; align-items: flex-end;
+      background: rgba(11,15,25,0.86); color: #e5e7eb;
+    }
+    .geosonify-viewer-tag--sky .geosonify-viewer-area { color: #e5e7eb; }
+    .geosonify-viewer-tag--sky a, .geosonify-viewer-tag--sky .geosonify-viewer-export { color: #93c5fd; }
+    /* lbl= labels on the Earth map */
+    .leaflet-tooltip.geosonify-ann-label {
+      background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.25); border-radius: 4px;
+      padding: 1px 5px; font: 600 12px/1.3 system-ui, sans-serif; color: #111; box-shadow: none;
+      white-space: nowrap;
+    }
+    .leaflet-tooltip.geosonify-ann-label::before { display: none; }
     .geosonify-viewer-export {
       cursor: pointer; color: #1a6ebd; background: none; border: none;
       font: inherit; padding: 0; text-decoration: underline;
@@ -524,6 +539,25 @@
             <button class="btn btn-secondary" id="exportGpxBtn">📍 Export GPX</button>
             <button class="btn btn-secondary" id="exportKmlBtn">🌍 Export KML</button>
           </div>
+          <!-- Sky only: the shape in astronomers' formats (geosonify-sky-export.js) -->
+          <div class="btn-row" id="skyExportRow" style="display:none;">
+            <button class="btn btn-secondary" data-sky-export="csv" title="Target list: names, RA/Dec in degrees and sexagesimal">⭐ CSV</button>
+            <button class="btn btn-secondary" data-sky-export="reg" title="SAOImage DS9 region file (ICRS), with labels and colours">⭕ DS9</button>
+            <button class="btn btn-secondary" data-sky-export="moc" title="The points' HEALPix cells as an ASCII MOC (for Aladin, mocpy)">⬡ MOC</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Labels &amp; colours</div>
+        <div class="card-body">
+          <p style="margin:0 0 8px; font-size:13px; color:var(--ios-secondary-label, #8a8a8e);">One per line, written as in a link. <code>lbl=0:Dubhe</code> names point 0. <code>sty=s0-6:y,w3</code> draws sides 0 to 6 yellow, 3 pixels wide; <code>p</code> instead of <code>s</code> styles points. A colour is one of <code>r o y g c b v m p n k w</code> or six hex digits; add <code>,dash</code> for a dashed line. Points count from 0 in the order the shape runs. They travel in the link beside the code and never change where it points.</p>
+          <textarea id="annotationsInput" rows="4" spellcheck="false" autocomplete="off" style="width:100%; box-sizing:border-box; font:13px ui-monospace,SFMono-Regular,Menlo,monospace; padding:8px; border:1px solid var(--ios-separator, #c6c6c8); border-radius:8px;" placeholder="lbl=0:Dubhe&#10;sty=s0-6:y,w3"></textarea>
+          <div class="btn-row">
+            <button class="btn btn-secondary" id="annotationsApplyBtn">✓ Apply</button>
+            <button class="btn btn-secondary" id="annotationsClearBtn">✕ Clear</button>
+          </div>
+          <p id="annotationsNote" style="display:none; margin:8px 0 0; font-size:13px; color:#b8860b;"></p>
         </div>
       </div>
       
@@ -581,14 +615,15 @@
             <div style="margin-bottom:10px;">
               <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Map</div>
               <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="osm"> Standard</label>
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="aerial"> Aerial</label>
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="topo"> Topographic</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="osm"> Standard</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="aerial"> Aerial</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="topo"> Topographic</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayBasemap" value="sky"> Sky</label>
               </div>
             </div>
 
             <div class="list-row" style="padding:6px 0;">
-              <label style="font-size:14px;">Show area / measurements</label>
+              <label style="font-size:14px;" id="displayShowAreaLabel">Show area / measurements</label>
               <div class="toggle"><input type="checkbox" id="displayShowArea" /><span class="toggle-slider"></span></div>
             </div>
 
@@ -596,8 +631,11 @@
               <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Let viewer export</div>
               <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
                 <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value=""> Off</label>
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="gpx"> GPX</label>
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="kml"> KML</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="gpx"> GPX</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="kml"> KML</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="csv"> CSV</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="reg"> DS9</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="moc"> MOC</label>
               </div>
             </div>
 
@@ -680,7 +718,7 @@
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20260109"></script>
-  <script src="js/core/delta-gear.js?v=20260109"></script>
+  <script src="js/core/delta-gear.js?v=20261013e"></script>
   
 <!-- Services -->
 <script src="js/services/audio-service.js?v=20261009g"></script>
@@ -719,11 +757,11 @@
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
-<script src="js/lib/geosonify-sky-carry.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20261013e"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261013b"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261013e"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
@@ -731,6 +769,8 @@
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261012b"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
+<script src="js/lib/geosonify-annotations.js?v=20261013e"></script>
+<script src="js/lib/geosonify-sky-export.js?v=20261013e"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
@@ -741,7 +781,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261013a"></script>
+<script src="js/lib/faq-data.js?v=20261013e"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -1407,6 +1447,14 @@
           isTracking: typeof GPSTracking !== 'undefined' ? GPSTracking.isTracking : false 
         });
       }
+      // A plain point carries its label on the pin. Once bound, follow it
+      // (moving the pin drops a label that named the old place). Binding
+      // itself happens only where a point link is decoded, so a pin placed
+      // while a shape link is still loading cannot capture that shape's labels.
+      if ((!lastSolution || lastSolution.type === 'point') &&
+          typeof GeosonifyAnnotations !== 'undefined' && GeosonifyAnnotations.isBound()) {
+        try { syncAndRenderAnnotations(); } catch (e) {}
+      }
     }
     
     function updateGPSDot(lat, lon) {
@@ -1503,6 +1551,102 @@
     // Track current mode: 'single' (home tab) or 'shape' (input tab)
     let inputMode = 'single';
     
+    // ── Sky or Earth? ─────────────────────────────────────────
+    // The frame in AppState, or the sky view being open (main.js's state
+    // restore can drop the frame silently; the open view puts it back).
+    function isSkyFrameNow() {
+      try {
+        const f = (typeof AppState !== 'undefined' && AppState.get) ? AppState.get('frame') : null;
+        if (f && f.sphere === 'sky') return true;
+      } catch (e) {}
+      try { return typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isOpen(); } catch (e) { return false; }
+    }
+
+    // The share panel offers Sky (and the sky export formats) while the frame
+    // is the sky, and the Earth basemaps (and GPX / KML) otherwise. A checked
+    // option that is being hidden moves to its counterpart.
+    function refreshDisplayPanelFrame() {
+      const sky = isSkyFrameNow();
+      document.querySelectorAll('#displaySharePanel .display-sky-only').forEach(n => { n.style.display = sky ? 'flex' : 'none'; });
+      document.querySelectorAll('#displaySharePanel .display-earth-only').forEach(n => { n.style.display = sky ? 'none' : 'flex'; });
+      const bm = document.querySelector('input[name="displayBasemap"]:checked');
+      if (bm && ((sky && bm.value !== 'sky') || (!sky && bm.value === 'sky'))) {
+        if (window.__geosonifySeedDisplayBasemap) window.__geosonifySeedDisplayBasemap();
+      }
+      const ex = document.querySelector('input[name="displayExport"]:checked');
+      const skyFmt = ex && ['csv', 'reg', 'moc'].includes(ex.value);
+      const earthFmt = ex && ['gpx', 'kml'].includes(ex.value);
+      if ((sky && earthFmt) || (!sky && skyFmt)) {
+        const off = document.querySelector('input[name="displayExport"][value=""]');
+        if (off) off.checked = true;
+      }
+      const lab = document.getElementById('displayShowAreaLabel');
+      if (lab) lab.textContent = sky ? 'Show solid angle / lengths (angles)' : 'Show area / measurements';
+      const row = document.getElementById('skyExportRow');
+      if (row) row.style.display = sky ? 'flex' : 'none';
+    }
+
+    // Everything that depends on which sphere is showing, refreshed on every
+    // frame change: the share panel, the Output tab's sky exports, and a
+    // display viewer's tag (its measurements are angles in the sky).
+    function refreshDisplayChrome() {
+      try { refreshDisplayPanelFrame(); } catch (e) {}
+      if (window.DISPLAY_MODE && document.querySelector('.geosonify-viewer-tag')) {
+        try { buildViewerTag(); } catch (e) {}
+      }
+    }
+
+    // The shape as [dec, ra] parts for the sky formats, with which parts are
+    // closed. Rectangles, circles and graticules come as the ring the map draws.
+    function skyExportGroups() {
+      const sol = lastSolution;
+      if (!sol || sol.type === 'point') {
+        const c = currentCardCoord;
+        return c ? { groups: [[[c.lat, c.lon]]], closed: [false] } : null;
+      }
+      if (sol.groups && sol.groups.length > 1) {
+        return { groups: sol.groups, closed: sol.groups.map(g => g.length > 2 && isClosedPolygon(g)) };
+      }
+      if (Array.isArray(sol.points) && sol.points.length) {
+        return { groups: [sol.points],
+                 closed: [sol.type === 'polygon' || (sol.points.length > 2 && isClosedPolygon(sol.points))] };
+      }
+      if (typeof GeosonifySkyCarry !== 'undefined') {
+        const r = GeosonifySkyCarry.solutionToRings(sol);
+        if (r && r.rings.length) return { groups: r.rings, closed: r.rings.map(() => !!r.closed) };
+      }
+      return null;
+    }
+
+    // The HEALPix order a MOC export uses: the starred HEALPix card's, else
+    // HEALPix · hex's; MOC itself stops at 29.
+    function skyExportOrder() {
+      const a = cardState && cardState.active;
+      const k = (a && CARD_GRIDS[a] && CARD_GRIDS[a].healpix)
+        ? cardState.iterations[a] : (cardState && cardState.iterations.hphex);
+      return Math.max(1, Math.min(29, k || 22));
+    }
+
+    function downloadSkyExport(fmt) {
+      const E = (typeof GeosonifySkyExport !== 'undefined') ? GeosonifySkyExport : null;
+      const meta = E && E.FORMATS[fmt];
+      const d = skyExportGroups();
+      if (!E || !meta || !d) { showToast('Nothing to export', 'error'); return; }
+      const ann = (typeof GeosonifyAnnotations !== 'undefined') ? GeosonifyAnnotations.get() : null;
+      const flat = d.groups.flat();
+      let text;
+      try {
+        if (fmt === 'csv') text = E.toCSV(flat, ann);
+        else if (fmt === 'reg') text = E.toDS9(d.groups, ann, {});
+        else text = E.toMOC(flat, skyExportOrder(), HealpixGrids);
+      } catch (e) { showToast('Export failed: ' + e.message, 'error'); return; }
+      const blob = new Blob([text], { type: meta.mime });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob); a.download = 'geosonify-sky.' + meta.ext;
+      document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    }
+
     // ── Display (viewer) mode setup ──────────────────────────
     // Builds the bare-map chrome after the shape is drawn: a quiet attribution
     // tag (links to the full interactive app on the same shape), and the opt-in
@@ -1582,17 +1726,42 @@
         }
       } catch (e) {}
 
+      buildViewerTag();
+
+      if (opts.gps) _viewerStartGpsDot();
+    }
+
+    // The viewer's tag: measurements, export button, back-link. Rebuilt when
+    // the frame changes, so a sky link (whose frame may settle after the tag
+    // is first drawn) measures in angles and offers the sky formats.
+    function buildViewerTag() {
+      const opts = window.DISPLAY_OPTS || {};
+      const sky = isSkyFrameNow();
+      const old = document.querySelector('.geosonify-viewer-tag');
+      if (old) old.remove();
+
       const tag = document.createElement('div');
-      tag.className = 'geosonify-viewer-tag';
+      tag.className = 'geosonify-viewer-tag' + (sky ? ' geosonify-viewer-tag--sky' : '');
 
       // Area on its own row (top), so the tag stays narrow and clears the
-      // Leaflet attribution on the right.
+      // Leaflet attribution on the right. In the sky it is a solid angle and
+      // lengths are angles: never metres.
       if (opts.area) {
-        const areaM2 = _viewerComputeArea();
-        if (areaM2 != null && areaM2 > 0) {
+        let text = null;
+        if (sky) {
+          const d = skyExportGroups();
+          if (d && typeof GeosonifySkyExport !== 'undefined') {
+            const m = GeosonifySkyExport.measure(d.groups, d.closed);
+            if (m.text) text = m.text;
+          }
+        } else {
+          const areaM2 = _viewerComputeArea();
+          if (areaM2 != null && areaM2 > 0) text = _viewerFormatArea(areaM2);
+        }
+        if (text) {
           const arow = document.createElement('div');
           arow.className = 'geosonify-viewer-row geosonify-viewer-area';
-          arow.textContent = _viewerFormatArea(areaM2);
+          arow.textContent = text;
           tag.appendChild(arow);
         }
       }
@@ -1601,11 +1770,20 @@
       const row = document.createElement('div');
       row.className = 'geosonify-viewer-row';
 
+      // export= values: gpx | kml (Earth), csv | reg | moc (added for the sky;
+      // an older app shows no button for a value it does not know).
+      const skyFormats = (typeof GeosonifySkyExport !== 'undefined') ? GeosonifySkyExport.FORMATS : {};
       if (opts.export === 'gpx' || opts.export === 'kml') {
         const btn = document.createElement('button');
         btn.className = 'geosonify-viewer-export';
         btn.textContent = '↓ ' + opts.export.toUpperCase();
         btn.onclick = () => _viewerExport(opts.export);
+        row.appendChild(btn);
+      } else if (opts.export && Object.prototype.hasOwnProperty.call(skyFormats, opts.export)) {
+        const btn = document.createElement('button');
+        btn.className = 'geosonify-viewer-export';
+        btn.textContent = '↓ ' + skyFormats[opts.export].label;
+        btn.onclick = () => downloadSkyExport(opts.export);
         row.appendChild(btn);
       }
 
@@ -1622,8 +1800,6 @@
 
       tag.appendChild(row);
       document.body.appendChild(tag);
-
-      if (opts.gps) _viewerStartGpsDot();
     }
 
     function _viewerComputeArea() {
@@ -2429,7 +2605,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // only when a preset is chosen; custom imagery is surfaced via warning.
         function seedBasemapRadio() {
           const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
-          const want = (active === 'aerial' || active === 'topo') ? active : 'osm';
+          const want = isSkyFrameNow() ? 'sky' : ((active === 'aerial' || active === 'topo') ? active : 'osm');
           const radio = document.querySelector(`input[name="displayBasemap"][value="${want}"]`);
           if (radio) radio.checked = true;
         }
@@ -2440,9 +2616,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
 
         toggle.addEventListener('change', () => {
           panel.style.display = toggle.checked ? 'block' : 'none';
+          refreshDisplayPanelFrame();
           if (toggle.checked) seedBasemapRadio();
           refreshWarn();
         });
+        window.__geosonifySeedDisplayBasemap = seedBasemapRadio;
         panel.querySelectorAll('input[name="displayBasemap"]').forEach(r =>
           r.addEventListener('change', refreshWarn));
       })();
@@ -2497,6 +2675,25 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         });
       });
       
+      // Cards give sizes as ANGLES in the sky and as lengths on Earth, decided
+      // when they render (GeosonifySkyUnits.isSky reads AppState 'frame'). But
+      // nothing re-rendered them when the frame changed, so a card drawn a
+      // moment before the sky opened kept saying "6.2 m × 6.2 m" (bug 5). It
+      // is easy to land there: a link sets the frame, main.js's state restore
+      // then replaces the whole AppState without the frame (and without
+      // notifying), the cards render on Earth, and the sky view opening puts
+      // the frame back. So every frame change re-renders the cards, without
+      // de-duplicating: a silent reset means "same as last time" is not proof
+      // that the cards already show it.
+      try {
+        if (typeof AppState !== 'undefined' && AppState.subscribe) {
+          AppState.subscribe('frame', () => {
+            try { if (cardState) renderCards(); } catch (e) {}
+            try { refreshDisplayChrome(); } catch (e) {}
+          });
+        }
+      } catch (e) {}
+
       // Check for URL parameters on load
       parseURLParameters();
 
@@ -2690,6 +2887,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function parseURLParameters() {
       const urlParams = new URLSearchParams(window.location.search);
 
+      // ── Labels and styles (?lbl=, ?sty=) ─────────────────────────────
+      // Read first, on every parse (an ?enc= link is parsed again once it is
+      // decrypted, and its labels are inside). They never touch a code: they
+      // bind to whatever shape this link draws (geosonify-annotations.js).
+      if (typeof GeosonifyAnnotations !== 'undefined') {
+        try { GeosonifyAnnotations.set(GeosonifyAnnotations.parseParams(urlParams)); }
+        catch (e) { GeosonifyAnnotations.clear(); }
+      }
+
       // ── Sky frame (?frame=, ?epoch=) ─────────────────────────────────
       // Absent frame ALWAYS means earth, forever: every URL already issued is
       // an Earth URL and must stay one. frame=earth is never emitted, so
@@ -2758,15 +2964,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             reads. setCoordinate fires onCoordChange, which is the only path that
             updates the pin, the display, the cards and AppState together.
           */
-          if (typeof CardRenderer !== 'undefined' && CardRenderer.setCoordinate) {
-            const lonSigned = skyFmt.lon > 180 ? skyFmt.lon - 360 : skyFmt.lon;
-            CardRenderer.setCoordinate(skyFmt.lat, lonSigned);
-          }
           /*
             Re-encode AT THE ORDER THE TOKEN CARRIED. A MOC names an index, and a
             cell centre sits exactly on a boundary at every deeper order — 393 of
             500 test points diverge at order 26. Matching the order is what keeps
             the round trip exact.
+
+            Set BEFORE the coordinate, so the render the coordinate triggers
+            already uses it.
           */
           if (skyFmt.order !== null && skyFmt.order !== undefined &&
               typeof CardRenderer !== 'undefined' && CardRenderer.getCardState) {
@@ -2775,8 +2980,26 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               ['hphex', 'hpquad', 'hp64', 'skymoc', 'skynuniq'].forEach(k => {
                 if (cs.iterations) cs.iterations[k] = skyFmt.order;
               });
+              /*
+                A link that names a HEALPix CELL draws that cell (bug 8). The map
+                and the sky draw the STARRED card's cell, so with Alphanumeric
+                starred, Barnard's Star's Gaia cell came out as an alphanumeric
+                rectangle. Code links star their own grid; a MOC / NUNIQ link
+                stars HEALPix · hex the same way (making it visible if hidden).
+              */
+              if ((skyFmt.source === 'moc' || skyFmt.source === 'nuniq') && CARD_GRIDS.hphex) {
+                cs.active = 'hphex';
+                if (cs.visible && !cs.visible.includes('hphex')) cs.visible.push('hphex');
+                saveCardState();
+              }
             } catch (e) {}
           }
+          if (typeof CardRenderer !== 'undefined' && CardRenderer.setCoordinate) {
+            const lonSigned = skyFmt.lon > 180 ? skyFmt.lon - 360 : skyFmt.lon;
+            CardRenderer.setCoordinate(skyFmt.lat, lonSigned);
+          }
+          try { syncAndRenderAnnotations(true); } catch (e) {}     // lbl=0:… on this cell
+          try { if (typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) MapManager.refreshHierarchicalGrid(); } catch (e) {}
           if (skyFmt.sphere === 'sky') {
             openSkyAt({ sphere: 'sky' }, skyFmt.lat, skyFmt.lon, skyFmt.order);
           }
@@ -2952,6 +3175,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           saveCardState();
           updateCoordDisplay();
           updateMapPin();
+          try { syncAndRenderAnnotations(true); } catch (e) {}   // lbl=0:… on this point
           renderCards();
           if (map && currentCardCoord) {
             const z = [4, 4, 10, 15, 19, 20, 20, 20, 20][Math.min(hpwWords, 8)];
@@ -3080,9 +3304,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (window.DISPLAY_MODE) {
           // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
           // reads them and they're not sensitive.
-          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'basemap'];
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'basemap', 'frame', 'epoch'];
           const kept = keep.filter(k => urlParams.has(k))
-            .map(k => urlParams.get(k) === '' || urlParams.get(k) === null ? k : `${k}=${urlParams.get(k)}`);
+            .map(k => urlParams.get(k) === '' || urlParams.get(k) === null ? k : `${k}=${urlParams.get(k)}`)
+            // lbl= / sty= repeat, so all of them, re-encoded strictly.
+            .concat(annotationShareParams());
           window.history.replaceState({}, '', window.location.pathname + (kept.length ? '?' + kept.join('&') : ''));
           // In display mode the viewer shows the result in place — never
           // redirect away from the display URL.
@@ -3341,6 +3567,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               // shapes draw their own centroid marker via drawPathPolyOnMap
               if (!(hasTilde && shapeSuffix)) {
                 updateMapPin();
+                try { syncAndRenderAnnotations(true); } catch (e) {}   // lbl=0:… on this point
                 // Stamp provenance from the decoded URL code (plain points only;
                 // shapes carry their own precision semantics). Match (if active)
                 // then tracks the code's precision; readout shows "decoded code".
@@ -3442,7 +3669,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                     GeosonifySkyView.clearShapes();
                     if (skyPts.length > 1) {
                       GeosonifySkyView.addShape({
-                        type: 'path', vertices: skyPts, stroke: '#93c5fd', strokeWidth: 1.6
+                        type: 'path', vertices: skyPts, stroke: '#93c5fd', strokeWidth: 1.6,
+                        annotate: true, indexOffset: 0      // carries lbl= / sty=
                       });
                     }
                     // Frame the WHOLE path, not just its first vertex. open()
@@ -3653,11 +3881,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (encoded && !encoded.startsWith('ERR')) {
         const hpw = hpwordsPointShare();
         if (hpw) {
-          window.history.replaceState({}, '', `${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}` + frameQuerySuffix());
+          window.history.replaceState({}, '', `${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}` + frameQuerySuffix() + annotationQuerySuffix());
           return;
         }
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
-        const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}` + frameQuerySuffix();
+        // Rebuilt from the code alone, so the frame and the labels/styles are
+        // added back explicitly (they live outside the code).
+        const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}` + frameQuerySuffix() + annotationQuerySuffix();
         window.history.replaceState({}, '', newURL);
       }
     }
@@ -3797,7 +4027,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // is never emitted.
       const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
       const isPreset = active === 'osm' || active === 'aerial' || active === 'topo';
-      if (basemap === 'aerial' || basemap === 'topo') {
+      if (isSkyFrameNow()) {
+        // A sky shape has no Earth basemap: frame=icrs&epoch=J2000 (added by
+        // buildShareURL) is what opens the viewer on the sky.
+      } else if (basemap === 'aerial' || basemap === 'topo') {
         params.push('basemap=' + encodeURIComponent(basemap));
       } else if (basemap === 'osm' && active && !isPreset) {
         params.push('basemap=' + encodeURIComponent(active));
@@ -3810,8 +4043,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const base = buildBaseShareURL();
       if (base == null) return null;
       const dParams = getDisplayShareParams();
-      const fParams = getFrameShareParams();
-      const all = dParams.concat(fParams);
+      // An encrypted link carries its frame and its labels INSIDE the blob
+      // (updateCompactOutputs). Repeating them outside would show anyone that
+      // it is a sky link, and what its points are called.
+      const encrypted = !!(encryptURL && encryptPassphrase);
+      const fParams = encrypted ? [] : getFrameShareParams();
+      const aParams = encrypted ? [] : annotationShareParams();
+      const all = dParams.concat(fParams, aParams);
       if (!all.length) return base;
       return base + (base.includes('?') ? '&' : '?') + all.join('&');
     }
@@ -5723,6 +5961,110 @@ function encodeRaw(sol) {
 
     // checksumChar moved to geosonify-compact-codec.js
 
+    // =================== LABELS AND STYLES (lbl= / sty=) ===================
+    // The shape's points in lbl=/sty= numbering: decode order, straight
+    // through the parts of a multi-part shape. A plain point link is point 0.
+    // Rectangles, circles and graticules have no points of their own: [].
+    function annotationVerts() {
+      const sol = lastSolution;
+      if (sol && sol.groups && sol.groups.length > 1) return sol.groups.flat();
+      if (sol && Array.isArray(sol.points) && sol.points.length &&
+          (sol.type === 'path' || sol.type === 'polygon' || sol.type === 'points')) return sol.points;
+      if (!sol || sol.type === 'point') {
+        return currentCardCoord ? [[currentCardCoord.lat, currentCardCoord.lon]] : [];
+      }
+      return [];
+    }
+    function annotationGroups() {
+      const sol = lastSolution;
+      if (sol && sol.groups && sol.groups.length > 1) return sol.groups;
+      const v = annotationVerts();
+      return v.length ? [v] : [];
+    }
+
+    // '' or '&lbl=…&sty=…' for the live annotations (already encoded).
+    function annotationQuerySuffix() {
+      try { return (typeof GeosonifyAnnotations !== 'undefined') ? GeosonifyAnnotations.querySuffix() : ''; }
+      catch (e) { return ''; }
+    }
+    function annotationShareParams() {
+      const s = annotationQuerySuffix();
+      return s ? s.slice(1).split('&') : [];
+    }
+
+    let _annLayer = null;
+    // bindPoint: may an unbound set of labels bind to the plain pin? Only the
+    // point-link decoders and the Apply button say yes; otherwise a pin placed
+    // while a shape link is still loading would capture the shape's labels.
+    function syncAndRenderAnnotations(bindPoint) {
+      if (typeof GeosonifyAnnotations === 'undefined') return;
+      let ann = null;
+      try {
+        const pointOnly = !lastSolution || lastSolution.type === 'point';
+        if (pointOnly && !bindPoint && !GeosonifyAnnotations.isBound()) {
+          try { renderMapAnnotations(null); } catch (e) {}
+          return;
+        }
+        const verts = annotationVerts();
+        // A shape with no points of its own cannot carry them: let them go
+        // rather than have them attach to whatever is drawn next.
+        if (lastSolution && lastSolution.type !== 'point' && !verts.length) GeosonifyAnnotations.clear();
+        ann = GeosonifyAnnotations.sync(verts);
+      } catch (e) { ann = null; }
+      try { renderMapAnnotations(ann); } catch (e) { console.warn('[geosonify] labels:', e); }
+      try { if (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.isOpen()) GeosonifySkyView.redraw(); } catch (e) {}
+      try { refreshAnnotationsBox(); } catch (e) {}
+    }
+
+    // Drawn OVER the shape: styled sides again in their own colour, width and
+    // dash; dots for styled points; labels as permanent tooltips whose content
+    // is a text node (Leaflet would treat a string as HTML).
+    function renderMapAnnotations(ann) {
+      if (typeof map === 'undefined' || !map) return;
+      if (_annLayer) { try { map.removeLayer(_annLayer); } catch (e) {} _annLayer = null; }
+      if (!ann) return;
+      const groups = annotationGroups();
+      if (!groups.length) return;
+      const disp = groups.length > 1 ? normalizeGroupsForDisplay(groups).groups : [unwrapLongitudes(groups[0])];
+      const layers = [];
+      let base = 0;
+      // A set of separate points has no sides; a path's sides follow its own
+      // line type (geodesic, or rhumb where the shape says so).
+      const hasSides = !(lastSolution && lastSolution.type === 'points');
+      const modes = (lastSolution && lastSolution.segmentModes) || null;
+      disp.forEach(g => {
+        for (let i = 0; hasSides && i + 1 < g.length; i++) {
+          const st = ann.segments[base + i];
+          if (!st) continue;
+          const mode = modes ? modes[base + i] : null;
+          layers.push(L.polyline(densifyPathGreatCircle([g[i], g[i + 1]], 10, mode ? [mode] : null), {
+            color: st.color, weight: st.width || 4, opacity: 0.95,
+            dashArray: st.dash ? '8 6' : null, interactive: false
+          }));
+        }
+        for (let i = 0; i < g.length; i++) {
+          const ps = ann.points[base + i], text = ann.labels[base + i];
+          if (!ps && !text) continue;
+          const mk = L.circleMarker(g[i], {
+            radius: ps ? Math.max(4, (ps.width || 2) + 3) : 3,
+            color: ps ? ps.color : '#1f2937', weight: 1.5,
+            dashArray: (ps && ps.dash) ? '2 2' : null,
+            fillColor: ps ? ps.color : '#ffffff', fillOpacity: (ps && ps.dash) ? 0.25 : 0.95,
+            interactive: false
+          });
+          if (text) {
+            const span = document.createElement('span');
+            span.textContent = text;                       // never markup
+            mk.bindTooltip(span, { permanent: true, direction: 'right', offset: [8, 0],
+                                   className: 'geosonify-ann-label', interactive: false });
+          }
+          layers.push(mk);
+        }
+        base += g.length;
+      });
+      _annLayer = L.layerGroup(layers).addTo(map);
+    }
+
     function updateCompactOutputs() {
       /*
         Publish the current solution for the sky view to carry across.
@@ -5735,6 +6077,10 @@ function encodeRaw(sol) {
         this function.
       */
       window.__geosonifyLastSolution = lastSolution;
+
+      // lbl= / sty= follow the shape: bound on first sight, remapped on
+      // reverse, dropped when their vertex is gone (geosonify-annotations.js).
+      syncAndRenderAnnotations();
 
       // Sync obfuscated state from CardRenderer
       if (typeof CardRenderer !== 'undefined') {
@@ -5855,7 +6201,9 @@ function encodeRaw(sol) {
         // without it decrypted as an Earth link and opened on land. The
         // plaintext is a query string, so this is an added parameter, not a
         // format change; older blobs decrypt exactly as before.
-        const plainQuery = `${param}=${s}` + frameQuerySuffix();
+        // Labels and styles go inside too: outside the blob they would be the
+        // one part of an encrypted link anyone could read.
+        const plainQuery = `${param}=${s}` + frameQuerySuffix() + annotationQuerySuffix();
         encryptQueryString(plainQuery, encryptPassphrase).then(blob => {
           out.textContent = blob;
           out.title = 'Hard encrypted — original code hidden';
@@ -6061,10 +6409,85 @@ function encodeRaw(sol) {
       
       // All-rhumb: use best encoding as normal — the global R prefix is added by the caller
       // All-geodesic: also use best encoding as normal
-      
-      // Return the shortest encoding
-      candidates.sort((a, b) => a.encoded.length - b.encoded.length);
-      return candidates[0].encoded;
+
+      // KEEP ONLY WHAT READS BACK (bug 1). The reader cannot tell the three
+      // forms apart by any marker, only by shape, so the shortest candidate can
+      // be read as a different form: a variable payload whose first delta looks
+      // like an old-gear header ("3abc", 3 dividing the rest) or a gear header
+      // ("d4..."), or whose delta starts with R (read as a rhumb flag). Each
+      // candidate is put through the readers' own function and dropped unless
+      // it gives back exactly these codes. Links already issued stay as they
+      // are: what they say is legitimate in its own reading.
+      const expectRaw = rawCodes.slice(1);
+      const deobfForCheck = d => (obfuscated && flat && GeoCodec.applyObfuscation)
+        ? GeoCodec.applyObfuscation('decode', d, flat) : d;
+      function readsBack(enc) {
+        if (!enc) return false;
+        try {
+          const gr = stripGlobalRhumb([firstCode].concat(enc.split('~')));
+          if (gr.globalRhumb) return false;           // the reader would eat an R
+          const cls = classifyDeltaPayload(firstCode, (gr.parts[1] || '').trim());
+          const firstRawChk = (obfuscated && flat && GeoCodec.applyObfuscation)
+            ? GeoCodec.applyObfuscation('decode', firstCode, flat) : firstCode;
+          const got = expandDeltaPayloadRaw(gr.parts, firstRawChk, cls.kind, deobfForCheck, flat, obfuscated);
+          if (got.rhumb.some(Boolean)) return false;  // an R the encoder did not mean
+          if (got.raw.length !== expectRaw.length) return false;
+          for (let i = 0; i < expectRaw.length; i++) if (got.raw[i] !== expectRaw[i]) return false;
+          return true;
+        } catch (e) { return false; }
+      }
+
+      let safe = candidates.filter(c => readsBack(c.encoded));
+
+      if (!safe.length) {
+        // Nothing the usual candidates wrote reads back. Two more tries, both
+        // in forms every reader already understands:
+        //  - gear, even for a two-point path (its "d" headers are explicit);
+        //  - variable deltas lengthened one character at a time until the
+        //    first stops looking like a header and none starts with R. A
+        //    longer suffix of the same code is still a correct delta, because
+        //    variable deltas replace the end of the FIRST code.
+        try {
+          if (typeof DeltaGear !== 'undefined' && DeltaGear.encodeGearPath && rawCodes.length >= 2) {
+            const g = DeltaGear.encodeGearPath(rawCodes);
+            let suffix = g ? g.substring(firstRawCode.length + 1) : '';
+            if (suffix && obfuscated && flat && GeoCodec.applyObfuscation) {
+              suffix = obfuscateGearSuffix(suffix, firstRawCode.length, flat);
+            }
+            if (readsBack(suffix)) safe.push({ encoded: suffix, method: 'gear' });
+          }
+        } catch (e) { /* fall through */ }
+        if (!safe.length) {
+          const pieces = deltaInfos.map(info => {
+            const full = info.fullCode;
+            for (let w = Math.max(1, info.rawDeltaLen); w <= full.length; w++) {
+              let d = full.slice(-w);
+              if (obfuscated && flat && GeoCodec.applyObfuscation) d = GeoCodec.applyObfuscation('encode', d, flat);
+              if (!d.startsWith('R')) return d;
+            }
+            return null;
+          });
+          if (pieces.every(Boolean)) {
+            // Lengthen the first piece until the payload no longer reads as a header.
+            const base = pieces.slice(1).join('~');
+            const info0 = deltaInfos[0];
+            for (let w = Math.max(1, info0.rawDeltaLen); w <= info0.fullCode.length; w++) {
+              let d0 = info0.fullCode.slice(-w);
+              if (obfuscated && flat && GeoCodec.applyObfuscation) d0 = GeoCodec.applyObfuscation('encode', d0, flat);
+              const enc = base ? d0 + '~' + base : d0;
+              if (readsBack(enc)) { safe.push({ encoded: enc, method: 'variable-safe' }); break; }
+            }
+          }
+        }
+        if (!safe.length) {
+          console.warn('[geosonify] No delta form of this path reads back exactly; using the shortest anyway.');
+          safe = candidates;
+        }
+      }
+
+      // Return the shortest encoding that reads back
+      safe.sort((a, b) => a.encoded.length - b.encoded.length);
+      return safe[0].encoded;
     }
     
     function computeMatchLength(firstCode, currentCode) {
@@ -7052,6 +7475,117 @@ function encodeRaw(sol) {
     }
 
     // =================== Multi-Polygon Decode ===================
+    // =================== DELTA PAYLOAD READER (shared) ===================
+    // ONE reading of "firstCode~payload", used by both path readers below
+    // (redrawFromString, decodeSegmentAsPath) AND by encodeDeltaPath to check
+    // that what it writes reads back. The rules are the ones the readers have
+    // always applied, moved here unchanged, so every issued link reads exactly
+    // as before:
+    //   1. a payload starting R + (hex digit or a-z) is a global rhumb flag;
+    //   2. "X=..."                                  fixed width, relative to first;
+    //   3. "d<hex>..."                              gear (DeltaGear, relative to previous);
+    //   4. "<hexN><payload>", N < code length,
+    //      payload a whole number of N             old gear (DeltaGear);
+    //   5. anything else                           variable, relative to first,
+    //                                              with an optional per-delta R flag.
+    // Rules 1, 4 and 5 can MISREAD a variable payload the encoder meant (a
+    // delta starting "3abc" is rule 4; one starting "R" loses its R), which is
+    // why the encoder now keeps only candidates that survive this function.
+
+    // parts: the '~'-split string, parts[0] = first code. Mutates nothing.
+    // Returns { parts, globalRhumb } with the global R removed from parts[1].
+    function stripGlobalRhumb(parts) {
+      const p = parts.slice();
+      let globalRhumb = false;
+      const second = p.length > 1 ? p[1].trim() : '';
+      if (second.startsWith('R') && second.length > 1 && /^[0-9a-f]/i.test(second.substring(1))) {
+        globalRhumb = true;
+        p[1] = second.substring(1);
+      }
+      return { parts: p, globalRhumb };
+    }
+
+    // Which reading the payload gets. firstPart is the first code as written.
+    function classifyDeltaPayload(firstPart, secondPart) {
+      const isFixed = /^([0-9A-Fa-f])=/.test(secondPart);
+      const gm = secondPart.match(/^([0-9A-Fa-f])(.+)$/);
+      const n = gm ? parseInt(gm[1], 16) : 0;
+      const isOldGear = !!gm && n > 0 && n < firstPart.length &&
+        !secondPart.includes('=') && gm[2].length >= n && gm[2].length % n === 0;
+      const isNewGear = /^d[0-9A-Fa-f]/.test(secondPart) && !secondPart.includes('=');
+      return { isFixed: isFixed, isGear: isOldGear || isNewGear, isOldGear: isOldGear, isNewGear: isNewGear,
+               kind: isFixed ? 'fixed' : ((isOldGear || isNewGear) ? 'gear' : 'variable') };
+    }
+
+    // The raw (de-obfuscated) codes after the first, in order, plus a per-code
+    // rhumb flag (variable form only). parts must already have had any global R
+    // removed. deobf(s) undoes per-delta obfuscation (identity when off); flat
+    // is the shuffled grid for gear-suffix de-obfuscation (null for HEALPix,
+    // whose codes carry their own obfuscation).
+    function expandDeltaPayloadRaw(parts, firstRaw, kind, deobf, flat, isObf) {
+      const raw = [], rhumb = [];
+      if (kind === 'fixed') {
+        const m = (parts[1] || '').match(/^([0-9A-Fa-f])=(.+)$/);
+        if (!m) return { raw, rhumb };
+        const width = parseInt(m[1], 16);
+        let remaining = m[2];
+        if (parts.length > 2) remaining += parts.slice(2).join('');
+        while (remaining.length > 0) {
+          let delta, suffixLen;
+          if (remaining[0] === '*') {
+            const escLen = parseInt(remaining[1]);
+            if (!(escLen > 0)) break;          // "*x": unreadable, and would never advance
+            delta = remaining.substring(2, 2 + escLen);
+            remaining = remaining.substring(2 + escLen);
+            suffixLen = delta.length;
+          } else {
+            if (!(width > 0)) break;           // "0=": width 0 would never advance
+            delta = remaining.substring(0, width);
+            remaining = remaining.substring(width);
+            suffixLen = width;
+          }
+          raw.push(firstRaw.substring(0, firstRaw.length - suffixLen) + deobf(delta));
+          rhumb.push(false);
+        }
+      } else if (kind === 'gear') {
+        if (typeof DeltaGear === 'undefined' || !DeltaGear.decodeGearPath) return { raw, rhumb };
+        let fullEncoded;
+        if (isObf && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+          fullEncoded = firstRaw + '~' + deobfuscateGearSuffix(parts.slice(1).join('~'), firstRaw.length, flat);
+        } else {
+          fullEncoded = parts.join('~');
+        }
+        const codes = DeltaGear.decodeGearPath(fullEncoded);
+        for (let i = 1; i < codes.length; i++) { raw.push(codes[i]); rhumb.push(false); }
+      } else {
+        for (let i = 1; i < parts.length; i++) {
+          let delta = parts[i].trim();
+          if (!delta) continue;
+          let isR = false;
+          if (delta.startsWith('R') && delta.length > 1) { isR = true; delta = delta.substring(1); }
+          raw.push(firstRaw.substring(0, firstRaw.length - delta.length) + deobf(delta));
+          rhumb.push(isR);
+        }
+      }
+      return { raw, rhumb };
+    }
+
+    // The order a HEALPix path was written at, from its first code. A path's
+    // vertices must decode at the SENDER's order, not the receiver's card
+    // order: decoding a 12-character code at a deeper order pads it with
+    // zero-children and lands every vertex on its cell's south corner. "@k"
+    // wins when present; otherwise the length gives the order exactly for even
+    // orders (and one level too deep, still inside the cell, for odd ones).
+    // null when this is not a HEALPix grid.
+    function healpixPathOrder(gridKey, firstPart) {
+      const gd = CARD_GRIDS[gridKey];
+      if (!gd || !gd.healpix || typeof HealpixGrids === 'undefined' || !HealpixGrids.inferOrder) return null;
+      try {
+        const k = HealpixGrids.inferOrder(gd.healpix, String(firstPart || '').trim());
+        return (k > 0) ? HealpixGrids.clampOrder(k) : null;
+      } catch (e) { return null; }
+    }
+
     /**
      * Decode a ~~~-separated multi-polygon string.
      * Format: anchor~group1_deltas~~~group2_code~group2_deltas~~~...
@@ -7204,9 +7738,11 @@ function encodeRaw(sol) {
       const gridDef = CARD_GRIDS[gridKey];
       if (!gridDef) return null;
       
-      // Infer iterations
+      // Infer iterations (HEALPix: the sender's order, from the code)
+      const hpOrder = healpixPathOrder(gridKey, firstPart);
       const iterations = (() => {
         if (gridDef.fixedIterations) return gridDef.fixedIterations;
+        if (hpOrder) return hpOrder;
         const sh = getShuffledGrid(gridKey);
         if (sh && typeof GeoCodec !== 'undefined' && GeoCodec.tokenizeCode) {
           const toks = GeoCodec.tokenizeCode(firstPart, sh.grid.flat());
@@ -7222,19 +7758,21 @@ function encodeRaw(sol) {
       if (parts.length === 1) return [firstCoord];
       
       const coords = [firstCoord];
+      // HEALPix has no vocabulary grid (its codes carry their own
+      // obfuscation), so a null shuffle is not a reason to stop here.
       const shuffled = getShuffledGrid(gridKey);
-      if (!shuffled) return [firstCoord];
+      if (!shuffled && !hpOrder) return [firstCoord];
       
-      const flat = shuffled.grid.flat();
+      const flat = shuffled ? shuffled.grid.flat() : null;
       
       // De-obfuscate first code to get raw prefix
       let firstRaw = firstPart;
-      if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
+      if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
         firstRaw = GeoCodec.applyObfuscation('decode', firstPart, flat);
       }
       
       function deobfuscateDelta(obfDelta) {
-        if (!obfuscated || !GeoCodec?.applyObfuscation) return obfDelta;
+        if (!obfuscated || !flat || !GeoCodec?.applyObfuscation) return obfDelta;
         return GeoCodec.applyObfuscation('decode', obfDelta, flat);
       }
       
@@ -7242,31 +7780,21 @@ function encodeRaw(sol) {
         if (typeof CardRenderer !== 'undefined' && CardRenderer.decodeRaw) {
           return CardRenderer.decodeRaw(gridKey, rawCode, iterations);
         }
-        if (typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
+        if (shuffled && typeof GeoCodec !== 'undefined' && GeoCodec.decodeHierarchical) {
           return GeoCodec.decodeHierarchical(rawCode, shuffled.grid, iterations);
         }
         return null;
       }
       
-      let secondPart = parts[1].trim();
-      
       // Global rhumb prefix: R at start of payload means all segments are rhumb
-      let globalRhumb = false;
-      if (secondPart.startsWith('R') && secondPart.length > 1 && /^[0-9a-f]/i.test(secondPart.substring(1))) {
-        globalRhumb = true;
-        secondPart = secondPart.substring(1);
-        parts[1] = secondPart;
-      }
+      const _gr = stripGlobalRhumb(parts);
+      const globalRhumb = _gr.globalRhumb;
+      parts[1] = globalRhumb ? _gr.parts[1] : parts[1].trim();
+      const secondPart = parts[1];
       
-      const isDeltaFixedWidth = secondPart.match(/^([0-9A-Fa-f])=/) !== null;
-      // Gear-change detection: old format (hex header) and new format (d-prefix)
-      const gearMatch2 = secondPart.match(/^([0-9A-Fa-f])(.+)$/);
-      const gearN2 = gearMatch2 ? parseInt(gearMatch2[1], 16) : 0;
-      const isOldGearFormat = gearMatch2 && gearN2 > 0 && gearN2 < firstPart.length && 
-        !secondPart.includes('=') && gearMatch2[2].length >= gearN2 && 
-        gearMatch2[2].length % gearN2 === 0;
-      const isNewGearFormat = /^d[0-9A-Fa-f]/.test(secondPart) && !secondPart.includes('=');
-      const isGearChange = isOldGearFormat || isNewGearFormat;
+      const _cls = classifyDeltaPayload(firstPart, secondPart);
+      const isDeltaFixedWidth = _cls.isFixed;
+      const isGearChange = _cls.isGear;
       
       // Use explicit flag if provided, otherwise heuristics
       const isDelta = isDeltaKnown !== null ? isDeltaKnown :
@@ -7295,70 +7823,19 @@ function encodeRaw(sol) {
         return coords;
       }
       
-      // Delta decode
-      if (isDeltaFixedWidth) {
-        const match = secondPart.match(/^([0-9A-Fa-f])=(.+)$/);
-        const width = parseInt(match[1], 16);
-        let remaining = match[2];
-        if (parts.length > 2) remaining += parts.slice(2).join('');
-        
-        while (remaining.length > 0) {
-          let delta, suffixLen;
-          if (remaining[0] === '*') {
-            const escLen = parseInt(remaining[1]);
-            delta = remaining.substring(2, 2 + escLen);
-            remaining = remaining.substring(2 + escLen);
-            suffixLen = delta.length;
-          } else {
-            delta = remaining.substring(0, width);
-            remaining = remaining.substring(width);
-            suffixLen = width;
-          }
-          const rawDelta = deobfuscateDelta(delta);
-          const fullRaw = firstRaw.substring(0, firstRaw.length - suffixLen) + rawDelta;
-          const coord = decodeRawCode(fullRaw);
-          if (coord) coords.push(coord);
-        }
-      } else if (isGearChange) {
-        if (typeof DeltaGear !== 'undefined' && DeltaGear.decodeGearPath) {
-          try {
-            let fullEncoded;
-            if (obfuscated && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
-              const gearSuffix = parts.slice(1).join('~');
-              const rawGearSuffix = deobfuscateGearSuffix(gearSuffix, firstRaw.length, flat);
-              fullEncoded = firstRaw + '~' + rawGearSuffix;
-            } else {
-              fullEncoded = parts.join('~');
-            }
-            const decodedCodes = DeltaGear.decodeGearPath(fullEncoded);
-            for (let i = 1; i < decodedCodes.length; i++) {
-              const coord = decodeRawCode(decodedCodes[i]);
-              if (coord) coords.push(coord);
-            }
-          } catch (e) { console.error('[geosonify] Multi-poly gear error:', e); }
-        }
-      } else {
-        // Variable-width deltas — supports R prefix for rhumb segments
-        for (let i = 1; i < parts.length; i++) {
-          let delta = parts[i].trim();
-          if (delta) {
-            // Check for R prefix (rhumb flag: segment FROM this point is rhumb)
-            let isRhumb = false;
-            if (delta.startsWith('R') && delta.length > 1) {
-              isRhumb = true;
-              delta = delta.substring(1);
-            }
-            const rawDelta = deobfuscateDelta(delta);
-            const fullRaw = firstRaw.substring(0, firstRaw.length - delta.length) + rawDelta;
-            const coord = decodeRawCode(fullRaw);
-            if (coord) {
-              coords.push(coord);
-              if (isRhumb) {
-                // Store rhumb flag — segment FROM this point (coords.length - 1) is rhumb
-                if (!coords._segmentModes) coords._segmentModes = [];
-                coords._segmentModes[coords.length - 1] = 'R';
-              }
-            }
+      // Delta decode: the shared reading (fixed / gear / variable)
+      const _kind = isDeltaFixedWidth ? 'fixed' : (isGearChange ? 'gear' : 'variable');
+      let _exp = { raw: [], rhumb: [] };
+      try {
+        _exp = expandDeltaPayloadRaw(parts, firstRaw, _kind, deobfuscateDelta, flat, obfuscated);
+      } catch (e) { console.error('[geosonify] Multi-poly delta error:', e); }
+      for (let i = 0; i < _exp.raw.length; i++) {
+        const coord = decodeRawCode(_exp.raw[i]);
+        if (coord) {
+          coords.push(coord);
+          if (_exp.rhumb[i]) {
+            if (!coords._segmentModes) coords._segmentModes = [];
+            coords._segmentModes[coords.length - 1] = 'R';
           }
         }
       }
@@ -7451,35 +7928,22 @@ function encodeRaw(sol) {
         const firstPart = parts[0].trim();
         let secondPart = parts.length > 1 ? parts[1].trim() : '';
         
-        // Global rhumb prefix: if payload starts with R, all segments are rhumb
-        let globalRhumb = false;
-        if (secondPart.startsWith('R') && secondPart.length > 1) {
-          // Check if stripping R still leaves a valid delta/payload
-          const afterR = secondPart.substring(1);
-          // R prefix is global rhumb if the rest looks like a delta, not a full code starting with R
-          // Heuristic: global R if the char after R is a hex digit or lowercase (delta start)
-          if (/^[0-9a-f]/i.test(afterR)) {
-            globalRhumb = true;
-            secondPart = afterR;
-            // Also update parts array
-            parts[1] = secondPart;
-          }
+        // Global rhumb prefix: if payload starts with R (then a hex digit or
+        // a-z), all segments are rhumb. Shared rule: stripGlobalRhumb().
+        const _gr = stripGlobalRhumb(parts);
+        const globalRhumb = _gr.globalRhumb;
+        if (globalRhumb) {
+          secondPart = _gr.parts[1];
+          parts[1] = secondPart;
         }
-        
-        // Detect delta formats (for manual paste only)
-        const isDeltaFixedWidth = secondPart.match(/^([0-9A-Fa-f])=/) !== null;
-        // Gear-change detection: two formats exist
-        // Old format: {hex_digit}{payload} — single hex header, no 'd' prefix
-        // New format: d{hex_digit}{payload} — 'd' prefix + hex header (self-delimiting)
+
+        // Detect delta formats. Shared rule: classifyDeltaPayload().
+        // Old gear: {hex_digit}{payload} — single hex header, no 'd' prefix
+        // New gear: d{hex_digit}{payload} — 'd' prefix + hex header (self-delimiting)
         // Both route to DeltaGear.decodeGearPath which handles either.
-        const gearMatch = secondPart.match(/^([0-9A-Fa-f])(.+)$/);
-        const gearN = gearMatch ? parseInt(gearMatch[1], 16) : 0;
-        const isOldGearFormat = gearMatch && gearN > 0 && gearN < firstPart.length && 
-          !secondPart.includes('=') && gearMatch[2].length >= gearN && 
-          gearMatch[2].length % gearN === 0;
-        // New d-prefix: segment starts with 'd' followed by a hex digit (the gear width)
-        const isNewGearFormat = /^d[0-9A-Fa-f]/.test(secondPart) && !secondPart.includes('=');
-        const isGearChange = isOldGearFormat || isNewGearFormat;
+        const _cls = classifyDeltaPayload(firstPart, secondPart);
+        const isDeltaFixedWidth = _cls.isFixed;
+        const isGearChange = _cls.isGear;
         const isDeltaFormat = isDeltaFixedWidth;
         
         // Also detect if first part looks like an encoded geocode and subsequent parts are short deltas
@@ -7535,9 +7999,14 @@ function encodeRaw(sol) {
           
           if (gridKey) {
             // Infer iterations from code length to preserve URL precision
+            const hpOrder = healpixPathOrder(gridKey, firstPart);
             const urlInferredIters = (() => {
               const gDef = CARD_GRIDS[gridKey];
               if (gDef?.fixedIterations) return gDef.fixedIterations;
+              // HEALPix: the sender's order, from the code (bug 3: was the
+              // receiver's card order, default 22, so short codes decoded to
+              // their cells' south corners).
+              if (hpOrder) return hpOrder;
               const sh = getShuffledGrid(gridKey);
               if (sh && typeof GeoCodec !== 'undefined' && GeoCodec.tokenizeCode) {
                 const toks = GeoCodec.tokenizeCode(firstPart, sh.grid.flat());
@@ -7597,95 +8066,29 @@ function encodeRaw(sol) {
                   return GeoCodec.applyObfuscation('decode', obfDelta, flat);
                 }
                 
-                if (isDeltaFormat) {
-                  // Fixed-width delta format: X=delta1delta2... (single hex + =)
-                  console.log('[geosonify] Decoding fixed-width delta format');
-                  const match = secondPart.match(/^([0-9A-Fa-f])=(.+)$/);
-                  const width = parseInt(match[1], 16);
-                  let remaining = match[2];
-                  
-                  // Include remaining parts after the first delta payload
-                  if (parts.length > 2) {
-                    remaining += parts.slice(2).join('');
+                // One shared reading of the payload (fixed / gear / variable),
+                // the same function the encoder checks its output against.
+                const _kind = isDeltaFormat ? 'fixed' : (isGearChange ? 'gear' : 'variable');
+                console.log('[geosonify] Decoding ' + _kind + ' delta format, parts:', parts.length);
+                let _exp = { raw: [], rhumb: [] };
+                try {
+                  _exp = expandDeltaPayloadRaw(parts, firstRaw, _kind, deobfuscateDelta, flat, obfuscated);
+                } catch (e) { console.error('[geosonify] Delta payload error:', e); }
+                const _segModes = {};
+                for (let i = 0; i < _exp.raw.length; i++) {
+                  const coord = decodeRawCode(_exp.raw[i]);
+                  if (coord) {
+                    coords.push(coord);
+                    if (_exp.rhumb[i]) _segModes[coords.length - 1] = 'R';
+                  } else {
+                    console.warn('[geosonify] Failed to decode delta \u2192 fullRaw:', _exp.raw[i]);
                   }
-                  
-                  while (remaining.length > 0) {
-                    let delta;
-                    let suffixLen;
-                    if (remaining[0] === '*') {
-                      const escLen = parseInt(remaining[1]);
-                      delta = remaining.substring(2, 2 + escLen);
-                      remaining = remaining.substring(2 + escLen);
-                      suffixLen = delta.length;
-                    } else {
-                      delta = remaining.substring(0, width);
-                      remaining = remaining.substring(width);
-                      suffixLen = width;
-                    }
-                    
-                    // De-obfuscate the delta, then combine with raw prefix
-                    const rawDelta = deobfuscateDelta(delta);
-                    const fullRaw = firstRaw.substring(0, firstRaw.length - suffixLen) + rawDelta;
-                    const coord = decodeRawCode(fullRaw);
-                    if (coord) coords.push(coord);
-                  }
-                } else if (isGearChange) {
-                  // Gear-change delta format
-                  console.log('[geosonify] Decoding gear-change delta format');
-                  if (typeof DeltaGear !== 'undefined' && DeltaGear.decodeGearPath) {
-                    try {
-                      let fullEncoded;
-                      if (obfuscated && flat && typeof GeoCodec !== 'undefined' && GeoCodec.applyObfuscation) {
-                        const gearSuffix = parts.slice(1).join('~');
-                        const rawGearSuffix = deobfuscateGearSuffix(gearSuffix, firstRaw.length, flat);
-                        fullEncoded = firstRaw + '~' + rawGearSuffix;
-                      } else {
-                        fullEncoded = parts.join('~');
-                      }
-                      const decodedCodes = DeltaGear.decodeGearPath(fullEncoded);
-                      for (let i = 1; i < decodedCodes.length; i++) {
-                        const coord = decodeRawCode(decodedCodes[i]);
-                        if (coord) coords.push(coord);
-                      }
-                      console.log('[geosonify] Gear-change decoded:', coords.length, 'coords');
-                    } catch (e) { console.error('[geosonify] Gear-change error:', e); }
-                  } else { console.error('[geosonify] DeltaGear not available!'); }
-                } else {
-                  // Variable-width: each part after first is a delta
-                  // Supports R prefix: R{delta} = segment FROM this point is rhumb
-                  console.log('[geosonify] Decoding variable-width delta format');
-                  console.log('[geosonify] Parts count:', parts.length);
-                  const _segModes = {};
-                  
-                  for (let i = 1; i < parts.length; i++) {
-                    let delta = parts[i].trim();
-                    if (delta) {
-                      // Check for R prefix
-                      let isRhumb = false;
-                      if (delta.startsWith('R') && delta.length > 1) {
-                        isRhumb = true;
-                        delta = delta.substring(1);
-                      }
-                      // De-obfuscate the delta, then combine with raw prefix
-                      const rawDelta = deobfuscateDelta(delta);
-                      const fullRaw = firstRaw.substring(0, firstRaw.length - delta.length) + rawDelta;
-                      const coord = decodeRawCode(fullRaw);
-                      if (coord) {
-                        coords.push(coord);
-                        if (isRhumb) {
-                          _segModes[coords.length - 1] = 'R';
-                        }
-                      } else {
-                        console.warn('[geosonify] Failed to decode variable delta:', delta, '→ fullRaw:', fullRaw);
-                      }
-                    }
-                  }
-                  // Attach segment modes if any rhumb segments found
-                  if (Object.keys(_segModes).length > 0) {
-                    coords._segmentModes = _segModes;
-                  }
-                  console.log('[geosonify] Variable-width decoded coords count:', coords.length);
                 }
+                // Attach segment modes if any rhumb segments found
+                if (Object.keys(_segModes).length > 0) {
+                  coords._segmentModes = _segModes;
+                }
+                console.log('[geosonify] Delta decoded coords count:', coords.length);
               }
               
               if (coords.length >= 2) {
@@ -7705,6 +8108,9 @@ function encodeRaw(sol) {
                 // Update cards to this location
                 currentCardCoord = { lat: firstCoord[0], lon: firstCoord[1] };
                 cardState.active = gridKey;
+                // HEALPix: take the sender's order too, so the card (and any
+                // re-share) encodes the vertices at the order they arrived in.
+                if (hpOrder) cardState.iterations[gridKey] = hpOrder;
                 saveCardState();
                 updateCoordDisplay();
                 renderCards();
@@ -9715,7 +10121,8 @@ function encodeRaw(sol) {
             shareURL = `${window.location.origin}${window.location.pathname}?enc=${encoded}`;
           } else {
             const param = getURLParamForActiveCard(_currentOutputIsDelta);
-            shareURL = `${window.location.origin}${window.location.pathname}?${param}=${encoded}`;
+            shareURL = `${window.location.origin}${window.location.pathname}?${param}=${encoded}` +
+              frameQuerySuffix() + annotationQuerySuffix();
           }
           
           if (p.result === 'r') {
@@ -10613,8 +11020,67 @@ function encodeRaw(sol) {
       document.getElementById('inputCoords').value = 
         lastSolution.points.map(c => `${c[0].toFixed(6)}, ${c[1].toFixed(6)}`).join("\n");
       
+      // Re-encodes the reversed shape; lbl= / sty= follow their points there
+      // (point i becomes n-1-i, in GeosonifyAnnotations.sync).
       updateCompactOutputs();
     });
+
+    // ── Sky exports on the Output tab ─────────────────────────
+    document.querySelectorAll('[data-sky-export]').forEach(btn => {
+      btn.addEventListener('click', () => downloadSkyExport(btn.getAttribute('data-sky-export')));
+    });
+
+    // ── Labels & colours box ──────────────────────────────────
+    // Shows the live lbl= / sty= (decoded, one per line) and applies edits. A
+    // line it cannot read is skipped and counted, never guessed at.
+    function refreshAnnotationsBox() {
+      const box = document.getElementById('annotationsInput');
+      const note = document.getElementById('annotationsNote');
+      if (!box || typeof GeosonifyAnnotations === 'undefined') return;
+      const ann = GeosonifyAnnotations.get();
+      if (document.activeElement !== box) {
+        box.value = GeosonifyAnnotations.serialize(ann).map(x => {
+          try { return decodeURIComponent(x); } catch (e) { return x; }
+        }).join('\n');
+      }
+      if (note) {
+        const priv = !!(passphrase || obfuscated);
+        if (ann && priv && !(encryptURL && encryptPassphrase)) {
+          note.textContent = 'Labels and colours are not hidden by the passphrase or obfuscation: they travel as plain text beside the code. Turn on Hard encrypt URL to hide them too.';
+          note.style.display = 'block';
+        } else {
+          note.style.display = 'none';
+        }
+      }
+    }
+    (function wireAnnotationsBox() {
+      const box = document.getElementById('annotationsInput');
+      const apply = document.getElementById('annotationsApplyBtn');
+      const clr = document.getElementById('annotationsClearBtn');
+      if (!box || !apply || typeof GeosonifyAnnotations === 'undefined') return;
+      apply.addEventListener('click', () => {
+        const A = GeosonifyAnnotations, ann = A.empty();
+        let bad = 0, n = 0;
+        box.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean).forEach(line => {
+          n++;
+          const m = /^(lbl|sty)=(.*)$/.exec(line);
+          let v = m ? m[2] : null;
+          if (v !== null && /%[0-9A-Fa-f]{2}/.test(v)) { try { v = decodeURIComponent(v); } catch (e) {} }
+          const ok = m && (m[1] === 'lbl' ? A.addLabel(ann, v) : A.addStyle(ann, v));
+          if (!ok) bad++;
+        });
+        A.set(A.isEmpty(ann) ? null : ann);
+        box.blur();
+        if (lastSolution) updateCompactOutputs(); else syncAndRenderAnnotations(true);
+        if (bad) showToast(bad + ' of ' + n + ' line' + (n === 1 ? '' : 's') + ' could not be read and ' + (bad === 1 ? 'was' : 'were') + ' skipped', 'error');
+        else showToast(n ? 'Labels and colours applied' : 'Labels and colours cleared');
+      });
+      clr.addEventListener('click', () => {
+        box.value = '';
+        GeosonifyAnnotations.clear();
+        if (lastSolution) updateCompactOutputs(); else syncAndRenderAnnotations();
+      });
+    })();
     
     // Edit button - copy shape coordinates back to input for editing
     document.getElementById('editCoordsBtn').addEventListener('click', function() {
