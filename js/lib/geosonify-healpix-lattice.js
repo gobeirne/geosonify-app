@@ -89,7 +89,15 @@
     opacity = Math.max(0, Math.min(1, Math.round(x * 100) / 100));
     if (earthLayer && earthLayer._cv) styleCanvas(earthLayer._cv);
     styleCanvas(skyCv);
+    notify();
     return opacity;
+  }
+
+  // Listeners: told whenever the lattice is shown or hidden, or its opacity
+  // changes, so controls elsewhere can follow (v0.3).
+  var listeners = [];
+  function notify() {
+    listeners.slice().forEach(function (fn) { try { fn({ showing: shown, opacity: opacity }); } catch (e) {} });
   }
 
   // ── Starpin's loop, over any projection ──────────────────────────────────
@@ -393,6 +401,7 @@
     } else {
       scheduleSky();
     }
+    notify();
     return shown;
   }
 
@@ -437,6 +446,12 @@
       return now;
     },
     getOpacity: function () { return opacity; },
+    // fn({ showing, opacity }) on every change; returns an unsubscribe.
+    onChange: function (fn) {
+      if (typeof fn !== 'function') return function () {};
+      listeners.push(fn);
+      return function () { listeners = listeners.filter(function (f) { return f !== fn; }); };
+    },
     PANE: PANE,
     _draw: draw,
     MAX_ORDER: MAX_ORDER

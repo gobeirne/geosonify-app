@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.8  — the in-app sky view
+  geosonify-sky-view.js  v0.9  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -28,6 +28,11 @@
     * LABELS AND STYLES (lbl= / sty=, geosonify-annotations.js) on shapes
       added with { annotate: true }: coloured / wider / dashed sides, coloured
       points, and labels drawn as SVG text (textContent, never markup).
+
+  v0.9: &bare on a display link hides the header and the readouts (the
+  imagery credit moves into the picture's corner). After a view is framed on
+  a shape, or zoomed by hand, the imagery no longer re-matches the field to
+  the Earth map's cell.
 
   v0.8: shapes and their labels are drawn in a layer of their own (z-index 6),
   ABOVE the HEALPix lattice canvas (z-index 5), which used to cross them.
@@ -72,7 +77,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.8';
+  var VERSION = 'v0.9';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -134,6 +139,7 @@
   var _deepToastShown = false;
 
   function readOnly() { return !!(opts && opts.readOnly) || !!global.DISPLAY_MODE; }
+  function bareView() { return !!(opts && opts.bare) || !!(global.DISPLAY_OPTS && global.DISPLAY_OPTS.bare); }
 
   function _Sky() {
     try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
@@ -456,6 +462,18 @@
     if (readOnly()) {
       [minus, plus, close, earthBtn].forEach(function (b) { b.style.display = 'none'; });
       provTxt.style.display = 'none';
+    }
+    /*
+      BARE (v0.9): a display link with &bare shows the sky alone -- no header,
+      no readouts. The imagery credit is not optional (LGPL, and plain
+      courtesy to CDS), so it moves into a corner of the picture instead.
+    */
+    if (readOnly() && bareView()) {
+      bar.style.display = 'none';
+      foot.style.display = 'none';
+      attrib.setAttribute('style', 'position:absolute; left:10px; bottom:8px; z-index:10; ' +
+        'font-size:10px; color:#cbd5e1; text-decoration:none; text-shadow:0 0 3px #000,0 0 3px #000;');
+      canvasWrap.appendChild(attrib);
     }
 
     zIn.onclick = function (ev) {
