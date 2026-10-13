@@ -638,6 +638,17 @@
               </div>
             </div>
 
+            <!-- HEALPix grid on the viewer: shown only while the lattice is on here.
+                 Moving it previews on this screen too. lattice=<0..1> in the link. -->
+            <div id="displayLatticeRow" style="display:none; margin-top:10px;">
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">HEALPix grid</div>
+              <div style="display:flex; align-items:center; gap:10px; font-size:14px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer; flex:none;"><input type="checkbox" id="displayLatticeShow" checked> Show</label>
+                <input type="range" id="displayLatticeOpacity" min="5" max="100" step="5" value="100" aria-label="HEALPix grid opacity" style="flex:1 1 auto; min-width:0;">
+                <span id="displayLatticeValue" style="flex:none; min-width:3.2em; text-align:right; font-variant-numeric:tabular-nums;">100%</span>
+              </div>
+            </div>
+
             <p id="displayShareWarn" style="display:none; margin:10px 0 0; font-size:13px; color:#b8860b;"></p>
           </div>
 
@@ -717,7 +728,7 @@
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20260109"></script>
-  <script src="js/core/delta-gear.js?v=20261013g"></script>
+  <script src="js/core/delta-gear.js?v=20261013i"></script>
   
 <!-- Services -->
 <script src="js/services/audio-service.js?v=20261009g"></script>
@@ -756,20 +767,20 @@
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
-<script src="js/lib/geosonify-sky-carry.js?v=20261013g"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20261013i"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261013g"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261013i"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
-<script src="js/lib/geosonify-healpix-lattice.js?v=20261012b"></script>
+<script src="js/lib/geosonify-healpix-lattice.js?v=20261013i"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
-<script src="js/lib/geosonify-annotations.js?v=20261013g"></script>
-<script src="js/lib/geosonify-sky-export.js?v=20261013g"></script>
+<script src="js/lib/geosonify-annotations.js?v=20261013i"></script>
+<script src="js/lib/geosonify-sky-export.js?v=20261013i"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
@@ -780,7 +791,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261013g"></script>
+<script src="js/lib/faq-data.js?v=20261013i"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -1581,6 +1592,36 @@
       if (lab) lab.textContent = sky ? 'Show solid angle / lengths (angles)' : 'Show area / measurements';
       const row = document.getElementById('skyExportRow');
       if (row) row.style.display = sky ? 'flex' : 'none';
+      refreshDisplayLatticeRow();
+    }
+
+    // The HEALPix grid control: only while the lattice is showing (Sky mode, or
+    // a HEALPix card starred), seeded from the opacity on screen.
+    function latticeShowingNow() {
+      try { return typeof GeosonifyHealpixLattice !== 'undefined' && GeosonifyHealpixLattice.isShowing(); }
+      catch (e) { return false; }
+    }
+    function refreshDisplayLatticeRow() {
+      const row = document.getElementById('displayLatticeRow');
+      if (!row) return;
+      const on = latticeShowingNow();
+      row.style.display = on ? 'block' : 'none';
+      if (!on) return;
+      const op = GeosonifyHealpixLattice.getOpacity ? GeosonifyHealpixLattice.getOpacity() : 1;
+      const show = document.getElementById('displayLatticeShow');
+      const range = document.getElementById('displayLatticeOpacity');
+      const val = document.getElementById('displayLatticeValue');
+      if (show) show.checked = op > 0;
+      if (range) { if (op > 0) range.value = String(Math.round(op * 100)); range.disabled = !(op > 0); }
+      if (val) val.textContent = op > 0 ? Math.round(op * 100) + '%' : 'hidden';
+    }
+    // The opacity the panel describes: 0 when unticked.
+    function displayLatticeOpacity() {
+      const show = document.getElementById('displayLatticeShow');
+      const range = document.getElementById('displayLatticeOpacity');
+      if (show && !show.checked) return 0;
+      const v = range ? Number(range.value) / 100 : 1;
+      return isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
     }
 
     // Everything that depends on which sphere is showing, refreshed on every
@@ -2091,12 +2132,21 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         export: _dispParams.get('export') || null,
         // export= may repeat (csv, reg and moc together); every value, once.
         exports: _dispParams.getAll('export').filter((v, i, a) => v && a.indexOf(v) === i),
+        // lattice=<0..1>: HEALPix grid opacity; 0 hides it. Absent = as drawn.
+        lattice: (() => {
+          const v = parseFloat(_dispParams.get('lattice'));
+          return (_dispParams.has('lattice') && isFinite(v)) ? Math.max(0, Math.min(1, v)) : null;
+        })(),
         zoom: _dispParams.has('zoom') ? parseFloat(_dispParams.get('zoom')) : null,
         context: _dispParams.has('context') ? parseFloat(_dispParams.get('context')) : null,
         fixzoom: _dispParams.has('fixzoom')
       };
       if (window.DISPLAY_MODE) {
         document.documentElement.classList.add('display-mode');
+        if (window.DISPLAY_OPTS.lattice !== null && typeof GeosonifyHealpixLattice !== 'undefined' &&
+            GeosonifyHealpixLattice.setOpacity) {
+          try { GeosonifyHealpixLattice.setOpacity(window.DISPLAY_OPTS.lattice); } catch (e) {}
+        }
       }
 
       // Check if URL has params - if so, skip splash and random location
@@ -2262,6 +2312,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         in this classic script, so GeosonifySkyCarry cannot see it otherwise.
       */
       window.__geosonifyMap = map;
+      // Everything drawn follows the world copy you are looking at.
+      map.on('moveend', followCentreCopy);
 
       // Apply a basemap chosen via ?basemap= — honored only on display links
       // (applyFromURL ignores it on plain shape links, which open in the
@@ -2637,6 +2689,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         window.__geosonifySeedDisplayBasemap = seedBasemapRadio;
         panel.querySelectorAll('input[name="displayBasemap"]').forEach(r =>
           r.addEventListener('change', refreshWarn));
+        // HEALPix grid: what the viewer will see, previewed here as it moves.
+        const latShow = document.getElementById('displayLatticeShow');
+        const latRange = document.getElementById('displayLatticeOpacity');
+        const latPreview = () => {
+          try { GeosonifyHealpixLattice.setOpacity(displayLatticeOpacity()); } catch (e) {}
+          if (latRange && latShow) latRange.disabled = !latShow.checked;
+          const val = document.getElementById('displayLatticeValue');
+          if (val) val.textContent = latShow && !latShow.checked ? 'hidden' : Math.round(displayLatticeOpacity() * 100) + '%';
+        };
+        if (latShow) latShow.addEventListener('change', latPreview);
+        if (latRange) latRange.addEventListener('input', latPreview);
       })();
 
       // Map resize handle functionality - now handled by MapManager
@@ -3318,7 +3381,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (window.DISPLAY_MODE) {
           // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
           // reads them and they're not sensitive.
-          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'basemap', 'frame', 'epoch'];
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'lattice', 'basemap', 'frame', 'epoch'];
           const kept = keep.filter(k => urlParams.has(k))
             .flatMap(k => (k === 'export' ? urlParams.getAll(k) : [urlParams.get(k)])
               .map(v => v === '' || v === null ? k : `${k}=${v}`))
@@ -4033,6 +4096,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const basemap = (document.querySelector('input[name="displayBasemap"]:checked') || {}).value || '';
       const showArea = document.getElementById('displayShowArea');
       if (showArea && showArea.checked) params.push('area');
+      // lattice=<0..1>: the HEALPix grid's opacity on the viewer (0 hides it).
+      // Only while the lattice is on here, and only when not the default 1.
+      if (latticeShowingNow()) {
+        const op = displayLatticeOpacity();
+        if (op < 1) params.push('lattice=' + String(Math.round(op * 100) / 100));
+      }
       // export= repeats, one per format (an app from before 13 Oct 2026 reads
       // only the first, and offers that one).
       document.querySelectorAll('input[name="displayExport"]:checked').forEach(c => {
@@ -4892,6 +4961,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Use smart bounds for fitBounds — handles antimeridian correctly
       const bounds = smartBounds(coords);
       if (bounds) map.fitBounds(bounds, { padding: [50, 50] });
+      // (The centroid marker is added below; a follow pass runs after it.)
+      setTimeout(followCentreCopy, 0);
       
       // Place centroid using smart longitude
       const smartLon = smartCentroidLon(coords);
@@ -6010,6 +6081,55 @@ function encodeRaw(sol) {
       return s ? s.slice(1).split('&') : [];
     }
 
+    /*
+      ONE WORLD COPY. Leaflet draws a longitude exactly as given, so -194 and
+      +166 are the same place on two copies of the world, 360 degrees apart. A
+      shape across the date line is drawn continuously from its first point
+      (the Big Dipper: -153 to -194), while the shape carried back from the sky
+      lands on the copy nearest the map's centre; after Sky -> Earth the map
+      could show one and not the other, and the labels went with the far one.
+
+      So after every move, each drawn line, polygon, dot and pin is put on the
+      copy nearest the map's centre, by whole turns only (nothing moves on the
+      ground). Tile layers, the HEALPix lattice and anything wider than the
+      world are left alone, as is a layer marked { gsFixedCopy: true }.
+    */
+    function _shiftLatLngs(lls, d) {
+      return lls.map(x => Array.isArray(x) ? _shiftLatLngs(x, d) : L.latLng(x.lat, x.lng + d, x.alt));
+    }
+    function _followLeaf(layer, ref) {
+      if (!layer || (layer.options && layer.options.gsFixedCopy)) return;
+      if (layer.dragging && layer.dragging._draggable && layer.dragging._draggable._moving) return;
+      let mid;
+      if (typeof layer.getLatLngs === 'function' && typeof layer.getBounds === 'function') {
+        const b = layer.getBounds();
+        if (!b || !b.isValid()) return;
+        if (b.getEast() - b.getWest() >= 360) return;           // wraps the world: leave it
+        mid = (b.getEast() + b.getWest()) / 2;
+        const k = Math.round((ref - mid) / 360);
+        if (k) layer.setLatLngs(_shiftLatLngs(layer.getLatLngs(), 360 * k));
+      } else if (typeof layer.getLatLng === 'function' && typeof layer.setLatLng === 'function') {
+        const ll = layer.getLatLng();
+        if (!ll) return;
+        const k = Math.round((ref - ll.lng) / 360);
+        if (k) layer.setLatLng(L.latLng(ll.lat, ll.lng + 360 * k, ll.alt));
+      }
+    }
+    function _followLayer(layer, ref) {
+      if (!layer) return;
+      if (typeof layer.eachLayer === 'function' && typeof layer.getLatLngs !== 'function') {
+        layer.eachLayer(l => _followLayer(l, ref));
+        return;
+      }
+      if (layer instanceof L.Path || layer instanceof L.Marker) _followLeaf(layer, ref);
+    }
+    function followCentreCopy() {
+      if (typeof map === 'undefined' || !map || typeof L === 'undefined') return;
+      let ref;
+      try { ref = map.getCenter().lng; } catch (e) { return; }
+      try { map.eachLayer(l => _followLayer(l, ref)); } catch (e) { console.warn('[geosonify] world copy:', e); }
+    }
+
     let _annLayer = null;
     // bindPoint: may an unbound set of labels bind to the plain pin? Only the
     // point-link decoders and the Apply button say yes; otherwise a pin placed
@@ -6081,6 +6201,7 @@ function encodeRaw(sol) {
         base += g.length;
       });
       _annLayer = L.layerGroup(layers).addTo(map);
+      followCentreCopy();
     }
 
     function updateCompactOutputs() {
@@ -10168,6 +10289,7 @@ function encodeRaw(sol) {
               if (dp.zoom != null && !isNaN(dp.zoom)) dParams.push('zoom=' + dp.zoom);
               if (dp.fixzoom) dParams.push('fixzoom');
               if (dp.gps) dParams.push('gps');
+              if (dp.lattice !== null && dp.lattice !== undefined) dParams.push('lattice=' + dp.lattice);
               (dp.exports && dp.exports.length ? dp.exports : (dp.export ? [dp.export] : []))
                 .forEach(v => dParams.push('export=' + v));
               if (window.__GEOSONIFY_BASEMAP_ACTIVE) dParams.push('basemap=' + encodeURIComponent(window.__GEOSONIFY_BASEMAP_ACTIVE));
