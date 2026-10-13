@@ -1,5 +1,13 @@
 /*
-  geosonify-sky-carry.js  v0.1  — shapes cross the frame boundary, both ways
+  geosonify-sky-carry.js  v0.2  — shapes cross the frame boundary, both ways
+
+  v0.2: shapes that cross RA 0h / the date line are drawn the SHORT way round
+  on Earth. ringsFromSky() folded every vertex to +/-180 independently, so the
+  Big Dipper (RA 165..207) became longitudes +165 .. -153 and its eastern stars
+  were joined across the whole globe. Now the first vertex is folded and each
+  later one is taken as the longitude nearest its predecessor (values past
+  +/-180 are fine for Leaflet), and carryToEarth() shifts the whole ring by a
+  multiple of 360 to sit nearest the map's centre.
 
   Load the Berlin Wall, hit Sky, and see it written on the stars. Draw Orion,
   hit Earth, and see it laid across the globe. The same digits, read twice.
@@ -52,7 +60,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var CIRCLE_SEGMENTS = 64;
 
   function _GeoMath() { return global.GeoMath || null; }
@@ -60,6 +68,39 @@
 
   function fold360(lon) { return ((lon % 360) + 360) % 360; }
   function fold180(ra) { var x = ((ra % 360) + 360) % 360; return x > 180 ? x - 360 : x; }
+
+  /*
+    Longitudes made continuous along a ring: the first is folded to +/-180,
+    each later one is the value nearest its predecessor (so it may pass 180).
+    Leaflet draws a segment between two longitudes as the straight line
+    between those numbers, so +165 then -153 is a line the long way round,
+    while +165 then +207 is the 42 degrees it really is.
+  */
+  function unwrapRing(ring) {
+    var out = [];
+    for (var i = 0; i < ring.length; i++) {
+      var lon = ring[i][1];
+      if (!out.length) lon = fold180(lon);
+      else {
+        var prev = out[out.length - 1][1];
+        lon = prev + (((lon - prev) % 360 + 540) % 360 - 180);
+      }
+      out.push([ring[i][0], lon]);
+    }
+    return out;
+  }
+
+  // Shift a whole (already continuous) ring by k*360 so its middle sits
+  // nearest refLon: the copy of it the map is actually looking at.
+  function nearestCopy(ring, refLon) {
+    if (!ring.length || !isFinite(refLon)) return ring;
+    var lo = Infinity, hi = -Infinity;
+    for (var i = 0; i < ring.length; i++) { lo = Math.min(lo, ring[i][1]); hi = Math.max(hi, ring[i][1]); }
+    var mid = (lo + hi) / 2;
+    var k = Math.round((refLon - mid) / 360);
+    if (!k) return ring;
+    return ring.map(function (p) { return [p[0], p[1] + 360 * k]; });
+  }
 
   function asPair(p) {
     if (!p) return null;
@@ -180,16 +221,22 @@
 
     if (opts.replace !== false && V.clearShapes) V.clearShapes();
 
-    var all = [], n = 0;
+    var all = [], n = 0, offset = 0;
     got.rings.forEach(function (ring) {
       var verts = ring.map(function (p) { return [p[0], fold360(p[1])]; });
+      var start = offset;
+      offset += verts.length;
       if (verts.length < 2) return;
       V.addShape({
         type: 'path',
         vertices: verts,
         stroke: opts.stroke || '#f0abfc',
         strokeWidth: opts.strokeWidth || 1.5,
-        origin: got.kind
+        origin: got.kind,
+        // A path's own points carry lbl= / sty= (numbered straight through
+        // the parts); a circle or rectangle's sampled ring does not.
+        annotate: (got.kind === 'path' || got.kind === 'polygon'),
+        indexOffset: start
       });
       all = all.concat(verts);
       n++;
@@ -202,8 +249,10 @@
 
   /*
     SKY -> EARTH. The shapes currently on the sphere, as lat/lon rings ready for
-    L.polyline. Longitude is folded back to +/-180 because Leaflet wraps oddly
-    past 180 and would draw a line across the whole map.
+    L.polyline. Longitudes are CONTINUOUS along each ring (v0.2): the first is
+    folded to +/-180 and each later one is the value nearest the one before,
+    which may pass +/-180. Leaflet draws exactly those numbers, so a ring across
+    the date line is drawn across it rather than round the whole world.
 
     Returns rings rather than drawing them: the map has several drawing paths
     (shapeLayer, imported layers, GPX layers) with different lifetimes, and
@@ -223,9 +272,9 @@
       for (var i = 0; i < verts.length; i++) {
         var v = verts[i];
         if (!Array.isArray(v) || !isFinite(v[0]) || !isFinite(v[1])) continue;
-        ring.push([v[0], fold180(v[1])]);        // [dec, ra] -> [lat, lon]
+        ring.push([v[0], v[1]]);                  // [dec, ra] -> [lat, lon]
       }
-      if (ring.length >= 2) out.push(ring);
+      if (ring.length >= 2) out.push(unwrapRing(ring));
     });
     return out;
   }
@@ -250,9 +299,12 @@
     if (!map || !global.L) return 0;
     clearEarthShapes(map);
 
+    var ref = 0;
+    try { ref = map.getCenter().lng; } catch (e) { ref = 0; }
+
     var rings = ringsFromSky();
     rings.forEach(function (r) {
-      var line = global.L.polyline(r, {
+      var line = global.L.polyline(nearestCopy(r, ref), {
         color: opts.color || '#f0abfc',
         weight: opts.weight || 3,
         opacity: opts.opacity === undefined ? 0.9 : opts.opacity
@@ -270,7 +322,9 @@
     carryToSky: carryToSky,
     ringsFromSky: ringsFromSky,
     carryToEarth: carryToEarth,
-    clearEarthShapes: clearEarthShapes
+    clearEarthShapes: clearEarthShapes,
+    unwrapRing: unwrapRing,
+    nearestCopy: nearestCopy
   };
 
   global.GeosonifySkyCarry = API;

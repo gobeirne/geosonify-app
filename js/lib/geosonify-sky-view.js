@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.4  — the in-app sky view
+  geosonify-sky-view.js  v0.7  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -14,6 +14,20 @@
   in later without touching a line of this file. Geosonify owns the chrome, the
   readouts, the styling and the depth honesty; a renderer only ever answers
   "where on screen is this (ra, dec)?".
+
+  v0.7: three things.
+    * IMAGERY THAT CANNOT GO THIS DEEP IS NOT SWAPPED IN. A ?moc=26/... link
+      opens framed on a 3-milliarcsecond cell; Aladin cannot show a field that
+      small, clamped it, and the view jumped far out a moment after opening.
+      Now the swap measures the field Aladin actually gives: if it is wider
+      than the one asked for, the built-in chart stays, and imagery is tried
+      again once the person zooms out past where Aladin stopped.
+    * READ-ONLY for display links (?display): the order stepper, the close
+      and Earth buttons are hidden and a click no longer moves the mark (it
+      still identifies what was tapped).
+    * LABELS AND STYLES (lbl= / sty=, geosonify-annotations.js) on shapes
+      added with { annotate: true }: coloured / wider / dashed sides, coloured
+      points, and labels drawn as SVG text (textContent, never markup).
 
   v0.2: Sky is a public mode, chosen beside Standard / Aerial / Topographic in
   the Map imagery panel. Opening it no longer opens the separate read-only Sky
@@ -53,7 +67,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.6';
+  var VERSION = 'v0.7';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -69,6 +83,10 @@
 
   // How far from a click counts as "on" an object, in screen pixels.
   var CLICK_PICK_PX = 12;
+
+  // Aladin is asked for a field and measured afterwards; if it gives back a
+  // field this much wider than asked, it could not go that deep (bug 4).
+  var IMAGERY_FOV_SLACK = 1.25;
 
   var host = null, renderer = null, els = null, styleTag = null;
 
@@ -87,6 +105,7 @@
 
   // Leave the sky: through the turn when it is loaded, directly otherwise.
   function requestClose() {
+    if (readOnly()) return;                      // a display link has no way back
     var Flip = global.GeosonifySkyFlip;
     if (Flip && Flip.toEarth && Flip.isAvailable && Flip.isAvailable()) {
       if (Flip.isBusy && Flip.isBusy()) return;
@@ -102,6 +121,14 @@
   var orderIsManual = false;      // did the user override the justified order?
   var mark = null;
   var mapEl = null;
+  // Set when imagery was declined because the field is deeper than Aladin can
+  // show; holds the narrowest field (deg) it was measured to give. Imagery is
+  // tried again once the view is zoomed out past it.
+  var imageryFloorDeg = null;
+  var imageryTrying = false;
+  var _deepToastShown = false;
+
+  function readOnly() { return !!(opts && opts.readOnly) || !!global.DISPLAY_MODE; }
 
   function _Sky() {
     try { if (typeof GeosonifySky !== 'undefined' && GeosonifySky) return GeosonifySky; } catch (e) {}
@@ -111,6 +138,7 @@
   function _Shapes() { return global.GeosonifySkyShapes || null; }
   function _Aladin() { return global.GeosonifySkyAladin || null; }
   function _RendererLib() { return global.GeosonifySkyRenderer || null; }
+  function _Ann() { return global.GeosonifyAnnotations || null; }
   function _HP() {
     var S = _Sky();
     if (S && S.getEngine && S.getEngine()) return S.getEngine();
@@ -419,6 +447,12 @@
       earthBtn: earthBtn, scaleTxt: scaleTxt, scaleBar: scaleBar
     };
 
+    // Display links are read-only: no way to change the cell, no way out.
+    if (readOnly()) {
+      [minus, plus, close, earthBtn].forEach(function (b) { b.style.display = 'none'; });
+      provTxt.style.display = 'none';
+    }
+
     zIn.onclick = function (ev) {
       ev.stopPropagation();
       if (!renderer) return;
@@ -684,6 +718,10 @@
     Rendering goes through the same overlay projector the cells use, which means
     a shape is clipped at the limb, split at a projection wrap, and never closed
     across a chord — for free, and identically whichever renderer is live.
+
+    { annotate: true, indexOffset: k } marks a shape whose vertices are the
+    shape's points k, k+1, ... in the numbering lbl= and sty= use; only those
+    shapes carry labels and styles.
   */
   function addShape(spec) {
     if (!_Shapes()) return null;
@@ -785,6 +823,8 @@
     var vp = renderer.getSize();
     var centre = null, fovDeg = null;
     try { centre = renderer.getCenter(); fovDeg = renderer.getFovDeg(); } catch (e) {}
+    var A = _Ann(), ann = (A && A.get) ? A.get() : null;
+    var labelLayer = [];
     shapes.forEach(function (spec) {
       var ring = shapeRing(spec);
       if (!ring || ring.length < 2) return;
@@ -793,26 +833,76 @@
         ? viewRuns(ring, spec.type === 'polygon', centre, fovDeg) : null;
       if (runs) {
         runs.forEach(function (run) { drawRun(g, spec, Overlay, run, vp); });
-        return;
+      } else {
+        drawRun(g, spec, Overlay, ring, vp, spec.type !== 'path');
       }
-      drawRun(g, spec, Overlay, ring, vp, spec.type !== 'path');
+      if (ann && spec.annotate && vertexShape && spec.vertices) {
+        drawAnnotations(g, spec, ann, Overlay, vp, centre, fovDeg, labelLayer);
+      }
     });
+    // Labels last, so no line is drawn across one.
+    labelLayer.forEach(function (n) { g.appendChild(n); });
   }
 
-  function drawRun(g, spec, Overlay, ring, vp, close) {
+  function drawRun(g, spec, Overlay, ring, vp, close, style) {
       var pr = Overlay.projectRing(ring, renderer.project, { viewport: vp });
       if (!pr.visible) return;
       var d = Overlay.ringToPath(pr, { close: !!close });
       if (!d) return;
       var p = document.createElementNS(SVGNS, 'path');
       p.setAttribute('d', d);
-      p.setAttribute('fill', spec.fill || 'none');
-      p.setAttribute('stroke', spec.stroke || '#60a5fa');
-      p.setAttribute('stroke-width', spec.strokeWidth || 1.4);
+      p.setAttribute('fill', (style ? 'none' : spec.fill) || 'none');
+      p.setAttribute('stroke', (style && style.color) || spec.stroke || '#60a5fa');
+      p.setAttribute('stroke-width', (style && style.width) || spec.strokeWidth || 1.4);
       p.setAttribute('stroke-linejoin', 'round');
       p.setAttribute('stroke-linecap', 'round');
-      if (spec.dash) p.setAttribute('stroke-dasharray', spec.dash);
+      var dash = style ? (style.dash ? '6 4' : null) : spec.dash;
+      if (dash) p.setAttribute('stroke-dasharray', dash);
       g.appendChild(p);
+  }
+
+  /*
+    lbl= and sty= on one shape. Side k of the shape is lbl/sty side
+    (indexOffset + k). Styled sides are drawn again, over the plain line, in
+    their own colour, width and dash; points with a style get a dot; labels are
+    SVG text set with textContent, outlined in the background colour so they
+    read over stars and lines alike.
+  */
+  function drawAnnotations(g, spec, ann, Overlay, vp, centre, fovDeg, labelLayer) {
+    var V = spec.vertices, off = spec.indexOffset || 0;
+    for (var k = 0; k + 1 < V.length; k++) {
+      var st = ann.segments[off + k];
+      if (!st) continue;
+      var seg = [V[k], V[k + 1]];
+      var runs = (centre && isFinite(fovDeg)) ? viewRuns(seg, false, centre, fovDeg) : [seg];
+      runs.forEach(function (run) { drawRun(g, spec, Overlay, run, vp, false, st); });
+    }
+    for (var i = 0; i < V.length; i++) {
+      var ps = ann.points[off + i], text = ann.labels[off + i];
+      if (!ps && !text) continue;
+      var p = renderer.project(V[i][1], V[i][0]);
+      if (!p || !isFinite(p[0]) || !isFinite(p[1])) continue;
+      if (p[0] < -50 || p[1] < -50 || p[0] > vp.width + 50 || p[1] > vp.height + 50) continue;
+      if (ps) {
+        var c = document.createElementNS(SVGNS, 'circle');
+        c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]);
+        c.setAttribute('r', Math.max(2.5, (ps.width || 2) + 1.5));
+        c.setAttribute('fill', ps.color);
+        c.setAttribute('stroke', '#0b0f19'); c.setAttribute('stroke-width', '1');
+        if (ps.dash) { c.setAttribute('fill-opacity', '0.25'); c.setAttribute('stroke', ps.color); c.setAttribute('stroke-dasharray', '2 2'); }
+        g.appendChild(c);
+      }
+      if (text) {
+        var t = document.createElementNS(SVGNS, 'text');
+        t.setAttribute('x', p[0] + 7); t.setAttribute('y', p[1] - 6);
+        t.setAttribute('fill', (ps && ps.color) || '#e5e7eb');
+        t.setAttribute('stroke', '#0b0f19'); t.setAttribute('stroke-width', '3');
+        t.setAttribute('paint-order', 'stroke');
+        t.setAttribute('style', 'font:600 12px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;');
+        t.textContent = text;                       // never markup
+        labelLayer.push(t);
+      }
+    }
   }
 
   function boundaryOf(cell) {
@@ -1103,9 +1193,18 @@
         if (!orderIsManual) order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, provenance.order));
       }
       draw();
+      retryImageryIfShallowEnough(r);
     });
     r.on('resize', draw);
     r.on('click', function (p) {
+      var asp = measuredAsp();
+      var radius = (asp && isFinite(asp)) ? asp * CLICK_PICK_PX : null;
+      if (readOnly()) {
+        // A display link only looks: the mark and the app stay where the link
+        // put them. Identifying what was tapped is still allowed.
+        emit('click', { ra: p.ra, dec: p.dec, radiusArcsec: radius });
+        return;
+      }
       mark.ra = p.ra; mark.dec = p.dec;
       var Sky = _Sky();
       var s = r.getSize();
@@ -1116,15 +1215,29 @@
       pushCoordinate(p.dec, p.ra);
       // Tell listeners what was clicked, with a pick radius of a few screen
       // pixels at this zoom (what "on" an object means to a finger).
-      var asp = measuredAsp();
-      emit('click', { ra: p.ra, dec: p.dec,
-                      radiusArcsec: (asp && isFinite(asp)) ? asp * CLICK_PICK_PX : null });
+      emit('click', { ra: p.ra, dec: p.dec, radiusArcsec: radius });
+    });
+  }
+
+  // Imagery declined for depth: try again once the field is wider than the
+  // narrowest one Aladin was measured to give.
+  function retryImageryIfShallowEnough(r) {
+    if (imageryFloorDeg === null || imageryTrying || rendererKind !== 'builtin' || !host) return;
+    if (opts.renderer === 'builtin') return;
+    var f = null;
+    try { f = r.getFovDeg(); } catch (e) {}
+    if (!(f > imageryFloorDeg)) return;
+    imageryFloorDeg = null;
+    tryAladin().then(function (ok) {
+      if (ok && global.showToast) global.showToast('Sky imagery loaded');
     });
   }
 
   function tryAladin() {
     var Al = _Aladin();
     if (!Al || !Al.isAvailable()) return Promise.resolve(false);
+    if (imageryTrying) return Promise.resolve(false);
+    imageryTrying = true;
     var centre = renderer ? renderer.getCenter() : [mark.ra, mark.dec];
     var fov = renderer ? renderer.getFovDeg() : 1.5;
     var candidate = Al.createAladinRenderer(els.canvasWrap, {
@@ -1178,6 +1291,27 @@
       // once it has drawn, so measure across frames, at most a few rounds.
       return placeHidden(candidate, mid).then(function () {
         if (!host) { candidate.destroy(); return false; }
+        /*
+          TOO DEEP FOR THE IMAGERY (bug 4). Aladin has a smallest field it will
+          show and silently widens anything narrower, so a ?moc=26/... link,
+          opened framed on a 3-mas cell, jumped far out the moment the imagery
+          arrived. Measure what Aladin actually gives; if it is wider than the
+          field the view is showing, keep the built-in chart (which can go
+          that deep) and remember the field Aladin managed, to try again once
+          the view is zoomed out past it.
+        */
+        var gotFov = null;
+        try { gotFov = candidate.getFovDeg(); } catch (e) {}
+        var nowFov = renderer ? renderer.getFovDeg() : liveFov;
+        if (gotFov && nowFov && gotFov > nowFov * IMAGERY_FOV_SLACK) {
+          try { candidate.destroy(); } catch (e) {}
+          imageryFloorDeg = gotFov;
+          if (!_deepToastShown && global.showToast) {
+            _deepToastShown = true;
+            global.showToast('Sky imagery cannot zoom in this far; showing the chart. Zoom out to see the photography.');
+          }
+          return false;
+        }
         var old = renderer;
         renderer = candidate;
         rendererKind = 'aladin';
@@ -1191,7 +1325,8 @@
       console.warn('[geosonify] sky imagery unavailable, staying on the built-in renderer:',
                    err && err.message);
       return false;
-    });
+    }).then(function (ok) { imageryTrying = false; return ok; },
+            function (err) { imageryTrying = false; throw err; });
   }
 
   function _frames(n) {
@@ -1281,6 +1416,7 @@
     var lon = opts.ra !== undefined ? opts.ra : (c && c.lon !== null && c.lon !== undefined ? c.lon : 0);
     mark = { ra: ((lon % 360) + 360) % 360, dec: lat };
     if (opts.order) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, opts.order)); orderIsManual = true; }
+    imageryFloorDeg = null;
 
     build();
     /*
@@ -1401,9 +1537,9 @@
     /*
       And the reverse: draw Orion, hit Earth, and Orion is laid across the globe.
 
-      Read the shapes BEFORE the teardown below clears them. Longitude folds
-      back to +/-180 inside the carry module, because Leaflet wraps oddly past
-      180 and would draw a line across the whole map.
+      Read the shapes BEFORE the teardown below clears them. Longitudes are
+      made continuous inside the carry module, so a shape across RA 0h is
+      drawn across the date line, not round the world.
     */
     if (global.GeosonifySkyCarry && global.__geosonifyMap) {
       try { global.GeosonifySkyCarry.carryToEarth(global.__geosonifyMap); } catch (e) {}
@@ -1429,6 +1565,7 @@
     host = null; els = null; mapEl = null;
     provenance = null; orderIsManual = false; shapes = [];
     rendererKind = 'builtin';
+    imageryFloorDeg = null;
     emit('close');
     return true;
   }
@@ -1477,6 +1614,7 @@
     close: closeView,
     requestClose: requestClose,
     isOpen: isOpen,
+    isReadOnly: readOnly,
     on: on,
     getRenderer: function () { return renderer; },
     getHost: function () { return host; },
@@ -1533,6 +1671,7 @@
     },
     isOrderManual: function () { return orderIsManual; },
     getRendererKind: function () { return rendererKind; },
+    getImageryFloorDeg: function () { return imageryFloorDeg; },
     getFovDeg: function () { return renderer ? renderer.getFovDeg() : null; },
     getCentre: function () { return renderer ? renderer.getCenter() : [mark.ra, mark.dec]; },
     useAladin: function () { return tryAladin(); },
