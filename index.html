@@ -261,6 +261,15 @@
         <div class="card collapsible-card" data-collapse-key="imagery" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
           <div class="card-header">Map imagery<span class="collapse-summary"></span><span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body" id="mapImageryMount"></div>
+          <!-- HEALPix grid strength, for everyday viewing (shown while the grid is on).
+               Remembered on this device. A display link's lattice= overrides it there. -->
+          <div class="card-body" id="latticeFadeRow" style="display:none; padding-top:0;">
+            <div style="display:flex; align-items:center; gap:10px; font-size:14px;">
+              <label style="display:flex; align-items:center; gap:5px; cursor:pointer; flex:none;"><input type="checkbox" id="latticeFadeShow" checked> HEALPix grid</label>
+              <input type="range" id="latticeFadeRange" min="5" max="100" step="5" value="100" aria-label="HEALPix grid strength" style="flex:1 1 auto; min-width:0;">
+              <span id="latticeFadeValue" style="flex:none; min-width:3.2em; text-align:right; font-variant-numeric:tabular-nums;">100%</span>
+            </div>
+          </div>
         </div>
       </div>
       
@@ -649,6 +658,23 @@
               </div>
             </div>
 
+            <!-- Zoom on arrival: fit the shape (default), the zoom you are at now, or a level.
+                 zoom=N in the link; in the sky the same number means the same scale. -->
+            <div style="margin-top:10px;">
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Zoom</div>
+              <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; align-items:center; font-size:14px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayZoom" value="fit" checked> Fit the shape</label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayZoom" value="now"> As now <span id="displayZoomNow" style="color:var(--ios-secondary,#8e8e93); font-variant-numeric:tabular-nums;"></span></label>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayZoom" value="level"> Level <input type="number" id="displayZoomLevel" min="0" max="30" step="0.5" value="12" inputmode="decimal" aria-label="Zoom level" style="width:4.5em; font:inherit; padding:2px 4px;"></label>
+              </div>
+            </div>
+
+            <!-- Sky only: the sky alone, without the sky view's header and readouts. -->
+            <div class="display-sky-only list-row" style="display:none; padding:6px 0; margin-top:6px;">
+              <label style="font-size:14px;" for="displayBare">Just the sky (no header or readouts)</label>
+              <div class="toggle"><input type="checkbox" id="displayBare" /><span class="toggle-slider"></span></div>
+            </div>
+
             <p id="displayShareWarn" style="display:none; margin:10px 0 0; font-size:13px; color:#b8860b;"></p>
           </div>
 
@@ -728,7 +754,7 @@
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20260109"></script>
-  <script src="js/core/delta-gear.js?v=20261013j"></script>
+  <script src="js/core/delta-gear.js?v=20261014a"></script>
   
 <!-- Services -->
 <script src="js/services/audio-service.js?v=20261009g"></script>
@@ -767,20 +793,20 @@
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
-<script src="js/lib/geosonify-sky-carry.js?v=20261013j"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20261014a"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261013j"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261014a"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
-<script src="js/lib/geosonify-healpix-lattice.js?v=20261013j"></script>
+<script src="js/lib/geosonify-healpix-lattice.js?v=20261014a"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
-<script src="js/lib/geosonify-annotations.js?v=20261013j"></script>
-<script src="js/lib/geosonify-sky-export.js?v=20261013j"></script>
+<script src="js/lib/geosonify-annotations.js?v=20261014a"></script>
+<script src="js/lib/geosonify-sky-export.js?v=20261014a"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
@@ -791,7 +817,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261013j"></script>
+<script src="js/lib/faq-data.js?v=20261014a"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -1615,6 +1641,86 @@
       if (range) { if (op > 0) range.value = String(Math.round(op * 100)); range.disabled = !(op > 0); }
       if (val) val.textContent = op > 0 ? Math.round(op * 100) + '%' : 'hidden';
     }
+    // ── HEALPix grid strength on the main screen (everyday viewing) ──
+    // Kept in step with the lattice (whatever changed it: this row, the share
+    // panel's preview, a display link). Remembered per device, except in a
+    // display link, where the link decides and nothing is stored.
+    const LATTICE_PREF_KEY = 'geosonify_lattice_opacity';
+    let _latticeLastShown = 1;          // the strength to return to when re-ticked
+    function syncLatticeFadeRow(st) {
+      const row = document.getElementById('latticeFadeRow');
+      if (!row) return;
+      const L_ = (typeof GeosonifyHealpixLattice !== 'undefined') ? GeosonifyHealpixLattice : null;
+      const showing = st ? st.showing : !!(L_ && L_.isShowing());
+      const op = st ? st.opacity : (L_ && L_.getOpacity ? L_.getOpacity() : 1);
+      row.style.display = (showing && !window.DISPLAY_MODE) ? 'block' : 'none';
+      if (op > 0) _latticeLastShown = op;
+      const show = document.getElementById('latticeFadeShow');
+      const range = document.getElementById('latticeFadeRange');
+      const val = document.getElementById('latticeFadeValue');
+      if (show) show.checked = op > 0;
+      if (range) { range.value = String(Math.round(_latticeLastShown * 100)); range.disabled = !(op > 0); }
+      if (val) val.textContent = op > 0 ? Math.round(op * 100) + '%' : 'off';
+    }
+    function initLatticeFade() {
+      const L_ = (typeof GeosonifyHealpixLattice !== 'undefined') ? GeosonifyHealpixLattice : null;
+      if (!L_ || !L_.setOpacity) return;
+      if (!window.DISPLAY_MODE) {
+        try {
+          const saved = localStorage.getItem(LATTICE_PREF_KEY);
+          if (saved !== null && isFinite(parseFloat(saved))) L_.setOpacity(parseFloat(saved));
+        } catch (e) {}
+      }
+      const show = document.getElementById('latticeFadeShow');
+      const range = document.getElementById('latticeFadeRange');
+      const apply = () => {
+        const v = (show && !show.checked) ? 0 : (range ? Number(range.value) / 100 : 1);
+        L_.setOpacity(v);
+        if (!window.DISPLAY_MODE) { try { localStorage.setItem(LATTICE_PREF_KEY, String(L_.getOpacity())); } catch (e) {} }
+      };
+      if (show) show.addEventListener('change', apply);
+      if (range) range.addEventListener('input', apply);
+      if (L_.onChange) L_.onChange(st => { syncLatticeFadeRow(st); refreshDisplayLatticeRow(); });
+      syncLatticeFadeRow();
+    }
+
+    // The zoom you are looking at, as a map zoom level. In the sky, the zoom at
+    // which the map shows the same arcseconds per pixel at the view's
+    // declination (the scale the Earth/Sky turn keeps). One decimal.
+    function currentDisplayZoom() {
+      try {
+        const V = (typeof GeosonifySkyView !== 'undefined') ? GeosonifySkyView : null;
+        const F = window.GeosonifyStarpinFlip;
+        if (V && V.isOpen() && V.getRenderer() && F && F.zoomForAsp) {
+          const r = V.getRenderer(), sz = r.getSize(), minDim = Math.min(sz.width, sz.height) || 400;
+          const asp = Math.sin(r.getFovDeg() * Math.PI / 360) * 206264.80624709636 / (minDim / 2);
+          const z = F.zoomForAsp(asp, r.getCenter()[1]);
+          if (isFinite(z)) return Math.round(z * 10) / 10;
+        }
+      } catch (e) {}
+      try { return Math.round(map.getZoom() * 10) / 10; } catch (e) { return null; }
+    }
+    // zoom=N on a sky display link: set the field for that scale, centred where
+    // the link framed the shape. Waits briefly for the sky view to open.
+    function applySkyDisplayZoom(tries) {
+      const opts = window.DISPLAY_OPTS || {};
+      if (!(opts.zoom != null && isFinite(opts.zoom))) return;
+      const V = (typeof GeosonifySkyView !== 'undefined') ? GeosonifySkyView : null;
+      const F = window.GeosonifyStarpinFlip;
+      if (!V || !F || !F.aspForZoom) return;
+      if (!V.isOpen() || !V.getRenderer()) {
+        if ((tries || 0) < 20) setTimeout(() => applySkyDisplayZoom((tries || 0) + 1), 150);
+        return;
+      }
+      const r = V.getRenderer(), c = r.getCenter(), sz = r.getSize();
+      const minDim = Math.min(sz.width, sz.height) || 400;
+      const asp = F.aspForZoom(Math.max(0, Math.min(30, opts.zoom)), c[1]);
+      const half = minDim / 2 * asp / 206264.80624709636;
+      if (!(half > 0)) return;
+      r.setFovDeg(2 * Math.asin(Math.min(1, half)) * 180 / Math.PI);
+      V.redraw();
+    }
+
     // The opacity the panel describes: 0 when unticked.
     function displayLatticeOpacity() {
       const show = document.getElementById('displayLatticeShow');
@@ -1685,12 +1791,58 @@
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     }
 
+    /*
+      Display (viewer) options, read from a query string. Called at start-up
+      and again after an encrypted link is decrypted: a display link made with
+      Hard encrypt carries display, lattice=, zoom= and the rest INSIDE the
+      blob (nothing outside ?enc= says it is a display link or a sky one), so
+      it becomes a display link only once it is open. upgradeOnly: never turn
+      display mode OFF (an older encrypted display link kept ?display outside
+      the blob, and its decrypted text has none).
+    */
+    function readDisplayOptions(search, upgradeOnly) {
+      const p = new URLSearchParams(search || '');
+      const on = p.has('display');
+      if (upgradeOnly && (!on || window.DISPLAY_MODE)) return false;
+      window.DISPLAY_MODE = on;
+      window.DISPLAY_OPTS = {
+        gps: p.has('gps'),
+        area: p.has('area'),
+        export: p.get('export') || null,
+        // export= may repeat (csv, reg and moc together); every value, once.
+        exports: p.getAll('export').filter((v, i, a) => v && a.indexOf(v) === i),
+        // lattice=<0..1>: HEALPix grid opacity; 0 hides it. Absent = as drawn.
+        lattice: (() => {
+          const v = parseFloat(p.get('lattice'));
+          return (p.has('lattice') && isFinite(v)) ? Math.max(0, Math.min(1, v)) : null;
+        })(),
+        // zoom=N: the map's zoom level, centred on the shape. In the sky the
+        // same number means the same scale (arcseconds per pixel = the ground
+        // a map pixel covers at that zoom and the shape's declination).
+        zoom: p.has('zoom') ? parseFloat(p.get('zoom')) : null,
+        context: p.has('context') ? parseFloat(p.get('context')) : null,
+        fixzoom: p.has('fixzoom'),
+        // bare: a sky display link without the sky view's header and footer.
+        bare: p.has('bare')
+      };
+      if (on) {
+        document.documentElement.classList.add('display-mode');
+        if (window.DISPLAY_OPTS.lattice !== null && typeof GeosonifyHealpixLattice !== 'undefined' &&
+            GeosonifyHealpixLattice.setOpacity) {
+          try { GeosonifyHealpixLattice.setOpacity(window.DISPLAY_OPTS.lattice); } catch (e) {}
+        }
+      }
+      return on;
+    }
+
     // ── Display (viewer) mode setup ──────────────────────────
     // Builds the bare-map chrome after the shape is drawn: a quiet attribution
     // tag (links to the full interactive app on the same shape), and the opt-in
     // extras (&area land area, &export download, &gps live dot).
     function setupDisplayViewer() {
       const opts = window.DISPLAY_OPTS || {};
+      // zoom=N in the sky: the same scale as the map at that zoom.
+      try { if (isSkyFrameNow()) applySkyDisplayZoom(); } catch (e) {}
 
       // Force the drawn shape to be non-interactive (pan/zoom the map, but the
       // boundary can't be dragged or edited). Remove the editing centroid
@@ -2124,30 +2276,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // area for closed shapes), &export=gpx|kml (download button),
       // &zoom=N (absolute zoom, centred on shape), &context=N (auto-fit with
       // N× breathing room), &fixzoom (lock zoom interactions).
-      const _dispParams = new URLSearchParams(window.location.search);
-      window.DISPLAY_MODE = _dispParams.has('display');
-      window.DISPLAY_OPTS = {
-        gps: _dispParams.has('gps'),
-        area: _dispParams.has('area'),
-        export: _dispParams.get('export') || null,
-        // export= may repeat (csv, reg and moc together); every value, once.
-        exports: _dispParams.getAll('export').filter((v, i, a) => v && a.indexOf(v) === i),
-        // lattice=<0..1>: HEALPix grid opacity; 0 hides it. Absent = as drawn.
-        lattice: (() => {
-          const v = parseFloat(_dispParams.get('lattice'));
-          return (_dispParams.has('lattice') && isFinite(v)) ? Math.max(0, Math.min(1, v)) : null;
-        })(),
-        zoom: _dispParams.has('zoom') ? parseFloat(_dispParams.get('zoom')) : null,
-        context: _dispParams.has('context') ? parseFloat(_dispParams.get('context')) : null,
-        fixzoom: _dispParams.has('fixzoom')
-      };
-      if (window.DISPLAY_MODE) {
-        document.documentElement.classList.add('display-mode');
-        if (window.DISPLAY_OPTS.lattice !== null && typeof GeosonifyHealpixLattice !== 'undefined' &&
-            GeosonifyHealpixLattice.setOpacity) {
-          try { GeosonifyHealpixLattice.setOpacity(window.DISPLAY_OPTS.lattice); } catch (e) {}
-        }
-      }
+      readDisplayOptions(window.location.search);
+      try { initLatticeFade(); } catch (e) { console.warn('[geosonify] grid strength:', e); }
 
       // Check if URL has params - if so, skip splash and random location
       const hasURLParams = window.location.search.length > 1;
@@ -2680,7 +2810,36 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // Default: no downloads offered.
         document.querySelectorAll('input[name="displayExport"]').forEach(c => { c.checked = false; });
 
+        const seedZoom = () => {
+          const z = currentDisplayZoom();
+          const now = document.getElementById('displayZoomNow');
+          if (now) now.textContent = z !== null ? '(' + z + ')' : '';
+          const lvl = document.getElementById('displayZoomLevel');
+          if (lvl && z !== null && !lvl.dataset.touched) lvl.value = String(z);
+        };
+        const lvlBox = document.getElementById('displayZoomLevel');
+        if (lvlBox) {
+          lvlBox.addEventListener('focus', () => {
+            const r = document.querySelector('input[name="displayZoom"][value="level"]');
+            if (r) r.checked = true;
+          });
+          lvlBox.addEventListener('input', () => { lvlBox.dataset.touched = '1'; });
+        }
+        // "As now" follows the view while the panel is open.
+        try { map.on('moveend', () => { if (toggle.checked) { seedZoom(); refreshEncryptedDisplayShare(); } }); } catch (e) {}
+        try {
+          if (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.on) {
+            let _zt = null;
+            GeosonifySkyView.on('view', () => {
+              if (!toggle.checked) return;
+              clearTimeout(_zt);
+              _zt = setTimeout(() => { seedZoom(); refreshEncryptedDisplayShare(); }, 400);
+            });
+          }
+        } catch (e) {}
+
         toggle.addEventListener('change', () => {
+          if (toggle.checked) seedZoom();
           panel.style.display = toggle.checked ? 'block' : 'none';
           refreshDisplayPanelFrame();
           if (toggle.checked) seedBasemapRadio();
@@ -2700,6 +2859,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         };
         if (latShow) latShow.addEventListener('change', latPreview);
         if (latRange) latRange.addEventListener('input', latPreview);
+        // An encrypted display link is encrypted ahead of time (see
+        // refreshEncryptedDisplayShare): redo it whenever the panel changes.
+        const reEnc = () => { try { refreshEncryptedDisplayShare(); } catch (e) {} };
+        panel.addEventListener('change', reEnc);
+        toggle.addEventListener('change', reEnc);
       })();
 
       // Map resize handle functionality - now handled by MapManager
@@ -2946,8 +3110,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // Suppress URL update so the decrypted params don't get overwritten
         _suppressURLUpdate = true;
         
+        // A display link's options travel inside the blob: apply them now.
+        const becameDisplay = readDisplayOptions(decrypted, true);
+
         // Re-parse with the decrypted parameters
         parseURLParameters();
+        if (becameDisplay) {
+          try { syncLatticeFadeRow(); } catch (e) {}
+          const _dp = new URLSearchParams(decrypted);
+          const _pipe = ['address','place','wikidata','osmrelation','geojson','kml','gpx'].some(k => _dp.has(k));
+          if (!_pipe) setTimeout(setupDisplayViewer, 300);
+        }
       }
       
       decryptBtn.onclick = attemptDecrypt;
@@ -4097,6 +4270,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const basemap = (document.querySelector('input[name="displayBasemap"]:checked') || {}).value || '';
       const showArea = document.getElementById('displayShowArea');
       if (showArea && showArea.checked) params.push('area');
+      // zoom=N: as now, or a chosen level (absent = fit the shape).
+      const zMode = (document.querySelector('input[name="displayZoom"]:checked') || {}).value || 'fit';
+      let zVal = null;
+      if (zMode === 'now') zVal = currentDisplayZoom();
+      else if (zMode === 'level') zVal = parseFloat((document.getElementById('displayZoomLevel') || {}).value);
+      if (zVal !== null && isFinite(zVal)) params.push('zoom=' + String(Math.round(Math.max(0, Math.min(30, zVal)) * 10) / 10));
+      // bare: the sky alone (sky display links only).
+      const bare = document.getElementById('displayBare');
+      if (bare && bare.checked && isSkyFrameNow()) params.push('bare');
       // lattice=<0..1>: the HEALPix grid's opacity on the viewer (0 hides it).
       // Only while the lattice is on here, and only when not the default 1.
       if (latticeShowingNow()) {
@@ -4127,14 +4309,55 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     }
 
     // Compose the final share URL: base shape/enc URL plus any display params.
+    /*
+      AN ENCRYPTED DISPLAY LINK keeps its display options inside the blob too:
+      display, area, export=, lattice=, zoom=, bare. Outside, ?display and
+      lattice=0 told anyone that the link was a display link, and of the sky.
+      The blob for sharing is the address-bar blob's plaintext plus those
+      options, encrypted ahead of time (on every output change and every
+      change in the panel) so that Copy can still write the clipboard inside
+      the tap that asked for it. The address bar keeps the plain blob: the
+      sender's own page is not a display link.
+    */
+    let _encPlainQuery = null;
+    let _encDisp = { key: null, blob: null, promise: null };
+    function encryptedDisplayKey() {
+      if (!(encryptURL && encryptPassphrase) || !_encPlainQuery) return null;
+      const d = getDisplayShareParams();
+      return d.length ? _encPlainQuery + '&' + d.join('&') : null;
+    }
+    function refreshEncryptedDisplayShare() {
+      const key = encryptedDisplayKey();
+      if (!key) { _encDisp = { key: null, blob: null, promise: null }; return null; }
+      if (_encDisp.key === key) return _encDisp.promise;
+      const rec = { key: key, blob: null, promise: null };
+      rec.promise = encryptQueryString(key, encryptPassphrase).then(b => { rec.blob = b; return b; });
+      _encDisp = rec;
+      return rec.promise;
+    }
+    // The share URL, waiting for the encrypted display blob if it is not ready.
+    async function buildShareURLReady() {
+      const key = encryptedDisplayKey();
+      if (key && !(_encDisp.key === key && _encDisp.blob)) {
+        try { await refreshEncryptedDisplayShare(); } catch (e) { return null; }
+      }
+      return buildShareURL();
+    }
+
     function buildShareURL() {
+      const encrypted = !!(encryptURL && encryptPassphrase);
+      const encKey = encrypted ? encryptedDisplayKey() : null;
+      if (encKey) {
+        // Everything inside: nothing at all after the blob.
+        if (_encDisp.key !== encKey || !_encDisp.blob) return null;
+        return `${window.location.origin}${window.location.pathname}?enc=${_encDisp.blob}`;
+      }
       const base = buildBaseShareURL();
       if (base == null) return null;
       const dParams = getDisplayShareParams();
       // An encrypted link carries its frame and its labels INSIDE the blob
       // (updateCompactOutputs). Repeating them outside would show anyone that
       // it is a sky link, and what its points are called.
-      const encrypted = !!(encryptURL && encryptPassphrase);
       const fParams = encrypted ? [] : getFrameShareParams();
       const aParams = encrypted ? [] : annotationShareParams();
       const all = dParams.concat(fParams, aParams);
@@ -4231,7 +4454,20 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return;
       }
 
-      const shareURL = buildShareURL();
+      let shareURL = buildShareURL();
+      if (shareURL == null && encryptedDisplayKey()) {
+        // Still encrypting the display options: wait, then copy.
+        buildShareURLReady().then(u => {
+          if (!u) { alert('Cannot generate shareable URL.'); return; }
+          navigator.clipboard.writeText(u).then(() => {
+            const btn = document.getElementById('copyURLBtn');
+            const original = btn.textContent;
+            btn.textContent = '✓ Encrypted & Copied!';
+            setTimeout(() => btn.textContent = original, 1500);
+          }).catch(() => { window.prompt('Copy this encrypted display link:', u); });
+        });
+        return;
+      }
       if (shareURL == null) {
         alert('Cannot generate shareable URL.');
         return;
@@ -4257,6 +4493,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       }
 
       const shareURL = buildShareURL();
+      if (shareURL == null && encryptedDisplayKey()) {
+        // Open the tab inside the tap (or a blocker eats it), fill it in later.
+        const w = window.open('about:blank', '_blank');
+        buildShareURLReady().then(u => { if (u && w) w.location.href = u; else if (w) w.close(); });
+        return;
+      }
       if (shareURL == null) {
         alert('Cannot generate shareable URL.');
         return;
@@ -6344,6 +6586,8 @@ function encodeRaw(sol) {
         // Labels and styles go inside too: outside the blob they would be the
         // one part of an encrypted link anyone could read.
         const plainQuery = `${param}=${s}` + frameQuerySuffix() + annotationQuerySuffix();
+        _encPlainQuery = plainQuery;
+        refreshEncryptedDisplayShare();
         encryptQueryString(plainQuery, encryptPassphrase).then(blob => {
           out.textContent = blob;
           out.title = 'Hard encrypted — original code hidden';
