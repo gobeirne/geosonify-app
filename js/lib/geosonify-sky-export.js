@@ -199,20 +199,20 @@
   function formatAngleDeg(d) {
     var a = Math.abs(d) * 3600;
     function r(x) { return String(+x.toPrecision(3)); }
-    if (a >= 3600) return r(a / 3600) + '°';
-    if (a >= 60) return r(a / 60) + '′';
-    if (a >= 1) return r(a) + '″';
+    if (a >= 3600) return r(a / 3600) + '\u00B0';
+    if (a >= 60) return r(a / 60) + '\u2032';
+    if (a >= 1) return r(a) + '\u2033';
     if (a >= 1e-3) return r(a * 1e3) + ' mas';
-    return r(a * 1e6) + ' µas';
+    return r(a * 1e6) + ' \u00B5as';
   }
   function formatSolidAngle(deg2) {
     function r(x) { return String(+x.toPrecision(3)); }
-    if (!(deg2 > 0)) return '0 deg²';
+    if (!(deg2 > 0)) return '0 deg\u00B2';
     var sr = deg2 * D2R * D2R;
-    if (deg2 >= 1) return r(deg2) + ' deg² (' + r(sr) + ' sr)';
-    if (deg2 * 3600 >= 1) return r(deg2 * 3600) + ' arcmin²';
-    if (deg2 * 3600 * 3600 >= 1e-2) return r(deg2 * 3600 * 3600) + ' arcsec²';
-    return r(deg2 * 3600 * 3600 * 1e6) + ' mas²';
+    if (deg2 >= 1) return r(deg2) + ' deg\u00B2 (' + r(sr) + ' sr)';
+    if (deg2 * 3600 >= 1) return r(deg2 * 3600) + ' arcmin\u00B2';
+    if (deg2 * 3600 * 3600 >= 1e-2) return r(deg2 * 3600 * 3600) + ' arcsec\u00B2';
+    return r(deg2 * 3600 * 3600 * 1e6) + ' mas\u00B2';
   }
 
   /*
@@ -229,7 +229,7 @@
     var bits = [];
     if (anyClosed) bits.push(formatSolidAngle(area));
     if (len > 0) bits.push((anyClosed ? 'perimeter ' : 'length ') + formatAngleDeg(len));
-    return { text: bits.join(' · '), lengthDeg: len, areaDeg2: area };
+    return { text: bits.join(' \u00B7 '), lengthDeg: len, areaDeg2: area };
   }
 
   // The export values a sky display link may carry (export=<value>). Added

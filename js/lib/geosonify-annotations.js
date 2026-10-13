@@ -1,5 +1,5 @@
 /*
-  geosonify-annotations.js  v0.1  — labels, colours and widths on a shape
+  geosonify-annotations.js  v0.2  — labels, colours and widths on a shape
 
   Two new, repeatable URL parameters. Neither lives inside a code, so neither
   can move a point:
@@ -34,14 +34,15 @@
 
   Annotations are BOUND to the shape they arrived with: bind() records its
   vertices, and sync() is called whenever the shape changes. Reversing remaps
-  them (point i -> n-1-i). Any other change keeps a label only if its exact
-  vertex is still there (so simplifying keeps the labels on the points it
-  keeps), and otherwise drops it: a label must never slide onto another point.
+  them (point i -> n-1-i). Any other change keeps a label only if its own
+  vertex is still there (the same to 1e-9 degrees, longitude compared round
+  the circle; so simplifying keeps the labels on the points it keeps), and
+  otherwise drops it: a label must never slide onto another point.
 */
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
 
   var PALETTE = {
     r: '#ef4444',   // red
@@ -63,7 +64,7 @@
 
   // Control characters, bidi embeddings/overrides/isolates and marks, and
   // zero-width characters. Removed outright rather than replaced.
-  var STRIP = /[\u0000-\u001F\u007F-\u009F؜​-‏‪-‮⁠-⁩﻿]/g;
+  var STRIP = /[\u0000-\u001F\u007F-\u009F\u061C\u200B-\u200F\u202A-\u202E\u2060-\u2069\uFEFF]/g;
 
   function sanitizeLabel(text) {
     if (text === null || text === undefined) return '';
@@ -216,7 +217,19 @@
     return c;
   }
 
-  function same(a, b) { return Math.abs(a[0] - b[0]) < 1e-12 && Math.abs(a[1] - b[1]) < 1e-12; }
+  /*
+    The same vertex? Within 1e-9 degrees (about 0.1 mm on Earth, 4 microarcsec
+    in the sky), and longitude compared round the circle: one shape is read as
+    -153.1 on the map, 206.9 as right ascension, and -513.1 where a line has
+    been unwrapped across the date line, and a value folded by a different
+    formula differs in the last bits. Exact equality dropped labels on that.
+  */
+  var SAME_EPS = 1e-9;
+  function same(a, b) {
+    if (Math.abs(a[0] - b[0]) >= SAME_EPS) return false;
+    var d = ((a[1] - b[1]) % 360 + 540) % 360 - 180;
+    return Math.abs(d) < SAME_EPS;
+  }
 
   function sameList(a, b) {
     if (!a || !b || a.length !== b.length) return false;
