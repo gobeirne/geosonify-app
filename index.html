@@ -754,7 +754,7 @@
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20260109"></script>
-  <script src="js/core/delta-gear.js?v=20261014a"></script>
+  <script src="js/core/delta-gear.js?v=20261014b"></script>
   
 <!-- Services -->
 <script src="js/services/audio-service.js?v=20261009g"></script>
@@ -793,20 +793,20 @@
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
-<script src="js/lib/geosonify-sky-carry.js?v=20261014a"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20261014b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261014a"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261014b"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
-<script src="js/lib/geosonify-healpix-lattice.js?v=20261014a"></script>
+<script src="js/lib/geosonify-healpix-lattice.js?v=20261014b"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
-<script src="js/lib/geosonify-annotations.js?v=20261014a"></script>
-<script src="js/lib/geosonify-sky-export.js?v=20261014a"></script>
+<script src="js/lib/geosonify-annotations.js?v=20261014b"></script>
+<script src="js/lib/geosonify-sky-export.js?v=20261014b"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
@@ -817,7 +817,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261014a"></script>
+<script src="js/lib/faq-data.js?v=20261014b"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -3332,7 +3332,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       //            handed to the board, so deobfuscate it before the grid decode.
       // No "@k": ChessboardLib.scan recovers the hex from the 64 squares, and
       // decodeCardCode lets the HEALPix sibling infer order from length.
+      //   fen / hpfen (Oct 2026) → the same, under the name a chess player knows.
+      //            These are what share links now carry; chs / hpchs stay readable
+      //            forever (the URL grammar only grows). Obfuscated: feno (standard,
+      //            like every standard grid's 'o') and hpfenj (HEALPix obf-v2, like hpchsj).
       const CHESS_PARAM_MAP = {
+        fen:    { card: 'chessboard',   obf: false },
+        feno:   { card: 'chessboard',   obf: true  },
+        hpfen:  { card: 'hpchessboard', obf: false },
+        hpfenj: { card: 'hpchessboard', obf: true  },   // healpix-obf-v2
         chs:    { card: 'chessboard',   obf: false },
         chso:   { card: 'chessboard',   obf: true  },
         hpchs:  { card: 'hpchessboard', obf: false },
@@ -4061,7 +4069,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // hex→ink) happen in encodeShareValue via withChessFEN / withChromaInk.
       const _activeDef = CARD_GRIDS[gridKey];
       if (_activeDef && _activeDef.display === 'chessboard') {
-        let param = (_activeDef.chessOf === 'hphex') ? 'hpchs' : 'chs';
+        // ?fen= / ?hpfen= carry the board's FEN placement field (chs / hpchs before
+        // Oct 2026, still read).
+        let param = (_activeDef.chessOf === 'hphex') ? 'hpfen' : 'fen';
         if (obfuscated) param += (_activeDef.chessOf === 'hphex') ? 'j' : 'o';   // HEALPix: obf-v2
         return param;
       }
@@ -4176,13 +4186,18 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // hex → FEN. Obfuscation is already baked into `encoded`, so the FEN is the
     // obfuscated board for chso/hpchso — symmetric with the decode loop. A
     // shape/delta/multi value (~ or , present) has no single board, left as-is.
+    // Chessboard share params -> the board format their FEN is written in.
+    const CHESS_SHARE_FORMAT = {
+      fen: 'standard', feno: 'standard', chs: 'standard', chso: 'standard',
+      hpfen: 'healpix', hpfenj: 'healpix', hpchs: 'healpix', hpchso: 'healpix', hpchsj: 'healpix'
+    };
     function withChessFEN(param, encoded) {
       try {
-        if ((param === 'chs' || param === 'chso' || param === 'hpchs' || param === 'hpchso' || param === 'hpchsj') &&
+        if (CHESS_SHARE_FORMAT[param] &&
             typeof encoded === 'string' && !encoded.startsWith('ERR') &&
             encoded.indexOf('~') === -1 && encoded.indexOf(',') === -1 &&
             typeof ChessboardLib !== 'undefined') {
-          const fmt = (param === 'hpchs' || param === 'hpchso' || param === 'hpchsj') ? 'healpix' : 'standard';
+          const fmt = CHESS_SHARE_FORMAT[param];
           const hex = encoded.split('@')[0];   // defensive: drop any stray "@k"
           const fen = ChessboardLib.toFEN(hex, fmt);
           return fen || encoded;
