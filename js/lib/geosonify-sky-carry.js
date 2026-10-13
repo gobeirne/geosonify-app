@@ -1,5 +1,13 @@
 /*
-  geosonify-sky-carry.js  v0.2  — shapes cross the frame boundary, both ways
+  geosonify-sky-carry.js  v0.3  — shapes cross the frame boundary, both ways
+
+  v0.3: a shape that CAME FROM the map (carried up by carryToSky, or drawn by
+  a link's path, both marked { fromMap: true }) is not carried back down while
+  the map still has its own shape. The map's own drawing is the one with the
+  labels and colours, and the one that honours rhumb sides; the carried copy
+  joined the same stars with straight Mercator segments, so the two parted
+  between the stars and the Big Dipper was drawn twice. Shapes that exist only
+  in the sky (a constellation figure) are carried as before.
 
   v0.2: shapes that cross RA 0h / the date line are drawn the SHORT way round
   on Earth. ringsFromSky() folded every vertex to +/-180 independently, so the
@@ -60,7 +68,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.2';
+  var VERSION = 'v0.3';
   var CIRCLE_SEGMENTS = 64;
 
   function _GeoMath() { return global.GeoMath || null; }
@@ -236,7 +244,8 @@
         // A path's own points carry lbl= / sty= (numbered straight through
         // the parts); a circle or rectangle's sampled ring does not.
         annotate: (got.kind === 'path' || got.kind === 'polygon'),
-        indexOffset: start
+        indexOffset: start,
+        fromMap: true                       // the map already draws this one
       });
       all = all.concat(verts);
       n++;
@@ -258,14 +267,24 @@
     (shapeLayer, imported layers, GPX layers) with different lifetimes, and
     picking one for the caller would be guessing.
   */
-  function ringsFromSky() {
+  // Does the map still draw a shape of its own? (Then a fromMap sky shape is
+  // that same shape, and carrying it back would draw it twice.)
+  function mapHasOwnShape() {
+    var sol = global.__geosonifyLastSolution;
+    return !!(sol && sol.type && sol.type !== 'point');
+  }
+
+  function ringsFromSky(opts) {
+    opts = opts || {};
     var V = _SkyView();
     if (!V || !V.getShapes) return [];
     var shapes = [];
     try { shapes = V.getShapes() || []; } catch (e) { return []; }
+    var skipFromMap = !opts.includeFromMap && mapHasOwnShape();
 
     var out = [];
     shapes.forEach(function (s) {
+      if (skipFromMap && s && s.fromMap) return;
       var verts = s && (s.vertices || s.points);
       if (!verts || verts.length < 2) return;
       var ring = [];

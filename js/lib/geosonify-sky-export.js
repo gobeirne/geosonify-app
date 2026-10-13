@@ -237,7 +237,8 @@
   var FORMATS = {
     csv: { label: 'CSV', mime: 'text/csv', ext: 'csv' },
     reg: { label: 'DS9', mime: 'text/plain', ext: 'reg' },
-    moc: { label: 'MOC', mime: 'text/plain', ext: 'moc.txt' }
+    // The cells the POINTS lie in, not the area a polygon encloses: named so.
+    moc: { label: 'Target-cell MOC', mime: 'text/plain', ext: 'moc.txt', file: 'geosonify-sky-target-cells.moc.txt' }
   };
 
   var API = {
