@@ -127,7 +127,7 @@
       display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
     }
     .geosonify-viewer-tag .geosonify-viewer-row {
-      display: flex; gap: 10px; align-items: center;
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
     }
     .geosonify-viewer-tag a { color: #1a6ebd; text-decoration: none; }
     .geosonify-viewer-tag a:hover { text-decoration: underline; }
@@ -628,14 +628,13 @@
             </div>
 
             <div style="margin-top:8px;">
-              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Let viewer export</div>
+              <div style="font-size:13px; font-weight:600; margin-bottom:6px;">Let viewer export <span style="font-weight:400; color:var(--ios-secondary,#8e8e93);">(any or all)</span></div>
               <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
-                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value=""> Off</label>
-                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="gpx"> GPX</label>
-                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="kml"> KML</label>
-                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="csv"> CSV</label>
-                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="reg"> DS9</label>
-                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="radio" name="displayExport" value="moc"> MOC</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="gpx"> GPX</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="kml"> KML</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="csv"> CSV</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="reg"> DS9</label>
+                <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="moc"> MOC</label>
               </div>
             </div>
 
@@ -718,7 +717,7 @@
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20260109"></script>
-  <script src="js/core/delta-gear.js?v=20261013e"></script>
+  <script src="js/core/delta-gear.js?v=20261013g"></script>
   
 <!-- Services -->
 <script src="js/services/audio-service.js?v=20261009g"></script>
@@ -757,11 +756,11 @@
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
-<script src="js/lib/geosonify-sky-carry.js?v=20261013e"></script>
+<script src="js/lib/geosonify-sky-carry.js?v=20261013g"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261013e"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261013g"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261012a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
@@ -769,8 +768,8 @@
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261012b"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
-<script src="js/lib/geosonify-annotations.js?v=20261013e"></script>
-<script src="js/lib/geosonify-sky-export.js?v=20261013e"></script>
+<script src="js/lib/geosonify-annotations.js?v=20261013g"></script>
+<script src="js/lib/geosonify-sky-export.js?v=20261013g"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
@@ -781,7 +780,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261013e"></script>
+<script src="js/lib/faq-data.js?v=20261013g"></script>
 <script src="js/ui/faq-ui.js?v=20261012c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -1573,13 +1572,11 @@
       if (bm && ((sky && bm.value !== 'sky') || (!sky && bm.value === 'sky'))) {
         if (window.__geosonifySeedDisplayBasemap) window.__geosonifySeedDisplayBasemap();
       }
-      const ex = document.querySelector('input[name="displayExport"]:checked');
-      const skyFmt = ex && ['csv', 'reg', 'moc'].includes(ex.value);
-      const earthFmt = ex && ['gpx', 'kml'].includes(ex.value);
-      if ((sky && earthFmt) || (!sky && skyFmt)) {
-        const off = document.querySelector('input[name="displayExport"][value=""]');
-        if (off) off.checked = true;
-      }
+      // A format of the other sphere is unticked, not carried hidden.
+      document.querySelectorAll('input[name="displayExport"]:checked').forEach(ex => {
+        const skyFmt = ['csv', 'reg', 'moc'].includes(ex.value);
+        if (sky !== skyFmt) ex.checked = false;
+      });
       const lab = document.getElementById('displayShowAreaLabel');
       if (lab) lab.textContent = sky ? 'Show solid angle / lengths (angles)' : 'Show area / measurements';
       const row = document.getElementById('skyExportRow');
@@ -1772,20 +1769,27 @@
 
       // export= values: gpx | kml (Earth), csv | reg | moc (added for the sky;
       // an older app shows no button for a value it does not know).
+      // export= may repeat: one button per format, in the link's order. Earth
+      // formats only on Earth and sky formats only in the sky, so a link
+      // never offers a file that would describe the wrong sphere.
       const skyFormats = (typeof GeosonifySkyExport !== 'undefined') ? GeosonifySkyExport.FORMATS : {};
-      if (opts.export === 'gpx' || opts.export === 'kml') {
+      const wanted = (opts.exports && opts.exports.length) ? opts.exports : (opts.export ? [opts.export] : []);
+      const inSky = isSkyFrameNow();
+      wanted.forEach(fmt => {
+        let label = null, run = null;
+        if ((fmt === 'gpx' || fmt === 'kml') && !inSky) {
+          label = fmt.toUpperCase(); run = () => _viewerExport(fmt);
+        } else if (inSky && Object.prototype.hasOwnProperty.call(skyFormats, fmt)) {
+          label = skyFormats[fmt].label; run = () => downloadSkyExport(fmt);
+        }
+        if (!label) return;
         const btn = document.createElement('button');
         btn.className = 'geosonify-viewer-export';
-        btn.textContent = '↓ ' + opts.export.toUpperCase();
-        btn.onclick = () => _viewerExport(opts.export);
+        btn.textContent = '↓ ' + label;
+        btn.title = 'Download ' + label;
+        btn.onclick = run;
         row.appendChild(btn);
-      } else if (opts.export && Object.prototype.hasOwnProperty.call(skyFormats, opts.export)) {
-        const btn = document.createElement('button');
-        btn.className = 'geosonify-viewer-export';
-        btn.textContent = '↓ ' + skyFormats[opts.export].label;
-        btn.onclick = () => downloadSkyExport(opts.export);
-        row.appendChild(btn);
-      }
+      });
 
       const link = document.createElement('a');
       // Build by string surgery rather than URLSearchParams, which would
@@ -2060,6 +2064,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     let startMarker = null, endMarker = null; // For path start/end indicators
     let showStartEndMarkers = localStorage.getItem('showStartEndMarkers') === 'true'; // Default false
     let lastSolution = null;
+    // The sky view reads the current shape through this, so it can never be
+    // handed a copy older than the one on the map (a plain property was only
+    // refreshed by updateCompactOutputs). Writes are ignored: lastSolution is
+    // the only source.
+    try {
+      Object.defineProperty(window, '__geosonifyLastSolution', {
+        configurable: true, get: () => lastSolution, set: () => {}
+      });
+    } catch (e) {}
     let EMO = null;
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -2076,6 +2089,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         gps: _dispParams.has('gps'),
         area: _dispParams.has('area'),
         export: _dispParams.get('export') || null,
+        // export= may repeat (csv, reg and moc together); every value, once.
+        exports: _dispParams.getAll('export').filter((v, i, a) => v && a.indexOf(v) === i),
         zoom: _dispParams.has('zoom') ? parseFloat(_dispParams.get('zoom')) : null,
         context: _dispParams.has('context') ? parseFloat(_dispParams.get('context')) : null,
         fixzoom: _dispParams.has('fixzoom')
@@ -2610,9 +2625,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           if (radio) radio.checked = true;
         }
         seedBasemapRadio();
-        // Default export to Off.
-        const exportOff = document.querySelector('input[name="displayExport"][value=""]');
-        if (exportOff) exportOff.checked = true;
+        // Default: no downloads offered.
+        document.querySelectorAll('input[name="displayExport"]').forEach(c => { c.checked = false; });
 
         toggle.addEventListener('change', () => {
           panel.style.display = toggle.checked ? 'block' : 'none';
@@ -3306,7 +3320,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           // reads them and they're not sensitive.
           const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'basemap', 'frame', 'epoch'];
           const kept = keep.filter(k => urlParams.has(k))
-            .map(k => urlParams.get(k) === '' || urlParams.get(k) === null ? k : `${k}=${urlParams.get(k)}`)
+            .flatMap(k => (k === 'export' ? urlParams.getAll(k) : [urlParams.get(k)])
+              .map(v => v === '' || v === null ? k : `${k}=${v}`))
             // lbl= / sty= repeat, so all of them, re-encoded strictly.
             .concat(annotationShareParams());
           window.history.replaceState({}, '', window.location.pathname + (kept.length ? '?' + kept.join('&') : ''));
@@ -4017,9 +4032,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const params = ['display'];
       const basemap = (document.querySelector('input[name="displayBasemap"]:checked') || {}).value || '';
       const showArea = document.getElementById('displayShowArea');
-      const exportFmt = (document.querySelector('input[name="displayExport"]:checked') || {}).value || '';
       if (showArea && showArea.checked) params.push('area');
-      if (exportFmt) params.push('export=' + exportFmt);
+      // export= repeats, one per format (an app from before 13 Oct 2026 reads
+      // only the first, and offers that one).
+      document.querySelectorAll('input[name="displayExport"]:checked').forEach(c => {
+        if (c.value) params.push('export=' + c.value);
+      });
       // Basemap: a chosen preset radio wins. If the radio is left at the
       // Standard default but the user is actually viewing a custom pasted
       // imagery URL, carry that custom URL through instead (so "share what I
@@ -10150,7 +10168,8 @@ function encodeRaw(sol) {
               if (dp.zoom != null && !isNaN(dp.zoom)) dParams.push('zoom=' + dp.zoom);
               if (dp.fixzoom) dParams.push('fixzoom');
               if (dp.gps) dParams.push('gps');
-              if (dp.export) dParams.push('export=' + dp.export);
+              (dp.exports && dp.exports.length ? dp.exports : (dp.export ? [dp.export] : []))
+                .forEach(v => dParams.push('export=' + v));
               if (window.__GEOSONIFY_BASEMAP_ACTIVE) dParams.push('basemap=' + encodeURIComponent(window.__GEOSONIFY_BASEMAP_ACTIVE));
               finalURL = shareURL + (shareURL.includes('?') ? '&' : '?') + dParams.join('&');
             }
