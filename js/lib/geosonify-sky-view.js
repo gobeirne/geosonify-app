@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.7  — the in-app sky view
+  geosonify-sky-view.js  v0.8  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -28,6 +28,11 @@
     * LABELS AND STYLES (lbl= / sty=, geosonify-annotations.js) on shapes
       added with { annotate: true }: coloured / wider / dashed sides, coloured
       points, and labels drawn as SVG text (textContent, never markup).
+
+  v0.8: shapes and their labels are drawn in a layer of their own (z-index 6),
+  ABOVE the HEALPix lattice canvas (z-index 5), which used to cross them.
+  getShapeLayer() returns that SVG; the renderer's overlayGroup() keeps the
+  cells and the mark.
 
   v0.2: Sky is a public mode, chosen beside Standard / Aerial / Topographic in
   the Map imagery panel. Opening it no longer opens the separate read-only Sky
@@ -67,7 +72,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.7';
+  var VERSION = 'v0.8';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -607,6 +612,13 @@
     to the Earth map on every flip, compounding.
   */
   var userZoomed = false;
+  /*
+    Set when the view was framed on a shape (frameOn with more than one
+    vertex): the field then shows that shape on purpose, and nothing that
+    matches the scale to the Earth map's cell may take it back. Cleared on
+    open and close.
+  */
+  var framedOnShape = false;
 
   var _coordUnsub = null;
   var _pushing = false;
@@ -816,6 +828,36 @@
     flush();
     return runs;
   }
+
+  /*
+    ABOVE THE GRID (v0.8). The HEALPix lattice is a canvas at z-index 5 over the
+    picture (geosonify-healpix-lattice.js), above the renderer's own overlay,
+    so it was drawn across every shape and label. Shapes and their labels now
+    go in a layer of their own at z-index 6: over the lattice, under the
+    view's controls (z-index 10). Same pixels as the renderer's overlay (both
+    start at the picture's top left), so nothing moves.
+  */
+  var TOP_Z = 6;
+  function topLayer() {
+    if (!els || !els.canvasWrap || !renderer) return null;
+    var svg = els.topSvg;
+    if (!svg || svg.parentNode !== els.canvasWrap) {
+      svg = document.createElementNS(SVGNS, 'svg');
+      svg.setAttribute('class', 'gs-sky-shapes');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.setAttribute('style', 'position:absolute; left:0; top:0; pointer-events:none; overflow:visible; z-index:' + TOP_Z + ';');
+      els.canvasWrap.appendChild(svg);
+      els.topSvg = svg;
+    }
+    var s = renderer.getSize();
+    svg.setAttribute('width', s.width);
+    svg.setAttribute('height', s.height);
+    svg.setAttribute('viewBox', '0 0 ' + s.width + ' ' + s.height);
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    return svg;
+  }
+  // The layer shapes and labels are drawn in (for tests and tools).
+  function shapeLayer() { return (els && els.topSvg) || null; }
 
   function drawShapes(g) {
     var Overlay = _Overlay();
@@ -1033,6 +1075,7 @@
     // A single point has no extent; leave the field alone rather than zooming to
     // the floor. Otherwise pad so the outermost vertex is not on the very edge.
     var fov = radius > 0 ? radius * 2 * (opts.pad || 1.6) : null;
+    if (fov && vertices.length > 1) framedOnShape = true;
 
     mark.dec = decC; mark.ra = raC;
     if (renderer) {
@@ -1108,7 +1151,8 @@
       });
     }
 
-    drawShapes(g);
+    // Shapes and labels go in their own layer, above the HEALPix lattice.
+    drawShapes(topLayer() || g);
 
     var mp = renderer.project(mark.ra, mark.dec);
     if (mp) {
@@ -1370,7 +1414,15 @@
         Aladin lands somewhere else, the loop corrects it; if Aladin refuses to
         move, the log says so rather than the scale silently drifting.
       */
-      if (!opts.noRematch && global.GeosonifySkyZoom && global.__geosonifyMap &&
+      /*
+        Not when the field was chosen on purpose (v0.8): a view framed on a
+        shape (a link's path, a camera footprint) or zoomed by hand keeps its
+        field, and the imagery takes over exactly that. Re-matching there
+        zoomed straight into the cell at the shape's centre (an order-22 cell
+        is 50 milliarcseconds across) the moment the imagery arrived.
+      */
+      if (!opts.noRematch && !framedOnShape && !userZoomed &&
+          global.GeosonifySkyZoom && global.__geosonifyMap &&
           global.GeosonifySkyZoom.matchCellEarthToSky &&
           global.GeosonifySkyZoom.REMATCH_AFTER_IMAGERY) {
         try {
@@ -1399,6 +1451,7 @@
       return false;
     }
     if (host) return true;
+    framedOnShape = false;
 
     /*
       Register the sky-only cards on first open rather than at load. They are
@@ -1501,7 +1554,9 @@
       } catch (e) {}
     }
 
-    if (!opts.fovDeg && global.GeosonifySkyZoom && global.__geosonifyMap) {
+    // Not over a carried shape the view has just been framed on (v0.8): the
+    // shape is what was asked to be seen, not the cell at its centre.
+    if (!opts.fovDeg && !framedOnShape && global.GeosonifySkyZoom && global.__geosonifyMap) {
       try {
         if (global.GeosonifySkyZoom.matchCellEarthToSky(
               global.__geosonifyMap, renderer, mark.dec, mark.ra, order) !== null) {
@@ -1566,6 +1621,7 @@
     provenance = null; orderIsManual = false; shapes = [];
     rendererKind = 'builtin';
     imageryFloorDeg = null;
+    framedOnShape = false;
     emit('close');
     return true;
   }
@@ -1619,7 +1675,9 @@
     getRenderer: function () { return renderer; },
     getHost: function () { return host; },
     getCanvasWrap: function () { return els ? els.canvasWrap : null; },
+    getShapeLayer: shapeLayer,
     isUserZoomed: function () { return userZoomed; },
+    isFramedOnShape: function () { return framedOnShape; },
     isPrivacyOn: _privacyOn,
     measuredAsp: measuredAsp,
     redraw: draw,

@@ -1,5 +1,5 @@
 /*
-  geosonify-healpix-lattice.js  v0.2  — the HEALPix lattice, on the Earth map and on the sky
+  geosonify-healpix-lattice.js  v0.3  — the HEALPix lattice, on the Earth map and on the sky
 
   Shown in Sky mode (chosen in the Map imagery panel on the main screen), on both
   faces: over the Earth map, and over the sky view. Off again in the normal
@@ -8,6 +8,15 @@
   v0.2: also shown while a HEALPix card is the starred card (card-renderer.js
   asks for it), in any map mode. The switches are kept apart as reasons, so
   neither can turn off what the other asked for (see the switch section).
+
+  v0.3: BENEATH what you drew. On the map the lattice has a pane of its own
+  (gsLattice, z-index 350) between the tiles (200) and the overlay pane (400)
+  where shapes are drawn, so a path and its labels are never crossed by a grid
+  line; it used to sit in the overlay pane itself, on top of anything added
+  before it. In the sky the shapes moved up instead (geosonify-sky-view.js
+  v0.8 draws them in their own layer above this canvas). And an OPACITY,
+  0 (hidden) to 1 (as drawn), set by setOpacity(): a display link carries it
+  as lattice=<0..1>, chosen in the share panel.
 
   THE DRAWING IS STARPIN'S (geosonify-starpin-map.js), generalised from one
   Leaflet map to any projection, so the same loop draws the ground and the sky:
@@ -27,8 +36,8 @@
   Palettes are Starpin's too: bark on the street and topographic maps, yellow
   on aerial imagery, warm amber on the night sky.
 
-  Ground: a Leaflet layer in the overlay pane, so it pans and zooms with the
-  map (and fades with it during the turn). Sky: a canvas inside the sky view's
+  Ground: a Leaflet layer in its own pane, so it pans and zooms with the map
+  (and fades with it during the turn). Sky: a canvas inside the sky view's
   picture, drawn through the sky renderer's MEASURED projection (the same
   three-point affine geosonify-sky-flip.js uses), so it lies exactly where the
   renderer puts the same coordinates.
@@ -38,7 +47,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.2';
+  var VERSION = 'v0.3';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var M_PER_ARCSEC = 111319.9 / 3600;
@@ -49,6 +58,9 @@
   // on exactly, through BigInt.
   var MAX_ORDER = 29;
   var MAX_CELLS = 700;
+  // The map pane: above the tiles (200), below the overlay pane (400) where
+  // shapes are drawn, and far below markers (600) and tooltips (650).
+  var PANE = 'gsLattice', PANE_Z = 350;
 
   function SM() { return global.GeosonifyStarpinMap || null; }
   function SF() { return global.GeosonifyStarpinFlip || null; }
@@ -60,6 +72,24 @@
   function available() {
     var M = SM(), H = HP();
     return !!(M && M.strokeFor && M.cellWidthM && M.ringCopies && H && H._core && H._core.pixcoord2vec_nest && H.nestIndex);
+  }
+
+  // ── opacity (v0.3) ───────────────────────────────────────────────────────
+  // One number for both faces, applied to the canvases as CSS opacity, so it
+  // costs no redraw. 0 hides them outright (nothing left to hit-test or paint).
+  var opacity = 1;
+  function styleCanvas(cv) {
+    if (!cv) return;
+    cv.style.opacity = String(opacity);
+    cv.style.display = opacity > 0 ? '' : 'none';
+  }
+  function setOpacity(x) {
+    x = Number(x);
+    if (!isFinite(x)) return opacity;
+    opacity = Math.max(0, Math.min(1, Math.round(x * 100) / 100));
+    if (earthLayer && earthLayer._cv) styleCanvas(earthLayer._cv);
+    styleCanvas(skyCv);
+    return opacity;
   }
 
   // ── Starpin's loop, over any projection ──────────────────────────────────
@@ -193,13 +223,25 @@
     });
   }
 
+  // The lattice's own pane, made once per map, beneath the overlay pane.
+  function latticePane(m) {
+    var p = m.getPane(PANE);
+    if (!p) {
+      p = m.createPane(PANE);
+      p.style.zIndex = String(PANE_Z);
+      p.style.pointerEvents = 'none';
+    }
+    return p;
+  }
+
   function makeEarthLayer() {
     var L = global.L;
     var Layer = L.Layer.extend({
       onAdd: function (m) {
         this._cv = L.DomUtil.create('canvas', 'leaflet-zoom-animated gs-lattice-earth');
         this._cv.style.pointerEvents = 'none';
-        m.getPanes().overlayPane.appendChild(this._cv);
+        styleCanvas(this._cv);
+        latticePane(m).appendChild(this._cv);
         m.on('moveend zoomend resize', this._render, this);
         if (m.options.zoomAnimation && L.Browser.any3d) m.on('zoomanim', this._animateZoom, this);
         this._render();
@@ -248,9 +290,13 @@
       skyCv = document.createElement('canvas');
       skyCv.className = 'gs-lattice-sky';
       skyCv.setAttribute('aria-hidden', 'true');
+      // z-index 5: over the imagery and the cells, UNDER the shapes and their
+      // labels (geosonify-sky-view.js draws those at z-index 6).
       skyCv.style.cssText = 'position:absolute; left:0; top:0; z-index:5; pointer-events:none;';
     }
+    styleCanvas(skyCv);
     if (skyCv.parentNode !== wrap) wrap.appendChild(skyCv);
+    if (!(opacity > 0)) return;                          // hidden: nothing to draw
     var w = wrap.clientWidth, h = wrap.clientHeight;
     var g = sizeCanvas(skyCv, w, h);
     if (!g || !w || !h) return;
@@ -298,6 +344,9 @@
   // take the lattice away from Sky mode, and leaving Sky mode cannot take it
   // away from a starred HEALPix card. setEnabled / isEnabled keep meaning
   // exactly what they did for sky-flip: Sky mode's own switch.
+  //
+  // Opacity is not a reason: a lattice at opacity 0 is still "showing" (the
+  // reasons hold), only invisible, so turning it back up needs nothing else.
 
   var reasons = {};
   var shown = false;
@@ -380,6 +429,15 @@
     isShowing: function () { return shown; },
     reasons: function () { return Object.keys(reasons); },
     refresh: refresh,
+    // v0.3: 0 (hidden) .. 1 (as drawn); rounded to hundredths. Turning it up
+    // from 0 redraws the sky (a hidden sky canvas is not kept drawn).
+    setOpacity: function (x) {
+      var was = opacity, now = setOpacity(x);
+      if (!(was > 0) && now > 0) refresh();
+      return now;
+    },
+    getOpacity: function () { return opacity; },
+    PANE: PANE,
     _draw: draw,
     MAX_ORDER: MAX_ORDER
   };
