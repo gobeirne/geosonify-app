@@ -1,23 +1,28 @@
 /*
-  geosonify-delta-gear.js v1.0
+  geosonify-delta-gear.js v1.1
   Gear-change delta encoding for compact path representation
-  
+
   Uses dynamic programming to find optimal gear (delta width) for each segment,
   minimizing total encoded length. The gear-change format allows variable-width
   deltas within a single encoded string.
-  
+
   Format: firstCode~d{K}{HEX_K}{payload}...
   - K = number of 'd' characters = number of hex digits for the gear value
   - HEX_K = gear value (delta width) in hex
   - payload = concatenated deltas of that width
-  
+
   Example: ABC123~dd05XYZPQR~d3RST
   - First code: ABC123
   - dd05 = gear 5 (2 d's, 2 hex digits "05"), payload XYZPQ R (5 chars each)
   - d3 = gear 3 (1 d, 1 hex digit "3"), payload RST (3 chars)
-  
+
+  v1.1: a segment whose width is not a positive hex number is SKIPPED. A width
+  of 0 ("~d0...") used to step through its payload by 0 and never finish,
+  freezing the tab; a non-hex width ("~dG...") parsed as NaN and produced an
+  empty code. The encoder never writes either, so no issued link changes.
+
   Dependencies: None
-  
+
   Exports (via window.DeltaGear):
   - encodeGearPath(codes) - Encode array of codes using DP-optimal gear changes
   - decodeGearPath(encoded) - Decode gear-change encoded string to array of codes
@@ -29,7 +34,7 @@
 (function(global) {
   'use strict';
 
-  const __DELTA_GEAR_VER__ = 'v1.0';
+  const __DELTA_GEAR_VER__ = 'v1.1';
   try { console.log('[geosonify] delta-gear ' + __DELTA_GEAR_VER__ + ' loaded'); } catch(e) {}
 
   // ================= Token model =================
@@ -77,18 +82,23 @@
   /**
    * Parse a gear segment (after the tilde)
    * @param {string} seg - Segment string like "d5payload" or "dd10payload"
-   * @returns {{ N: number, payload: string }} Parsed gear and payload
+   * @returns {{ N: number, payload: string }} Parsed gear and payload.
+   *   N is NaN when the K characters after the d-run are not all hex
+   *   (parseInt would otherwise read a prefix of them, e.g. "1G" as 1).
    */
   function parseSegment(seg) {
     let K = 0;
     while (seg[K] === 'd') K++;
     const hex = seg.slice(K, K + K);
-    const N = parseInt(hex, 16);
+    const N = (hex.length === K && /^[0-9A-Fa-f]+$/.test(hex)) ? parseInt(hex, 16) : NaN;
     return { N, payload: seg.slice(K + K) };
   }
 
+  // A usable gear: a whole number of tokens per delta, at least one.
+  function validGear(N) { return Number.isInteger(N) && N > 0; }
+
   // ================= Decoder =================
-  
+
   /**
    * Decode a gear-change encoded path back to array of codes
    * @param {string} encoded - Encoded string like "ABC123~d5XYZPQ~d3RST"
@@ -96,29 +106,35 @@
    */
   function decodeGearPath(encoded) {
     console.log('[delta-gear] decodeGearPath called with:', encoded.substring(0, 80) + '...');
-    
+
     const parts = encoded.split('~').filter(Boolean);
     console.log('[delta-gear] Split into', parts.length, 'parts');
-    
+
     if (parts.length === 0) return [];
-    
+
     const first = parts[0];
     const L = tokenize(first).length;
     let current = first;
     const out = [first];
-    
+
     console.log('[delta-gear] First code:', first, 'L:', L);
 
     for (let i = 1; i < parts.length; i++) {
       const seg = parts[i];
-      
+
       // New format: gear-change segment starts with 'd'
       if (seg.startsWith('d')) {
         const { N, payload } = parseSegment(seg);
+        // v1.1: a zero or unreadable width is skipped. Stepping by 0 never
+        // ends (the tab froze on "~d0..."), and NaN made an empty code.
+        if (!validGear(N)) {
+          console.warn('[delta-gear] Skipping segment with invalid width:', seg.substring(0, 20));
+          continue;
+        }
         const p = tokenize(payload);
-        
-        console.log('[delta-gear] Gear segment:', seg.substring(0, 20), '\u2192 N:', N, 'payload len:', payload.length);
-        
+
+        console.log('[delta-gear] Gear segment:', seg.substring(0, 20), '→ N:', N, 'payload len:', payload.length);
+
         // Process payload in chunks of N tokens
         for (let j = 0; j < p.length; j += N) {
           const ct = tokenize(current);
@@ -127,7 +143,7 @@
         }
         continue;
       }
-      
+
       // Old format: single hex digit header + payload (no 'd' prefix)
       // Detect: first char is hex, payload length is divisible by N, and N < L
       const hexMatch = seg.match(/^([0-9A-Fa-f])(.+)$/);
@@ -136,9 +152,9 @@
         const payload = hexMatch[2];
         if (N > 0 && N < L && payload.length >= N && payload.length % N === 0) {
           const p = tokenize(payload);
-          
-          console.log('[delta-gear] Old-format gear:', seg.substring(0, 20), '\u2192 N:', N, 'payload len:', payload.length);
-          
+
+          console.log('[delta-gear] Old-format gear:', seg.substring(0, 20), '→ N:', N, 'payload len:', payload.length);
+
           // Process payload in chunks of N tokens
           for (let j = 0; j < p.length; j += N) {
             const ct = tokenize(current);
@@ -148,24 +164,24 @@
           continue;
         }
       }
-      
+
       // Fallback: variable-width delta suffix
       const delta = seg;
       const ct = tokenize(current);
       const N = delta.length;
       current = joinTokens(ct.slice(0, L - N).concat(tokenize(delta)));
       out.push(current);
-      console.log('[delta-gear] Variable delta:', delta, '\u2192', current);
+      console.log('[delta-gear] Variable delta:', delta, '→', current);
     }
-    
+
     console.log('[delta-gear] Decoded', out.length, 'codes');
     console.log('[delta-gear] First 3 codes:', out.slice(0, 3));
-    
+
     return out;
   }
 
   // ================= Encoder (DP optimal) =================
-  
+
   /**
    * Encode array of codes using DP-optimal gear-change encoding
    * Minimizes total encoded length by finding optimal gear for each segment
@@ -175,7 +191,7 @@
   function encodeGearPath(codes) {
     if (!codes || codes.length === 0) return '';
     if (codes.length === 1) return codes[0];
-    
+
     const L = tokenize(codes[0]).length;
     const tok = codes.map(tokenize);
     const S = codes.length - 1; // Number of transitions (deltas)
@@ -189,7 +205,7 @@
     }
 
     const INF = 1e15;
-    
+
     // dp[s][g] = minimum cost to encode transitions 1..s with gear g at step s
     const dp = Array.from({ length: S + 1 }, () => Array(L + 1).fill(INF));
     const back = Array.from({ length: S + 1 }, () => Array(L + 1).fill(-1));
@@ -204,11 +220,11 @@
       for (let g = need[s]; g <= L; g++) {
         for (let pg = 1; pg <= L; pg++) {
           if (dp[s - 1][pg] === INF) continue;
-          
+
           // Cost: if same gear, just add delta width
           // If different gear, add header + delta width
           const cost = dp[s - 1][pg] + (pg === g ? g : headerLen(g) + g);
-          
+
           if (cost < dp[s][g]) {
             dp[s][g] = cost;
             back[s][g] = pg;
@@ -248,7 +264,7 @@
       payload += joinTokens(tok[s].slice(L - curG));
     }
     flush();
-    
+
     return out;
   }
 
@@ -266,21 +282,21 @@
         savings: 0
       };
     }
-    
+
     // Variable-width: just tildes between deltas
     const L = tokenize(codes[0]).length;
     const tok = codes.map(tokenize);
     const variableDeltas = [];
-    
+
     for (let i = 1; i < codes.length; i++) {
       const cp = commonPrefixLen(tok[i - 1], tok[i]);
       const delta = codes[i].slice(cp);
       variableDeltas.push(delta || codes[i]); // Full code if no common prefix
     }
-    
+
     const variableResult = codes[0] + '~' + variableDeltas.join('~');
     const gearResult = encodeGearPath(codes);
-    
+
     if (gearResult.length < variableResult.length) {
       return {
         encoded: gearResult,
@@ -306,14 +322,14 @@
     encodeGearPath,
     decodeGearPath,
     encodeBest,
-    
+
     // Helper functions
     gearK,
     makeHeader,
     headerLen,
     parseSegment,
     commonPrefixLen,
-    
+
     // Token utilities (for advanced use)
     tokenize,
     joinTokens
