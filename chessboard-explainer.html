@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f6ef">
+  <meta name="description" content="An interactive, step-by-step explanation of how Geosonify converts a hex coordinate into a reversible 32-piece chessboard.">
+  <title>Chessboard explained · Geosonify</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/chessboard-explainer.css">
+</head>
+<body>
+  <a class="skip-link" href="#storyTitle">Skip to the explanation</a>
+  <header class="site-head">
+    <a href="./" class="brand" aria-label="Back to Geosonify">
+      <span class="brand-symbol" aria-hidden="true">g<span>•</span></span>
+      <span>geosonify<span class="brand-exclaim">!</span></span>
+    </a>
+    <div class="head-right">
+      <span class="head-label">THE CHESSBOARD EXPLAINER</span>
+      <a href="./" class="back-link">Back to the map <span aria-hidden="true">↗</span></a>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <section class="hero" aria-labelledby="pageTitle">
+      <div>
+        <div class="kicker"><span class="kicker-dot"></span> ONE LOCATION · SIXTY-FOUR SQUARES</div>
+        <h1 id="pageTitle">How a place becomes<br><em>a chessboard.</em></h1>
+        <p class="hero-copy">A chess position that looks like a game—but is actually an exact geographical address. Follow the real calculations, one decision at a time, and watch the board decode itself.</p>
+      </div>
+      <div class="hero-decoration" aria-hidden="true">
+        <span>♜</span><i>→</i><span>⌖</span>
+        <small>REVERSIBLE BY DESIGN</small>
+      </div>
+    </section>
+
+    <section class="explorer" aria-labelledby="controlTitle">
+      <div class="control-head">
+        <div>
+          <span class="section-index">01 — CHOOSE A CODE</span>
+          <h2 id="controlTitle">Your starting point</h2>
+        </div>
+        <div class="office-hint">REFERENCE EXAMPLE: <strong>−43.524136, 172.584394</strong></div>
+      </div>
+
+      <form id="codeForm" class="controls" novalidate>
+        <fieldset class="mode-set">
+          <legend>Representation</legend>
+          <div class="mode-switch" role="group" aria-label="Representation">
+            <label><input type="radio" name="mode" value="healpix" checked><span>HEALPix <small>default</small></span></label>
+            <label><input type="radio" name="mode" value="standard"><span>Lat / lon HexByte</span></label>
+          </div>
+        </fieldset>
+        <label class="code-field" for="hexInput">
+          <span>Geosonify hex code</span>
+          <input id="hexInput" name="code" type="text" spellcheck="false" autocomplete="off" autocapitalize="characters" value="95625281C9B5" aria-describedby="inputHelp" maxlength="32" pattern="[0-9A-Fa-f]+">
+        </label>
+        <button class="start-button" type="submit">Build the board <span aria-hidden="true">→</span></button>
+      </form>
+      <div class="controls-below">
+        <p id="inputHelp">The office example is filled in. Switch modes to load its corresponding HexByte code.</p>
+        <p id="validation" class="validation" role="alert" hidden></p>
+        <button id="resetExample" class="text-button" type="button">Reset to office example ↺</button>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="stage-heading">
+        <div>
+          <span class="section-index">02 — FOLLOW THE ENCODER</span>
+          <h2>Watch the decisions unfold</h2>
+        </div>
+        <div id="trustIndicator" class="trust-indicator" title="The animation is checked against the real Geosonify encoder">SOURCE-CHECKED TRACE <span aria-hidden="true">✓</span></div>
+      </div>
+
+      <nav id="chapterNav" class="chapter-nav" aria-label="Encoding chapters"></nav>
+
+      <div class="theatre">
+        <section class="board-panel" aria-label="Animated chessboard">
+          <div class="board-panel-head">
+            <span class="tiny-heading">THE CHESSBOARD</span>
+            <span id="pieceCount" class="piece-counter">0 / 32 pieces</span>
+          </div>
+          <div class="board-frame">
+            <div class="board-wrap">
+              <div id="chessboard" class="chessboard" role="img" aria-label="Empty chessboard"></div>
+            </div>
+          </div>
+          <div class="board-caption">
+            <div class="legend"><span class="legend-tile chosen"></span> Newly chosen <span class="legend-tile allowed"></span> Eligible <span class="legend-tile not-allowed"></span> Unsafe</div>
+            <span>White at the bottom · a1 → h8 indexing</span>
+          </div>
+          <div class="fen-line">
+            <span>FINAL FEN</span>
+            <code id="fenOutput">—</code>
+            <button class="mini-button" id="copyFen" type="button" aria-label="Copy FEN">Copy</button>
+          </div>
+        </section>
+
+        <section class="story-panel" aria-labelledby="storyTitle">
+          <div class="story-meta">
+            <span id="phaseTag" class="phase-tag">INTRODUCTION</span>
+            <span id="stepCount">Step 1 of 1</span>
+          </div>
+          <h3 id="storyTitle">A geographical address disguised as chess</h3>
+          <p id="storyDescription" class="story-description">Loading the exact codec trace…</p>
+
+          <div id="candidateBlock" class="candidate-block" hidden>
+            <div class="module-title"><span>THE COUNTING DECISION</span><span id="candidateTotal" class="count-label"></span></div>
+            <div id="intervalStrip" class="interval-strip" aria-label="Candidate interval proportions"></div>
+            <p class="tiny-explainer" id="intervalDescription">The current integer falls inside one interval.</p>
+            <div id="candidateList" class="candidate-list"></div>
+          </div>
+
+          <div id="rejectedBlock" class="rejected-block" hidden>
+            <div class="module-title"><span>EARLIER CANDIDATES REJECTED</span></div>
+            <div id="rejectedList" class="rejected-list"></div>
+          </div>
+
+          <details id="numbers" class="math-details" open>
+            <summary>Show the exact numbers <span aria-hidden="true">⌄</span></summary>
+            <div id="mathTable" class="math-table"></div>
+          </details>
+
+          <div class="story-bottom">
+            <div class="step-controls">
+              <button id="previous" type="button" class="prev-next" aria-label="Previous step">← <span>Back</span></button>
+              <button id="playPause" type="button" class="play-button" aria-label="Play animation"><span id="playSymbol" aria-hidden="true">▶</span><span id="playLabel">Play</span></button>
+              <button id="next" type="button" class="prev-next"><span>Next</span> →</button>
+            </div>
+            <div class="timeline-wrap">
+              <label for="timeline">TIMELINE</label>
+              <input id="timeline" type="range" min="0" max="0" value="0" step="1" aria-label="Move through the walkthrough">
+            </div>
+            <div class="playback-settings">
+              <label class="check-label"><input type="checkbox" id="showEmpties"> <span>Show every empty-square decision</span></label>
+              <label class="speed-label" for="speed">Playback speed <select id="speed"><option value="2100">Slow</option><option value="1250" selected>Normal</option><option value="700">Fast</option></select></label>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div class="result" id="result" aria-live="polite">
+        <div class="result-left"><span class="result-symbol">↔</span><span><strong>Exact round trip</strong><small id="roundTrip">The final result will appear here.</small></span></div>
+        <div class="result-actions">
+          <a id="viewGeosonify" href="https://geosonify.org/?hpfen=NBB5/p3p1pp/2p2p2/1P2Pnn1/1pPp2PP/qbb1Q3/P1RPKPrN/k1r4R" target="_blank" rel="noopener">Open this position ↗</a>
+          <button id="copyLink" type="button">Copy explainer link</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="about" aria-labelledby="aboutTitle">
+      <div class="about-label">THE IDEA</div>
+      <div><h2 id="aboutTitle">Not a chess game. <em>A coordinate in disguise.</em></h2>
+        <p>The 32 visible pieces have standard material and look like a settled chess position. Geosonify turns the board back into its exact original hex string, including leading zeros, without remembering anything about the encoding session.</p>
+        <p>Both the normal HexByte and HEALPix modes use the same chessboard mathematics. The difference is the coordinate system represented—and the parameter name on the shared board URL.</p>
+      </div>
+      <a class="source-link" href="https://github.com/gobeirne/geosonify-app/blob/main/js/lib/chessboard-bundle.js" target="_blank" rel="noopener">Explore the source code ↗</a>
+    </section>
+  </main>
+
+  <footer class="site-footer"><span>GEOSONIFY · ONE LOCATION, MANY LANGUAGES</span><span>Mathematics by the live Geosonify codec · <a href="https://github.com/gobeirne/geosonify-app" target="_blank" rel="noopener">MPL-2.0 source ↗</a></span></footer>
+
+  <!-- The same unchanged ChessboardLib loaded by Geosonify index.html. -->
+  <script src="js/lib/geosonify-chessboard-lib_v1_0.js"></script>
+  <script src="js/lib/chessboard-explainer-trace.js"></script>
+  <script src="js/chessboard-explainer.js"></script>
+</body>
+</html>
