@@ -5678,6 +5678,35 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         return;
       }
     }
+    // Presentation cards share AS THEMSELVES, exactly as the main app's share
+    // link does (index.html getURLParamForActiveCard + withChessFEN), so the link
+    // opens the board or swatch rather than the sibling hex card. Before this the
+    // loop below resolved them to the sibling and shared ?h= / ?hphex=.
+    //   Chessboard          ?fen=<FEN placement>    obfuscated ?feno=
+    //   HEALPix Chessboard  ?hpfen=<FEN placement>  obfuscated ?hpfenj= (obf-v2)
+    //   HEALPix ChromaCoord ?hpc=<hex>              obfuscated ?hpcj=   (the decoder takes hex or ink)
+    {
+      const pd = CARD_GRIDS[gridKey];
+      const base = window.location.origin + window.location.pathname;
+      if (pd && pd.display === 'chessboard' && typeof ChessboardLib !== 'undefined') {
+        const hp = pd.chessOf === 'hphex';
+        try {
+          const fen = ChessboardLib.toFEN(String(code).split('@')[0], pd.chessFormat || (hp ? 'healpix' : 'standard'));
+          if (fen) {
+            const param = (hp ? 'hpfen' : 'fen') + (obfuscated ? (hp ? 'j' : 'o') : '');
+            // A FEN is query-safe as it stands ('/' and digits and letters), and
+            // keeping the slashes is what makes the link read as a chess position.
+            shareURLOut(`${base}?${param}=${fen}${frameShareSuffix()}`);
+            return;
+          }
+        } catch (e) { /* not a board this family can hold: fall through to the sibling's link */ }
+      }
+      if (pd && pd.display === 'chroma' && pd.chromaOf) {
+        shareURLOut(`${base}?${obfuscated ? 'hpcj' : 'hpc'}=${encodeURIComponent(code)}${frameShareSuffix()}`);
+        return;
+      }
+    }
+
     // GIS reference cards: the code is itself a portable, universal location
     // reference (that's the point of these standards), so share/copy the code.
     const gd = CARD_GRIDS[gridKey];
@@ -5758,7 +5787,10 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
           }
         }
       } catch (e) {}
-      let hpPrefix = hp + (obfuscated ? 'o' : '');
+      // Obfuscated HEALPix codes are healpix-obf-v2, whose flag is 'j' (as in
+      // index.html). 'o' means the legacy v1 obfuscation and is decode-only: a
+      // v2 code sent as ?hphexo= decoded, without error, to a different place.
+      let hpPrefix = hp + (obfuscated ? 'j' : '');
       const hpBase = window.location.origin + window.location.pathname;
       const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}${frameShareSuffix()}`;
       if (navigator.share) {
