@@ -97,6 +97,7 @@
       opacity: 0.6;
     }
     /* ── Display (viewer) mode ── bare map, no chrome ── */
+    html.display-link #splashScreen { display: none !important; }
     html.display-mode .tab-bar,
     html.display-mode .decode-banner,
     html.display-mode #mapResizeHandle,
@@ -162,6 +163,12 @@
   </style>
 </head>
 <body>
+  <!-- A display link (?…&display) opens straight onto the shape: the splash is
+       hidden before it is ever painted. Encrypted display links cannot be told
+       apart from outside, so they keep it. -->
+  <script>
+    try { if (/(?:^|[?&])display(?:[=&]|$)/.test(location.search)) document.documentElement.classList.add('display-link'); } catch (e) {}
+  </script>
   <!-- Splash Screen -->
   <div class="splash-screen" id="splashScreen">
     <div class="splash-title">geosonify!</div>
@@ -811,7 +818,7 @@
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261014c"></script>
+<script src="js/ui/card-renderer.js?v=20261014f"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -1653,7 +1660,10 @@
       const L_ = (typeof GeosonifyHealpixLattice !== 'undefined') ? GeosonifyHealpixLattice : null;
       const showing = st ? st.showing : !!(L_ && L_.isShowing());
       const op = st ? st.opacity : (L_ && L_.getOpacity ? L_.getOpacity() : 1);
-      row.style.display = (showing && !window.DISPLAY_MODE) ? 'block' : 'none';
+      // '' (not 'block') when shown, so a collapsed Map imagery card still hides
+      // it: the collapse rule is a stylesheet rule, which an inline display
+      // would override.
+      row.style.display = (showing && !window.DISPLAY_MODE) ? '' : 'none';
       if (op > 0) _latticeLastShown = op;
       const show = document.getElementById('latticeFadeShow');
       const range = document.getElementById('latticeFadeRange');
@@ -2179,14 +2189,21 @@
         },
         imagery: function () {
           var c = document.querySelector('#mapImageryMount .basemap-chip.active');
-          if (c) return c.textContent.trim();
-          return document.querySelector('#mapImageryMount .basemap-chip') ? 'Your own' : '';
+          var s = c ? c.textContent.trim()
+                    : (document.querySelector('#mapImageryMount .basemap-chip') ? 'Your own' : '');
+          // The HEALPix grid's strength, while it is on (its row folds away too).
+          var row = document.getElementById('latticeFadeRow');
+          var val = document.getElementById('latticeFadeValue');
+          if (row && row.style.display !== 'none' && val && val.textContent) {
+            s += (s ? ' \u00B7 ' : '') + 'grid ' + val.textContent.trim();
+          }
+          return s;
         }
       };
       var WATCH = {
         encoding: ['obfuscateBtn', 'passphraseBtn'],
         precision: ['precisionModeBtn'],
-        imagery: ['mapImageryMount']
+        imagery: ['mapImageryMount', 'latticeFadeRow']
       };
 
       var hinted = [];
