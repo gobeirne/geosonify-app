@@ -2356,12 +2356,90 @@
     return `${firstLine}<br>${secondLine}`;
   }
   
+  /*
+    Full-screen line plan for text codes with natural break points. Returns
+    { lines: [{ text, html }], maxVw } or null (null = the old character wrap).
+    text is for measuring; html carries the grey group separators.
+  */
+  function fullscreenLines(code, gridKey, gridDef) {
+    if (typeof code !== 'string' || !code) return null;
+    const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const portrait = (window.innerHeight || 0) > (window.innerWidth || 0);
+    const SEP = '<span style="opacity:0.4;padding:0 0.08em;">-</span>';
+    // groups -> lines: one group a line when upright and few enough, else two
+    // or more a line, balanced; joined by a grey hyphen while groups are on.
+    function fromGroups(groups, opts) {
+      opts = opts || {};
+      const sepOn = opts.sep !== false && codeGroupsOn();
+      let per;
+      if (portrait) per = groups.length <= (opts.maxLines || 4) ? 1 : Math.ceil(groups.length / (opts.maxLines || 4));
+      else per = groups.length <= (opts.maxPerLandscape || 4) ? groups.length : Math.ceil(groups.length / 2);
+      const lines = splitIntoBalancedLines(groups, Math.max(1, per)).map(g => ({
+        text: g.join(sepOn ? '-' : ''),
+        html: g.map(esc).join(sepOn ? SEP : '')
+      }));
+      return lines;
+    }
+    const hp = gridDef && gridDef.healpix;
+    // 1. Grouped cards (alphanumeric thp-9da-hrg): break between groups.
+    if (groupable(gridDef, code)) {
+      return { lines: fromGroups(codeGroups(gridDef, code)), maxVw: 18 };
+    }
+    // 2. HEALPix quaternary f3.0123...: the face, then blocks of 4 digits.
+    const q = hp === 'hpquad' ? /^(f\d{1,2}\.)([0-3]*)$/.exec(code) : null;
+    if (q) {
+      const g = [];
+      for (let i = 0; i < q[2].length; i += 4) g.push(q[2].slice(i, i + 4));
+      const body = fromGroups(g, { sep: false, maxLines: 3, maxPerLandscape: 3 });
+      if (!g.length) return null;
+      // join a line's blocks with a thin space so the blocks stay readable
+      body.forEach((l, i) => { l.html = esc(l.text.replace(/(.{4})(?=.)/g, '$1 ')); l.text = l.text.replace(/(.{4})(?=.)/g, '$1 '); });
+      return { lines: [{ text: q[1], html: esc(q[1]) }].concat(body), maxVw: 14 };
+    }
+    // 3. Hex-family codes (hex, HEALPix hex / base64, base64): fixed groups from
+    //    the start, only when one line would be small. A trailing "@k" or
+    //    ".face" stays with the last group.
+    const hexFamily = hp === 'hphex' || hp === 'hp64' || gridKey === 'hexbyte' || gridKey === 'base64';
+    if (hexFamily) {
+      const m = /^([0-9A-Za-z_-]+)((?:[@.][0-9A-Za-z]+)?)$/.exec(code);
+      if (!m) return null;
+      const body = m[1], tail = m[2];
+      if (body.length + tail.length <= (portrait ? 10 : 20)) return null;   // one line is already large
+      const size = body.length > 16 ? 4 : 3;
+      const g = [];
+      for (let i = 0; i < body.length; i += size) g.push(body.slice(i, i + size));
+      if (g.length > 1 && g[g.length - 1].length === 1) { g[g.length - 2] += g.pop(); }   // never a lone character
+      g[g.length - 1] += tail;
+      return { lines: fromGroups(g, { sep: false, maxLines: 5 }), maxVw: 16 };
+    }
+    // 4. Codes with spaces (RA / Dec, MGRS, ...): break only at the spaces.
+    if (/\s/.test(code.trim())) {
+      const toks = code.trim().split(/\s+/);
+      const per = portrait ? Math.max(1, Math.ceil(toks.length / 3)) : Math.max(1, Math.ceil(toks.length / 2));
+      const lines = splitIntoBalancedLines(toks, per).map(t => ({ text: t.join(' '), html: esc(t.join(' ')) }));
+      return { lines, maxVw: 12 };
+    }
+    // 5. Long codes with separators but no spaces (22/164249493047447,
+    //    J113036.2-433319): break after a separator, keeping it on the line above.
+    if (code.length > (portrait ? 12 : 24)) {
+      const parts = code.match(/[^/+\-]+[/+\-]?|[/+\-]/g) || [code];
+      if (parts.length > 1) {
+        const lines = splitIntoBalancedLines(parts, Math.ceil(parts.length / 2)).map(t => ({ text: t.join(''), html: esc(t.join('')) }));
+        return { lines, maxVw: 12 };
+      }
+    }
+    return null;
+  }
+
   function renderBalancedCode(container, code, gridKey) {
     const gridDef = CARD_GRIDS[gridKey];
     const isEmoji = gridDef?.display === 'emoji';
     const isMusic = gridDef?.display === 'music';
-    // PascalCase word-based grids (BIP39 grids have prefixLength)
-    const isWordBased = gridDef?.prefixLength || gridKey === 'nato';
+    // PascalCase word-based grids (BIP39 grids have prefixLength). HEALPix
+    // words are word cards too: without them here, nice-barely-parrot-thought.358
+    // fell to the character wrap below and broke mid-word.
+    const isHpWords = !!gridDef?.hpwords;
+    const isWordBased = gridDef?.prefixLength || gridKey === 'nato' || isHpWords;
     const delimiter = gridDef?.delimiter;
     
     // Check if checksum should be displayed
@@ -2372,6 +2450,13 @@
       // Strip delimiter for checksum calculation
       const codeForChecksum = delimiter ? code.split(delimiter).join('') : code;
       checksumValue = computeChecksumNumeric(codeForChecksum, gridKey);
+    }
+    // HEALPix words carry their checksum IN the code (".358", or "。358" after
+    // Chinese words): take it off so the words split cleanly, and show it the
+    // way the BIP39 cards show theirs.
+    if (isHpWords && code) {
+      const m = /^(.*?)([.\u3002])(\d{3})$/.exec(code);
+      if (m) { code = m[1]; checksumValue = m[3]; }
     }
     
     if (isEmoji) {
@@ -2437,7 +2522,8 @@
       // Check if this is a CJK script (Japanese, Korean, Chinese)
       const isCJK = gridKey.startsWith('bip39japanese') || 
                     gridKey.startsWith('bip39korean') || 
-                    gridKey.startsWith('bip39chinese');
+                    gridKey.startsWith('bip39chinese') ||
+                    (isHpWords && /^(japanese|korean|chinese)/.test(gridDef.hpwords));
       
       if (isPortrait && words.length > 1) {
         // Portrait: each word on its own line
@@ -2463,9 +2549,12 @@
         
         // For CJK scripts, check if we need to break into multiple lines
         // Break at delimiter positions if code is too long
-        const maxCharsPerLine = isCJK ? 12 : 30;  // CJK characters are wider
+        const maxCharsPerLine = isCJK ? 12 : 24;  // CJK characters are wider
+        // Width per character, for capping the size so a line never runs off
+        // the screen (NATO's TangoHotelPapa... did, at 10vw).
+        const advance = isCJK ? 1.0 : 0.62;
         
-        if (isCJK && displayCode.length > maxCharsPerLine && words.length > 1) {
+        if (displayCode.length > maxCharsPerLine && words.length > 1) {
           // Find middle break point for balanced lines
           const midPoint = Math.ceil(words.length / 2);
           const firstHalf = words.slice(0, midPoint);
@@ -2475,7 +2564,7 @@
           let secondLine = secondHalf.join(displayDelim);
           
           const maxLen = Math.max(firstLine.length, secondLine.length + (checksumValue ? checksumValue.length + 1 : 0));
-          const fontSize = Math.min(10, 70 / Math.max(1, maxLen / 6));
+          const fontSize = Math.min(10, 70 / Math.max(1, maxLen / 6), 88 / Math.max(1, maxLen * advance));
           
           container.style.fontSize = fontSize + 'vw';
           container.style.lineHeight = '1.4';
@@ -2490,7 +2579,7 @@
           container.innerHTML = html;
         } else {
           // Single line
-          const fontSize = Math.min(10, 70 / Math.max(1, fullCode.length / 10));
+          const fontSize = Math.min(10, 70 / Math.max(1, fullCode.length / 10), 88 / Math.max(1, fullCode.length * advance));
           
           container.style.fontSize = fontSize + 'vw';
           container.style.lineHeight = '1.3';
@@ -2505,6 +2594,27 @@
         }
       }
       
+    } else if (fullscreenLines(code, gridKey, gridDef)) {
+      /*
+        Text codes that have natural break points (v. 14 Oct 2026): grouped
+        codes break between their groups, hex-family codes into fixed groups
+        counted from the start (so the coarse part keeps its shape at every
+        precision, as on the card), HEALPix quaternary after its face, and codes
+        with spaces only at their spaces. Never inside a group or a number.
+      */
+      const plan = fullscreenLines(code, gridKey, gridDef);
+      const widest = Math.max(...plan.lines.map(l => l.text.length));
+      const CH_ADVANCE = 0.62;
+      const W = window.innerWidth || 400, H = window.innerHeight || 700;
+      // Fit the width, and the height (lines at 1.3em, in 70% of the screen).
+      let fontSize = Math.min(plan.maxVw, 88 / Math.max(1, widest * CH_ADVANCE),
+                              (0.7 * H / (plan.lines.length * 1.3)) / W * 100);
+      fontSize = Math.max(3, fontSize);
+      container.style.fontSize = fontSize + 'vw';
+      container.style.lineHeight = '1.3';
+      container.style.textAlign = 'center';
+      container.style.overflowWrap = 'anywhere';
+      container.innerHTML = plan.lines.map(l => `<div>${l.html}</div>`).join('');
     } else {
       let fontSize, charsPerLine;
       if (code.length > 60) { fontSize = 5; charsPerLine = 12; }
