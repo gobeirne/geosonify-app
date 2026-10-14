@@ -117,24 +117,33 @@
       }, extra));
     }
 
-    add('intro', 'A geographical address disguised as chess',
-      'Start with an empty board. Each later square will be determined from the hex code—not by playing chess.');
-    add('packing', 'First, preserve the exact hex string',
-      'A leading zero is meaningful. Geosonify enumerates all shorter codes first, then adds the numeric value of these digits.', {
+    add('intro', 'Start with the original hex code',
+      `This is the ${length}-digit ${codec.format === 'healpix' ? 'HEALPix' : 'HexByte'} representation of the location. We will preserve every character, including any leading zeros, while creating a board of 32 chess pieces.`);
+    add('packing', 'How hex digits become a number',
+      'Hexadecimal is base 16. Each character contributes its value multiplied by a power of 16, determined by its position. After calculating that value, we add a length offset so leading zeros are never lost.', {
         math: [
           ['Hex digits (L)', String(length)],
-          ['Hex value (V)', value.toString()],
+          ['Hex value (V, decimal)', value.toString()],
           ['Length offset (16ᴸ − 1) / 15', offset.toString()],
           ['Packed payload (P = offset + V)', payload.toString()]
         ]
       });
     add('whitening', 'Spread the payload over the available boards',
-      'A fixed multiplier coprime to the board capacity permutes the ranks. Short codes therefore do not always create the same pawn or bishop pattern. This is reversible, not cryptography.', {
+      'A fixed multiplier coprime to the board capacity permutes the ranks without losing information. The result is a single integer N called the whitened rank. In the next step we use precisely this N—not a hex digit, hash or random choice—to find the first pawn pair by counting all possible completed boards in order. Whitening is reversible, not encryption.', {
         math: [
           ['Board capacity (C)', cap.toString()],
           ['Coprime multiplier (M)', stride.toString()],
           ['Whitened rank (P × M mod C)', whitened.toString()]
         ]
+      });
+
+    // Explain the tree *before* the first branch is taken. The browser uses
+    // the completed authoritative trace to draw the actual h → g path here.
+    add('tree', 'A number chooses a path through a tree',
+      'The whitened rank identifies one complete arrangement among all the boards in this family. The first fork in this tree is the 14 possible pawn pairs on file h. Each pair owns a block of consecutive ranks: a rank inside its block chooses that pair. Subtract the counts of every earlier block to obtain a local rank, then use it at the next fork (file g).', {
+        math: [['Starting rank (N)', whitened.toString()],
+          ['Board capacity (C)', cap.toString()],
+          ['First fork', 'The 14 pawn-pair choices on file h']]
       });
 
     // Pawn descent is h-file → a-file, and each source-code call gives ALL 14
@@ -161,8 +170,12 @@
       const [whiteRank, blackRank] = family.fileStates[target];
       const wSq = whiteRank * 8 + f, bSq = blackRank * 8 + f;
       board[wSq] = 6; board[bSq] = 12;
+      const fromFile = String.fromCharCode(98 + f);
+      const handoff = f === 7
+        ? 'We start with the whitened rank N from the previous step, unchanged.'
+        : `We start with the local rank left by the decision on file ${fromFile}, not with the original global rank.`;
       add('pawns', `File ${String.fromCharCode(97 + f)}: ${square(wSq)} and ${square(bSq)}`,
-        `This file has 14 legal white/black pawn pairs. Their subtree sizes are counted in canonical order; the current rank falls in the highlighted interval. Earlier intervals are subtracted before moving left.`, {
+        `${handoff} The codec lists 14 permitted white/black pawn pairs in a fixed order. Each pair owns a consecutive block of ranks, sized by the number of complete boards still possible with that pair fixed. Locate the block containing our rank, subtract the sizes of earlier blocks, then carry the new local rank one file to the left. The blocks need not be equally sized.`, {
           highlight: [wSq, bSq], choices, picked: target, before, after: rank,
           math: [['Previous rank', before.toString()], ['Skipped earlier completions', skipped.toString()],
             ['Rank within selected branch', rank.toString()]]
@@ -204,7 +217,7 @@
       board[target] = piece;
       free = free.filter(x => x !== target);
       add('bishops', `${title} → ${square(target)}`,
-        `Only unoccupied ${color ? 'light' : 'dark'} squares are eligible. The chosen square's interval contains the remaining rank; the intervals before it are discarded.`, {
+        `${key === 'wl' ? 'The rank arriving from the a-file pawn decision is now passed to the bishops, without any new whitening. ' : 'Use the remaining rank from the preceding bishop decision. '}Only unoccupied ${color ? 'light' : 'dark'} squares are eligible. Every eligible square heads a branch containing all compatible completions. Find the branch interval containing the incoming rank; subtract the counts of preceding branches and carry the local rank onward.`, {
           highlight: [target], eligible: candidates, choices, picked, before, after: bishopRank,
           math: [['Previous rank', before.toString()], ['Skipped earlier completions', skipped.toString()],
             ['Rank within selected branch', bishopRank.toString()]]
@@ -261,8 +274,8 @@
     ensure(counts.every(c => c === 0), 'material counts not exhausted');
     const trailing = free.slice(slots);
     ensure(trailing.length === 2, 'expected two unranked trailing slots');
-    add('material', 'Two trailing slots are left empty',
-      `The current bundle ranks ${slots} material slots; the last two free squares (${trailing.map(square).join(' and ')}) are left empty by construction. Other squares may also be empty. Kings will use the first safe pair among ALL the empty squares.`, {
+    add('material', 'Two squares are left unranked',
+      `The material ranking covers ${slots} of the ${free.length} free squares and always leaves the last two (${trailing.map(square).join(' and ')}) empty. That sets aside two squares' worth of room for the kings, which are added afterwards and carry no part of the rank. It does not choose where they go: the kings take the first safe pair among all the empty squares, searching up from a1, while these two are the last free squares on the board.`, {
         highlight: trailing,
         math: [['Material decisions', String(slots)], ['Trailing empty squares', trailing.map(square).join(', ')]]
       });
