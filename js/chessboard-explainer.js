@@ -389,7 +389,11 @@
     if (!placeMap) return;
     if (placeBase) placeMap.removeLayer(placeBase);
     const b = BASEMAPS[key] || BASEMAPS.osm;
-    placeBase = L.tileLayer(b.url, { attribution: b.attrib, maxNativeZoom: 19, maxZoom: 22 }).addTo(placeMap);
+    // Tiles load only when the map is still (updateWhenIdle; Leaflet's default on phones)
+    // and never mid-zoom (updateWhenZooming). During the glide the opening tiles are
+    // stretched, then the final set loads once: two sets of tiles, not one per level.
+    placeBase = L.tileLayer(b.url, { attribution: b.attrib, maxNativeZoom: 19, maxZoom: 22,
+      updateWhenZooming: false, updateWhenIdle: true }).addTo(placeMap);
   }
   function canShowPlace() {
     return !!origin && typeof L !== 'undefined' && (trace.mode === 'healpix'
@@ -434,23 +438,27 @@
     const cellBounds = L.latLngBounds(rings[rings.length - 1]);
     const target = Math.max(placeMap.getMinZoom(), placeMap.getBoundsZoom(cellBounds.pad(1.5)) - 3);
     const centre = cellBounds.getCenter();
-    // Start on the city, then fly in, so the reader sees where on Earth this is first.
+    // Two views only: open six zoom levels out (the surroundings), hold, then glide in.
+    // The tile layer does not reload while zooming, so the glide shows the opening tiles
+    // stretched and then the final tiles, instead of a flicker through every level.
     const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const flight = ++placeFlight;
     placeMap.stop();
-    placeMap.setView([origin.lat, origin.lon], 11, { animate: false });
     if (noMotion) { placeMap.setView(centre, target, { animate: false }); drawRings(); }
-    else setTimeout(() => {
-      if (flight !== placeFlight) return;            // a newer code or "Fly in again" took over
-      placeMap.once('moveend', () => { if (flight === placeFlight) drawRings(); });
-      placeMap.flyTo(centre, target, { duration: 3 });
-    }, 600);
+    else {
+      placeMap.setView(centre, Math.max(placeMap.getMinZoom(), target - 6), { animate: false });
+      setTimeout(() => {
+        if (flight !== placeFlight) return;            // a newer code or "Zoom in again" took over
+        placeMap.once('moveend', () => { if (flight === placeFlight) drawRings(); });
+        placeMap.flyTo(centre, target, { duration: 2.5 });
+      }, 1200);
+    }
     const inner = rings[rings.length - 1];
     el.placeCaption.replaceChildren();
     el.placeCaption.append(document.createTextNode(
       `The red outline is the code's cell, ${cellSize(trace.mode, trace.code, inner, origin.lat)}${around}. Zoom in for a closer look, or out to see where it is. `));
     const again = document.createElement('button');
-    again.type = 'button'; again.className = 'text-button'; again.textContent = 'Fly in again';
+    again.type = 'button'; again.className = 'text-button'; again.textContent = 'Zoom in again';
     again.addEventListener('click', () => { placeFlownFor = ''; showPlace(step); });
     el.placeCaption.append(again);
   }
