@@ -15,7 +15,7 @@
  *   unranking by counting) for a narrower job: carrying a Geosonify hex string in one curated,
  *   fixed-material visible-board family. It claims no originality for the method, and makes no
  *   claim that its boards could arise in a real game. Acknowledged as notable prior work in
- *   chess-position ranking and legal-position counting. Written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.
+ *   chess-position ranking and legal-position counting. Chessboard codec – developed collaboratively by Claude and ChatGPT, to G.O'B.'s functional specification and iterative feedback.
  */
 (function(global){
 // ===== bundled Chessboard codec (geochess + catalogue + engine + parse-layer) =====
@@ -30,7 +30,7 @@
  *   unranking by counting) for a narrower job: carrying a Geosonify hex string in one curated,
  *   fixed-material visible-board family. It claims no originality for the method, and makes no
  *   claim that its boards could arise in a real game. Acknowledged as notable prior work in
- *   chess-position ranking and legal-position counting. Written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.
+ *   chess-position ranking and legal-position counting. Chessboard codec – developed collaboratively by Claude and ChatGPT, to G.O'B.'s functional specification and iterative feedback.
  *
  * Spec (locked through Claude/ChatGPT design dialogue):
  *
