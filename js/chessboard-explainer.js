@@ -29,6 +29,8 @@
     hexOrigin: $('hexOrigin'), emptiesLabel: $('emptiesLabel'),
     rankCarry: $('rankCarry'), rankBoxes: $('rankBoxes'), rankNote: $('rankNote'), fullDigits: $('fullDigits'),
     decisionBlock: $('decisionBlock'), decisionList: $('decisionList'), decisionCount: $('decisionCount'),
+    placeView: $('placeView'), placeMap: $('placeMap'), placeCaption: $('placeCaption'),
+    boardWrap: $('boardWrap'), boardCaption: $('boardCaption'), boardHeading: $('boardHeading'),
     treeLesson: $('treeLesson'), treeDiagram: $('treeDiagram'), treeArithmetic: $('treeArithmetic'),
     rejectedBlock: $('rejectedBlock'), rejectedList: $('rejectedList'),
     numbers: $('numbers'), math: $('mathTable'), timeline: $('timeline'),
@@ -322,6 +324,122 @@
     } catch (_) { return null; }
   }
   function coord(v) { return v.toFixed(6).replace('-', '−'); }
+
+  // ---- The place: the code's cell on a map, step 1 only ----
+  // Rings come from the app's own geometry: HealpixGrids.cellCorners (the true curved
+  // cell edge) or the HexByte grid walked digit pair by digit pair with GeoCodec, the
+  // same path the decoder takes. Drawn like the app's grid overlay: the cell in red
+  // with fainter parent cells around it.
+  const BASEMAPS = {
+    osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attrib: '© OpenStreetMap contributors' },
+    aerial: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attrib: 'Imagery © Esri, Maxar, Earthstar Geographics' }
+  };
+  let placeMap = null, placeBase = null, placeLayers = [], placeFlownFor = '';
+  function cellRings(mode, code, where) {
+    if (mode === 'healpix') {
+      const k = HealpixGrids.inferOrder('hphex', code);
+      const rings = [];
+      for (let ord = Math.max(1, k - 4); ord <= k; ord++) rings.push(HealpixGrids.cellCorners('hphex', where.lat, where.lon, ord, 18));
+      const lo = Math.max(1, k - 4);
+      return { rings: nearCopy(rings.filter(Boolean), where.lon), around: lo < k ? `, inside the larger cells of HEALPix order${lo < k - 1 ? 's ' + lo + '–' + (k - 1) : ' ' + lo}` : '' };
+    }
+    const flat = GeoCodec.flattenGrid(hexByteArray), dims = GeoCodec.gridDims(hexByteArray);
+    const tokens = GeoCodec.tokenizeCode(code, flat) || [];
+    let b = { latMin: -90, latMax: 90, lonMin: -180, lonMax: 180 };
+    const rings = [];
+    for (const t of tokens) {
+      const idx = flat.indexOf(t);
+      b = GeoCodec.boundsForCell(dims.rows, dims.cols, Math.floor(idx / dims.cols), idx % dims.cols, b.latMin, b.latMax, b.lonMin, b.lonMax);
+      rings.push([[b.latMin, b.lonMin], [b.latMin, b.lonMax], [b.latMax, b.lonMax], [b.latMax, b.lonMin]]);
+    }
+    // Each HexByte level is 16× larger than the next, so two parent levels already
+    // reach from the cell to the neighbourhood when the reader zooms out.
+    const n = tokens.length;
+    return { rings: rings.slice(-3), around: n > 1 ? `, inside the larger cells its earlier digit pairs name` : '' };
+  }
+  // A ring can come back on a neighbouring copy of the world (lon ± 360, e.g. an order-1
+  // HEALPix cell at −225…−180 instead of 135…180). Same place; move it next to the point.
+  function nearCopy(rings, lon) {
+    return rings.map(ring => {
+      const mean = ring.reduce((s, p) => s + p[1], 0) / ring.length;
+      const shift = 360 * Math.round((lon - mean) / 360);
+      return shift ? ring.map(p => [p[0], p[1] + shift]) : ring;
+    });
+  }
+  function cellSize(mode, code, ring, lat) {
+    const R = 6371008.8;
+    if (mode === 'healpix') {
+      const k = HealpixGrids.inferOrder('hphex', code);
+      const side = Math.sqrt(4 * Math.PI * R * R / (12 * Math.pow(4, k)));
+      return `about ${fmtLen(side)} across`;
+    }
+    const h = Math.abs(ring[2][0] - ring[0][0]) * Math.PI / 180 * R;
+    const w = Math.abs(ring[1][1] - ring[0][1]) * Math.PI / 180 * R * Math.cos(lat * Math.PI / 180);
+    return `about ${fmtLen(w)} × ${fmtLen(h)}`;
+  }
+  // Two significant figures, never exponent notation: 410 km, 1.6 m, 3.9 cm.
+  function fmtLen(m) {
+    const two = v => Number(v.toPrecision(2)).toLocaleString('en');
+    if (m >= 1000) return two(m / 1000) + ' km';
+    if (m >= 1) return two(m) + ' m';
+    if (m >= 0.01) return two(m * 100) + ' cm';
+    return two(m * 1000) + ' mm';
+  }
+  function setBasemap(key) {
+    if (!placeMap) return;
+    if (placeBase) placeMap.removeLayer(placeBase);
+    const b = BASEMAPS[key] || BASEMAPS.osm;
+    placeBase = L.tileLayer(b.url, { attribution: b.attrib, maxNativeZoom: 19, maxZoom: 22 }).addTo(placeMap);
+  }
+  function canShowPlace() {
+    return !!origin && typeof L !== 'undefined' && (trace.mode === 'healpix'
+      ? typeof HealpixGrids !== 'undefined' && !!HealpixGrids.cellCorners
+      : typeof GeoCodec !== 'undefined' && typeof hexByteArray !== 'undefined');
+  }
+  function showPlace(step) {
+    const show = step.phase === 'intro' && canShowPlace();
+    el.placeView.hidden = !show;
+    el.boardWrap.hidden = show;
+    el.boardCaption.hidden = show;
+    el.pieces.hidden = show;
+    el.boardHeading.textContent = show ? 'The place' : 'The board';
+    if (!show) return;
+    if (!placeMap) {
+      placeMap = L.map(el.placeMap, { zoomControl: true, maxZoom: 22, zoomSnap: 0.25, scrollWheelZoom: false,
+        dragging: !L.Browser.mobile, tap: false, attributionControl: true });
+      const checked = document.querySelector('input[name="basemap"]:checked');
+      setBasemap(checked ? checked.value : 'osm');
+    }
+    // The map may have been laid out while hidden.
+    placeMap.invalidateSize();
+    const key = trace.mode + ':' + trace.code;
+    if (placeFlownFor === key) return;
+    placeFlownFor = key;
+    for (const layer of placeLayers) placeMap.removeLayer(layer);
+    placeLayers = [];
+    const { rings, around } = cellRings(trace.mode, trace.code, origin);
+    if (!rings.length) { el.placeView.hidden = true; el.boardWrap.hidden = false; el.boardCaption.hidden = false; return; }
+    rings.forEach((ring, i) => {
+      const inner = i === rings.length - 1, fromInner = rings.length - 1 - i;
+      placeLayers.push(L.polygon(ring, { color: '#ff4444', fillColor: '#ff4444', weight: inner ? 2 : 1,
+        opacity: inner ? 0.9 : Math.max(0.15, 0.55 - fromInner * 0.1), fillOpacity: inner ? 0.18 : 0, interactive: false }).addTo(placeMap));
+    });
+    // Frame the cell itself at about a quarter of the view; its parents run off the edges.
+    const frame = L.latLngBounds(rings[rings.length - 1]).pad(1.5);
+    // Start on the city, then fly in, so the reader sees where on Earth this is first.
+    const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    placeMap.setView([origin.lat, origin.lon], 11, { animate: false });
+    if (noMotion) placeMap.fitBounds(frame, { animate: false });
+    else setTimeout(() => placeMap.flyToBounds(frame, { duration: 3 }), 600);
+    const inner = rings[rings.length - 1];
+    el.placeCaption.replaceChildren();
+    el.placeCaption.append(document.createTextNode(
+      `The red outline is the code's cell, ${cellSize(trace.mode, trace.code, inner, origin.lat)}${around}. Zoom out to see where it is. `));
+    const again = document.createElement('button');
+    again.type = 'button'; again.className = 'text-button'; again.textContent = 'Fly in again';
+    again.addEventListener('click', () => { placeFlownFor = ''; showPlace(step); });
+    el.placeCaption.append(again);
+  }
   function showOrigin(step) {
     el.hexOrigin.hidden = step.phase !== 'intro';
     if (step.phase !== 'intro') return;
@@ -639,6 +757,7 @@
     el.description.textContent = step.description;
     showHexSteps(step);
     showOrigin(step);
+    showPlace(step);
     showTree(step);
     el.timeline.value = String(stepIndex);
     el.timeline.setAttribute('aria-valuetext', `Step ${stepIndex + 1}: ${step.title}`);
@@ -759,6 +878,7 @@
       el.candidates.hidden = true; el.rejectedBlock.hidden = true; el.numbers.hidden = true;
       el.hexSpotlight.hidden = true; el.hexBreakdown.hidden = true; el.treeLesson.hidden = true;
       el.decisionBlock.hidden = true; el.rankCarry.hidden = true;
+      el.placeView.hidden = true; el.boardWrap.hidden = false; el.boardCaption.hidden = false;
       el.fen.textContent = '—'; el.copyFen.disabled = true;
       el.openPosition.hidden = true;
       el.roundTrip.textContent = 'No board was generated from this input.';
@@ -816,6 +936,8 @@
           window.history.replaceState(null, '', '?' + pageQuery(trace.mode, trace.code));
       });
     }
+    for (const input of document.querySelectorAll('input[name="basemap"]'))
+      input.addEventListener('change', event => setBasemap(event.target.value));
     el.fullDigits.addEventListener('click', () => {
       showAllDigits = !showAllDigits;
       el.fullDigits.setAttribute('aria-pressed', String(showAllDigits));
