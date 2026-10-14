@@ -390,11 +390,7 @@
     if (!placeMap) return;
     if (placeBase) placeMap.removeLayer(placeBase);
     const b = BASEMAPS[key] || BASEMAPS.osm;
-    // Tiles load only when the map is still (updateWhenIdle; Leaflet's default on phones)
-    // and never mid-zoom (updateWhenZooming). During the glide the opening tiles are
-    // stretched, then the final set loads once: two sets of tiles, not one per level.
-    placeBase = L.tileLayer(b.url, { attribution: b.attrib, maxNativeZoom: 19, maxZoom: 22,
-      updateWhenZooming: false, updateWhenIdle: true }).addTo(placeMap);
+    placeBase = L.tileLayer(b.url, { attribution: b.attrib, maxNativeZoom: 19, maxZoom: 22 }).addTo(placeMap);
   }
   function canShowPlace() {
     return !!origin && typeof L !== 'undefined' && (trace.mode === 'healpix'
@@ -442,42 +438,33 @@
     const cellBounds = L.latLngBounds(rings[rings.length - 1]);
     const target = Math.max(placeMap.getMinZoom(), placeMap.getBoundsZoom(cellBounds.pad(1.5)) - 3);
     const centre = cellBounds.getCenter();
-    // Open ZOOM_HOPS levels out (the surroundings), hold, then zoom in one level per short
-    // animated step, pausing at each for its tiles to arrive: six even sets of tiles in all.
-    // (A single flyTo reloads at every level and flickers; one long glide with no reloads
-    // stretches the opening tiles too far.) Tiles load only when the map is still.
-    const ZOOM_HOPS = 5, HOP_PAUSE = 400;
+    // Start over the city, wait a moment, then fly in continuously. The outlines are drawn
+    // once, after the flight lands (see drawRings). Coarse cells start further out so there
+    // is still something to fly in from.
     const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const flight = ++placeFlight;
-    const live = () => flight === placeFlight;        // false once a newer code or "Zoom in again" takes over
-    // The one place this zoom-in ends: outlines drawn once, then the sequence is retired,
+    const live = () => flight === placeFlight;        // false once a newer code or "Fly in again" takes over
+    // The one place this fly-in ends: outlines drawn once, then the flight is retired,
     // so nothing pending (a late moveend, a press on the map) can draw them again.
     const finish = () => { if (!live()) return; placeFlight++; placeInterrupt = null; drawRings(); };
     placeInterrupt = () => { if (live()) { placeMap.stop(); finish(); } };
     placeMap.stop();
     if (noMotion) { placeMap.setView(centre, target, { animate: false }); finish(); }
     else {
-      const start = Math.max(placeMap.getMinZoom(), target - ZOOM_HOPS);
-      const stops = Array.from({ length: ZOOM_HOPS }, (_, i) => start + (target - start) * (i + 1) / ZOOM_HOPS);
-      placeMap.setView(centre, start, { animate: false });
-      let hop = 0;
-      const next = () => {
+      const start = Math.max(placeMap.getMinZoom(), Math.min(11, target - 3));
+      placeMap.setView([origin.lat, origin.lon], start, { animate: false });
+      setTimeout(() => {
         if (!live()) return;
-        if (hop >= stops.length) { finish(); return; }
-        const z = stops[hop++];
-        const last = hop >= stops.length;
-        if (Math.abs(placeMap.getZoom() - z) < 0.01) { next(); return; }   // nothing to zoom (coarse codes)
-        placeMap.once('moveend', () => setTimeout(next, last ? 0 : HOP_PAUSE));
-        placeMap.setView(centre, z, { animate: true });
-      };
-      setTimeout(next, 1200);
+        placeMap.once('moveend', finish);
+        placeMap.flyTo(centre, target, { duration: 3 });
+      }, 600);
     }
     const inner = rings[rings.length - 1];
     el.placeCaption.replaceChildren();
     el.placeCaption.append(document.createTextNode(
       `The red outline is the code's cell, ${cellSize(trace.mode, trace.code, inner, origin.lat)}${around}. Zoom in for a closer look, or out to see where it is. `));
     const again = document.createElement('button');
-    again.type = 'button'; again.className = 'text-button'; again.textContent = 'Zoom in again';
+    again.type = 'button'; again.className = 'text-button'; again.textContent = 'Fly in again';
     again.addEventListener('click', () => { placeFlownFor = ''; showPlace(step); });
     el.placeCaption.append(again);
   }
