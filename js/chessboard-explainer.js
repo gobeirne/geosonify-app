@@ -335,6 +335,7 @@
     aerial: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attrib: 'Imagery © Esri, Maxar, Earthstar Geographics' }
   };
   let placeMap = null, placeBase = null, placeLayers = [], placeFlownFor = '', placeFlight = 0;
+  let placeInterrupt = null;   // stops the zoom-in under way, if any
   function cellRings(mode, code, where) {
     if (mode === 'healpix') {
       const k = HealpixGrids.inferOrder('hphex', code);
@@ -413,6 +414,9 @@
         dragging: !L.Browser.mobile, tap: false, attributionControl: true });
       const checked = document.querySelector('input[name="basemap"]:checked');
       setBasemap(checked ? checked.value : 'osm');
+      // Leaflet ignores drags during a zoom animation, so listen for any press on the map:
+      // a reader who reaches for it mid-zoom gets it at once, outlines drawn.
+      el.placeMap.addEventListener('pointerdown', () => { if (placeInterrupt) placeInterrupt(); });
     }
     // The map may have been laid out while hidden.
     placeMap.invalidateSize();
@@ -438,20 +442,35 @@
     const cellBounds = L.latLngBounds(rings[rings.length - 1]);
     const target = Math.max(placeMap.getMinZoom(), placeMap.getBoundsZoom(cellBounds.pad(1.5)) - 3);
     const centre = cellBounds.getCenter();
-    // Two views only: open six zoom levels out (the surroundings), hold, then glide in.
-    // The tile layer does not reload while zooming, so the glide shows the opening tiles
-    // stretched and then the final tiles, instead of a flicker through every level.
+    // Open ZOOM_HOPS levels out (the surroundings), hold, then zoom in one level per short
+    // animated step, pausing at each for its tiles to arrive: six even sets of tiles in all.
+    // (A single flyTo reloads at every level and flickers; one long glide with no reloads
+    // stretches the opening tiles too far.) Tiles load only when the map is still.
+    const ZOOM_HOPS = 5, HOP_PAUSE = 400;
     const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const flight = ++placeFlight;
+    const live = () => flight === placeFlight;        // false once a newer code or "Zoom in again" takes over
+    // The one place this zoom-in ends: outlines drawn once, then the sequence is retired,
+    // so nothing pending (a late moveend, a press on the map) can draw them again.
+    const finish = () => { if (!live()) return; placeFlight++; placeInterrupt = null; drawRings(); };
+    placeInterrupt = () => { if (live()) { placeMap.stop(); finish(); } };
     placeMap.stop();
-    if (noMotion) { placeMap.setView(centre, target, { animate: false }); drawRings(); }
+    if (noMotion) { placeMap.setView(centre, target, { animate: false }); finish(); }
     else {
-      placeMap.setView(centre, Math.max(placeMap.getMinZoom(), target - 6), { animate: false });
-      setTimeout(() => {
-        if (flight !== placeFlight) return;            // a newer code or "Zoom in again" took over
-        placeMap.once('moveend', () => { if (flight === placeFlight) drawRings(); });
-        placeMap.flyTo(centre, target, { duration: 2.5 });
-      }, 1200);
+      const start = Math.max(placeMap.getMinZoom(), target - ZOOM_HOPS);
+      const stops = Array.from({ length: ZOOM_HOPS }, (_, i) => start + (target - start) * (i + 1) / ZOOM_HOPS);
+      placeMap.setView(centre, start, { animate: false });
+      let hop = 0;
+      const next = () => {
+        if (!live()) return;
+        if (hop >= stops.length) { finish(); return; }
+        const z = stops[hop++];
+        const last = hop >= stops.length;
+        if (Math.abs(placeMap.getZoom() - z) < 0.01) { next(); return; }   // nothing to zoom (coarse codes)
+        placeMap.once('moveend', () => setTimeout(next, last ? 0 : HOP_PAUSE));
+        placeMap.setView(centre, z, { animate: true });
+      };
+      setTimeout(next, 1200);
     }
     const inner = rings[rings.length - 1];
     el.placeCaption.replaceChildren();
