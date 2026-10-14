@@ -223,7 +223,7 @@
       <div class="card-body about">
         <p>The board in the walkthrough is the one the app draws. The page loads the same <code>ChessboardLib</code> the app does, records the counts it computes while encoding, and refuses to show anything unless the replayed board matches the codec's board square for square, decodes to the same rank, and passes the app's 64-square scan.</p>
         <p>Both Chessboard cards use the same board mathematics. They differ only in which code they portray, which is why a share link says <code>?fen=</code> for one and <code>?hpfen=</code> for the other.</p>
-        <p><strong>Related work.</strong> Numbering chess positions with an invertible ranking is well-explored ground. The best-known example is John Tromp's <a href="https://github.com/tromp/ChessPositionRanking" target="_blank" rel="noopener">ChessPositionRanking</a>, which ranks a superset of chess positions to estimate how many legal ones exist. Geosonify's chess board codec uses the same general technique, ranking and unranking by counting, for a narrower job: carrying a code in one fixed-material family of boards. It claims no originality for the method, and makes no claim that its boards could arise in a real game. The codec and this page were written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.</p>
+        <p><strong>Related work.</strong> Numbering chess positions with an invertible ranking is well-explored ground. The best-known example is John Tromp's <a href="https://github.com/tromp/ChessPositionRanking" target="_blank" rel="noopener">ChessPositionRanking</a>, which ranks a superset of chess positions to estimate how many legal ones exist. Geosonify's chess board codec uses the same general technique, ranking and unranking by counting, for a narrower job: carrying a code in one fixed-material family of boards. It claims no originality for the method, and makes no claim that its boards could arise in a real game. The codec and this page were developed collaboratively by Claude and ChatGPT, to G.O'B.'s functional specification and iterative feedback.</p>
         <p><a href="https://github.com/gobeirne/geosonify-app/blob/main/js/lib/geosonify-chessboard-lib_v1_0.js" target="_blank" rel="noopener">The codec source</a> · <a href="https://github.com/gobeirne/geosonify-app/blob/main/js/lib/chessboard-explainer-trace.js" target="_blank" rel="noopener">this page's tracer</a></p>
       </div>
     </section>
@@ -240,7 +240,7 @@
   <script src="js/lib/geosonify-grids-data.js?v=20260109"></script>
   <script src="js/lib/geosonify-codec-engine_v11_8a.js?v=20260109"></script>
   <script src="js/lib/geosonify-healpix.js?v=20260930b"></script>
-  <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
+  <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20261014"></script>
   <script src="js/lib/chessboard-explainer-trace.js?v=20261014b"></script>
   <script src="js/chessboard-explainer.js?v=20261014h"></script>
 </body>
