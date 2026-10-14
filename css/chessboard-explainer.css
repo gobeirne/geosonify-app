@@ -463,3 +463,13 @@ a.tab-item:hover { color: #fff; }
 
 /* Related-work pointer at the decision-tree step: present, but quieter than the lesson. */
 .tree-lesson p.tree-related { font-size: 12.5px; color: var(--muted); padding-left: 13px; }
+
+/* ── Step 1: the place, in the board's slot ── */
+.place-view { width: min(100%, var(--board-max)); margin: 0 auto; }
+.place-map-wrap { position: relative; }
+.place-map { width: 100%; aspect-ratio: 1; border: 1.5px solid var(--board-edge); border-radius: 3px; background: var(--ios-light-gray); z-index: 0; }
+.basemap-switch { position: absolute; top: 8px; right: 8px; z-index: 500; margin: 0; width: 150px; box-shadow: 0 1px 4px rgba(0,0,0,.25); background: var(--ios-light-gray); }
+.basemap-switch span { padding: 5px 4px; font-size: 12px; }
+.place-caption { margin: 8px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--ios-secondary); }
+.place-caption .text-button { font-size: 12.5px; }
+.place-map .leaflet-control-attribution { font-size: 10px; }
