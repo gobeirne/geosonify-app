@@ -10,10 +10,12 @@
  * fenToBoard, boardToFEN, asciiToBoard, boardToASCII. MPL-2.0, part of Geosonify.
  *
  * Related work: John Tromp's ChessPositionRanking, https://github.com/tromp/ChessPositionRanking
- *   — invertible ranking of legal chess positions and estimates of how many exist. This codec is
- *   NOT a port or adaptation of Tromp's code; it ranks one curated, fixed-material visible-board
- *   family to encode Geosonify hex strings (a different problem from ranking all legal positions).
- *   Acknowledged as notable prior work in chess-position ranking and legal-position capacity.
+ *   — ranks a superset of chess positions with an invertible ranking, to estimate how many legal
+ *   positions exist. Geosonify's chess board codec uses the same general technique (ranking and
+ *   unranking by counting) for a narrower job: carrying a Geosonify hex string in one curated,
+ *   fixed-material visible-board family. It claims no originality for the method, and makes no
+ *   claim that its boards could arise in a real game. Acknowledged as notable prior work in
+ *   chess-position ranking and legal-position counting. Written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.
  */
 (function(global){
 // ===== bundled Chessboard codec (geochess + catalogue + engine + parse-layer) =====
@@ -23,11 +25,12 @@
  * ===========================================================
  *
  * Related work: John Tromp's ChessPositionRanking, https://github.com/tromp/ChessPositionRanking
- *   — invertible ranking of legal chess positions and estimates of how many exist. This Geosonify
- *   Chessboard codec is NOT a port or adaptation of Tromp's code; it ranks one curated,
- *   fixed-material visible-board family to encode Geosonify hex strings, a different problem from
- *   ranking all legal positions. Acknowledged as notable prior work on chess-position ranking and
- *   legal-position capacity (kings-in-check, adjacent kings, monochromatic bishops, and so on).
+ *   — ranks a superset of chess positions with an invertible ranking, to estimate how many legal
+ *   positions exist. Geosonify's chess board codec uses the same general technique (ranking and
+ *   unranking by counting) for a narrower job: carrying a Geosonify hex string in one curated,
+ *   fixed-material visible-board family. It claims no originality for the method, and makes no
+ *   claim that its boards could arise in a real game. Acknowledged as notable prior work in
+ *   chess-position ranking and legal-position counting. Written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.
  *
  * Spec (locked through Claude/ChatGPT design dialogue):
  *
