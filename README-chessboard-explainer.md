@@ -1,72 +1,49 @@
-# Geosonify · Chessboard explained
+# Chessboard explainer
 
-A standalone, responsive and reversible walkthrough of the **existing** Geosonify Chessboard and HEALPix · Chessboard encoders. It is an *additive patch*: no existing Geosonify file needs to be replaced or modified.
+`chessboard-explainer.html` walks through how the Chessboard and HEALPix · Chessboard cards turn a hex code into a board and back, one decision at a time, using the live codec. The FAQ's Chessboard answer links to it.
 
-## Install in `gobeirne/geosonify-app`
-
-Copy the folders/files from this package **into the repository root**, preserving their paths:
+## Files
 
 ```
-chessboard-explainer.html
-css/chessboard-explainer.css
-js/chessboard-explainer.js
-js/lib/chessboard-explainer-trace.js
-spec/chessboard-explainer-smoke.test.js
+chessboard-explainer.html               the page
+css/chessboard-explainer.css            styles (app tokens, light and dark)
+js/chessboard-explainer.js              playback UI
+js/lib/chessboard-explainer-trace.js    records the codec's own counts and replays them
+spec/chessboard-explainer-smoke.test.js Node test against the live codec
 ```
 
-The HTML loads `js/lib/geosonify-chessboard-lib_v1_0.js` from your **existing repository**. That original source is **not included or changed** here; the page will not work if you open the HTML outside the Geosonify directory without that dependency.
+The page loads the same `js/lib/geosonify-chessboard-lib_v1_0.js` that `index.html` loads and does not modify it. The tracer temporarily wraps `_rankPawns`, `_rankBishops` and `_pawnSubtreeSizes` on the cached codec while one encode runs, restores them in `finally`, and refuses to show a walkthrough unless the replayed board equals the codec's board, decodes to the same rank and payload, matches `toFEN`, and passes `scan`.
 
-From the repo root, serve the site normally, or for a local preview run:
+## What a reader sees
 
-```sh
-python3 -m http.server 8000
-```
+- **Guided** (default, 16 steps): files h and g in full, then f–a as one step; one bishop, then the other three; one material square, then the rest; the kings; the read-back; the proof. A grouped step lists every fork inside it with the rank entering and leaving.
+- **Every decision** (`?view=full`): all 35 decisions one at a time, or all 67 with empty squares included.
+- **How the rank moves**: a panel under the board that follows the one integer through every step (incoming rank, earlier branches skipped, the range it falls in, the rank passed on). Numbers are shortened to 1.1357 × 10²⁹ until “Show all digits”. It replaces the four-paragraph walkthrough that used to repeat on every step.
+- **Where the code came from**: the first step names the place, decoded with the app's own `HealpixGrids` or `GeoCodec` and frozen `hexByteArray` (loaded at the same versions as `index.html`), with a link to it on the map. For a typed code it says “read as a plain code”, since a passphrase or obfuscation puts the same digits elsewhere; the board never depends on which.
+- “The exact numbers” starts closed and stays as the reader leaves it.
 
-Then visit:
+Grouping is presentation only: both views read the same verified trace, and the tracer's checks are unchanged (only the wording of its “two squares left unranked” step changed).
 
-`http://localhost:8000/chessboard-explainer.html?mode=healpix&code=95625281C9B5`
+## Look
 
-Standard HexByte example:
+Styled to sit inside the app: the teal tab bar, the system font stack, `.card` / `.card-header` / segmented control / button shapes and the iOS grey tokens from `css/geosonify-styles.css`, the FAQ sub-tab look for the chapter strip, and the card's own board colours and glyph styling (`.gschess-*`). Dark mode follows the system, as the app does. No web fonts. The stylesheet copies tokens rather than importing `geosonify-styles.css`, because that file's map-shell layout rules (fixed heights at ≥1024px, tab-bar padding) would fight a long page.
 
-`http://localhost:8000/chessboard-explainer.html?mode=standard&code=BFDAEB6AA077`
-
-**Optional FAQ link** (place it alongside the written Chessboard explanation in your existing FAQ):
-
-```html
-<a href="/chessboard-explainer.html?mode=healpix&amp;code=95625281C9B5">
-  Watch a HEALPix address become a chessboard, step by step →
-</a>
-```
+The step controls and the rank panel sit under the board, which stays in view on wide screens; below 900px the controls become a fixed bottom bar. In dark mode the segmented controls and grey buttons use iOS dark fills, because the app's own `#1C1C1E` track and pill vanish on a `#1C1C1E` card (worth fixing in `geosonify-styles.css` too).
 
 ## Test
-
-From the **Geosonify repository root** after copying these files:
 
 ```sh
 node spec/chessboard-explainer-smoke.test.js
 ```
 
-This exercises both published office FENs, source encoder-versus-trace comparison, the reverse decoding check, leading-zero preservation, and input failure paths. **The tests are provided but were not run against the original library in this delivery environment** because the container could not download GitHub source. JavaScript syntax and the visual page shell were checked locally. Run this test before publishing.
+Checks both FAQ example boards, rank hand-off between every decision, the decode and scan round trip, leading zeros (`96E`, `096E`, `0096E` … give nine distinct boards), and refusal of non-hex and over-capacity input.
 
-## What it shows
+## Capacity
 
-- The exact hex length-offset packing and reversible modular whitening, using real BigInt numbers.
-- Pawns: eight file decisions, h through a, with *actual source-computed subtree counts* for all 14 candidate pairs.
-- Bishops: one light and one dark square per side, with conditioned exact continuation counts.
-- Queen/rook/knight multiset unranking, including optional empty-square choices and the two reserved trailing squares of the **present implemented encoder**.
-- Canonically selected safe king pair, with unsafe and excluded candidates highlighted.
-- Reverse rank, inverse whitening, restored hex, source FEN, and a verified 64-square `scan` round-trip.
-- Play/pause, step/chapters/timeline, adjustable speed, keyboard arrows/space, reduced-motion support, responsive layout, shareable URL, FEN copying and link to the actual Geosonify card.
+The family holds 96 bits: up to 23 hex digits, as the FAQ and ARCHITECTURE.md say. The header comment of `geosonify-chessboard-lib_v1_0.js` still says "78-bit capacity; guaranteed max 19 hex", which predates the session-8 bishop fix and is stale.
 
-## Design and compatibility decisions
+## Linking
 
-- The original `ChessboardLib` remains the authority: its `_rankPawns`, `_rankBishops`, `_remainingBishopPlacements`, `decode`, and `scan` are invoked from the trace, not replaced by a second codec.
-- The two methods used for instrumentation on the cached, per-mode codec instance are restored with `finally`; fresh array snapshots are recorded for each display step.
-- The trace refuses to present a result unless the calculated full board **exactly matches** `ChessboardLib.toBoard`, the FEN agrees, the decoded rank and payload agree, and the official scanner accepts the board.
-- Existing FEN links and production encoding are unchanged.
-- The current source has some inherited comments that predate the kings-out-of-rank approach. The explanation follows the **executed source**, notably the `free.length - 2` multiset allocation with two unranked trailing squares. A discrepancy throws a visible error rather than showing a misleading trace.
-- The existing codec source specifies a ~78-bit capacity and guaranteed 19 hex digits, which differ from the FAQ's current ~96-bit/23-digit claim. Consider reconciling the public FAQ separately; this package does **not** change that text or the codec.
+`chessboard-explainer.html?mode=healpix&code=95625281C9B5` (or `mode=standard`, and `&view=full`). `mode`, `code` and `view` belong to this page only; they are not part of the app's URL grammar. The page links out with existing app parameters only (`?hphex=`, `?h=`, `?hpfen=`, `?fen=`).
 
-## License
-
-MPL-2.0, like the rest of Geosonify. New standalone visual and tracing modules are intended for integration into the Geosonify source repository.
+MPL-2.0, like the rest of Geosonify.
