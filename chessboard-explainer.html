@@ -10,7 +10,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="shortcut icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/chessboard-explainer.css?v=20261014c" />
+  <link rel="stylesheet" href="css/chessboard-explainer.css?v=20261014d" />
 </head>
 <body>
   <a class="skip-link" href="#storyTitle">Skip to the walkthrough</a>
@@ -158,6 +158,7 @@
             <div id="treeDiagram" class="decision-tree" role="group" aria-label="Decision tree for the first two pawn files"></div>
             <div id="treeArithmetic" class="tree-arithmetic" aria-label="How the rank picks the first two branches"></div>
             <p class="tree-afterword">After files h and g the encoder carries on through files f to a, then the bishops, then the other pieces, each choice narrowing the subtree. The two kings come <strong>after</strong> the rank has found its leaf, and carry none of it.</p>
+            <p class="tree-related">Numbering things by counting your way down a tree like this is a standard technique, called ranking and unranking. Its best-known use in chess is John Tromp's <a href="https://github.com/tromp/ChessPositionRanking" target="_blank" rel="noopener">ChessPositionRanking</a>; <a href="#aboutTitle">About this page</a> says how this differs.</p>
           </section>
 
           <div id="candidateBlock" class="panel" hidden>
@@ -210,6 +211,7 @@
       <div class="card-body about">
         <p>The board in the walkthrough is the one the app draws. The page loads the same <code>ChessboardLib</code> the app does, records the counts it computes while encoding, and refuses to show anything unless the replayed board matches the codec's board square for square, decodes to the same rank, and passes the app's 64-square scan.</p>
         <p>Both Chessboard cards use the same board mathematics. They differ only in which code they portray, which is why a share link says <code>?fen=</code> for one and <code>?hpfen=</code> for the other.</p>
+        <p><strong>Related work.</strong> Numbering chess positions with an invertible ranking is well-explored ground. The best-known example is John Tromp's <a href="https://github.com/tromp/ChessPositionRanking" target="_blank" rel="noopener">ChessPositionRanking</a>, which ranks a superset of chess positions to estimate how many legal ones exist. Geosonify's chess board codec uses the same general technique, ranking and unranking by counting, for a narrower job: carrying a code in one fixed-material family of boards. It claims no originality for the method, and makes no claim that its boards could arise in a real game. The codec and this page were written by AI assistants (Claude and ChatGPT) to Greg O'Beirne's specification.</p>
         <p><a href="https://github.com/gobeirne/geosonify-app/blob/main/js/lib/geosonify-chessboard-lib_v1_0.js" target="_blank" rel="noopener">The codec source</a> · <a href="https://github.com/gobeirne/geosonify-app/blob/main/js/lib/chessboard-explainer-trace.js" target="_blank" rel="noopener">this page's tracer</a></p>
       </div>
     </section>
