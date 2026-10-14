@@ -10,7 +10,8 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="shortcut icon" href="/favicon.ico" />
   <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-  <link rel="stylesheet" href="css/chessboard-explainer.css?v=20261014d" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="css/chessboard-explainer.css?v=20261014e" />
 </head>
 <body>
   <a class="skip-link" href="#storyTitle">Skip to the walkthrough</a>
@@ -84,13 +85,24 @@
       <div class="theatre">
         <section class="board-panel" aria-label="Chessboard">
           <div class="board-panel-head">
-            <span class="mini-heading">The board</span>
+            <span class="mini-heading" id="boardHeading">The board</span>
             <span id="pieceCount" class="piece-counter">0 / 32 pieces</span>
           </div>
-          <div class="board-wrap">
+          <!-- Step 1 only: where the code is, so a reader arriving cold sees a place become a board. -->
+          <div id="placeView" class="place-view" hidden>
+            <div class="place-map-wrap">
+              <div id="placeMap" class="place-map" role="img" aria-label="Map of the code's cell"></div>
+              <div class="segmented-control basemap-switch" role="group" aria-label="Map imagery">
+                <label><input type="radio" name="basemap" value="osm" checked><span>Map</span></label>
+                <label><input type="radio" name="basemap" value="aerial"><span>Aerial</span></label>
+              </div>
+            </div>
+            <p id="placeCaption" class="place-caption"></p>
+          </div>
+          <div class="board-wrap" id="boardWrap">
             <div id="chessboard" class="chessboard" role="img" aria-label="Empty chessboard"></div>
           </div>
-          <div class="board-caption">
+          <div class="board-caption" id="boardCaption">
             <span class="legend"><span class="legend-tile chosen"></span>Chosen <span class="legend-tile allowed"></span>Eligible <span class="legend-tile not-allowed"></span>Unsafe</span>
             <span>White at the bottom</span>
           </div>
@@ -224,11 +236,12 @@
 
   <!-- The same files and versions index.html loads. The grids, engine and HEALPix
        libraries are used only to say where a code is on the map. -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="js/lib/geosonify-grids-data.js?v=20260109"></script>
   <script src="js/lib/geosonify-codec-engine_v11_8a.js?v=20260109"></script>
   <script src="js/lib/geosonify-healpix.js?v=20260930b"></script>
   <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
   <script src="js/lib/chessboard-explainer-trace.js?v=20261014b"></script>
-  <script src="js/chessboard-explainer.js?v=20261014c"></script>
+  <script src="js/chessboard-explainer.js?v=20261014d"></script>
 </body>
 </html>
