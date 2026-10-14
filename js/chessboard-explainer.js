@@ -226,7 +226,8 @@
   function num(value) {
     const s = String(value);
     if (!/^\d+$/.test(s) || showAllDigits || s.length <= 12) return comma(s);
-    return `${s[0]}.${s.slice(1, 5)} × 10${[...String(s.length - 1)].map(c => SUPERSCRIPT[c]).join('')}`;
+    // Non-breaking spaces: a shortened number wraps as one unit, never as "10²⁶" alone.
+    return `${s[0]}.${s.slice(1, 5)}\u00A0×\u00A010${[...String(s.length - 1)].map(c => SUPERSCRIPT[c]).join('')}`;
   }
   function rankBox(label, value, sub, cls) {
     const box = document.createElement('div');
