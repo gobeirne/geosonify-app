@@ -334,7 +334,7 @@
     osm: { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', attrib: '© OpenStreetMap contributors' },
     aerial: { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attrib: 'Imagery © Esri, Maxar, Earthstar Geographics' }
   };
-  let placeMap = null, placeBase = null, placeLayers = [], placeFlownFor = '';
+  let placeMap = null, placeBase = null, placeLayers = [], placeFlownFor = '', placeFlight = 0;
   function cellRings(mode, code, where) {
     if (mode === 'healpix') {
       const k = HealpixGrids.inferOrder('hphex', code);
@@ -419,22 +419,36 @@
     placeLayers = [];
     const { rings, around } = cellRings(trace.mode, trace.code, origin);
     if (!rings.length) { el.placeView.hidden = true; el.boardWrap.hidden = false; el.boardCaption.hidden = false; return; }
-    rings.forEach((ring, i) => {
-      const inner = i === rings.length - 1, fromInner = rings.length - 1 - i;
-      placeLayers.push(L.polygon(ring, { color: '#ff4444', fillColor: '#ff4444', weight: inner ? 2 : 1,
-        opacity: inner ? 0.9 : Math.max(0.15, 0.55 - fromInner * 0.1), fillOpacity: inner ? 0.18 : 0, interactive: false }).addTo(placeMap));
-    });
-    // Frame the cell itself at about a quarter of the view; its parents run off the edges.
-    const frame = L.latLngBounds(rings[rings.length - 1]).pad(1.5);
+    // The outlines are added only once the map has arrived. Drawn before the flight, Leaflet
+    // would stretch the version it drew at city zoom (where the cell is under a pixel) all the
+    // way in, which shows as a pixellated smear until it redraws at the end.
+    const drawRings = () => {
+      rings.forEach((ring, i) => {
+        const inner = i === rings.length - 1, fromInner = rings.length - 1 - i;
+        placeLayers.push(L.polygon(ring, { color: '#ff4444', fillColor: '#ff4444', weight: inner ? 2 : 1,
+          opacity: inner ? 0.9 : Math.max(0.15, 0.55 - fromInner * 0.1), fillOpacity: inner ? 0.18 : 0, interactive: false }).addTo(placeMap));
+      });
+    };
+    // End three zoom levels out from a frame that makes the cell about a quarter of the
+    // view, so the reader sees the cell, its parent cells and some surroundings.
+    const cellBounds = L.latLngBounds(rings[rings.length - 1]);
+    const target = Math.max(placeMap.getMinZoom(), placeMap.getBoundsZoom(cellBounds.pad(1.5)) - 3);
+    const centre = cellBounds.getCenter();
     // Start on the city, then fly in, so the reader sees where on Earth this is first.
     const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const flight = ++placeFlight;
+    placeMap.stop();
     placeMap.setView([origin.lat, origin.lon], 11, { animate: false });
-    if (noMotion) placeMap.fitBounds(frame, { animate: false });
-    else setTimeout(() => placeMap.flyToBounds(frame, { duration: 3 }), 600);
+    if (noMotion) { placeMap.setView(centre, target, { animate: false }); drawRings(); }
+    else setTimeout(() => {
+      if (flight !== placeFlight) return;            // a newer code or "Fly in again" took over
+      placeMap.once('moveend', () => { if (flight === placeFlight) drawRings(); });
+      placeMap.flyTo(centre, target, { duration: 3 });
+    }, 600);
     const inner = rings[rings.length - 1];
     el.placeCaption.replaceChildren();
     el.placeCaption.append(document.createTextNode(
-      `The red outline is the code's cell, ${cellSize(trace.mode, trace.code, inner, origin.lat)}${around}. Zoom out to see where it is. `));
+      `The red outline is the code's cell, ${cellSize(trace.mode, trace.code, inner, origin.lat)}${around}. Zoom in for a closer look, or out to see where it is. `));
     const again = document.createElement('button');
     again.type = 'button'; again.className = 'text-button'; again.textContent = 'Fly in again';
     again.addEventListener('click', () => { placeFlownFor = ''; showPlace(step); });
