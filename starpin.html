@@ -3042,6 +3042,16 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var culmArmed = null;                      // culminationMs whose run is scheduled
   var culmOffered = null;                    // culminationMs already offered
 
+  // ONE culmination, compared with a tolerance. attendance() recomputes the
+  // instant from the clock on every tick and the float arithmetic lands on
+  // either of two adjacent milliseconds (measured 17 Oct 2026: ...611 and
+  // ...612 alternating for the same culmination). Every "this culmination"
+  // check used ===, so on the ticks that disagreed the closed moment reopened
+  // (Greg, 17 Oct: it came back ~10 s after each close), and the run and the
+  // "marked" state could re-fire the same way. Culminations are a sidereal day
+  // apart, so a 1 s tolerance cannot confuse two of them.
+  function sameCulm(a, b) { return a != null && b != null && Math.abs(a - b) < 1000; }
+
   // The arpeggio needs the audio context RUNNING, and a browser will only start
   // one after a user gesture. Nothing in the culmination path is a gesture --
   // you are watching a clock, not tapping -- so on 14 Aug the run was scheduled
@@ -3122,7 +3132,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // skips notes already in the past, so a late arm just plays a shorter run
     // rather than nothing). If the context could not be woken, say so once in
     // the bar rather than failing mute.
-    if (culmArmed !== next && ms > 0 && ms <= RUN_LEAD_S * 1000 && fix) {
+    if (!sameCulm(culmArmed, next) && ms > 0 && ms <= RUN_LEAD_S * 1000 && fix) {
       culmArmed = next;
       var woke = false;
       try { woke = F.unlock(); } catch (e) {}
@@ -3157,7 +3167,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // second after close because show is purely time-based, so it kept coming
     // back until the app was killed -- once closed, it stays closed until the
     // next culmination.
-    if (!show || momentDismissed === culmMs) {
+    if (!show || sameCulm(momentDismissed, culmMs)) {
       if (!m.hidden) { m.hidden = true; m.className = ''; }
       momentFor = null; return;
     }
@@ -3198,11 +3208,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         ? near.star.name + ' \u00B7 ' + Math.round(near.distanceM) + ' m'
         : (fix ? '' : 'no fix yet');
       mark.hidden = true;
-    } else if (inR && culmOffered !== culmMs) {
+    } else if (inR && !sameCulm(culmOffered, culmMs)) {
       $('moment-where').textContent = near.star.name + ' \u00B7 ' +
         Math.round(near.distanceM) + ' m \u00B7 close enough';
       mark.hidden = false;
-    } else if (culmOffered === culmMs) {
+    } else if (sameCulm(culmOffered, culmMs)) {
       $('moment-where').textContent = 'marked';
       mark.hidden = true;
     } else {
