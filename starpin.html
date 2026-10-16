@@ -221,6 +221,25 @@ dl{margin:.7rem 0 0}
 .tally .t-star{border-color:var(--sun);background:color-mix(in srgb,var(--sun) 15%,var(--card))}
 .tally .t-corner{border-color:var(--moss);background:color-mix(in srgb,var(--moss) 14%,var(--card))}
 .tally .t-best{border-color:var(--rust);background:color-mix(in srgb,var(--rust) 13%,var(--card))}
+.tally .t-cell{border-color:var(--bark-lit);background:color-mix(in srgb,var(--bark-lit) 14%,var(--card))}
+@media (max-width:380px){.tally{gap:.35rem}.tally span{font-size:.55rem;letter-spacing:.04em}}
+/* cells-v1: completed order-13/14 cells, and the ones nearly there */
+.cells{margin:0 0 1rem}
+.cells h3{margin:.2rem 0 .1rem}
+.cells .hint{margin:.1rem 0 .5rem}
+.cells-sub{font-size:.62rem;letter-spacing:.09em;text-transform:uppercase;font-weight:800;
+  color:var(--ink-2);margin:.6rem 0 .3rem}
+.cellrow{display:flex;align-items:center;gap:.6rem;padding:.45rem .7rem;margin-bottom:.35rem;
+  border:2px solid var(--line);border-radius:14px;background:var(--card)}
+.cellrow.done{border-color:var(--bark-lit)}
+.cell-glyph{font-size:1.1rem;color:var(--bark-lit);line-height:1}
+.cell-mid{flex:1;min-width:0;display:flex;flex-direction:column}
+.cell-mid b{font-size:.78rem}
+.cell-path{font-size:.66rem;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cell-state{font-size:.75rem;white-space:nowrap}
+.cellrow:not(.done) .cell-state{letter-spacing:.12em;color:var(--rust)}
+.cell-acts{display:flex;flex-direction:column;gap:.3rem;align-items:stretch;flex:none}
+.cell-acts button{margin:0}
 
 .rec{display:flex;gap:.75rem;align-items:flex-start;padding:.8rem;background:var(--card);
   border:2px solid var(--line);border-radius:18px}
@@ -721,12 +740,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
-<script src="js/lib/geosonify-starpin.js?v=20260808"></script>
+<script src="js/lib/geosonify-starpin.js?v=20261017"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-feedback.js?v=20261009"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20261017"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261003"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
@@ -762,6 +781,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var $ = function (id) { return document.getElementById(id); };
   var clock = GeosonifyStarpinClock.mount($('clock'));
   var fix = null, collected = {};   // DERIVED from the log on every draw
+  // Completed and partial order-13/14 cells (cells-v1), DERIVED in drawLog.
+  // cellGoal is the one cell the compass is walking you round, if any.
+  var cellState = null, cellGoal = null;
 
   function bearing(a1, o1, a2, o2) {
     var d = Math.PI / 180, y = Math.sin((o2 - o1) * d) * Math.cos(a2 * d);
@@ -1009,23 +1031,77 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         ddC.id = 'driveby-row';
         driveByTick = { lat: lastCs.lat, lon: lastCs.lon, radiusM: vc2.radiusM };
       }
-      var pips = detailRow(dl2, 'corners of this cell', '\u2014', 'pips');
+      // Cells: the best order-13 and order-14 cell this vertex is a corner of,
+      // or the cell you asked to be guided round.
+      cellRowsFor(dl2, lastCs);
       detailRow(dl2, 'visit', verdictText(vc2.verdict),
         vc2.verdict === 'well-supported' ? 'ok' : vc2.verdict === 'not-supported' ? 'bad' : null);
       b.appendChild(dl2);
-      try {
-        var st2 = S.cellComplete(lastCs.incident[0], Object.keys(collected));
-        pips.textContent = st2.corners.map(function (n) {
-          return collected[n] ? '\u25CF' : '\u25CB'; }).join('') +
-          '  ' + (4 - st2.missing.length) + ' of 4';
-      } catch (e) {}
       var vc = visitedOn(lastCs.name);
       if (vc) b.appendChild(visitedLine(vc));
-      var cb = el('button', null, 'Bag this cornerstone');
+      // The button says what pressing it will actually do. A cornerstone needs
+      // a well-supported fix to count (collect-v1); anything less is offered
+      // as a closest approach, exactly as a starpin is, and never as a bag.
+      var csHave = !!collected[csName(lastCs.name)];
+      var csOn = vc2.verdict === 'well-supported';
+      var csBest = bestApproachTo(lastCs.name);
+      var csImprove = csOn || csBest == null || vc2.distanceM < csBest - 0.5;
+      var cb = el('button', null, csHave ? 'You have this one'
+        : csOn ? 'Bag this cornerstone'
+        : csImprove ? 'Save this as my closest approach so far \u00B7 ' +
+                      Math.round(vc2.distanceM) + ' m away'
+        : 'You have been closer \u00B7 ' + csBest.toFixed(1) + ' m');
       cb.type = 'button';
-      cb.addEventListener('click', bagCornerstone);
+      if (csHave || !csImprove) { cb.disabled = true; cb.style.opacity = '.5'; }
+      else cb.addEventListener('click', function () { bagCornerstone(); });
       b.appendChild(cb);
+      if (!csHave && !csOn) b.appendChild(el('p', 'hint',
+        'To bag it, get inside its ring with a good fix: your distance plus the ' +
+        'GPS uncertainty has to be under ' + Math.round(vc2.radiusM) + ' m.'));
     }
+  }
+
+  // \u2500\u2500 cells (cells-v1) in the Go tab \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  function cellEntry(cell) {
+    if (!cellState) return null;
+    return cellState.complete.concat(cellState.partial)
+      .filter(function (e) { return e.cell === cell; })[0] || null;
+  }
+  function pipsOf(entry) {
+    var cs = entry ? entry.corners : [{}, {}, {}, {}];
+    return cs.map(function (c) { return c.have ? '\u25CF' : '\u25CB'; }).join('') +
+      '  ' + (entry ? entry.have : 0) + ' of 4';
+  }
+  function cellRowsFor(dl, v) {
+    var rows = [];
+    try {
+      if (cellGoal) {
+        rows.push({ cell: cellGoal, goal: true });
+      } else {
+        var at = S.cellsAtVertex(v.lat, v.lon);
+        S.CELL_ORDERS.forEach(function (o) {
+          var best = null;
+          at.filter(function (c) { return c.order === o; }).forEach(function (c) {
+            var e = cellEntry(c.cell), n = e ? e.have : 0;
+            if (!best || n > best.n) best = { cell: c.cell, n: n };
+          });
+          if (best) rows.push({ cell: best.cell });
+        });
+      }
+    } catch (e) { return; }
+    rows.forEach(function (row) {
+      var e = cellEntry(row.cell), order = row.cell.split('.')[1].length;
+      var dd = detailRow(dl, (row.goal ? 'guiding round ' : '') + 'order-' + order + ' cell',
+                         e && e.complete ? 'complete \u2714' : pipsOf(e), 'pips');
+      var btn = el('button', 'close', row.goal ? 'stop' : 'guide me round it');
+      btn.type = 'button'; btn.style.marginLeft = '.5rem';
+      if (e && e.complete && !row.goal) return;
+      btn.addEventListener('click', function () {
+        cellGoal = row.goal ? null : row.cell;
+        cornerstone(); paintTabBody();
+      });
+      dd.appendChild(btn);
+    });
   }
 
   function visitedLine(r) {
@@ -1164,6 +1240,29 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // line crossing a common one) unreachable — you could stand on it and the
     // compass would send you to a coarser vertex hundreds of metres away.
     var maxTier = Math.max(6, Math.min(14, parseFloat($('order').value) || 12));
+    // Guided round a cell: the target is the nearest corner of it you do not
+    // have yet, whatever its tier — the rarity floor is for wandering, and a
+    // cell's corners are mostly tier 13–14 by construction.
+    if (cellGoal) {
+      var goal = cellEntry(cellGoal), want = null;
+      try {
+        var pts = goal ? goal.corners.filter(function (c) { return !c.have; })
+                       : S.cellCornerstones(cellGoal).filter(function (c) {
+                           return !collected[csName(c.name)]; });
+        pts.forEach(function (c) {
+          var dm = S.haversineM(fix.lat, fix.lon, c.lat, c.lon);
+          if (!want || dm < want.d) want = { c: c, d: dm };
+        });
+        if (want) {
+          lastCs = S.nearestCornerstone(want.c.lat, want.c.lon, 14);
+          lastCs.distanceM = want.d;
+          map.setHighlight(lastCs.name);
+          paintTargets();
+          return;
+        }
+      } catch (e) {}
+      cellGoal = null;                          // finished, or unreadable: stop guiding
+    }
     try { lastCs = S.nearestBaggable(fix.lat, fix.lon, { maxTier: maxTier }); }
     catch (e) { lastCs = null; return; }
     if (!lastCs) return;              // nothing that rare nearby; leave prior target
@@ -2260,38 +2359,26 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       }
       box.appendChild(pm);
       // Bagging from the map is allowed ONLY when your live fix is on the vertex
-      // AND the vertex is worth bagging (tier <= 12). A commonplace vertex
-      // (tier > 12) reads out fully but is not offered — it is not sought after.
+      // (well-supported). Every vertex the map can name (intrinsic order <= 14)
+      // is a corner of an order-14 cell, so commonplace ones (tier > 12) are
+      // baggable too since cells-v1: not sought after on their own, but a cell
+      // needs all four corners and most of them are tier 13-14.
       // Everything else is a reading, not a claim.
-      var baggableTier = v0 && v0.tierOrder <= 12;
+      var common0 = v0 && v0.tierOrder > 12;
       var already0 = v0 && collected[csName(v0.name)];
       var vv0 = (v0 && fix) ? S.assessVisit(fix, { lat: v0.lat, lon: v0.lon }) : null;
       var onIt = vv0 && vv0.verdict === 'well-supported';
-      if (v0 && !baggableTier) {
+      if (common0) {
         box.appendChild(el('div', 'meta',
-          'Too common to be sought after \u2014 tier ' + v0.tierOrder.toFixed(1) +
-          '. Logged for completeness only; the compass will not send you here.'));
-      } else if (v0 && fix && onIt && !already0) {
-        var pinBag = el('button', null, 'Bag this cornerstone');
+          'Commonplace \u2014 tier ' + v0.tierOrder.toFixed(1) +
+          '. The compass will not send you here for its own sake, but it is a ' +
+          'corner of order-13 and order-14 cells, and those count.'));
+      }
+      if (v0 && fix && onIt && !already0) {
+        var pinBag = el('button', null, common0 ? 'Bag this corner' : 'Bag this cornerstone');
         pinBag.type = 'button';
         pinBag.addEventListener('click', function () {
-          if (log.current().some(function (r) {
-                return r.target && csName(r.target.cornerstone) === csName(v0.name); })) {
-            F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
-                          degree: v0.degree, kicker: 'already yours' });
-            return;
-          }
-          F.unlock();
-          logIt({ cornerstone: v0.name });
-          F.celebrate({ kind: 'cornerstone', name: v0.name, order: v0.tierOrder,
-                        degree: v0.degree, digits: v0.name.replace(/\D/g, '') });
-          try {
-            var st0 = S.cellComplete(v0.incident[0], Object.keys(collected));
-            if (st0.complete) setTimeout(function () {
-              F.celebrate({ kind: 'cornerstone', name: v0.incident[0],
-                            order: v0.intrinsicOrder, kicker: 'all four corners' });
-            }, 1500);
-          } catch (e) {}
+          bagCorner(v0, S.assessVisit(fix, { lat: v0.lat, lon: v0.lon }));
           showInfo(sel);
         });
         box.appendChild(pinBag);
@@ -3305,12 +3392,23 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // Keyed by the CANONICAL name, so the four cornerstones logged under v0.2
     // names still light up their pips and still read as bagged. An ambiguous
     // legacy name throws; keep it under its own key rather than dropping it.
+    //
+    // ONLY records that collect (S.collects, collect-v1: well-supported for a
+    // cornerstone). Until 17 Oct 2026 every cornerstone record counted, and the
+    // Go tab's button logged whatever the verdict, so a tap from 2 km away
+    // lit the pips. A record that does not collect stays in the log as an
+    // approach; it just does not count.
     collected = {};
     log.current().forEach(function (r) {
       if (!r.target || !r.target.cornerstone) return;
+      if (!S.collects(r)) return;
       collected[csName(r.target.cornerstone)] = 1;
     });
     flip.setBagged(Object.keys(collected));
+    try { cellState = S.cellProgress(log.current()); }
+    catch (e) { cellState = null; console.warn('[starpin] cells:', e); }
+    if (cellGoal && cellState && cellState.complete.some(function (c) { return c.cell === cellGoal; }))
+      cellGoal = null;
 
     // Bagged STARPINS come from the record too, and the record carries the
     // ground address, so they draw at any zoom without a catalogue lookup.
@@ -3481,8 +3579,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // (kind 'culmination-attempt') targeting the same starpin. The visit record
     // is never edited. The card then derives both dates from the record set.
     var att = S.attendance(Date.now());
+    // "Already yours" means a record that COLLECTS (collect-v1). It used to be
+    // any record, so a saved closest approach blocked both the real bag and a
+    // closer approach: the press celebrated "already yours" and wrote nothing.
     var already = log.current().filter(function (r) {
-      return r.target.starpin === target.starpin; });
+      return r.target.starpin === target.starpin && S.collects(r); });
     var haveThisCulmination = log.current().some(function (r) {
       return r.kind === 'culmination-attempt' &&
              r.target.starpin === target.starpin &&
@@ -3546,28 +3647,139 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
 
   function bagCornerstone() {
-    if (!lastCs) return;
+    if (!lastCs || !fix) return;
+    bagCorner(lastCs, S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon }));
+  }
+
+  // One path for every cornerstone bag (Go tab and map), so the rules cannot
+  // drift apart again.
+  //
+  //  - "Already yours" means a record that COLLECTS. It used to mean any
+  //    record, so an early weak one would have blocked the real bag forever.
+  //  - Without a well-supported fix the press saves a closest approach, which
+  //    is honest and kept, but counts for nothing.
+  //  - A new corner can complete several cells at once (up to four per order),
+  //    so completions are found by diffing the derived cell set, not by
+  //    checking one incident cell.
+  function bagCorner(v, vr) {
     F.unlock();
-    if (log.current().some(function (r) {
-          return r.target && csName(r.target.cornerstone) === csName(lastCs.name); })) {
-      F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
-                    degree: lastCs.degree, kicker: 'already yours' });
+    stopSoundGuide();
+    if (collected[csName(v.name)]) {
+      F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder,
+                    degree: v.degree, kicker: 'already yours' });
       return;
     }
-    logIt({ cornerstone: lastCs.name });
+    if (!fix) { alert('Use my location first — a record without a fix cannot be assessed.'); return; }
+    var supported = vr.verdict === 'well-supported';
+    var before = {};
+    (cellState ? cellState.complete : []).forEach(function (c) { before[c.cell] = 1; });
+    var target = { cornerstone: v.name };
+    commitAndOffer(L.build(supported ? 'visit' : 'closest-approach', {
+      target: target,
+      fix: { lat: fix.lat, lon: fix.lon, accuracy_m: fix.accuracy_m, source: 'web-geolocation' },
+      approachReason: approachReasonFor(supported, vr.distanceM),
+      provenance: provenanceFor(target)
+    }));
+    drawLog(); redraw();
+    if (!supported) {
+      F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder, degree: v.degree,
+                    kicker: 'closest approach saved · ' + Math.round(vr.distanceM) +
+                            ' m — not bagged yet' });
+      return;
+    }
     // RULE 2: the single vertex is the reward. Set completion is a footnote,
     // announced separately and only when it actually happens.
     // tierOrder, not intrinsicOrder: a rare line crossing a common one sits
     // between the two, and the celebration should reflect that.
-    F.celebrate({ kind: 'cornerstone', name: lastCs.name, order: lastCs.tierOrder,
-                  degree: lastCs.degree, digits: lastCs.name.replace(/\D/g, '') });
-    try {
-      var st = S.cellComplete(lastCs.incident[0], Object.keys(collected));
-      if (st.complete) setTimeout(function () {
-        F.celebrate({ kind: 'cornerstone', name: lastCs.incident[0],
-                      order: lastCs.intrinsicOrder, kicker: 'all four corners' });
-      }, 1500);
-    } catch (e) {}
+    var common = v.tierOrder > 12;
+    F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder,
+                  degree: v.degree, digits: v.name.replace(/\D/g, ''),
+                  kicker: common ? 'corner bagged · counts towards cells' : undefined,
+                  blurb: common ? 'Too common to chase on its own, but it is a corner of ' +
+                                  'order-13 and order-14 cells. Bag all four corners of one.' : undefined });
+    var fresh = (cellState ? cellState.complete : []).filter(function (c) { return !before[c.cell]; })
+      .sort(function (a, b) { return a.order - b.order; });   // the bigger cell last, loudest
+    fresh.forEach(function (c, i) {
+      setTimeout(function () { celebrateCell(c); }, 1500 + i * 2600);
+    });
+  }
+
+  function celebrateCell(c) {
+    var n = 12 * Math.pow(4, c.order);
+    // `order` here only sets the size of the fanfare (the copy is overridden):
+    // a whole cell is four visits' work, so it gets the party of an uncommon
+    // vertex, and an order-13 cell one step more.
+    F.celebrate({ kind: 'cornerstone', name: c.cell, order: c.order === 13 ? 11 : 12,
+                  kicker: 'all four corners · order-' + c.order + ' cell',
+                  label: 'one of ' + n.toLocaleString() + ' order-' + c.order + ' cells on Earth',
+                  blurb: 'Every corner of this cell is yours, each from its own visit. ' +
+                         'It is in your log under Cells.' });
+  }
+
+  // ── Cells in the log (cells-v1) ─────────────────────────────────────────
+  // Completed cells, then the ones you are closest to finishing. Derived, like
+  // everything else here: delete a corner's record and its cells go back to
+  // "nearly there".
+  function drawCells(box) {
+    if (!cellState) return;
+    var done = cellState.complete;
+    var near = cellState.partial.filter(function (e) { return e.have >= 2; }).slice(0, 6);
+    if (!done.length && !near.length) return;
+    var sec = el('div', 'cells');
+    sec.appendChild(el('h3', null, 'Cells'));
+    var dateFmt = { day: 'numeric', month: 'short', year: 'numeric' };
+    function centreOf(e) {
+      var la = 0, lo = 0, ref = e.corners[0].lon;
+      e.corners.forEach(function (c) {
+        var l = c.lon; if (l - ref > 180) l -= 360; if (ref - l > 180) l += 360;
+        la += c.lat; lo += l;
+      });
+      return { lat: la / 4, lon: lo / 4 };
+    }
+    function row(e) {
+      var r = el('div', 'cellrow' + (e.complete ? ' done' : ''));
+      r.appendChild(el('span', 'cell-glyph', e.complete ? '■' : '□'));
+      var mid = el('span', 'cell-mid');
+      mid.appendChild(el('b', null, 'order-' + e.order + ' cell'));
+      mid.appendChild(el('span', 'cell-state', e.complete
+        ? (e.completedMs ? new Date(e.completedMs).toLocaleDateString(undefined, dateFmt) : 'complete')
+        : pipsOf(e)));
+      mid.appendChild(el('span', 'cell-path', e.cell));
+      r.appendChild(mid);
+      var acts = el('span', 'cell-acts');
+      var go = el('button', 'close', 'on map');
+      go.type = 'button';
+      go.addEventListener('click', function () {
+        var c = centreOf(e);
+        showMap();
+        map.leaflet.setView([c.lat, c.lon], e.order === 13 ? 15 : 16);
+      });
+      acts.appendChild(go);
+      if (!e.complete) {
+        var gd = el('button', 'close', cellGoal === e.cell ? 'guiding' : 'guide me');
+        gd.type = 'button';
+        gd.addEventListener('click', function () {
+          cellGoal = e.cell;
+          $('tab-corner').click();          // the compass's cornerstone mode
+          cornerstone();
+          goTab('go');
+          if (sheetState === 'peek') sheetTo('half');
+        });
+        acts.appendChild(gd);
+      }
+      r.appendChild(acts);
+      return r;
+    }
+    var counts = S.CELL_ORDERS.map(function (o) {
+      return (cellState.counts[o] || 0) + ' at order ' + o; }).join(' · ');
+    sec.appendChild(el('p', 'hint', done.length ? counts
+      : 'None finished yet. A cell is done when all four of its corners are bagged, each from its own visit.'));
+    done.forEach(function (e) { sec.appendChild(row(e)); });
+    if (near.length) {
+      sec.appendChild(el('div', 'cells-sub', 'nearly there'));
+      near.forEach(function (e) { sec.appendChild(row(e)); });
+    }
+    box.appendChild(sec);
   }
 
   $('lg-show').addEventListener('click', function () {
@@ -3582,26 +3794,37 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // A tally first. A list of rows is a receipt; a count is a collection.
     var stars = {}, corners = {}, best = 0;
     var rank = S.rankByTarget(recs);
+    // Cornerstones count once each, only when a record collects (collect-v1),
+    // and only from tier 12 up: "collectible floor at order 12". Commonplace
+    // corners bagged for cells are in the log and in Cells, not in this number.
+    // Rare finds likewise count each object once, not each record.
+    var rareSeen = {}, rare = 0;
     recs.forEach(function (r) {
-      if (r.target.cornerstone) corners[csName(r.target.cornerstone)] = 1;
-      else if (r.target.starpin) stars[r.target.starpin] = 1;
+      if (r.target.cornerstone) {
+        var k = csName(r.target.cornerstone);
+        if (!collected[k] || corners[k] != null) return;
+        corners[k] = 0;
+        try {
+          var pp = S.cornerstonePoint(r.target.cornerstone);
+          var pr = S.nearestCornerstone(pp.lat, pp.lon, 14);
+          corners[k] = pr.tierOrder;
+          if (pr.tierOrder <= 11 && !rareSeen[k]) { rareSeen[k] = 1; rare++; }
+        } catch (e) {}
+      } else if (r.target.starpin) {
+        stars[r.target.starpin] = 1;
+        if (r.target.mag_g != null && r.target.mag_g < 10 && !rareSeen[r.target.starpin]) {
+          rareSeen[r.target.starpin] = 1; rare++;
+        }
+      }
       var rk = rank[r.record_id];
       if (rk && rk.best && rk.supported) best++;
     });
     var tally = el('div', 'tally');
-    var rare = 0;
-    recs.forEach(function (r) {
-      if (r.target.cornerstone) {
-        var mm = /\.([0-3]+)(?:c[0-3])?$/.exec(r.target.cornerstone);
-        try {
-          var pp = S.cornerstonePoint(r.target.cornerstone);
-          var pr = S.nearestCornerstone(pp.lat, pp.lon, mm[1].length);
-          if (pr.tierOrder <= 11) rare++;
-        } catch (e) {}
-      } else if (r.target.mag_g != null && r.target.mag_g < 10) rare++;
-    });
+    var nCorners = Object.keys(corners).filter(function (k) { return corners[k] <= 12; }).length;
+    var nCells = cellState ? cellState.complete.length : 0;
     [['t-star', Object.keys(stars).length, 'starpins'],
-     ['t-corner', Object.keys(corners).length, 'cornerstones'],
+     ['t-corner', nCorners, 'cornerstones'],
+     ['t-cell', nCells, nCells === 1 ? 'cell' : 'cells'],
      ['t-best', rare, 'rare finds']].forEach(function (t) {
       var d = el('div', t[0]);
       d.appendChild(el('b', null, String(t[1])));
@@ -3609,6 +3832,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       tally.appendChild(d);
     });
     box.appendChild(tally);
+    drawCells(box);
 
     function scarcity(r) {
       if (r.target.cornerstone) {
@@ -3747,6 +3971,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       // per record is replaced by the visit lines below, one per event.
       chip(verdictText(verdict), verdict === 'well-supported' ? 'good'
                   : verdict === 'not-supported' ? 'warn' : null);
+      // A cornerstone counts only with a well-supported record (collect-v1).
+      // Say so on the card rather than leave an approach looking like a bag.
+      if (!isStar && !collected[csName(r.target.cornerstone)])
+        chip('approach only · not bagged', 'warn');
       // How you bagged it, as a single verdict for the whole find. Static is the
       // "best case": if you EVER walked up to it, the card reads static, and the
       // drive-by grabs are still visible per-line below. Only when every visit
