@@ -1298,8 +1298,11 @@ var GeosonifyStarpinFeedback = (function () {
     line('spf-kicker', opts.kicker ||
          (exceptional ? 'an exceptional find' : 'cornerstone bagged'));
     line('spf-name', opts.name || '');
-    line('spf-rare', tier.label);
-    line('spf-blurb', tier.blurb);
+    // label / blurb may be overridden: a commonplace corner bagged for a cell,
+    // or a completed cell, is not described by the vertex-rarity copy
+    // ("too common to be worth a walk").
+    line('spf-rare', opts.label || tier.label);
+    line('spf-blurb', opts.blurb || tier.blurb);
     doc.body.appendChild(b);
     doc.defaultView.requestAnimationFrame(function () { b.classList.add('on'); });
 

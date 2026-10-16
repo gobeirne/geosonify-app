@@ -89,7 +89,12 @@ ok('an order-12 halo is about 100 m', Math.abs(F.haloM(12) - 99.5) < 1, F.haloM(
 ok('order 10, about 400 m', Math.abs(F.haloM(10) - 398) < 3, F.haloM(10).toFixed(1));
 ok('order 8, about 1.6 km', Math.abs(F.haloM(8) - 1592) < 10, F.haloM(8).toFixed(0));
 ok('each order rarer doubles it', Math.abs(F.haloM(9) / F.haloM(10) - 2) < 1e-12);
-ok('the catch ring stays the 15 m arrival rule, whatever the rarity', F.CORNER_BAG_M === 15);
+// The ring is the visit-geometry-v1 circle (3", ~92.8 m), the rule the game
+// actually applies; an earlier 15 m ring was never enforced anywhere (see the
+// CORNER_BAG_M comment in geosonify-starpin-flip.js). This test still said 15.
+ok('the catch ring is the visit-geometry-v1 circle, whatever the rarity',
+   Math.abs(F.CORNER_BAG_M - F.VISIT_R_ARCSEC * S.M_PER_ARCSEC) < 1e-9 &&
+   Math.abs(F.CORNER_BAG_M - 92.77) < 0.01, F.CORNER_BAG_M);
 
 head('6  reachability says only what the data supports');
 var R_M = F.VISIT_R_ARCSEC * S.M_PER_ARCSEC;                 // 92.8 m

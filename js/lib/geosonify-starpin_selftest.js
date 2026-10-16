@@ -552,5 +552,143 @@ ok('brighter stars celebrate harder',
 ok('a cornerstone still gets lattice language',
    /on Earth|within 50 km/.test(FB.tierOf(12).label + FB.tierOf(12).blurb));
 
+// ── 12. cells: names the log can match, evidence that counts, cells-v1 ──────
+//
+// Added 17 Oct 2026. cellComplete() had never once been able to say "complete"
+// for a real collection: cellCornerstones() named corners at the cell's order,
+// the log names them at their intrinsic order, and every cell has a corner
+// where the two differ. Section 3 passed because it fed cellCornerstones()
+// names back into cellComplete(). These tests go through the names the app
+// actually LOGS (nearestCornerstone at the map's probe order, 14).
+if (haveHp) {
+  head('12: completed cells');
+  var H12 = require('./geosonify-healpix.js');
+  function cellAt(lat, lon, order) {
+    var p = H12.nestPath(H12.nestIndex(lat, lon, order), order);
+    return 'f' + (p.f != null ? p.f : p.face) + '.' + p.digits.join('');
+  }
+  function loggedName(c) { return S.nearestCornerstone(c.lat, c.lon, 14).name; }
+
+  // Christchurch, a face seam, both polar caps, the antimeridian.
+  var SITES = [[-43.53, 172.62], [-43.6, 172.7], [41.81, 0.3], [41.81, 45.0],
+               [-41.81, 135.2], [89.9, 30], [-89.9, 200], [10.0, 179.999], [-20, -179.999]];
+  var named = 0, mism = 0, completeOk = 0, cellsSeen = 0;
+  SITES.forEach(function (s) {
+    [13, 14].forEach(function (order) {
+      var q = cellAt(s[0], s[1], order), cs = S.cellCornerstones(q);
+      cellsSeen++;
+      var logged = cs.map(loggedName);
+      cs.forEach(function (c, i) { named++; if (c.name !== logged[i]) mism++; });
+      if (S.cellComplete(q, logged).complete) completeOk++;
+    });
+  });
+  ok('cellCornerstones names every corner exactly as the log would', mism === 0,
+     mism + ' of ' + named + ' corners named differently');
+  ok('a cell with all four corners logged reads as complete', completeOk === cellsSeen,
+     completeOk + ' of ' + cellsSeen);
+  ok('a corner with a coarser intrinsic order is named at that order',
+     S.cellCornerstones('f9.1112021102013').some(function (c) {
+       return c.name === 'V:f9.111202110201c3'; }));
+  ok('cell corner names still resolve to their own ground', (function () {
+    return S.cellCornerstones('f9.1112021102013').every(function (c) {
+      var p = S.cornerstonePoint(c.name);
+      return S.haversineM(p.lat, p.lon, c.lat, c.lon) < 0.01;
+    });
+  })());
+
+  // collect-v1
+  function csRec(name, mNorth, acc, ms, id) {
+    var p = S.cornerstonePoint(name);
+    return { record_id: id || ('r' + Math.random()), kind: 'visit',
+             target: { cornerstone: name }, event: { time_ms: ms || 1 },
+             fix: { lat_1e7: Math.round((p.lat + mNorth / 111319.9) * 1e7),
+                    lon_1e7: Math.round(p.lon * 1e7), accuracy_m: acc } };
+  }
+  var cs0 = S.cellCornerstones(cellAt(-43.53, 172.62, 14))[0].name;
+  ok('cornerstone: well-supported collects', S.collects(csRec(cs0, 10, 5)));
+  ok('cornerstone: compatible does NOT collect', !S.collects(csRec(cs0, 120, 40)),
+     S.assessRecord(csRec(cs0, 120, 40)).visit.verdict);
+  ok('cornerstone: from across town does not collect', !S.collects(csRec(cs0, 2000, 5)));
+  ok('cornerstone: unknown accuracy does not collect', !S.collects(csRec(cs0, 1, null)));
+  ok('starpin: compatible still collects (unchanged rule)',
+     S.collects({ target: { starpin: 'x', lat_1e7: -435529318, lon_1e7: 1726521327 },
+                  event: { time_ms: 0 },
+                  fix: { lat_1e7: -435529318 + 1000, lon_1e7: 1726521327, accuracy_m: 20 } }));
+
+  // cells-v1: a 3 x 3 grid of order-14 corners is one order-13 cell and four
+  // order-14 cells. Visit all nine, a day apart.
+  var big = cellAt(-43.53, 172.62, 13);
+  var kids = [0, 1, 2, 3].map(function (k) { return big + k; });
+  var nine = {};
+  kids.forEach(function (k) { S.cellCornerstones(k).forEach(function (c) { nine[c.name] = c; }); });
+  var nineNames = Object.keys(nine).sort();
+  ok('four sibling order-14 cells share nine corners', nineNames.length === 9, nineNames.length);
+  var DAY = 86400000;
+  var recs9 = nineNames.map(function (n, i) { return csRec(n, 5, 5, (i + 1) * DAY, 'v' + i); });
+  var P = S.cellProgress(recs9);
+  ok('nine corners complete four order-14 cells', P.counts[14] === 4, JSON.stringify(P.counts));
+  ok('...and their order-13 parent', P.counts[13] === 1 &&
+     P.complete.some(function (e) { return e.cell === big; }));
+  ok('every completed order-14 cell is one of the four children',
+     P.complete.filter(function (e) { return e.order === 14; })
+       .every(function (e) { return kids.indexOf(e.cell) >= 0; }));
+  var parent = P.complete.filter(function (e) { return e.cell === big; })[0];
+  var parentLatest = Math.max.apply(null, S.cellCornerstones(big).map(function (c) {
+    return (nineNames.indexOf(c.name) + 1) * DAY; }));
+  ok('completedMs is the latest of the four corners',
+     parent && parent.completedMs === parentLatest, parent && parent.completedMs);
+  ok('partial cells around the grid are reported, with what is held',
+     P.partial.length > 0 && P.partial.every(function (e) { return e.have < 4; }));
+
+  // Retroactive and honest: drop the centre corner and only order 13 survives.
+  var centre = nineNames.filter(function (n) {
+    return kids.every(function (k) {
+      return S.cellCornerstones(k).some(function (c) { return c.name === n; }); });
+  })[0];
+  ok('the centre corner belongs to all four children', !!centre);
+  var P2 = S.cellProgress(recs9.filter(function (r) { return r.target.cornerstone !== centre; }));
+  ok('remove the centre: no order-14 cell is complete', P2.counts[14] === 0, P2.counts[14]);
+  ok('...but the order-13 cell does not use it, so it stands', P2.counts[13] === 1);
+
+  // A record that does not collect does not complete anything.
+  var weak = recs9.map(function (r, i) {
+    return r.target.cornerstone === centre ? csRec(centre, 130, 40, 1, 'weak') : r; });
+  ok('a compatible-only corner completes nothing', S.cellProgress(weak).counts[14] === 0);
+
+  // Repeat visits: first collecting date wins; extra records change nothing.
+  var again = recs9.concat([csRec(centre, 2, 3, 99 * DAY, 'again')]);
+  var P3 = S.cellProgress(again);
+  ok('a later revisit does not move a completion date',
+     JSON.stringify(P3.complete.map(function (e) { return e.completedMs; })) ===
+     JSON.stringify(P.complete.map(function (e) { return e.completedMs; })));
+
+  // Legacy names are the same corner.
+  ok('a legacy cornerstone name counts as its canonical corner', (function () {
+    var r = csRec('V:f9.11120211002122c3', 1, 3, 5);
+    r.target.cornerstone = 'V:f9.11120211002122';
+    return S.cellProgress([r]).corners === 1;
+  })());
+
+  // No single spot can count for two corners of an eligible cell. The worst
+  // case on Earth is a polar order-14 cell (shortest corner pair 317.5 m);
+  // a well-supported fix lies within 92.77 m of its corner.
+  ok('anti-overlap: polar order-14 corners are > 2R apart', (function () {
+    var R2 = 2 * 3 * S.M_PER_ARCSEC, worst = Infinity;
+    [[89.99, 45], [-89.99, 45], [89.99, 135], [41.81, 0.01]].forEach(function (s) {
+      var cs = S.cellCornerstones(cellAt(s[0], s[1], 14));
+      for (var i = 0; i < 4; i++) for (var j = i + 1; j < 4; j++)
+        worst = Math.min(worst, S.haversineM(cs[i].lat, cs[i].lon, cs[j].lat, cs[j].lon));
+    });
+    return worst > R2 + 100;
+  })());
+  ok('cell orders are 13 and 14 only', JSON.stringify(S.CELL_ORDERS) === '[13,14]');
+  ok('cellsAtVertex: an order-14-only vertex is no corner at order 13', (function () {
+    var c = S.nearestCornerstone(-43.553, 172.652, 14);
+    var at = S.cellsAtVertex(c.lat, c.lon);
+    return c.intrinsicOrder === 14 ? at.every(function (x) { return x.order === 14; }) && at.length === 4
+                                   : true;
+  })());
+}
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

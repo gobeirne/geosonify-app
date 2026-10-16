@@ -509,20 +509,62 @@ var GeosonifyStarpin = (function () {
     return best;
   }
 
-  // The four canonical vertex names of a cell — for the "all four corners" bonus.
-  function cellCornerstones(quaternary) {
-    var H = hp();
+  // 'f9.1112...' -> { order, ipix } for a cell path.
+  function parseCell(quaternary) {
     var m = /^f(\d{1,2})\.([0-3]+)$/.exec(String(quaternary).trim());
-    if (!m) throw new Error('cellCornerstones: expected f<face>.<base-4 digits>');
+    if (!m) throw new Error('cell: expected f<face>.<base-4 digits>');
     var face = parseInt(m[1], 10), digits = m[2], order = digits.length;
     var q = 0n;
     for (var i = 0; i < digits.length; i++) q = q * 4n + BigInt(digits[i]);
-    var ipix = BigInt(face) * (1n << BigInt(2 * order)) + q, nside = Math.pow(2, order);
+    return { order: order, ipix: BigInt(face) * (1n << BigInt(2 * order)) + q };
+  }
+
+  // The four corner POINTS of a cell, in (u, v) order 00, 10, 11, 01.
+  function cellCornerPoints(H, ipix, order) {
+    var nside = Math.pow(2, order);
     return [[0, 0], [1, 0], [1, 1], [0, 1]].map(function (uv) {
-      var ll = vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
-      var inc = incidentCells(H, ll[0], ll[1], order);
-      return { name: vertexName(H, inc, order, ll[0], ll[1]), lat: ll[0], lon: ll[1] };
+      return vec2ll(H._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]));
     });
+  }
+
+  // Corners named at the CELL'S OWN order. Kept only for cornerstonePoint,
+  // which resolves a name 'V:<cell>c<k>' by naming the corners of <cell> — and
+  // there the cell's order IS the vertex's intrinsic order, so this naming is
+  // exactly right. Anywhere else it is wrong: see cellCornerstones.
+  function cellCornersAtOwnOrder(quaternary) {
+    var H = hp(), c = parseCell(quaternary);
+    return cellCornerPoints(H, c.ipix, c.order).map(function (ll) {
+      var inc = incidentCells(H, ll[0], ll[1], c.order);
+      return { name: vertexName(H, inc, c.order, ll[0], ll[1]), lat: ll[0], lon: ll[1] };
+    });
+  }
+
+  // The four canonical vertex names of a cell — the SAME names the log holds.
+  //
+  // A logged cornerstone is named at its INTRINSIC order (nearestCornerstone):
+  // the coarsest order at which it is a vertex. This used to name every corner
+  // at the cell's order instead, and in a quadtree every cell shares at least
+  // one corner with its parent, so at least one corner of EVERY cell got a
+  // name no record could ever carry. Measured 17 Oct 2026: of 400 order-13/14
+  // cells around Christchurch with all four corners logged exactly as the app
+  // logs them, cellComplete() called 0 complete. The self-test passed because
+  // it fed cellCornerstones() names straight back into cellComplete().
+  //
+  // Pure, so memoised: the log and the Go tab ask about the same few cells.
+  var cornerMemo = {}, cornerMemoN = 0;
+  function cellCornerstones(quaternary) {
+    var key = String(quaternary).trim();
+    if (cornerMemo[key]) return cornerMemo[key].map(function (c) {
+      return Object.assign({}, c); });
+    var H = hp(), c = parseCell(key);
+    var out = cellCornerPoints(H, c.ipix, c.order).map(function (ll) {
+      var v = nearestCornerstone(ll[0], ll[1], c.order);
+      return { name: v.name, lat: v.lat, lon: v.lon, intrinsicOrder: v.intrinsicOrder,
+               crossOrder: v.crossOrder, tierOrder: v.tierOrder, degree: v.degree };
+    });
+    if (cornerMemoN++ > 4000) { cornerMemo = {}; cornerMemoN = 0; }
+    cornerMemo[key] = out;
+    return out.map(function (x) { return Object.assign({}, x); });
   }
 
   // Have all four corners of this cell been collected?
@@ -554,7 +596,7 @@ var GeosonifyStarpin = (function () {
     var s = String(name).trim();
     var m = /^V:(f\d{1,2}\.[0-3]+)(?:c([0-3]))?$/.exec(s);
     if (!m) throw new Error('cornerstonePoint: expected V:f<face>.<base-4 digits>[c<corner>]');
-    var corners = cellCornerstones(m[1]);
+    var corners = cellCornersAtOwnOrder(m[1]);
     if (m[2] != null) {
       var hit = corners.filter(function (c) { return c.name === s; })[0];
       if (!hit) throw new Error('cornerstonePoint: "' + s + '" is not the canonical ' +
@@ -663,6 +705,147 @@ var GeosonifyStarpin = (function () {
     return out;
   }
 
+  // ── collect-v1: which records COUNT ───────────────────────────────────────
+  //
+  // A record is a fact (where you were, how good the fix was). Whether it
+  // counts is derived, like every other assessment, from its verdict:
+  //
+  //   starpin      well-supported or compatible — unchanged; the starpin bag
+  //                button has always accepted both.
+  //   cornerstone  well-supported only — the rule map bagging already applied.
+  //
+  // Until 17 Oct 2026 the Go tab's cornerstone button logged whatever the
+  // verdict, and the app counted every cornerstone record it held, so a tap
+  // from across town showed as bagged. Old records are not rewritten; a record
+  // that does not meet the rule simply does not count, and shows as an approach.
+  //
+  // The cornerstone bar is also what keeps cells honest (cells-v1 below): a
+  // well-supported fix lies inside the 92.77 m circle, so one spot can support
+  // two corners only if they are under 185.5 m apart. The closest two corners
+  // of any order-14 cell on Earth are 317.5 m apart (polar cells), so no
+  // single place can count for two corners of an eligible cell.
+  var COLLECT_RULE = 'collect-v1';
+  function collects(rec, assessment) {
+    if (!rec || !rec.target) return false;
+    var a = assessment;
+    if (!a) { try { a = assessRecord(rec); } catch (e) { return false; } }
+    var v = a && a.visit && a.visit.verdict;
+    if (rec.target.cornerstone) return v === 'well-supported';
+    return v === 'well-supported' || v === 'compatible';
+  }
+
+  // ── cells-v1: completed HEALPix cells ─────────────────────────────────────
+  //
+  // A cell is complete when all four of its corners have a record that
+  // collects. Nothing is stored: completion is derived from the log every
+  // time, so it is retroactive (old walks count), it follows deletions (retract
+  // a corner and the cell un-completes), and two devices that hold the same
+  // records always agree.
+  //
+  //   eligible orders   13 and 14 — at 15 the corners of 23% of cells are
+  //                     under 185.5 m apart, so one spot could count twice.
+  //   completedMs       the latest of the four corners' first collecting dates.
+  //   identity          the cell path, 'f9.11120211002…' (order = digit count).
+  //
+  // A new corner is a corner of up to four cells at each order it is a vertex
+  // of (three at the exceptional eight), so one visit can complete several.
+  var CELL_ORDERS = [13, 14];
+  var CELL_RULE = 'cells-v1';
+
+  // Cells (at the given orders) that have this point as a corner.
+  function cellsAtVertex(lat, lon, orders) {
+    var H = hp(), out = [];
+    (orders || CELL_ORDERS).forEach(function (order) {
+      var inc = incidentCells(H, lat, lon, order);
+      if (inc.length < 3) return;             // not a vertex at this order
+      inc.forEach(function (ipix) {
+        out.push({ cell: pathStr(H, ipix, order), order: order, ipix: ipix });
+      });
+    });
+    return out;
+  }
+
+  function cellProgress(records, opts) {
+    opts = opts || {};
+    var orders = opts.orders || CELL_ORDERS;
+    var H = hp();
+
+    // 1. corners that collect: canonical name -> first collecting time.
+    var have = {}, list = [];
+    (records || []).forEach(function (r) {
+      if (!r || !r.target || !r.target.cornerstone) return;
+      var a = null;
+      try { a = assessRecord(r); } catch (e) { return; }
+      if (!a.target || !collects(r, a)) return;
+      var k = targetKey(r.target), ms = r.event ? r.event.time_ms : null;
+      var h = have[k];
+      if (!h) {
+        h = have[k] = { name: k, lat: a.target.lat, lon: a.target.lon, firstMs: ms };
+        list.push(h);
+      } else if (ms != null && (h.firstMs == null || ms < h.firstMs)) h.firstMs = ms;
+    });
+
+    // 2. find a held corner AT a point. Corners are matched by position, not
+    //    by name, so detection never pays for naming; 0.5 m is far below the
+    //    317 m minimum corner spacing and far above float noise.
+    var B = 1e-3, grid = {}, polar = [];
+    function bucket(lat, lon) { return Math.floor(lat / B) + ':' + Math.floor(lon / B); }
+    list.forEach(function (h) {
+      if (Math.abs(h.lat) > 89.99) { polar.push(h); return; }   // longitude means nothing there
+      var k = bucket(h.lat, h.lon);
+      (grid[k] = grid[k] || []).push(h);
+    });
+    function heldAt(lat, lon) {
+      var pool = polar.slice();
+      if (Math.abs(lat) <= 89.99) {
+        [lon, lon - 360, lon + 360].forEach(function (L) {
+          var bi = Math.floor(lat / B), bj = Math.floor(L / B);
+          for (var di = -1; di <= 1; di++) for (var dj = -1; dj <= 1; dj++)
+            pool = pool.concat(grid[(bi + di) + ':' + (bj + dj)] || []);
+        });
+      }
+      for (var i = 0; i < pool.length; i++)
+        if (haversineM(lat, lon, pool[i].lat, pool[i].lon) < 0.5) return pool[i];
+      return null;
+    }
+
+    // 3. every cell touched by a held corner, at each eligible order.
+    var cand = {};
+    list.forEach(function (h) {
+      cellsAtVertex(h.lat, h.lon, orders).forEach(function (c) { cand[c.cell] = c; });
+    });
+
+    var complete = [], partial = [];
+    Object.keys(cand).forEach(function (key) {
+      var c = cand[key];
+      var corners = cellCornerPoints(H, c.ipix, c.order).map(function (ll) {
+        var h = heldAt(ll[0], ll[1]);
+        return h ? { have: true, name: h.name, lat: h.lat, lon: h.lon, firstMs: h.firstMs }
+                 : { have: false, name: null, lat: ll[0], lon: ll[1], firstMs: null };
+      });
+      var n = corners.filter(function (x) { return x.have; }).length;
+      var entry = { cell: c.cell, order: c.order, corners: corners, have: n,
+                    complete: n === 4, completedMs: null };
+      if (n === 4) {
+        entry.completedMs = corners.reduce(function (m, x) {
+          return x.firstMs != null && x.firstMs > m ? x.firstMs : m; }, -Infinity);
+        if (!isFinite(entry.completedMs)) entry.completedMs = null;
+        complete.push(entry);
+      } else partial.push(entry);
+    });
+    complete.sort(function (a, b) { return (b.completedMs || 0) - (a.completedMs || 0); });
+    partial.sort(function (a, b) {
+      if (b.have !== a.have) return b.have - a.have;
+      return a.order - b.order || (a.cell < b.cell ? -1 : 1);
+    });
+    var counts = {};
+    orders.forEach(function (o) {
+      counts[o] = complete.filter(function (e) { return e.order === o; }).length; });
+    return { rule: CELL_RULE, collect: COLLECT_RULE, orders: orders.slice(),
+             complete: complete, partial: partial, counts: counts,
+             corners: list.length };
+  }
+
   // ── exports ───────────────────────────────────────────────────────────────
 
   return {
@@ -679,7 +862,10 @@ var GeosonifyStarpin = (function () {
     cellComplete: cellComplete, cornerstonePoint: cornerstonePoint,
     canonicaliseCornerstone: canonicaliseCornerstone, targetKey: targetKey,
     sourceIdOf: sourceIdOf,
-    assessRecord: assessRecord, rankByTarget: rankByTarget
+    assessRecord: assessRecord, rankByTarget: rankByTarget,
+    COLLECT_RULE: COLLECT_RULE, collects: collects,
+    CELL_ORDERS: CELL_ORDERS, CELL_RULE: CELL_RULE,
+    cellsAtVertex: cellsAtVertex, cellProgress: cellProgress
   };
 })();
 
