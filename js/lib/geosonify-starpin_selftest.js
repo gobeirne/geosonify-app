@@ -552,6 +552,29 @@ ok('brighter stars celebrate harder',
 ok('a cornerstone still gets lattice language',
    /on Earth|within 50 km/.test(FB.tierOf(12).label + FB.tierOf(12).blurb));
 
+// ── 11b. one culmination, two milliseconds ───────────────────────────────────
+//
+// attendance() recomputes the instant from whatever time it is given, and the
+// float arithmetic lands on either of two adjacent milliseconds for the SAME
+// culmination. starpin.html compared culminations with ===, so a closed moment
+// reopened on the ticks that disagreed (17 Oct 2026). The app now compares
+// with sameCulm() (|a - b| < 1000 ms). This holds that tolerance to account.
+head('11b: a culmination\'s instant wobbles by at most a millisecond');
+(function () {
+  var worst = 0, wobbly = 0;
+  for (var k = 0; k < 200; k++) {
+    var c = S.nextCulmination(Date.UTC(2026, 9, 17) + k * 86164091);
+    var lo = Infinity, hi = -Infinity;
+    for (var t = c - 15000; t <= c + 60000; t += 97) {
+      var v = S.attendance(t).culminationMs; lo = Math.min(lo, v); hi = Math.max(hi, v);
+    }
+    if (hi > lo) wobbly++;
+    worst = Math.max(worst, hi - lo);
+  }
+  ok('the wobble exists, so === between ticks is unsafe', wobbly > 0, wobbly + ' of 200');
+  ok('...and never exceeds a millisecond, far inside the 1 s tolerance', worst <= 1, worst + ' ms');
+})();
+
 // ── 12. cells: names the log can match, evidence that counts, cells-v1 ──────
 //
 // Added 17 Oct 2026. cellComplete() had never once been able to say "complete"
