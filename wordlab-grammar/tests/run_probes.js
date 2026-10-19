@@ -40,7 +40,7 @@ function runProbe(p) {
   let failures = [];
   if (e.state === 'not_recognised') { if (res.state === 'recognised') failures.push('recognised, expected not'); }
   else if (res.state !== e.state) failures.push('state ' + res.state + ' != ' + e.state + (res.reason ? ' (' + res.reason + ')' : ''));
-  if (!failures.length && e.state === 'conflict' && res.conflict.constraint !== e.conflict) failures.push('conflict ' + res.conflict.constraint + ' != ' + e.conflict);
+  if (!failures.length && e.state === 'conflict' && !res.conflicts.some(c => c.constraint === e.conflict)) failures.push('conflict ' + res.conflicts.map(c => c.constraint).join('+') + ' lacks ' + e.conflict);
   if (!failures.length && e.state === 'recognised') {
     if ((e.where || 'canonical') === 'canonical' || e.where === 'pinned') failures = readingOk(res.canonical, p, ws);
     else { const tries = res.readings.map(r => readingOk(r, p, ws)); if (!tries.some(t => !t.length)) failures = ['no offered reading matches; closest: ' + tries.sort((a, b) => a.length - b.length)[0].join('; ')]; }
@@ -67,7 +67,7 @@ function main() {
       if (others.length) md.push('');
       if (res.choicePoints && res.choicePoints.length) md.push('Choice points: ' + res.choicePoints.map(c => c.word + ' {' + c.options.join(', ') + '}').join('; '), '');
     }
-    if (res.conflict) md.push('Conflict: ' + res.conflict.constraint + ' at “' + res.conflict.text + '” (' + res.conflict.explanation + ')', '');
+    if (res.conflicts) md.push('Conflict: ' + res.conflicts.map(c => c.constraint + ' at “' + c.text + '” (' + c.explanation + ')').join('; '), '');
     if (res.partial && res.state !== 'recognised') md.push('Partial: ' + res.partial.map(x => (x.cat ? '[' + x.cat + ' ' + x.text + ']' : x.text)).join(' '), '');
     if (res.state === 'invalid_tiles') md.push('Tiles: ' + (res.reason || '') + ' ' + JSON.stringify(res.words || res.word || ''), '');
     if (!ok) md.push('**Failures:** ' + r.failures.join('; '), '');

@@ -12,15 +12,16 @@ const {readingsFor, HELPER_CANDIDATES} = require('../src/lexicon');
 
 function makeRng(seed) { let s = seed >>> 0 || 1; return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; }; }
 
-function buildGenerator(engine, seed = 1) {
+function buildGenerator(engine, seed = 1, opts = {}) {
+  // opts.allowedBlue: Set of collected words available; opts.helpers: Set of unlocked gold helpers.
   const cg = engine.strict, lexicon = engine.lexicon, rnd = makeRng(seed);
   const pick = a => a[Math.floor(rnd() * a.length)];
   // preterminal symbol -> candidate tiles
   const bySym = new Map();
   const addTile = (sym, tile) => { if (!bySym.has(sym)) bySym.set(sym, []); bySym.get(sym).push(tile); };
   const symOf = (cat, f) => { const decl = cg.cats[cat]; if (!decl) return undefined; const keys = Object.keys(decl).sort(); return cg.symbols.get(keys.length ? cat + '[' + keys.map(k => k + '=' + f[k]).join(',') + ']' : cat); };
-  for (const [word] of lexicon.lex) for (const r of readingsFor(lexicon, word, 'collected')) { const s = symOf(r.cat, r.f); if (s !== undefined) addTile(s, {word, source: 'collected'}); }
-  for (const word of HELPER_CANDIDATES) for (const r of readingsFor(lexicon, word, 'helper')) { const s = symOf(r.cat, r.f); if (s !== undefined) addTile(s, {word, source: 'helper'}); }
+  for (const [word] of lexicon.lex) if (!opts.allowedBlue || opts.allowedBlue.has(word)) for (const r of readingsFor(lexicon, word, 'collected')) { const s = symOf(r.cat, r.f); if (s !== undefined) addTile(s, {word, source: 'collected'}); }
+  for (const word of HELPER_CANDIDATES) if (!opts.helpers || opts.helpers.has(word)) for (const r of readingsFor(lexicon, word, 'helper')) { const s = symOf(r.cat, r.f); if (s !== undefined) addTile(s, {word, source: 'helper'}); }
   // minimum yield length per symbol, to steer termination
   const minLen = new Map();
   for (const s of bySym.keys()) minLen.set(s, 1);
@@ -118,7 +119,8 @@ function buildGenerator(engine, seed = 1) {
       if (id === 'vp_tr') {
         const verb = tiles[n.kids[0].tok];
         const canBeIntr = readingsFor(engine.lexicon, verb.word, verb.source).some(r => r.cat === 'V' && r.f.fr === 'intr');
-        if (!canBeIntr) out.push({type: 'object_drop', tiles: remove(span(n.kids[1])), target: 'drop object of "' + verb.word + '"'});
+        // The object follows the verb, so the verb keeps its token index.
+        if (!canBeIntr) out.push({type: 'object_drop', tiles: remove(span(n.kids[1])), target: 'drop object of "' + verb.word + '"', verbIndex: n.kids[0].tok});
       }
     }
     if (tiles.length >= 3) {

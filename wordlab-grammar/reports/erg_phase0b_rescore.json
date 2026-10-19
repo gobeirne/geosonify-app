@@ -1,0 +1,236 @@
+{
+ "table": {
+  "generated_positive | ERG witness": {
+   "n": 349,
+   "before": 349,
+   "now": 349
+  },
+  "generated_positive | ERG no": {
+   "n": 51,
+   "before": 51,
+   "now": 51
+  },
+  "accepted | ERG witness": {
+   "n": 485,
+   "before": 485,
+   "now": 485
+  },
+  "accepted | ERG no": {
+   "n": 115,
+   "before": 115,
+   "now": 115
+  },
+  "rejected | ERG no": {
+   "n": 119,
+   "before": 0,
+   "now": 5
+  },
+  "rejected | ERG witness": {
+   "n": 181,
+   "before": 0,
+   "now": 20
+  }
+ },
+ "changes": [
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Choose but fuel because he or sleep bid and quit for he was not unaware and has or has you.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Only he or just she or tuition that has but has all or did not bid but glance and split will.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Sting since he does describe but dwarf but they hurt where you burst.",
+   "erg": "robust_lexical",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "adjacent_swap",
+   "text": "Often suggest when they breeze but split they or he quit stairs or fish farm and media letter and you glass.",
+   "erg": "no_parse",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Each emotion phrase has or has media and spread.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "token_delete",
+   "text": "Notice almost stock diamond has.",
+   "erg": "no_parse",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Again never pass the blind or you all or series or average or black.",
+   "erg": "no_parse",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "You or she did not sting or did prepare but foot and hurt.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Each emotion phrase has excess or has and spread.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "adjacent_swap",
+   "text": "Expect we that quit among only you staff or have mixed or bid.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Lift and coach above staff or you and someone has.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Will for almost perfect media erosion has people and has but was not merry.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "He spread or rose but has or has all but burst.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "He spread or rose but has you or has but burst.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Where she or excess or she that has still broken rose and quit wreck.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "token_delete",
+   "text": "You toward home like an ability and can not.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "She that is under all or has behind the midnight aware crew or only just we that bid but spread or she can.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Choose but fuel because he or sleep bid and quit for he was not unaware and has one or has.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "adjacent_swap",
+   "text": "You toward home like an ability one and can not.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Only he or just she or tuition that has you but has or did not bid but glance and split will.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Notice almost stock diamond has.",
+   "erg": "no_parse",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "token_delete",
+   "text": "Remember all rose where he split before buffalo did but gain or people burst and series spread.",
+   "erg": "vp_ellipsis",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Already screen over all but spray and adjust round.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Detect.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  },
+  {
+   "kind": "corruption_rejected",
+   "type": "object_drop",
+   "text": "Will for almost perfect media erosion has and has all but was not merry.",
+   "erg": "full_clause",
+   "before": "reject",
+   "now": "accept"
+  }
+ ]
+}

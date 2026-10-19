@@ -241,12 +241,14 @@ Readings added in Phase 0 (attested/derived) that the canonical analysis relied 
 | Cause | Items |
 |---|---:|
 | ERG count→mass coercion ("grinding") | 76 |
+| ERG verb object omission (optional complement) | 48 |
 | ERG does not check a/an | 29 |
 | ERG does not check reflexive binding | 16 |
 | ERG bare N-bar fragment (headline style) | 14 |
-| other | 11 |
+| ellipsis after has/do/be (Phase 0: modals only) | 9 |
 | lexical do/will (gold do is auxiliary-only) | 7 |
 | ERG agreement with or-coordination | 6 |
+| other | 3 |
 
 ### Samples (for rule-level triage, not for sentence adjudication)
 

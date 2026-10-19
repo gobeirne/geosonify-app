@@ -20,7 +20,7 @@ const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 const resultsPath = process.argv[2];
 if (!resultsPath) { console.error('usage: node erg/analyse.js erg_phase0_results.jsonl'); process.exit(2); }
-const readJsonl = f => fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
+const readJsonl = f => (f.endsWith('.gz') ? require('zlib').gunzipSync(fs.readFileSync(f)).toString('utf8') : fs.readFileSync(f, 'utf8')).trim().split('\n').filter(Boolean).map(JSON.parse); // .jsonl or .jsonl.gz
 const batchPath = process.argv[3] || path.join(__dirname, 'phase0_batch.jsonl');
 const TAG = process.argv[4] || 'erg_phase0';
 const batch = new Map(readJsonl(batchPath).map(b => [b.id, b]));
@@ -67,20 +67,24 @@ function readingType(deriv, insp, nWords) {
 // 2026-10-19 notebook store only the first derivation; later notebooks store
 // one per inspected reading.
 const TYPE_RANK = ['full_clause', 'vp_ellipsis', 'np_fragment', 'inverted_ellipsis', 'other_fragment', 'merged_span', 'robust_lexical'];
-function ergType(r) {
-  if (!r.erg_parsed) return r.ace_error ? 'ace_error' : 'no_parse';
+function ergBest(r) {
+  if (!r.erg_parsed) return {type: r.ace_error ? 'ace_error' : 'no_parse', deriv: null};
   const ins = r.inspected || [];
-  const types = ins.some(x => x.derivation) ? ins.filter(x => x.derivation).map(x => readingType(x.derivation, x, r.n_words))
-    : [readingType(r.first_derivation, ins[0], r.n_words)];
-  return types.sort((x, y) => TYPE_RANK.indexOf(x) - TYPE_RANK.indexOf(y))[0];
+  const cands = ins.some(x => x.derivation) ? ins.filter(x => x.derivation).map(x => ({type: readingType(x.derivation, x, r.n_words), deriv: x.derivation}))
+    : [{type: readingType(r.first_derivation, ins[0], r.n_words), deriv: r.first_derivation}];
+  return cands.sort((x, y) => TYPE_RANK.indexOf(x.type) - TYPE_RANK.indexOf(y.type))[0];
 }
+const ergType = r => ergBest(r).type;
 const WITNESS_TYPES = new Set(['full_clause', 'vp_ellipsis', 'np_fragment']);
 const items = [];
 for (const r of results) {
   const b = batch.get(r.id); if (!b) continue;
-  const t = ergType(r);
+  const best = ergBest(r), t = best.type;
+  // Rules of the reading that decided the type (the witnessing reading when
+  // there is one), so causes are read from the analysis that actually counts.
+  const rules = ruleNames(best.deriv || r.first_derivation);
   items.push({...b, erg: t, witnessed: WITNESS_TYPES.has(t), parsed: !!r.erg_parsed, readings: r.readings, ms: r.ms,
-    topRules: ruleNames(r.first_derivation).slice(0, 6).join(' '), allRules: ruleNames(r.first_derivation)});
+    topRules: rules.slice(0, 6).join(' '), allRules: rules, bestDeriv: best.deriv});
 }
 const pct = (a, b) => b ? (100 * a / b).toFixed(1) + '%' : '—';
 const count = (xs, f) => xs.filter(f).length;
@@ -161,6 +165,13 @@ function causes(x) {
   if (x.type === 'case' && /myself/i.test(x.text)) c.push('ERG does not check reflexive binding');
   if (x.type === 'agreement' && / or /.test(x.text)) c.push('ERG agreement with or-coordination');
   if (rs.some(r => /^do2$|^will_v1$/.test(r))) c.push('lexical do/will (gold do is auxiliary-only)');
+  // VP ellipsis after a non-modal auxiliary ("He has.", "She did.", "They were."):
+  // Phase 0 supports ellipsis after modals only.
+  const d = x.bestDeriv || '';
+  if (rs.some(r => /_aux-.*ell/.test(r)) && rs.some(r => /^(has_aux|have_fin_aux|have_bse_aux|had_aux|did1_pos|do1_pos|does1_pos|be_[a-z]+_(is|are|was|were))$/.test(r))) c.push('ellipsis after has/do/be (Phase 0: modals only)');
+  // ERG's optional-complement rule lets a transitive verb omit its object
+  // ("Detect.", "She reads."); Phase 0 needs an attested intransitive frame.
+  if (rs.includes('hd_optcmp_c')) c.push('ERG verb object omission (optional complement)');
   return c.length ? c : ['other'];
 }
 const causeTally = {};

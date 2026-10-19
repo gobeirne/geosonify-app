@@ -15,8 +15,19 @@ const {execFileSync} = require('child_process');
 const path = require('path');
 // Switches defined in src/grammar.js (OFF set). Add new candidate policies there.
 const TAG = process.argv[2] || 'erg_phase0', TILES = process.argv[3] || 'erg/phase0_batch_tiles.jsonl';
+// Each configuration is parsed once and cached on disk (resumable; the cache
+// key includes the engine source so a grammar change invalidates it).
+const fsx = require('fs'), crypto = require('crypto');
+const srcHash = crypto.createHash('sha1').update(['src/grammar.js', 'src/lexicon.js', 'src/engine.js', 'src/parser.js'].map(f => fsx.readFileSync(path.join(__dirname, '..', f), 'utf8')).join('')).digest('hex').slice(0, 10);
+const cacheDir = path.join(require('os').tmpdir(), 'wl-ablate-cache');
+fsx.mkdirSync(cacheDir, {recursive: true});
+const run = off => {
+  const key = path.join(cacheDir, [TAG, srcHash, off.slice().sort().join('+') || 'ALLON'].join('_') + '.json');
+  if (fsx.existsSync(key)) return JSON.parse(fsx.readFileSync(key, 'utf8'));
+  const r = runRaw(off); fsx.writeFileSync(key, JSON.stringify(r)); return r;
+};
 const SW = ['COLL', 'MASS', 'IDIOM', 'VF_intr', 'VF_tr', 'VF_ditr', 'VF_cop', 'VF_toinf', 'VF_clause'];
-const run = off => JSON.parse(execFileSync(process.execPath, ['-e', `
+const runRaw = off => JSON.parse(execFileSync(process.execPath, ['-e', `
   const fs=require('fs'),path=require('path');const {load}=require('./src/load');const e=load();
   const rj=f=>fs.readFileSync(f,'utf8').trim().split('\\n').map(JSON.parse);
   const T=new Map(rj(process.env.WL_TILES).map(t=>[t.id,t.tiles]));

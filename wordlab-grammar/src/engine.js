@@ -22,7 +22,7 @@ const VERSION = 'phase0-0.1.0';
 const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Number(process.hrtime.bigint()) / 1e6;
 
 function createEngine(v11Lexicon, oewnEvidence, options = {}) {
-  const lexicon = compileLexicon(v11Lexicon, oewnEvidence, {profile: options.profile || 'default'});
+  const lexicon = compileLexicon(v11Lexicon, oewnEvidence, {profile: options.profile || 'default', erg: options.erg || null});
   const gopts = {preps: lexicon.preps, idiomPreps: lexicon.idiomPreps.length ? lexicon.idiomPreps : ['on']};
   const t0 = now();
   const strict = compileGrammar(G, gopts);
@@ -102,6 +102,8 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
       roles[lf.tok] = {word: words[lf.tok], cat, pos: cat.split('[')[0], role: lf.tok === root ? 'root' : dep ? dep.type : 'head-internal',
         tier: r ? r.tier : null, src: r ? r.src : null};
     }
+    // A declarative whose root is an auxiliary is an elliptical utterance.
+    if (utype === 'declarative' && roles[root] && ['Modal', 'Cop', 'Do', 'HaveAux'].includes(roles[root].pos)) utype = 'ellipsis';
     const bracket = brk(tree, words);
     const prefCost = treeCost(tree, leafInfo);
     return {utteranceType: utype, bracket, roles, relations: rel, families: [...fam].sort(), violations: viol, cost: prefCost,
@@ -235,10 +237,14 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
     if (r.forest && r.best.length) {
       const a = analyse(r.best[0].tree, tiles, r.leafInfo, relaxed);
       const kinds = [...new Set(a.violations.map(v => v.constraint))];
-      if (a.violations.length === 1) {
-        const v = a.violations[0];
-        return {state: 'conflict', tiles, conflict: {constraint: v.constraint, explanation: G.RELAX_TEXT[v.constraint], rule: v.rule,
-          span: v.span, text: tiles.slice(v.span[0], v.span[1]).map(t => t.word).join(' ')}, nearestReading: a, partial, ms: ms(), version: VERSION};
+      // One or two named violations: a specific conflict, each with its span
+      // ("myself ... are": pronoun case AND agreement). Three or more means
+      // the relaxed parse is guessing, so the sentence is reported as outside
+      // the grammar instead.
+      if (a.violations.length <= 2) {
+        const conflicts = a.violations.map(v => ({constraint: v.constraint, explanation: G.RELAX_TEXT[v.constraint], rule: v.rule,
+          span: v.span, text: tiles.slice(v.span[0], v.span[1]).map(t => t.word).join(' ')}));
+        return {state: 'conflict', tiles, conflict: conflicts[0], conflicts, nearestReading: a, partial, ms: ms(), version: VERSION};
       }
       return {state: 'unrecognised', tiles, reason: 'needs_' + a.violations.length + '_relaxations', relaxationsNeeded: kinds, partial, ms: ms(), version: VERSION};
     }

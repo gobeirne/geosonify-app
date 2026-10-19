@@ -1,8 +1,8 @@
 {
  "COLL": {
-  "addsRejections": 197,
-  "rejAgree": 120,
-  "rejDisagree": 77,
+  "addsRejections": 208,
+  "rejAgree": 130,
+  "rejDisagree": 78,
   "addsAcceptances": 0,
   "accAgree": 0,
   "accDisagree": 0,
@@ -83,7 +83,8 @@
    "corrA:567",
    "corrA:582",
    "corrA:593",
-   "corrA:596"
+   "corrA:596",
+   "corrR:47"
   ],
   "accDisagreeIds": []
  },
@@ -91,8 +92,8 @@
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 286,
-  "accAgree": 207,
+  "addsAcceptances": 285,
+  "accAgree": 206,
   "accDisagree": 79,
   "costIds": [],
   "accDisagreeIds": [
@@ -111,7 +112,6 @@
    "gen:207",
    "gen:208",
    "gen:212",
-   "gen:229",
    "gen:244",
    "gen:310",
    "gen:326",
@@ -167,16 +167,17 @@
    "corrA:446",
    "corrA:449",
    "corrA:463",
-   "corrA:472",
    "corrA:514",
    "corrA:530",
    "corrA:533",
    "corrA:561",
    "corrA:565",
    "corrA:568",
-   "corrA:576"
+   "corrA:576",
+   "corrR:26",
+   "corrR:257"
   ],
-  "lengthControlledRatio": 0.85
+  "lengthControlledRatio": 0.87
  },
  "IDIOM": {
   "addsRejections": 0,
@@ -197,25 +198,22 @@
    "corrA:265",
    "corrA:335"
   ],
-  "lengthControlledRatio": 0.98
+  "lengthControlledRatio": 1.01
  },
  "VF_intr": {
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 193,
-  "accAgree": 136,
-  "accDisagree": 57,
+  "addsAcceptances": 110,
+  "accAgree": 65,
+  "accDisagree": 45,
   "costIds": [],
   "accDisagreeIds": [
    "gen:15",
    "gen:32",
-   "gen:37",
    "gen:45",
    "gen:50",
    "gen:60",
-   "gen:79",
-   "gen:115",
    "gen:120",
    "gen:130",
    "gen:160",
@@ -227,7 +225,6 @@
    "gen:277",
    "gen:300",
    "gen:305",
-   "gen:320",
    "gen:328",
    "gen:337",
    "gen:350",
@@ -239,16 +236,11 @@
    "corrA:17",
    "corrA:24",
    "corrA:31",
-   "corrA:75",
-   "corrA:89",
    "corrA:107",
-   "corrA:146",
    "corrA:155",
-   "corrA:178",
    "corrA:194",
    "corrA:242",
    "corrA:265",
-   "corrA:266",
    "corrA:311",
    "corrA:317",
    "corrA:364",
@@ -257,59 +249,53 @@
    "corrA:386",
    "corrA:411",
    "corrA:425",
-   "corrA:446",
    "corrA:449",
-   "corrA:463",
    "corrA:482",
-   "corrA:497",
-   "corrA:531",
-   "corrA:568",
-   "corrA:586"
+   "corrA:586",
+   "corrR:25",
+   "corrR:145"
   ],
-  "lengthControlledRatio": 0.82
+  "lengthControlledRatio": 0.72
  },
  "VF_tr": {
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 11,
-  "accAgree": 5,
-  "accDisagree": 6,
+  "addsAcceptances": 6,
+  "accAgree": 2,
+  "accDisagree": 4,
   "costIds": [],
   "accDisagreeIds": [
    "gen:169",
    "corrA:41",
    "corrA:88",
-   "corrA:505",
-   "corrA:565",
-   "corrA:568"
+   "corrA:565"
   ],
-  "lengthControlledRatio": 0.53
+  "lengthControlledRatio": 0.39
  },
  "VF_ditr": {
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 7,
-  "accAgree": 2,
-  "accDisagree": 5,
+  "addsAcceptances": 5,
+  "accAgree": 1,
+  "accDisagree": 4,
   "costIds": [],
   "accDisagreeIds": [
    "gen:42",
    "gen:310",
-   "gen:375",
    "corrA:155",
    "corrA:463"
   ],
-  "lengthControlledRatio": 0.33
+  "lengthControlledRatio": 0.24
  },
  "VF_cop": {
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 41,
+  "addsAcceptances": 42,
   "accAgree": 23,
-  "accDisagree": 18,
+  "accDisagree": 19,
   "costIds": [],
   "accDisagreeIds": [
    "gen:35",
@@ -329,7 +315,8 @@
    "corrA:446",
    "corrA:497",
    "corrA:519",
-   "corrA:588"
+   "corrA:588",
+   "corrR:271"
   ],
   "lengthControlledRatio": 0.66
  },
@@ -337,36 +324,30 @@
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 30,
-  "accAgree": 15,
-  "accDisagree": 15,
+  "addsAcceptances": 16,
+  "accAgree": 7,
+  "accDisagree": 9,
   "costIds": [],
   "accDisagreeIds": [
    "gen:35",
-   "gen:50",
    "gen:115",
    "gen:120",
    "gen:130",
-   "gen:150",
    "gen:300",
-   "gen:315",
-   "gen:320",
    "gen:330",
    "gen:339",
    "corrA:10",
-   "corrA:200",
-   "corrA:230",
    "corrA:482"
   ],
-  "lengthControlledRatio": 0.58
+  "lengthControlledRatio": 0.52
  },
  "VF_clause": {
   "addsRejections": 0,
   "rejAgree": 0,
   "rejDisagree": 0,
-  "addsAcceptances": 43,
-  "accAgree": 26,
-  "accDisagree": 17,
+  "addsAcceptances": 37,
+  "accAgree": 24,
+  "accDisagree": 13,
   "costIds": [],
   "accDisagreeIds": [
    "gen:15",
@@ -376,17 +357,13 @@
    "corrA:16",
    "corrA:190",
    "corrA:200",
-   "corrA:256",
-   "corrA:266",
    "corrA:317",
    "corrA:380",
    "corrA:482",
-   "corrA:505",
    "corrA:537",
-   "corrA:568",
    "corrA:576",
    "corrA:579"
   ],
-  "lengthControlledRatio": 0.7
+  "lengthControlledRatio": 0.78
  }
 }

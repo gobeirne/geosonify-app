@@ -2,12 +2,12 @@
 
 | Item set | ERG | n | Phase 0 accepted (ERG run) | Phase 0 accepts now |
 |---|---|---:|---:|---:|
-| accepted | ERG no | 186 | 186 | 88 |
-| accepted | ERG witness | 414 | 414 | 327 |
-| generated_positive | ERG no | 114 | 114 | 42 |
-| generated_positive | ERG witness | 286 | 286 | 230 |
-| rejected | ERG no | 184 | 0 | 0 |
-| rejected | ERG witness | 116 | 0 | 0 |
+| accepted | ERG no | 186 | 186 | 93 |
+| accepted | ERG witness | 414 | 414 | 330 |
+| generated_positive | ERG no | 114 | 114 | 47 |
+| generated_positive | ERG witness | 286 | 286 | 238 |
+| rejected | ERG no | 184 | 0 | 8 |
+| rejected | ERG witness | 116 | 0 | 4 |
 
 ## Verdicts that changed
 
@@ -32,8 +32,6 @@
 - accept→reject [generated_positive] They or the twist list can point other and indicate the innocent you and nothing. (ERG: no_parse)
 - accept→reject [generated_positive] Six pretty nuclear elite army. (ERG: no_parse)
 - accept→reject [generated_positive] Only that or smoke or series or you did not crawl between rally and run. (ERG: full_clause)
-- accept→reject [generated_positive] Can only tobacco grape or the input or that diet never omit to budget but parade but nurse but reform about you? (ERG: full_clause)
-- accept→reject [generated_positive] Because they bicycle or they spread but you mixed when she hurt or she bid neglect to have or base. (ERG: other_fragment)
 - accept→reject [generated_positive] Did you that were like local people buffalo make baby home? (ERG: inverted_ellipsis)
 - accept→reject [generated_positive] She spread but they split because they or we click where when you letter they shed because enemy permit. (ERG: no_parse)
 - accept→reject [generated_positive] Ride idle or behave unable and radio where we that allow or current or you or it did not stamp and letter. (ERG: other_fragment)
@@ -69,9 +67,7 @@
 - accept→reject [generated_positive] Solve where they bid and nothing split while we shed or army toss. (ERG: robust_lexical)
 - accept→reject [generated_positive] Will the blossom firm mass fall bleak or reveal she or they or crew never burst but cost? (ERG: full_clause)
 - accept→reject [generated_positive] Only he or thought or this above attitude or army must clerk or betray or has you. (ERG: no_parse)
-- accept→reject [generated_positive] Did almost usual horror industry check that duty mixed but one shed but grab? (ERG: full_clause)
 - accept→reject [generated_positive] Until where energy write where she hurt industry venture but injury burst where you emerge before she split all must whale on crew. (ERG: no_parse)
-- accept→reject [generated_positive] Mean to own all or you or renew. (ERG: other_fragment)
 - accept→reject [generated_positive] Addict some crew salmon but run to depart but spin. (ERG: np_fragment)
 - accept→reject [generated_positive] Must only erosion energy army receive just you that frost and left but remember to code and circle tonight? (ERG: no_parse)
 - accept→reject [generated_positive] Can you slight all? (ERG: other_fragment)
@@ -80,11 +76,9 @@
 - accept→reject [generated_positive] Were we and you and they or army or forum that have broken but frozen but left almost fine? (ERG: no_parse)
 - accept→reject [generated_positive] Powder just swarm or ice that burst but bid and he or she split and spread. (ERG: full_clause)
 - accept→reject [generated_positive] Did almost electric alcohol want that you mixed but energy rose but hazard? (ERG: full_clause)
-- accept→reject [generated_positive] Regret to okay but rent when they rose before this burst since you left and cheese bid. (ERG: full_clause)
 - accept→reject [generated_positive] The oil is insane, for that forum axis draft evil has you that burst or gap in sight among deer or seminar. (ERG: full_clause)
 - accept→reject [generated_positive] Were rigid energy asthma or company across all or marble from input? (ERG: full_clause)
 - accept→reject [generated_positive] We or you off tribe or all or just they or only axis or that. (ERG: no_parse)
-- accept→reject [generated_positive] Can all report that snack quit and exercise burst but he split or drum and kick like all and move to wash? (ERG: full_clause)
 - accept→reject [generated_positive] Say cool. (ERG: other_fragment)
 - accept→reject [generated_positive] Whale on clinic axis and ensure you jar but they left until we long but win to load or range and gas but right. (ERG: no_parse)
 - accept→reject [generated_positive] You or axis or all were not old but before they cloud and they bid they shed or stock split. (ERG: no_parse)
@@ -104,16 +98,12 @@
 - accept→reject [generated_positive] Did enemy axis wash almost immune and offer to crane and bench or moon? (ERG: no_parse)
 - accept→reject [generated_positive] Reunion or they or you or he and he will. (ERG: robust_lexical)
 - accept→reject [generated_positive] Do energy enemy fan but fall urban but jar? (ERG: other_fragment)
-- accept→reject [generated_positive] Spell but love to divide. (ERG: full_clause)
-- accept→reject [generated_positive] Were you that must not fix to claim and flag but major and bird outside some credit? (ERG: full_clause)
 - accept→reject [generated_positive] Appear to play almost more or fall pretty clean or push to catch and exchange. (ERG: robust_lexical)
 - accept→reject [generated_positive] Three energy were not you and salmon and the unusual other enemy spread or burst but mixed and we record and enlist and assist. (ERG: no_parse)
 - accept→reject [generated_positive] Picture they quit and we rose and salmon left but captain and dial but adjust or page. (ERG: no_parse)
 - accept→reject [generated_positive] Expect to ball but cake but radio but point industry and one you that hurt. (ERG: other_fragment)
 - accept→reject [generated_positive] Twelve stairs assault patrol must trim but awake but damage. (ERG: full_clause)
-- accept→reject [generated_positive] Like to round or clutch. (ERG: other_fragment)
 - accept→reject [generated_positive] This trade or you about all was all or enemy. (ERG: no_parse)
-- accept→reject [generated_positive] Aim to taste federal but carry and buzz toward home. (ERG: other_fragment)
 - accept→reject [generated_positive] Question but smile when couple yellow and we check and you bridge but we burst and she quit but left but seminar feature. (ERG: full_clause)
 - accept→reject [generated_positive] He was around only ecology or cattle or you or social but has quit. (ERG: full_clause)
 - accept→reject [generated_positive] Did some school eternal capable index trust all spread until it shed or state camp and he burst? (ERG: full_clause)
@@ -124,15 +114,12 @@
 - accept→reject [generated_positive] Congress and he that left or rose or we below rally like all and you that shed or cost will. (ERG: full_clause)
 - accept→reject [generated_positive] Any awesome army hunt and many state seminar and all village and rally or axis must. (ERG: vp_ellipsis)
 - accept→reject [generated_positive] Can card almost able seed remember to achieve that army transfer and they rose or you cost or spoon the text? (ERG: full_clause)
-- accept→reject [generated_positive] You over all that observe but evoke or just we or she that burst that must mean to end and cradle. (ERG: full_clause)
 - accept→reject [generated_positive] Order just only they or he spread and bid. (ERG: full_clause)
 - accept→reject [generated_positive] Still run rather great or move unique. (ERG: full_clause)
 - accept→reject [generated_positive] Conduct almost dumb or call you exchange but they tongue. (ERG: no_parse)
 - accept→reject [generated_positive] You or soup or deer must not sound but base and while party glide she spread and nothing hurt and we dust but quit. (ERG: full_clause)
 - accept→reject [generated_positive] Does a palm or some ecology place upper? (ERG: other_fragment)
-- accept→reject [generated_positive] Label you this that split but hover. (ERG: full_clause)
 - accept→reject [generated_positive] You burst or board walk and she shed because until we plunge industry march but axis do not whip. (ERG: no_parse)
-- accept→reject [generated_positive] Rent chicken the rib base, for we toward home cost and burst. (ERG: no_parse)
 - accept→reject [generated_positive] They or he spread and escape shed and they bid until you stomach or energy assist but culture cost. (ERG: full_clause)
 - accept→reject [generated_positive] Since they spread and evidence quit before army ask or they cost lecture or awake before you hurt and exercise bid. (ERG: no_parse)
 - accept→reject [generated_positive] Were you and only action or axis and grit and all or the elite bleak? (ERG: no_parse)
@@ -208,14 +195,11 @@
 - accept→reject [det_drop] Mind that hour mixed and we like but cable during all or you or leave more army hurry off energy or noodle. (ERG: np_fragment)
 - accept→reject [adjacent_swap] Move they flame or direct and we split you before hurt or notice cost. (ERG: full_clause)
 - accept→reject [adjacent_swap] Ice illegal tribe must. (ERG: no_parse)
-- accept→reject [det_drop] Aim to decide that apology has cost. (ERG: other_fragment)
 - accept→reject [token_delete] Whale on all army or control that they shed or waste. (ERG: no_parse)
 - accept→reject [case] Myself that did not rate siren in you but play extra will. (ERG: no_parse)
 - accept→reject [adjacent_swap] Were apple upper energy orbit axis more army? (ERG: no_parse)
-- accept→reject [token_delete] Visa shrimp but arrange that only you or artwork before smoke quit but burst or become almost olympic. (ERG: no_parse)
 - accept→reject [token_delete] Were evil actor blind happy? (ERG: other_fragment)
 - accept→reject [det_drop] Song can. (ERG: np_fragment)
-- accept→reject [det_drop] Does evil find clock mixed or you blossom since excess burst but they retreat but that shed until we bid? (ERG: no_parse)
 - accept→reject [adjacent_swap] Pretty six nuclear elite army. (ERG: np_fragment)
 - accept→reject [case] Myself or it that mixed or all or energy into axis from latin. (ERG: no_parse)
 - accept→reject [adjacent_swap] Fever garment attitude culture must. (ERG: vp_ellipsis)
@@ -246,7 +230,6 @@
 - accept→reject [adjacent_swap] Culture or the upset industry orange or you. (ERG: np_fragment)
 - accept→reject [token_delete] We for that did not whale on enemy or you but were not practice. (ERG: no_parse)
 - accept→reject [token_delete] Twenty enemy. (ERG: no_parse)
-- accept→reject [adjacent_swap] Aim to select and better, for that just quality or you has shed. (ERG: full_clause)
 - accept→reject [adjacent_swap] Is congress axis entry it or another or enemy or air that left? (ERG: no_parse)
 - accept→reject [token_delete] Before family mention but we cost they bid but shed and they or you split but hurt. (ERG: full_clause)
 - accept→reject [adjacent_swap] You must play olympic. (ERG: full_clause)
@@ -284,7 +267,6 @@
 - accept→reject [token_delete] Any army hunt and many state seminar and all village and rally or axis must. (ERG: vp_ellipsis)
 - accept→reject [adjacent_swap] Capital enemy or some math to you must. (ERG: vp_ellipsis)
 - accept→reject [token_delete] Did the axis make ugly but glue? (ERG: inverted_ellipsis)
-- accept→reject [token_delete] Fancy that drill or she is robust and note you or cost. (ERG: robust_lexical)
 - accept→reject [adjacent_swap] Point that oyster or you bid but we hurt but we budget but all claw or deny industry group series and cost. (ERG: full_clause)
 - accept→reject [adjacent_swap] Truth and you shed and all cost or forum shadow where we figure enemy but hurt and all burst. (ERG: np_fragment)
 - accept→reject [adjacent_swap] Stand almost sick, for neither hour does fine or cluster and only couple or youth toward it that burst and shed cost but mixed. (ERG: full_clause)
@@ -309,9 +291,7 @@
 - accept→reject [token_delete] Wonder that axis because elite left but you equal. (ERG: no_parse)
 - accept→reject [adjacent_swap] Can he that split and quit or you or he into attitude that rose or hurt almost make okay? (ERG: np_fragment)
 - accept→reject [token_delete] Only crew or some property. (ERG: np_fragment)
-- accept→reject [adjacent_swap] Does any evil find clock mixed or you blossom since excess burst but they retreat that but shed until we bid? (ERG: inverted_ellipsis)
 - accept→reject [adjacent_swap] All and upset only evil or they or elite or army must. (ERG: no_parse)
-- accept→reject [token_delete] Can all report that snack quit and exercise burst but he split or drum and kick all and move to wash? (ERG: full_clause)
 - accept→reject [adjacent_swap] Scrub escape and describe they rose or bid this. (ERG: no_parse)
 - accept→reject [token_delete] Announce you or she split. (ERG: other_fragment)
 - accept→reject [adjacent_swap] Ask that deer hurt or shed sleep or they whale. (ERG: full_clause)
@@ -319,8 +299,19 @@
 - accept→reject [token_delete] Ride idle or behave unable and radio where we allow or current or you or it did not stamp and letter. (ERG: full_clause)
 - accept→reject [adjacent_swap] Check to bring entry like you seminar or upset off alarm. (ERG: other_fragment)
 - accept→reject [adjacent_swap] Drive wet or call that industry tunnel or hurt you. (ERG: other_fragment)
-- accept→reject [token_delete] Account for that action aspect or service or sound endless type and skate next. (ERG: full_clause)
 - accept→reject [token_delete] Since they spread and evidence quit before army ask or they cost lecture or awake before you hurt and exercise. (ERG: no_parse)
 - accept→reject [token_delete] Must boring axis couple crisp or move? (ERG: np_fragment)
 - accept→reject [adjacent_swap] Are more desert south company into place? (ERG: full_clause)
 - accept→reject [token_delete] She quit but axis did teach or manage industry and you state or this. (ERG: no_parse)
+- reject→accept [object_drop] A gesture or only the avocado that has some party industry or has or has defense. (ERG: robust_lexical)
+- reject→accept [det_drop] Thumb and some advice can. (ERG: robust_lexical)
+- reject→accept [object_drop] Only emotion or he has or has the old or quit or cost but shed. (ERG: no_parse)
+- reject→accept [object_drop] Only she that never has you and has. (ERG: other_fragment)
+- reject→accept [object_drop] Again rain or wink for alcohol or you with this or neither does not identify but fold and has and has all. (ERG: other_fragment)
+- reject→accept [object_drop] Either movie blind genius auction did not build or escape or has. (ERG: np_fragment)
+- reject→accept [object_drop] Some orange did square but project or market or flock alcohol has. (ERG: vp_ellipsis)
+- reject→accept [object_drop] The oil is insane for that forum axis draft evil has. (ERG: full_clause)
+- reject→accept [object_drop] A gesture or only the avocado that has or has ethics or you that burst or bid or has defense. (ERG: robust_lexical)
+- reject→accept [object_drop] A gesture or only the avocado that has some party industry or has ethics or you that burst or bid or has. (ERG: robust_lexical)
+- reject→accept [object_drop] You or neither was not in industry and has. (ERG: vp_ellipsis)
+- reject→accept [object_drop] Only emotion or he has you or has or quit or cost but shed. (ERG: no_parse)

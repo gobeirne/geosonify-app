@@ -9,6 +9,7 @@ const root = path.join(__dirname, '..');
 const R = f => JSON.parse(fs.readFileSync(path.join(root, f), 'utf8'));
 const {load} = require('../src/load');
 const {runProbe} = require('../tests/run_probes');
+const {scoreResult, SCORE_VERSION, PARAMS} = require('../src/score');
 const engine = load();
 const gen = R('reports/generated_summary.json');
 const stress = R('reports/stress_timing.json');
@@ -32,7 +33,7 @@ function v11Verdict(p) {
 
 const L = [];
 const push = (...xs) => L.push(...xs);
-push('# Starpin Word Lab — Phase 0 grammar prototype: report', '',
+push('# Starpin Word Lab — grammar and scoring prototype (Phases 0–2): report', '',
   `Engine \`${engine.VERSION}\` · strict grammar ${engine.stats.strictRules} atomic rules, relaxed ${engine.stats.relaxedRules}, ${engine.stats.symbols} symbols · strict-grammar compile ${engine.compileMs.toFixed(0)} ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in ${engine.relaxedCompileMs.toFixed(0)} ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.`, '',
   'Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.', '');
 
@@ -59,12 +60,13 @@ push('## What Phase 0 is', '',
 
 // ---------------------------------------------------------------- probes
 push('## Intended-analysis probes', '', 'Full analyses, alternative readings and choice points: `reports/probe_analyses.md`. v1.1 verdicts are from the shipped parser on the same tiles.', '',
-  '| Probe | Source | Phase 0 | v1.1 | Canonical bracketing |', '|---|---|---|---|---|');
+  '| Probe | Source | Phase 0 | v1.1 | Score | Canonical bracketing |', '|---|---|---|---|---:|---|');
 for (const {p, r} of probeRes) {
   const res = r.res;
   const ours = (r.failures.length ? 'FAIL ' : '') + res.state + (res.conflict ? ' (' + res.conflict.constraint + ')' : '');
   const br = res.canonical ? '`' + res.canonical.bracket.replace(/\|/g, '/') + '`' : '';
-  push(`| ${p.id} | ${p.src.replace(/\|/g, '/')} | ${ours} | ${v11Verdict(p)} | ${br} |`);
+  const scoreCell = res.state === 'recognised' ? scoreResult(res).score : '—';
+  push(`| ${p.id} | ${p.src.replace(/\|/g, '/')} | ${ours} | ${v11Verdict(p)} | ${scoreCell} | ${br} |`);
 }
 push('');
 
@@ -118,16 +120,119 @@ if (fs.existsSync(ergF)) {
   if (A) {
     push('**Where Phase 0 accepts what ERG does not**, each lexical evidence source and restriction was measured by switching it off and on (`erg/ablate.js`). For evidence sources, the length-controlled ratio is ERG witnesses among the sentences the source alone admits, divided by the number expected at the curated-only rate for sentences of the same length. Rule: keep a source enabled if the ratio is ≥ 0.8.', '',
       '| Source / restriction | Adds acceptances | …ERG-witnessed | Adds rejections | …ERG agrees | Length-controlled ratio | Phase 0 decision |', '|---|---:|---:|---:|---:|---:|---|');
-    const dec = {COLL: 'keep (most disagreements are ERG grinding)', MASS: 'keep', IDIOM: 'keep', VF_intr: 'keep', VF_tr: 'demote to inferred', VF_ditr: 'demote to inferred', VF_cop: 'demote to inferred', VF_toinf: 'demote to inferred', VF_clause: 'demote to inferred'};
-    const name = {COLL: 'collective nouns: no plural determiners, not bare', MASS: 'Wiktionary mass readings', IDIOM: 'OEWN bare idiomatic PPs', VF_intr: 'attested intransitive frames', VF_tr: 'attested transitive frames', VF_ditr: 'attested ditransitive frames', VF_cop: 'attested lexical-copula frames', VF_toinf: 'attested to-infinitive frames', VF_clause: 'attested clause-complement frames'};
+    const dec = {COLL: 'keep (most disagreements are ERG grinding)', MASS: 'keep', IDIOM: 'keep', VF_intr: 'keep, borderline (held-out 0.81; see below)', VF_tr: 'demoted to inferred', VF_ditr: 'demoted to inferred', VF_cop: 'demoted to inferred', VF_toinf: 'demoted to inferred', VF_clause: 'demoted to inferred'};
+    const name = {COLL: 'collective nouns: no plural determiners, not bare', MASS: 'Wiktionary mass readings', IDIOM: 'OEWN bare idiomatic PPs', VF_intr: 'WordNet/Wiktionary intransitive frames', VF_tr: 'WordNet/Wiktionary transitive frames', VF_ditr: 'WordNet/Wiktionary ditransitive frames', VF_cop: 'WordNet/Wiktionary lexical-copula frames', VF_toinf: 'WordNet/Wiktionary to-infinitive frames', VF_clause: 'WordNet/Wiktionary clause frames'};
     for (const [k, v] of Object.entries(A)) push(`| ${name[k] || k} | ${v.addsAcceptances} | ${v.accAgree} | ${v.addsRejections} | ${v.rejAgree} | ${v.lengthControlledRatio ?? '—'} | ${dec[k] || ''} |`);
-    push('', 'Three grammar restrictions tried after the ERG run were measured the same way and **not** adopted, because ERG evidence ran against them: adjectives only before noun modifiers (would reject 33 ERG-analysed sentences to catch 14), no postmodification of case-marked pronouns (121 vs 48), no nominative-pronoun fragments (43 vs 27).', '');
+    push('', 'This table is re-measured with the current (Phase 1) engine, so each WordNet/Wiktionary frame source is measured by what it adds *beyond* curated and ERG-lexicon frames. ERG now supplies most well-supported intransitive uses, so the residual WordNet/Wiktionary intransitive frames score 0.72 on run 1 but 0.81 on the held-out run 2: kept under the rule (decisions rest on held-out data), flagged as the first candidate to drop if a later run falls below 0.8.', '');
+    push('Three grammar restrictions tried after the ERG run were measured the same way and **not** adopted, because ERG evidence ran against them: adjectives only before noun modifiers (would reject 33 ERG-analysed sentences to catch 14), no postmodification of case-marked pronouns (121 vs 48), no nominative-pronoun fragments (43 vs 27).', '');
   }
   if (S) {
     push('**Current engine against the same ERG results** (`erg/rescore.js`):', '', '| Items | ERG | n | Accepted by engine at ERG run | Accepted now |', '|---|---|---:|---:|---:|');
     for (const [k, v] of Object.entries(S.table).sort()) { const [x, y] = k.split(' | '); push(`| ${x} | ${y} | ${v.n} | ${v.before} | ${v.now} |`); }
     push('', 'The engine now rejects most of the generated sentences ERG could not analyse, at the cost of some ERG-analysed sentences that depend on ERG grinding or on the demoted verb frames. Agreement with ERG is a signal, not ground truth: ERG ignores a/an, grinds any count noun to mass, and does not check reflexive binding.', '');
   }
+}
+
+// ---------------------------------------------------------------- ERG run 2 (held out)
+if (fs.existsSync(path.join(root, 'reports', 'erg_phase0b_analysis.json'))) {
+  const E2 = R('reports/erg_phase0b_analysis.json');
+  const A2 = fs.existsSync(path.join(root, 'reports', 'erg_phase0b_ablation.json')) ? R('reports/erg_phase0b_ablation.json') : null;
+  const pos = E2.positiveWitnessRate;
+  push('## ERG held-out check (measured: second Colab run, same ERG/ACE)', '',
+    `A fresh batch (\`erg/phase0b_batch.jsonl\`, ${E2.items.length} items) generated by the engine *after* the run-1 decisions, so this tests those decisions on data they were not tuned on. The notebook stored a derivation for each of ERG's top five readings; an item is witnessed if any of them is a full clause, VP ellipsis with an overt subject, or an NP fragment. ACE was reproducible: re-running gave identical top derivations for 1,347 of 1,349 items.`, '',
+    `ERG witnesses **${(100 * pos).toFixed(1)}%** of the engine's generated sentences (run 1, curated-only baseline: 85.7%).`, '');
+  if (A2) {
+    push('| Evidence source | Sentences it alone admits | Length-controlled ratio (held out) | Run-1 ratio |', '|---|---:|---:|---:|');
+    const A1 = fs.existsSync(path.join(root, 'reports', 'erg_phase0_ablation.json')) ? R('reports/erg_phase0_ablation.json') : {};
+    for (const k of ['MASS', 'IDIOM', 'VF_intr']) push(`| ${{MASS: 'Wiktionary mass readings', IDIOM: 'OEWN bare idiomatic PPs', VF_intr: 'attested intransitive frames'}[k]} | ${A2[k].addsAcceptances} | ${A2[k].lengthControlledRatio} | ${(A1[k] || {}).lengthControlledRatio ?? '—'} |`);
+    push('', 'All three retained sources pass the 0.8 rule again on held-out data. The demoted verb-frame types cannot be re-tested on this batch (it was generated without them); their demotion rests on run 1.', '');
+  }
+  push('Where ERG analyses what Phase 0 rejects (held out), read from the ERG reading that actually witnesses the sentence:', '', '| Cause | Items | Status |', '|---|---:|---|');
+  const status = {
+    'ERG count→mass coercion ("grinding")': 'policy: excluded (decided 2026-10-19)',
+    'ERG verb object omission (optional complement)': 'Phase 1 candidate: ERG marks optional objects per verb',
+    'ERG does not check a/an': 'policy: Phase 0 checks a/an',
+    'ERG does not check reflexive binding': 'policy: reflexives only in fragments',
+    'ellipsis after has/do/be (Phase 0: modals only)': 'Phase 1 candidate: coverage gap',
+    'ERG agreement with or-coordination': 'policy: mixed-number or does not agree',
+    'ERG bare N-bar fragment (headline style)': 'policy: excluded',
+    'lexical do/will (gold do is auxiliary-only)': 'policy: gold-role rule',
+    'other': 'residual',
+  };
+  for (const [k, v] of Object.entries(E2.falseRejectionCauses || {}).sort((p, q) => q[1] - p[1])) push(`| ${k} | ${v} | ${status[k] || ''} |`);
+  push('');
+}
+
+// ---------------------------------------------------------------- decisions
+push('## Recorded policy decisions', '',
+  '- **Count→mass coercion ("grinding") is excluded from the default grammar** (Greg O\'Beirne, 2026-10-19). A singular count noun is used bare only where a mass reading is attested. This keeps determiner choice meaningful; grinding may later become a separately flagged rare reading.',
+  '- Gold tiles supply closed-class roles only, plus lexical *has* and causal *for* (2026-10-19).',
+  '- Unrecognised sentences may be saved with reserved blue tiles and zero competitive points, and are re-scored on grammar updates (2026-10-19).',
+  '- Creative-mode rescoring is allowed with version history; competitions freeze grammar and scoring versions (2026-10-19).', '');
+
+// ---------------------------------------------------------------- Phase 1
+push('## Phase 1 grammar additions (measured)', '',
+  '- **Post-auxiliary ellipsis** after modals, *has/have*, *does/do/did* and *is/are/was/were*, optionally with *not*, as an ordinary finite predicate, so it also appears inside coordination and subordinate clauses (*The cat can run because the dog did.*). Agreement still applies (*The cat are.* is a conflict). *The cat is.* is now recognised as ellipsis, as ERG analyses it.',
+  `- **Verb frames from the ERG lexicon** (MIT licence; \`data/erg_verb_evidence.json\`, SHA-256 recorded): ${engine.lexicon.policy.changes.filter(c => /^ERG/.test(c.src || '')).length} readings for ${new Set(engine.lexicon.policy.changes.filter(c => /^ERG/.test(c.src || '')).map(c => c.word)).size} BIP39 verbs. An optional object (\`v_np*_le\`, e.g. *detect*, *grant*, *sting*) licenses object omission (*Detect.*); \`v_np_le\` verbs (*bless*, *oppose*, *ensure*) still require one. ERG also supplies verb-specific ditransitive, *to*-infinitive and clause frames, replacing the WordNet frames demoted after run 1. Validating these against ERG would be circular, so they are checked by the corruption gates and probes instead.`,
+  '- **Specific conflicts** now report one or two named violations with spans (e.g. *myself … are*: pronoun case and agreement); three or more is reported as outside the grammar.',
+  '- **Family review:** with sentence length controlled, every construction family with n ≥ 15 is ERG-witnessed at ≥ 0.79 of its expected rate; the weakest (infinitives) is explained by v1.1 verb readings that ERG does not list (*to friend*, *to hole*). No grammar change.', '');
+
+// ---------------------------------------------------------------- Phase 2
+const SR = fs.existsSync(path.join(root, 'reports', 'scoring_report.json')) ? R('reports/scoring_report.json') : null;
+push(`## Phase 2 scoring (\`src/score.js\`, version ${SCORE_VERSION})`, '',
+  'A sentence is scored from one reading only: the canonical reading, or the one the player pinned. Conflicts and unrecognised sentences score 0 and are marked pending.', '',
+  '| Component | Rule |', '|---|---|',
+  `| Blue tile, core role (argument or predicate head) | ${PARAMS.CORE} |`,
+  `| Blue tile in a closed-class role (e.g. blue *can* as modal) | ${PARAMS.FUNCTION} |`,
+  `| Adjective/adverb modifiers of one head | ${PARAMS.ADJ} × ${PARAMS.ADJ_R}^k (bound ${(PARAMS.ADJ / (1 - PARAMS.ADJ_R)).toFixed(0)}) |`,
+  `| Noun-compound modifiers of one head | ${PARAMS.CMP} × ${PARAMS.CMP_R}^k (bound ${(PARAMS.CMP / (1 - PARAMS.CMP_R)).toFixed(0)}) |`,
+  `| Bare one-word conjuncts (lists), third onward | × ${PARAMS.LIST_R}^(k−2) |`,
+  `| Size multiplier on lexical points, B = blue tiles | 1 + ${PARAMS.SIZE}·(1 − ${PARAMS.SIZE_R}^(B−1)) (bound ${1 + PARAMS.SIZE}) |`,
+  `| Clause links (coordination, causal *for*, subordination, complement, infinitive, relative) | ${PARAMS.LINK} × ${PARAMS.LINK_R}^k per sentence, whatever the conjunction; each linked side must be blue-anchored and hold ≥ ${PARAMS.LINK_MIN_BLUE} blue tiles |`,
+  `| Distinct link types T | ${PARAMS.TYPE_A}·T + ${PARAMS.TYPE_B}·T·(T−1) = 10, 32, 66, 112, 170, 240 |`,
+  `| Argument-clause embedding depth | ${PARAMS.EMBED} per level, up to ${PARAMS.EMBED_MAX} |`,
+  `| Nominal fragment | × ${PARAMS.FRAGMENT} |`, '',
+  'Gold tiles earn no lexical points. There is no fixed per-sentence bonus. Portfolio score is the plain sum.', '');
+if (SR) {
+  push('### Invariant tests (measured, `tests/run_scoring.js`, all on real parses)', '',
+    '| Check | Result |', '|---|---|',
+    `| P1 recognised + blue tile ⇒ score > 0 | ${SR.P1.violations} violations in ${SR.P1.n} generated sentences |`,
+    `| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | ${SR.P2.violations} violations in ${SR.P2.insertions} insertions (${SR.P2.insertionsThatChangeStructure} further insertions re-bracketed the sentence and are a reading change, not a P2 case) |`,
+    `| P3′ gold-only material earns nothing; unanchored links earn nothing | ${SR.P3.goldOnlyNonzero} non-zero of ${SR.P3.goldOnlySentences} gold-only sentences; anchor cases ${SR.P3.anchorCases.every(a => a.scoringLinks === a.expected) ? 'all as expected' : 'FAIL'} |`,
+    `| P4′ chains converge; another *and* adds ${SR.P4.extension.addAnotherAnd} structural points, a new relation type (relative clause) adds ${SR.P4.extension.addRelativeClause} | ${SR.failures.filter(f => f.check === "P4'").length} failures |`,
+    `| P5 compound stack ≫ adjective stack (8 modifiers: ${SR.P5[7].compoundStack} vs ${SR.P5[7].adjectiveStack}; bounds ${Math.round(SR.P5bounds.compound)} vs ${Math.round(SR.P5bounds.adjective)}) | ${SR.failures.filter(f => f.check === 'P5').length} failures |`,
+    `| P6 score spread across alternative readings (tracked) | median ${SR.P6.medianRelativeSpread}, 90th percentile ${SR.P6.p90RelativeSpread} of the canonical score |`,
+    `| Join test: clause-level join ≥ separate sum | ${SR.J.violations} violations in ${SR.J.joins} joins |`, '');
+  push('Clause chains (same words; scores after 1–10 clauses):', '', '| Pattern | Scores |', '|---|---|');
+  for (const [k, rows] of Object.entries(SR.P4)) if (Array.isArray(rows)) push(`| ${k} | ${rows.map(r => r.score).join(', ')} |`);
+  push('', 'Splitting a long homogeneous chain into two sentences (the residual cost of keeping a plain portfolio sum with per-sentence link tapering):', '', '| Clauses | Joined | Split in two | Split gain |', '|---:|---:|---:|---:|');
+  for (const r of SR.split) push(`| ${r.clauses} | ${r.joined} | ${r.splitInTwo} | ${r.splitGainPct}% |`);
+  push('', 'Points per blue tile by strategy:', '', '| Strategy | Blue tiles | Score | Per blue tile |', '|---|---:|---:|---:|');
+  for (const x of SR.S) push(`| ${x.strategy} | ${x.blueTiles} | ${x.score} | ${x.perBlueTile} |`);
+  if (SR.O) {
+    const g = SR.O.greedyByPointsPerTile;
+    push('', `**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers ${SR.O.helpers.join(', ')}: ${SR.O.candidates} distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: ${g.sentences} sentences, ${g.blueTilesUsed} blue tiles, ${g.total} points (${g.perTile} per tile); structural points ${Math.round(100 * g.structuralShare)}% of the total; ${g.listItems} tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:`, '',
+      '| Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |', '|---|---:|---:|---:|');
+    for (const [k, v] of Object.entries(SR.O.perTileBySize)) push(`| ${k} | ${v.n} | ${v.median} | ${v.p90} |`);
+    push('', 'The first scorer draft (v0.1) failed this search: tiny elliptical or bare-verb structures (*project all can and canvas*: 3 blue tiles, 95 points) collected clause-link and diversity bonuses with almost no content, and *Run.* out-scored the handover sentences per tile. The substantive-link rule and the size multiplier were introduced in response.', '');
+  }
+}
+// v1.1 vs Phase 2 on the handover/session sentences
+{
+  const S11 = require('../reference/v1_1/starpin_score_v1_1.js');
+  const rows = [['A', 'Prevent prison patient parrot ketchup in all bitter banana menu output.'], ['C', 'The unknown civil void has just blame and the bitter October symbol can oppose the joke journey.'],
+    ['Session 1', 'Abandon barely fun festival salad and shiver because clean library jeans know robust news for the runway security man.'],
+    ['Session 2', 'A cheap angry badge and a shallow silly chat can boil nice level stairs and the vocal timber table in the million citizen parade.'],
+    ['Session 3', 'The vivid autumn blossom and the famous canvas cat bag crumble and observe the original midnight primary core on the inner coast.']];
+  push('### v1.1 score versus Phase 2 score', '', '| Sentence | v1.1 | Phase 2 | Phase 2 breakdown |', '|---|---:|---:|---|');
+  for (const [name, text] of rows) {
+    const ws = text.toLowerCase().replace(/[.,]/g, ' ').split(/\s+/).filter(Boolean);
+    const seen = new Set(); const types = ws.map(w => { if (BIP.has(w) && !seen.has(w)) { seen.add(w); return 'collected'; } return 'helper'; });
+    let old = '—'; try { const r = v11.parse(ws, {owned: ALL, helpers: V11_HELPERS, tokenTypes: types}); if (r.valid) old = S11.scoreParse(r, types).score; } catch (e) {}
+    const res = engine.parse(text); const s = scoreResult(res);
+    push(`| ${name} | ${old} | ${s.score} | lexical ${s.breakdown.lexicalBase} × ${s.breakdown.sizeMultiplier}, links ${s.breakdown.links.length}, types ${s.breakdown.distinctLinkTypes.join('/') || '—'} |`);
+  }
+  push('', 'Scales differ (v1.1 multiplied up to 6.8×), so compare rankings, not magnitudes.', '');
 }
 
 // ---------------------------------------------------------------- limitations
@@ -150,6 +255,6 @@ push('## Scoring invariants for Phase 2 (proposal, not implemented)', '',
   '- **P6** The score is computed on the canonical (or player-pinned) reading, chosen without consulting the score; score spread across readings is a tracked metric.',
   '- **P7** Portfolio score is the order-independent sum of sentence scores.', '');
 
-push('## Next step', '', 'Optional second ERG run on `erg/phase0b_batch.jsonl` (built from the current engine; the notebook now stores every inspected reading\'s derivation, so fragment-ranked-first cases can be resolved). Then `node erg/analyse.js <results> erg/phase0b_batch.jsonl erg_phase0b`. After that, Phase 2 (scoring) can start on a validated grammar.', '');
+push('## Next steps', '', '- **Phase 3 (integration into the game):** replace the v1.1 parser and scorer, three-state display with conflict spans, reading choice by pinning, versioned session migration (tiles, provenance, has), pending sentences re-scored on grammar updates, and an iPhone persistence/touch test.', '- Optional: a third ERG run on `erg/phase1_batch.jsonl` (built from the Phase 1 engine) to measure the post-auxiliary ellipsis and ERG-frame changes on held-out data.', '');
 fs.writeFileSync(path.join(root, 'reports', 'PHASE0_REPORT.md'), L.join('\n'));
 console.log('wrote reports/PHASE0_REPORT.md (' + L.length + ' lines)');

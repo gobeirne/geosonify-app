@@ -220,6 +220,22 @@ rule('fp_do_emph', L('FP', {num: '?n', per: '?p'}), [L('Do', {dt: '?d'}), L('VP'
   {fam: 'do_support', head: 1, deps: [[0, 'aux']], disp: 'FP', cost: 0.2, when: (v, C) => C('agreement', AGREE(v.d, v.n, v.p))});
 rule('fp_perfect', L('FP', {num: '?n', per: '?p'}), [L('HaveAux', {ht: '?h'}), L('VP', {vf: 'ppart'})],
   {fam: 'perfect', head: 1, deps: [[0, 'aux']], disp: 'FP', when: (v, C) => C('agreement', AGREE(v.h, v.n, v.p))});
+// Post-auxiliary VP ellipsis (Phase 1): an auxiliary with its complement
+// left understood ("The fence can.", "He has.", "She did not.", "They were.").
+// An ordinary finite predicate, so it also appears in coordination and
+// subordinate clauses ("... because she did"). Agreement still applies.
+// Slight cost so a full predicate is preferred when both exist.
+for (const neg of [false, true]) {
+  const N = neg ? [L('Not')] : [], dn = neg ? [[1, 'neg']] : [], sfx = neg ? '_neg' : '';
+  rule('fp_ell_modal' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Modal'), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5});
+  rule('fp_ell_cop' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Cop', {ct: '?c'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
+    when: (v, C) => C('agreement', AGREE(v.c, v.n, v.p))});
+  rule('fp_ell_do' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Do', {dt: '?d'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
+    when: (v, C) => C('agreement', AGREE(v.d, v.n, v.p))});
+  rule('fp_ell_have' + sfx, L('FP', {num: '?n', per: '?p'}), [L('HaveAux', {ht: '?h'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
+    when: (v, C) => C('agreement', AGREE(v.h, v.n, v.p))});
+}
+
 // Lexical verbs: plain present (non-3sg), 3sg present ('has'), and past.
 rule('fp_present', L('FP', {num: '?n', per: '?p'}), [L('VP', {vf: 'base'})],
   {fam: 'present_tense', head: 0, disp: 'FP', when: (v, C) => C('agreement', AGREE('base', v.n, v.p))});
@@ -274,10 +290,6 @@ rule('utt_for', L('Utt'), [L('Core'), L('ForCoord'), L('S')],
   {fam: 'causal_for_coordination', head: 0, deps: [[1, 'cc'], [2, 'conj_for']], disp: 'Utt', inheritType: true, cost: 0.1});
 // Non-sentential utterances: nominal (caption/answer) and modal VP ellipsis.
 rule('utt_frag', L('Utt'), [L('NP', {case: '?k'})], {fam: 'nominal_utterance', head: 0, disp: 'Frag', utype: 'fragment', cost: 2, when: (v) => FRAG_CASE(v.k)});
-rule('utt_ellipsis', L('Utt'), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('Modal')],
-  {fam: 'modal_ellipsis', head: 1, deps: [[0, 'nsubj']], disp: 'Ellipsis', utype: 'ellipsis', cost: 1, when: (v, C) => C('case', SUBJ(v.k))});
-rule('utt_ellipsis_neg', L('Utt'), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('Modal'), L('Not')],
-  {fam: 'modal_ellipsis', head: 1, deps: [[0, 'nsubj'], [2, 'neg']], disp: 'Ellipsis', utype: 'ellipsis', cost: 1, when: (v, C) => C('case', SUBJ(v.k))});
 
 const RELAXABLE = ['agreement', 'article', 'det_noun', 'case', 'verb_frame'];
 const RELAX_TEXT = {

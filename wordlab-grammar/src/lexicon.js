@@ -134,6 +134,7 @@ function onsetOf(entry) {
 }
 
 function compileLexicon(v11, oewn, options = {}) {
+  const erg = options.erg || null;
   const profile = options.profile || 'default'; // 'default' | 'exploratory'
   const enableTiers = new Set(profile === 'exploratory' ? ['curated', 'attested', 'derived', 'inferred'] : ['curated', 'attested', 'derived']);
   const entries = v11.entries;
@@ -231,6 +232,18 @@ function compileLexicon(v11, oewn, options = {}) {
       const att = new Map();
       for (const id of ev.wordnet_verb_frame_ids || []) { const m = WN_FRAME_MAP[id]; if (m) att.set(m, (att.get(m) || []).concat('WN frame ' + id)); }
       for (const t of ev.wiktionary_verb_usage_tags || []) for (const m of WIKT_TAG_MAP[t] || []) att.set(m, (att.get(m) || []).concat('Wiktionary ' + t));
+      // ERG lexicon (hand-built reference grammar): verb-specific frames.
+      // An optional object (v_np*_le) licenses both transitive and
+      // intransitive use ("Detect the cat." / "Detect."). Phase 1, 2026-10-19.
+      const ergV = ((erg && erg.verbs) || {})[w];
+      if (ergV && !(a.requires_particle_or_preposition || []).length && !LEX_OFF.has('ERG')) {
+        const map = {optional_object: ['tr', 'intr'], intransitive: ['intr'], transitive: ['tr'], ditransitive: ['ditr'], to_infinitive: ['toinf'], clause: ['clause']};
+        for (const c of ergV.classes) for (const m of map[c] || []) {
+          if (curatedFrames.has(m)) continue;
+          const ent = ergV.entries.filter(x => ({optional_object: /^v_np\*/, intransitive: /^v_-_(le|unacc_le)$/, transitive: /^v_np(_noger)?_le$/, ditransitive: /^v_np-np(_only)?_le$/, to_infinitive: /^v_vp_seq_le$/, clause: /^v_cp(_prop)?_le$/})[c].test(x.type)).map(x => x.entry + ' := ' + x.type);
+          for (const vf of vfs) add(w, 'V', {fr: m, vf}, 'attested', 'ERG lexicon: ' + ent.join('; '), c === 'optional_object' && m === 'intr' ? 'object omission (optional object)' : 'verb frame ' + m + ' (ERG)');
+        }
+      }
       for (const [m, srcs] of att) {
         if (curatedFrames.has(m)) continue;
         if (LEX_OFF.has('VF_' + m)) continue;

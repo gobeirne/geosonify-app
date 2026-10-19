@@ -660,10 +660,16 @@
   },
   {
    "id": "N9",
-   "src": "copula with no complement",
+   "src": "post-auxiliary ellipsis (Phase 1): \"Who is happy? The cat is.\" — ERG analyses it the same way",
    "text": "The cat is.",
    "expect": {
-    "state": "not_recognised"
+    "state": "recognised",
+    "type": "ellipsis",
+    "where": "canonical",
+    "roles": {
+     "cat": "N:nsubj",
+     "is": "Cop:root"
+    }
    }
   },
   {
@@ -682,6 +688,112 @@
    "expect": {
     "state": "conflict",
     "conflict": "agreement"
+   }
+  },
+  {
+   "id": "L1",
+   "src": "Phase 1: ellipsis after has",
+   "text": "The void has.",
+   "expect": {
+    "state": "recognised",
+    "type": "ellipsis",
+    "where": "canonical",
+    "roles": {
+     "void": "N:nsubj",
+     "has": "HaveAux:root"
+    }
+   }
+  },
+  {
+   "id": "L2",
+   "src": "Phase 1: negated do-ellipsis",
+   "text": "She did not.",
+   "expect": {
+    "state": "recognised",
+    "type": "ellipsis",
+    "where": "canonical",
+    "roles": {
+     "did": "Do:root",
+     "not": "Not:neg"
+    }
+   }
+  },
+  {
+   "id": "L3",
+   "src": "Phase 1: ellipsis inside a subordinate clause",
+   "text": "The cat can run because the dog did.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "families": [
+     "subordinate_clause",
+     "vp_ellipsis"
+    ],
+    "roles": {
+     "did": "Do:advcl"
+    }
+   }
+  },
+  {
+   "id": "L4",
+   "src": "Phase 1: agreement still applies under ellipsis",
+   "text": "The cat are.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "agreement"
+   }
+  },
+  {
+   "id": "L5",
+   "src": "Phase 1: ERG optional object (detect := v_np*_le)",
+   "text": "Detect.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "detect": "V:root"
+    }
+   }
+  },
+  {
+   "id": "L6",
+   "src": "Phase 1: ERG object required (bless := v_np_le)",
+   "text": "The cat can bless.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "verb_frame"
+   }
+  },
+  {
+   "id": "L7",
+   "src": "Phase 1: ERG optional object in coordination",
+   "text": "Bless the cat or decide.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "bless": "V:root",
+     "decide": "V:conj"
+    }
+   }
+  },
+  {
+   "id": "L8",
+   "src": "Phase 1: ERG to-infinitive frame (decide := v_vp_seq_le)",
+   "text": "The cat can decide to run.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "infinitive"
+    ],
+    "roles": {
+     "decide": "V:root",
+     "run": "V:xcomp"
+    }
    }
   },
   {

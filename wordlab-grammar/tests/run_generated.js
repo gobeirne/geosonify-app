@@ -74,13 +74,15 @@ for (const p of pos) for (const c of gen.corrupt(p.item)) {
   st.n++;
   if (r.state === 'recognised') st.oursAccept++;
   if (r.state === 'recognised' && c.type === 'object_drop') {
-    const verb = (c.target.match(/"(.+)"/) || [])[1];
-    if (r.canonical.roles.some(x => x.word === verb && x.pos === 'V')) st.oursAcceptVerbKept = (st.oursAcceptVerbKept || 0) + 1;
+    // Violation only if THAT token is still a verb (by position, not word).
+    if (r.canonical.roles[c.verbIndex] && r.canonical.roles[c.verbIndex].pos === 'V') st.oursAcceptVerbKept = (st.oursAcceptVerbKept || 0) + 1;
   }
-  if (r.state === 'conflict') { st.oursConflict++; const expect = {agreement: 'agreement', article: 'article', det_drop: 'det_noun', case: 'case', object_drop: 'verb_frame'}[c.type]; if (expect && r.conflict.constraint === expect) st.oursConflictMatches++; }
+  // Case corruptions can only use 'myself' (1st person singular), which also
+  // changes person/number, so 'agreement' is an equally correct attribution.
+  if (r.state === 'conflict') { st.oursConflict++; const expect = {agreement: ['agreement'], article: ['article'], det_drop: ['det_noun'], case: ['case', 'agreement'], object_drop: ['verb_frame']}[c.type]; if (expect && r.conflicts.some(x => expect.includes(x.constraint))) st.oursConflictMatches++; }
   if (v !== 'n/a' && v !== 'error') { st.v11Applicable++; if (v === 'accept') st.v11Accept++; }
   corr.push({type: c.type, target: c.target, original: text(p.item.tiles), text: text(c.tiles), tiles: c.tiles, ours: r.state,
-    conflict: r.conflict ? r.conflict.constraint : null, canonical: r.canonical ? r.canonical.bracket : null,
+    conflict: r.conflict ? r.conflicts.map(x => x.constraint).join('+') : null, canonical: r.canonical ? r.canonical.bracket : null,
     utype: r.canonical ? r.canonical.utteranceType : null, families: r.canonical ? r.canonical.families : [],
     nonCuratedReadings: r.canonical ? r.canonical.roles.filter(x => x.tier && x.tier !== 'curated').map(x => x.word + ':' + x.pos + '(' + x.tier + ')') : [],
     canonicalRoles: r.canonical ? r.canonical.roles.map(x => x.word + '/' + x.pos + ':' + x.role).join(' ') : null, v11: v});

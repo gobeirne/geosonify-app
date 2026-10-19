@@ -7,8 +7,10 @@
  *      caught: article swaps 0 accepted; object drops (transitive-only verbs)
  *      <= 5% accepted
  *   G4 every caught agreement/article/case corruption is attributed to the
- *      right constraint at least 70% of the time (diagnostic quality)
+ *      right constraint at least 70% of the time (diagnostic quality); a case
+ *      corruption (only 'myself' is available) may also be named as agreement
  *   G5 Node timing: p95 <= 25 ms for 21-24-token generated sentences
+ *   G6 scoring invariants P1, P2, P3', P4', P5, J: zero failures
  * Usage: node tests/run_all.js [count=800]
  */
 const {execFileSync} = require('child_process');
@@ -34,7 +36,13 @@ for (const t of ['agreement', 'article', 'case']) if (c[t]) {
 }
 const p95 = j.timing['21-24'] ? j.timing['21-24'].p95 : 0;
 gates.push(['G5 p95 21-24 tokens (Node)', p95 <= 25, p95 + ' ms']);
+let sOut = '';
+let sOk = true;
+try { sOut = execFileSync(process.execPath, [path.join(__dirname, 'run_scoring.js'), '300', 'fast'], {encoding: 'utf8', maxBuffer: 1 << 26, env: {...process.env, WL_NO_WRITE: '1'}}); }
+catch (e) { sOk = false; sOut = String(e.stdout || ''); }
+const sj = JSON.parse(sOut.split('\n')[0]);
+gates.push(['G6 scoring invariants', sOk && sj.failures === 0, `${sj.failures} failures (P1 ${sj.P1.violations}/${sj.P1.n}, P2 ${sj.P2.violations}/${sj.P2.insertions}, P3' ${sj.P3.nonzero}/${sj.P3.goldOnly})`]);
 let ok = true;
-console.log('\nPhase 0 gates');
+console.log('\nGates');
 for (const [name, pass, detail] of gates) { console.log((pass ? 'PASS ' : 'FAIL ') + name.padEnd(32) + detail); ok = ok && pass; }
 process.exitCode = ok ? 0 : 1;

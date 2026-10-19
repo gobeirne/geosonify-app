@@ -24346,9 +24346,11 @@
  "falseRejectionCauses": {
   "ERG count→mass coercion (\"grinding\")": 76,
   "ERG does not check reflexive binding": 16,
+  "ERG verb object omission (optional complement)": 48,
   "ERG does not check a/an": 29,
   "ERG bare N-bar fragment (headline style)": 14,
-  "other": 11,
+  "other": 3,
+  "ellipsis after has/do/be (Phase 0: modals only)": 9,
   "ERG agreement with or-coordination": 6,
   "lexical do/will (gold do is auxiliary-only)": 7
  },
@@ -24360,58 +24362,10 @@
    "conflict": "verb_frame"
   },
   {
-   "type": "token_delete",
-   "text": "We while we quit before she cost but we and he shed and guide.",
-   "ours": "unrecognised",
-   "conflict": null
-  },
-  {
-   "type": "object_drop",
-   "text": "Just some fringe has van or has and has you but has shed but was couple.",
-   "ours": "conflict",
-   "conflict": "verb_frame"
-  },
-  {
    "type": "det_drop",
    "text": "He or he or an evil amateur or actress must.",
    "ours": "conflict",
    "conflict": "det_noun"
-  },
-  {
-   "type": "adjacent_swap",
-   "text": "She that spread but not must embrace and bomb or is just or all hunt must.",
-   "ours": "unrecognised",
-   "conflict": null
-  },
-  {
-   "type": "adjacent_swap",
-   "text": "Must only the oven join or turn above and army circle among you or feel.",
-   "ours": "unrecognised",
-   "conflict": null
-  },
-  {
-   "type": "token_delete",
-   "text": "Only we that you are not okay and she or she rose but mixed.",
-   "ours": "unrecognised",
-   "conflict": null
-  },
-  {
-   "type": "token_delete",
-   "text": "One defense circle slide or just only he toward you below that is all or spread or burst must.",
-   "ours": "conflict",
-   "conflict": "det_noun"
-  },
-  {
-   "type": "adjacent_swap",
-   "text": "She did to refuse program but come.",
-   "ours": "unrecognised",
-   "conflict": null
-  },
-  {
-   "type": "token_delete",
-   "text": "Until you play but she shed if we mixed they present and burst since they hawk where we duck and another.",
-   "ours": "unrecognised",
-   "conflict": null
   },
   {
    "type": "adjacent_swap",

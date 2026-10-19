@@ -13,7 +13,7 @@ const fs = require('fs'), path = require('path');
 const {load} = require('../src/load');
 const {makeRng} = require('../tests/generate');
 const root = path.join(__dirname, '..');
-const NAME = process.argv[2] || 'phase0b_batch';
+const NAME = process.argv[2] || 'phase1_batch'; // never overwrite a batch that has ERG results
 const [NP = 400, NA = 600, NR = 300] = process.argv.slice(3).map(Number);
 const rnd = makeRng(4242);
 const engine = load();
@@ -51,6 +51,7 @@ for (const [i, c] of stratified(acc, x => x.type, NA).entries())
   batch.push({id: 'corrA:' + i, kind: 'corruption_accepted', type: c.type, tiles: c.tiles, target: c.target, text: orth(c.text, c.utype, c.families), original: c.original, ours: c.ours, families: c.families, nonCurated: c.nonCuratedReadings});
 for (const [i, c] of stratified(rej, x => x.type, NR).entries())
   batch.push({id: 'corrR:' + i, kind: 'corruption_rejected', type: c.type, tiles: c.tiles, target: c.target, text: orth(c.text, null, []), original: c.original, ours: c.ours, conflict: c.conflict});
+if (fs.existsSync(path.join(__dirname, 'erg_' + NAME.replace('_batch', '') + '_results.jsonl.gz')) || fs.existsSync(path.join(__dirname, 'erg_' + NAME.replace('_batch', '') + '_results.jsonl'))) { console.error('erg/' + NAME + '.jsonl already has ERG results; choose a new name'); process.exit(1); }
 fs.writeFileSync(path.join(__dirname, NAME + '.jsonl'), batch.map(b => JSON.stringify(b)).join('\n') + '\n');
 const tally = {}; for (const b of batch) tally[b.kind] = (tally[b.kind] || 0) + 1;
 console.log('wrote erg/' + NAME + '.jsonl', tally);

@@ -1,0 +1,649 @@
+{
+ "params": {
+  "CORE": 10,
+  "FUNCTION": 4,
+  "ADJ": 10,
+  "ADJ_R": 0.7,
+  "CMP": 10,
+  "CMP_R": 0.9,
+  "LIST_R": 0.7,
+  "SIZE": 0.6,
+  "SIZE_R": 0.85,
+  "LINK": 12,
+  "LINK_R": 0.6,
+  "LINK_MIN_BLUE": 2,
+  "TYPE_A": 10,
+  "TYPE_B": 6,
+  "EMBED": 8,
+  "EMBED_MAX": 3,
+  "FRAGMENT": 0.6
+ },
+ "failures": [],
+ "P1": {
+  "n": 800,
+  "violations": 0
+ },
+ "P6": {
+  "sentencesWithAlternatives": 520,
+  "medianRelativeSpread": 0,
+  "p90RelativeSpread": 0.269
+ },
+ "P2readingChanges": 21,
+ "P2": {
+  "insertions": 729,
+  "violations": 0,
+  "insertionsThatChangeStructure": 21
+ },
+ "P3": {
+  "goldOnlySentences": 150,
+  "goldOnlyNonzero": 0,
+  "anchorCases": [
+   {
+    "text": "The cat can run because the dog did.",
+    "scoringLinks": 1,
+    "expected": 1
+   },
+   {
+    "text": "The cat can run because he did.",
+    "scoringLinks": 0,
+    "expected": 0
+   },
+   {
+    "text": "It can run because he did.",
+    "scoringLinks": 0,
+    "expected": 0
+   }
+  ]
+ },
+ "P4": {
+  "and": [
+   {
+    "clauses": 1,
+    "score": 22,
+    "structural": 0
+   },
+   {
+    "clauses": 2,
+    "score": 71,
+    "structural": 22
+   },
+   {
+    "clauses": 3,
+    "score": 109,
+    "structural": 29.2
+   },
+   {
+    "clauses": 4,
+    "score": 146,
+    "structural": 33.52
+   },
+   {
+    "clauses": 5,
+    "score": 182,
+    "structural": 36.11
+   },
+   {
+    "clauses": 6,
+    "score": 218,
+    "structural": 37.67
+   },
+   {
+    "clauses": 7,
+    "score": 252,
+    "structural": 38.6
+   },
+   {
+    "clauses": 8,
+    "score": 287,
+    "structural": 39.16
+   },
+   {
+    "clauses": 9,
+    "score": 321,
+    "structural": 39.5
+   },
+   {
+    "clauses": 10,
+    "score": 354,
+    "structural": 39.7
+   }
+  ],
+  "because": [
+   {
+    "clauses": 1,
+    "score": 22,
+    "structural": 0
+   },
+   {
+    "clauses": 2,
+    "score": 79,
+    "structural": 22
+   },
+   {
+    "clauses": 3,
+    "score": 117,
+    "structural": 29.2
+   },
+   {
+    "clauses": 4,
+    "score": 154,
+    "structural": 33.52
+   },
+   {
+    "clauses": 5,
+    "score": 190,
+    "structural": 36.11
+   },
+   {
+    "clauses": 6,
+    "score": 225,
+    "structural": 37.67
+   },
+   {
+    "clauses": 7,
+    "score": 260,
+    "structural": 38.6
+   },
+   {
+    "clauses": 8,
+    "score": 294,
+    "structural": 39.16
+   },
+   {
+    "clauses": 9,
+    "score": 328,
+    "structural": 39.5
+   },
+   {
+    "clauses": 10,
+    "score": 361,
+    "structural": 39.7
+   }
+  ],
+  "alternating": [
+   {
+    "clauses": 1,
+    "score": 22,
+    "structural": 0
+   },
+   {
+    "clauses": 2,
+    "score": 71,
+    "structural": 22
+   },
+   {
+    "clauses": 3,
+    "score": 139,
+    "structural": 51.2
+   },
+   {
+    "clauses": 4,
+    "score": 176,
+    "structural": 55.52
+   },
+   {
+    "clauses": 5,
+    "score": 212,
+    "structural": 58.11
+   },
+   {
+    "clauses": 6,
+    "score": 247,
+    "structural": 59.67
+   },
+   {
+    "clauses": 7,
+    "score": 282,
+    "structural": 60.6
+   },
+   {
+    "clauses": 8,
+    "score": 316,
+    "structural": 61.16
+   },
+   {
+    "clauses": 9,
+    "score": 350,
+    "structural": 61.5
+   },
+   {
+    "clauses": 10,
+    "score": 383,
+    "structural": 61.7
+   }
+  ],
+  "and/because/while/before": [
+   {
+    "clauses": 1,
+    "score": 22,
+    "structural": 0
+   },
+   {
+    "clauses": 2,
+    "score": 71,
+    "structural": 22
+   },
+   {
+    "clauses": 3,
+    "score": 139,
+    "structural": 51.2
+   },
+   {
+    "clauses": 4,
+    "score": 176,
+    "structural": 55.52
+   },
+   {
+    "clauses": 5,
+    "score": 220,
+    "structural": 58.11
+   },
+   {
+    "clauses": 6,
+    "score": 255,
+    "structural": 59.67
+   },
+   {
+    "clauses": 7,
+    "score": 290,
+    "structural": 60.6
+   },
+   {
+    "clauses": 8,
+    "score": 324,
+    "structural": 61.16
+   },
+   {
+    "clauses": 9,
+    "score": 357,
+    "structural": 61.5
+   },
+   {
+    "clauses": 10,
+    "score": 390,
+    "structural": 61.7
+   }
+  ],
+  "extension": {
+   "base": 51.2,
+   "addAnotherAnd": 4.32,
+   "addRelativeClause": 46.32
+  }
+ },
+ "split": [
+  {
+   "clauses": 4,
+   "joined": 146.1,
+   "splitInTwo": 142.5,
+   "splitGainPct": -2.5
+  },
+  {
+   "clauses": 6,
+   "joined": 217.6,
+   "splitInTwo": 218.5,
+   "splitGainPct": 0.4
+  },
+  {
+   "clauses": 8,
+   "joined": 286.8,
+   "splitInTwo": 292.3,
+   "splitGainPct": 1.9
+  },
+  {
+   "clauses": 10,
+   "joined": 354.2,
+   "splitInTwo": 364.4,
+   "splitGainPct": 2.9
+  },
+  {
+   "clauses": 12,
+   "joined": 420.5,
+   "splitInTwo": 435.2,
+   "splitGainPct": 3.5
+  }
+ ],
+ "P5": [
+  {
+   "modifiers": 1,
+   "adjectiveStack": 10,
+   "compoundStack": 10
+  },
+  {
+   "modifiers": 2,
+   "adjectiveStack": 17,
+   "compoundStack": 19
+  },
+  {
+   "modifiers": 3,
+   "adjectiveStack": 21.9,
+   "compoundStack": 27.1
+  },
+  {
+   "modifiers": 4,
+   "adjectiveStack": 25.33,
+   "compoundStack": 34.39
+  },
+  {
+   "modifiers": 5,
+   "adjectiveStack": 27.73,
+   "compoundStack": 40.95
+  },
+  {
+   "modifiers": 6,
+   "adjectiveStack": 29.41,
+   "compoundStack": 46.85
+  },
+  {
+   "modifiers": 7,
+   "adjectiveStack": 30.59,
+   "compoundStack": 52.16
+  },
+  {
+   "modifiers": 8,
+   "adjectiveStack": 31.41,
+   "compoundStack": 56.94
+  }
+ ],
+ "P5bounds": {
+  "adjective": 33.33333333333333,
+  "compound": 100.00000000000003
+ },
+ "J": {
+  "joins": 14,
+  "violations": 0
+ },
+ "S": [
+  {
+   "strategy": "one-word imperative",
+   "text": "Run.",
+   "blueTiles": 1,
+   "score": 10,
+   "perBlueTile": 10
+  },
+  {
+   "strategy": "noun list fragment",
+   "text": "The cat or the dog or the fish or the bird or the lion or the horse.",
+   "blueTiles": 6,
+   "score": 48,
+   "perBlueTile": 8
+  },
+  {
+   "strategy": "bare noun list fragment",
+   "text": "Ketchup or salad or juice or sugar or honey or pepper.",
+   "blueTiles": 6,
+   "score": 30,
+   "perBlueTile": 5.03
+  },
+  {
+   "strategy": "adjective stack",
+   "text": "Prevent the able absent absurd acoustic actual aerobic ketchup.",
+   "blueTiles": 8,
+   "score": 70,
+   "perBlueTile": 8.69
+  },
+  {
+   "strategy": "noun compound",
+   "text": "Prevent the ability accident actor actress advice affair ketchup.",
+   "blueTiles": 8,
+   "score": 94,
+   "perBlueTile": 11.76
+  },
+  {
+   "strategy": "compound fragment",
+   "text": "The ability accident actor actress advice affair ketchup.",
+   "blueTiles": 7,
+   "score": 47,
+   "perBlueTile": 6.69
+  },
+  {
+   "strategy": "8-clause and-chain",
+   "text": "the dog can run and the cat can jump and the fish can swim and the bird can sing and the lion can dance and the horse can fly and the donkey can float and the eagle can shiver.",
+   "blueTiles": 16,
+   "score": 287,
+   "perBlueTile": 17.92
+  },
+  {
+   "strategy": "8-clause because-chain",
+   "text": "the dog can run because the cat can jump because the fish can swim because the bird can sing because the lion can dance because the horse can fly because the donkey can float because the eagle can shiver.",
+   "blueTiles": 17,
+   "score": 294,
+   "perBlueTile": 17.31
+  },
+  {
+   "strategy": "8-clause alternating chain",
+   "text": "the dog can run and the cat can jump because the fish can swim and the bird can sing because the lion can dance and the horse can fly because the donkey can float and the eagle can shiver.",
+   "blueTiles": 17,
+   "score": 316,
+   "perBlueTile": 18.6
+  },
+  {
+   "strategy": "handover A",
+   "text": "Prevent prison patient parrot ketchup in all bitter banana menu output.",
+   "blueTiles": 10,
+   "score": 134,
+   "perBlueTile": 13.44
+  },
+  {
+   "strategy": "handover C",
+   "text": "The unknown civil void has just blame and the bitter October symbol can oppose the joke journey.",
+   "blueTiles": 11,
+   "score": 181,
+   "perBlueTile": 16.41
+  },
+  {
+   "strategy": "session sentence 1",
+   "text": "Abandon barely fun festival salad and shiver because clean library jeans know robust news for the runway security man.",
+   "blueTiles": 16,
+   "score": 259,
+   "perBlueTile": 16.17
+  },
+  {
+   "strategy": "embedding + relative",
+   "text": "The angry cat that can sing can decide to run because the dog can swim.",
+   "blueTiles": 9,
+   "score": 134,
+   "perBlueTile": 14.89
+  }
+ ],
+ "O": {
+  "inventory": 167,
+  "helpers": [
+   "the",
+   "is",
+   "in",
+   "and",
+   "a",
+   "can",
+   "for",
+   "on",
+   "has"
+  ],
+  "candidates": 6000,
+  "perTileBySize": {
+   "1-2": {
+    "n": 699,
+    "median": 10,
+    "p90": 10.9
+   },
+   "3-4": {
+    "n": 1771,
+    "median": 10.5,
+    "p90": 12.3
+   },
+   "5-6": {
+    "n": 1478,
+    "median": 12,
+    "p90": 14.2
+   },
+   "7-9": {
+    "n": 1446,
+    "median": 12.6,
+    "p90": 16.7
+   },
+   "10+": {
+    "n": 606,
+    "median": 14.7,
+    "p90": 18
+   }
+  },
+  "greedyByPointsPerTile": {
+   "sentences": 62,
+   "blueTilesUsed": 145,
+   "total": 1939,
+   "perTile": 13.37,
+   "meanBluePerSentence": 2.3,
+   "utteranceTypes": {
+    "imperative": 28,
+    "declarative": 3,
+    "question": 13,
+    "ellipsis": 6,
+    "fragment": 12
+   },
+   "structuralShare": 0.14,
+   "listItems": 3,
+   "topFamilies": [
+    [
+     "noun_head",
+     40
+    ],
+    [
+     "np_premodifier",
+     40
+    ],
+    [
+     "determiner",
+     34
+    ],
+    [
+     "imperative",
+     28
+    ],
+    [
+     "intransitive",
+     28
+    ],
+    [
+     "adjective",
+     13
+    ],
+    [
+     "question",
+     13
+    ],
+    [
+     "bare_np",
+     12
+    ],
+    [
+     "clause",
+     12
+    ],
+    [
+     "verb_coordination",
+     12
+    ]
+   ],
+   "best": [
+    {
+     "score": 308,
+     "text": "holiday and joke later because all can and jeans renew for the nation say stairs can and can and must"
+    },
+    {
+     "score": 197,
+     "text": "abandon and measure tonight in autumn and message ketchup and void just junk and taste civil"
+    },
+    {
+     "score": 118,
+     "text": "level a canvas october and barely castle and melt and leaf"
+    },
+    {
+     "score": 94,
+     "text": "the affair core can consider staff need"
+    },
+    {
+     "score": 86,
+     "text": "can a chase figure and fix a second uniform"
+    }
+   ]
+  },
+  "greedyByScore": {
+   "sentences": 51,
+   "blueTilesUsed": 141,
+   "total": 1889,
+   "perTile": 13.4,
+   "meanBluePerSentence": 2.8,
+   "utteranceTypes": {
+    "imperative": 25,
+    "question": 11,
+    "ellipsis": 6,
+    "fragment": 9
+   },
+   "structuralShare": 0.13,
+   "listItems": 4,
+   "topFamilies": [
+    [
+     "noun_head",
+     33
+    ],
+    [
+     "np_premodifier",
+     33
+    ],
+    [
+     "determiner",
+     29
+    ],
+    [
+     "imperative",
+     25
+    ],
+    [
+     "intransitive",
+     23
+    ],
+    [
+     "verb_coordination",
+     14
+    ],
+    [
+     "adjective",
+     12
+    ],
+    [
+     "question",
+     11
+    ],
+    [
+     "adjective_modifier",
+     10
+    ],
+    [
+     "bare_np",
+     9
+    ]
+   ],
+   "best": [
+    {
+     "score": 308,
+     "text": "holiday and joke later because all can and jeans renew for the nation say stairs can and can and must"
+    },
+    {
+     "score": 205,
+     "text": "can plug salad for the unknown original core sign and spend output and taste august and raise and coast"
+    },
+    {
+     "score": 118,
+     "text": "level a canvas october and barely castle and melt and leaf"
+    },
+    {
+     "score": 102,
+     "text": "hint and filter for staff and win warfare security"
+    },
+    {
+     "score": 86,
+     "text": "can a chase figure and fix a second uniform"
+    }
+   ]
+  }
+ }
+}

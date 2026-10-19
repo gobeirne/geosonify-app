@@ -1,6 +1,6 @@
-# Starpin Word Lab — Phase 0 grammar prototype
+# Starpin Word Lab — grammar and scoring prototype (Phases 0–2)
 
-A standalone Node prototype of a replacement grammar engine for Word Lab. It does **not** modify the Word Lab game, its HTML, or any saved session. Node ≥ 18, no dependencies.
+A standalone Node prototype of a replacement grammar engine and scorer for Word Lab. It does **not** modify the Word Lab game, its HTML, or any saved session. Node ≥ 18, no dependencies.
 
 Start with `reports/PHASE0_REPORT.md` (results), then `reports/probe_analyses.md` (actual analyses) and `reports/lexical_policy.md` (every lexical change and its evidence).
 
@@ -31,16 +31,33 @@ engine.parse([{word: 'kick', source: 'collected'}, {word: 'the', source: 'helper
 engine.parse(text, {pins: {20: 'V'}});                       // choose a reading
 ```
 
+## Scoring (Phase 2)
+
+`src/score.js` scores one reading (canonical or player-pinned) from the tiles' provenance:
+- blue tiles earn role points, with tapering for stacked modifiers and list items, and a saturating size multiplier;
+- clause links between substantive constituents share one tapering budget per sentence;
+- a nonlinear bonus rewards distinct link types;
+- conflicts and unrecognised sentences score 0 and are marked pending.
+
+```js
+const {scoreResult} = require('./src/score');
+const r = engine.parse(tiles);           // or engine.parse(tiles, {pins})
+scoreResult(r);                          // {score, status, breakdown: {tiles, links, sizeMultiplier, ...}}
+```
+
+`tests/run_scoring.js` tests invariants P1–P6 on real parses, runs a join-versus-split test and compares farming strategies per blue tile. It also runs an adversarial portfolio search on `tests/inventory_v1_1_embedded.json`, the 167-word inventory embedded in v1.1 and not the live browser session.
+
 ## Running
 
 | Command | What it does |
 |---|---|
-| `npm test` | CI gates: probes, exact recovery of generated trees, corruption gates, diagnostic attribution, timing |
+| `npm test` | CI gates: probes, exact recovery of generated trees, corruption gates, diagnostic attribution, timing, scoring invariants |
 | `npm run probes` | intended-analysis probes → `reports/probe_analyses.md` |
 | `npm run generated` | 1,500 generated derivations, typed corruptions, v1.1 differential, timing → `reports/` |
 | `npm run stress` | adversarial timing → `reports/stress_timing.json` |
+| `npm run scoring` | scoring invariants, strategy table, inventory optimiser → `reports/scoring_report.json` |
 | `npm run lexicon-report` | `reports/lexical_policy.md` |
-| `npm run erg:prepare` | `erg/phase0b_batch.jsonl` for the ERG notebook |
+| `npm run erg:prepare` | `erg/phase1_batch.jsonl` for the ERG notebook (refuses to overwrite a batch that has results) |
 | `node erg/analyse.js <results> <batch> <tag>` | aggregates ERG output → `reports/<tag>_analysis.md` |
 | `node erg/ablate.js <tag> <tiles>` | measures each evidence source and restriction against ERG |
 | `node erg/rescore.js <tag> <tiles>` | current engine vs stored ERG results |
@@ -69,7 +86,14 @@ A sentence counts as ERG-witnessed only if ERG's top-ranked derivation is all of
 
 A bare ERG parse is not enough. ERG also returns subjectless finite-VP fragments, capitalised words read as proper names, and other robustness analyses.
 
-**Optional second run.**
+**Second run (held out, 2026-10-19).** Results are stored compressed as `erg/erg_phase0b_results.jsonl.gz` (the raw file is 66 MB); `analyse.js` reads `.gz` directly:
+
+```
+node erg/analyse.js erg/erg_phase0b_results.jsonl.gz erg/phase0b_batch.jsonl erg_phase0b
+node erg/ablate.js  erg_phase0b erg/phase0b_batch.jsonl
+```
+
+**Running it again.**
 1. In `erg/Starpin_ERG_Phase0.ipynb`, set `ERG_DAT_URL`, or upload the `.dat` when asked.
 2. Upload `erg/phase0b_batch.jsonl`, built from the current engine, which carries its own tiles.
 3. Run all, and return `erg_phase0b_results.jsonl`.
@@ -84,8 +108,8 @@ The notebook now stores the derivation of every inspected reading, not just the 
 ## Layout
 
 ```
-src/        engine, grammar, parser, lexicon compiler, loader
-data/       v1_1_lexicon.json (extracted from the v1.1 game), oewn_evidence.json (extracted from OEWN 2025)
+src/        engine, grammar, parser, lexicon compiler, scorer, loader
+data/       v1_1_lexicon.json (from the v1.1 game), oewn_evidence.json (OEWN 2025), erg_verb_evidence.json + ERG_LICENSE.txt (ERG)
 tests/      probes.json, run_probes.js, generate.js, run_generated.js, stress.js, run_all.js
 erg/        prepare.js, analyse.js, ablate.js, rescore.js, Starpin_ERG_Phase0.ipynb,
             phase0_batch.jsonl + phase0_batch_tiles.jsonl (+ your erg_phase0_results.jsonl), phase0b_batch.jsonl
@@ -96,6 +120,8 @@ reports/    generated results (regenerate with npm run report)
 ```
 
 ## Rebuilding the evidence files
+
+- `python3 tools/extract_erg_lexicon.py lexicon.tdl data/v1_1_lexicon.json data/erg_verb_evidence.json` uses `lexicon.tdl` from github.com/delph-in/erg (MIT licence; `data/ERG_LICENSE.txt`) and gives verb frames, including optional objects (`v_np*_le`).
 
 - `python3 tools/extract_oewn.py english-wordnet-2025.xml.gz data/v1_1_lexicon.json data/oewn_evidence.json` uses the release from github.com/globalwordnet/english-wordnet. The SHA-256 is recorded in the output.
 - `node tools/extract_v11.js Starpin_Word_Lab_v1_1_Starpin.html` re-extracts `reference/v1_1/`.
@@ -109,4 +135,5 @@ reports/    generated results (regenerate with npm run report)
 - **Open English WordNet 2025:** CC BY 4.0, which requires attribution. Lexicographer files, sense order, hypernyms, multiword and closed-form lemmas, and definition/example text counts are used.
 - **Simple English Wiktionary** (via Kaikki, inside the v1.1 lexicon's evidence fields): Wiktionary content is CC BY-SA 4.0 and GFDL. Whether derived count/mass flags carry share-alike obligations needs checking before redistribution.
 - **WordNet verb-frame IDs and VerbNet matches:** inherited from the v1.1 lexicon evidence. VerbNet's licence should be confirmed.
+- **English Resource Grammar lexicon:** MIT licence (`data/ERG_LICENSE.txt`), which requires the copyright notice to be kept with copies.
 - **The v1.1 lexicon itself:** the handover already flags that its redistribution terms need review.
