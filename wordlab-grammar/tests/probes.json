@@ -1,0 +1,724 @@
+{
+ "about": "Intended-analysis probes. Role assertions use 'word' (or 'word#2' for a second occurrence) mapped to 'POS:role' (an array allows alternatives). 'where': 'canonical' asserts the canonical reading; 'any' asserts some offered reading; 'pinned' parses with the given pins first. Sources: Word Lab holistic handover 2026-10-19 (sections 4-6) and the v1.1 session sentences. Negative probes assert a specific conflict type or non-recognition, never a blanket string ban.",
+ "probes": [
+  {
+   "id": "A1",
+   "src": "handover 5A",
+   "text": "Prevent prison patient parrot ketchup in all bitter banana menu output.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "prevent": "V:root",
+     "prison": "N:compound",
+     "parrot": "N:compound",
+     "ketchup": "N:obj",
+     "all": "Det:det",
+     "bitter": "Adj:amod",
+     "banana": "N:compound",
+     "menu": "N:compound",
+     "output": "N:pobj",
+     "in": [
+      "P:obl",
+      "P:nmod_pp"
+     ]
+    }
+   }
+  },
+  {
+   "id": "A2",
+   "src": "handover 5A (patient as noun adjunct)",
+   "text": "Prevent prison patient parrot ketchup in all bitter banana menu output.",
+   "expect": {
+    "state": "recognised",
+    "where": "any",
+    "roles": {
+     "patient": "N:compound",
+     "ketchup": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "B1",
+   "src": "handover 5B, intended reading via one pin",
+   "text": "Fix the fossil figure in the favorite filter and forget the grid gadget in the garage, for staff on stage sign steel soldier script output.",
+   "pins": {
+    "sign": "V"
+   },
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "causal_for_coordination",
+     "bare_idiomatic_pp"
+    ],
+    "roles": {
+     "for": "ForCoord:cc",
+     "staff": "N:nsubj",
+     "stage": "NIdiom:pobj",
+     "sign": "V:conj_for",
+     "steel": [
+      "Adj:amod",
+      "N:compound"
+     ],
+     "soldier": "N:compound",
+     "script": "N:compound",
+     "output": "N:obj",
+     "forget": "V:conj"
+    }
+   }
+  },
+  {
+   "id": "B2",
+   "src": "handover 5B (unpinned: causal 'for' must be offered)",
+   "text": "Fix the fossil figure in the favorite filter and forget the grid gadget in the garage, for staff on stage sign steel soldier script output.",
+   "expect": {
+    "state": "recognised",
+    "where": "any",
+    "families": [
+     "causal_for_coordination"
+    ]
+   }
+  },
+  {
+   "id": "B3",
+   "src": "handover 5B / ERG bake-off",
+   "text": "Staff on stage can sign the script.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "staff": "N:nsubj",
+     "stage": "NIdiom:pobj",
+     "sign": "V:root",
+     "script": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "C1",
+   "src": "handover 5C",
+   "text": "The unknown civil void has just blame and the bitter October symbol can oppose the joke journey.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "families": [
+     "clause_coordination"
+    ],
+    "roles": {
+     "has": "V:root",
+     "just": "Adj:amod",
+     "blame": "N:obj",
+     "october": "N:compound",
+     "symbol": "N:nsubj",
+     "joke": "N:compound",
+     "journey": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "C2",
+   "src": "handover 5C (focus reading also offered)",
+   "text": "The unknown civil void has just blame and the bitter October symbol can oppose the joke journey.",
+   "expect": {
+    "state": "recognised",
+    "where": "any",
+    "roles": {
+     "just": "AdvFocus:advmod"
+    }
+   }
+  },
+  {
+   "id": "D1",
+   "src": "handover 5D",
+   "text": "The cat can can run.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "cat": "N:compound",
+     "can": "N:nsubj",
+     "can#2": "Modal:aux",
+     "run": "V:root"
+    }
+   }
+  },
+  {
+   "id": "D2",
+   "src": "handover 5D",
+   "text": "Can the cat can run?",
+   "expect": {
+    "state": "recognised",
+    "type": "question",
+    "where": "canonical",
+    "roles": {
+     "can": "Modal:aux",
+     "cat": "N:compound",
+     "can#2": "N:nsubj",
+     "run": "V:root"
+    }
+   }
+  },
+  {
+   "id": "D3",
+   "src": "handover 5D: grammatical, but 'may' is neither BIP39 nor a helper",
+   "text": "The cat can may run.",
+   "expect": {
+    "state": "invalid_tiles"
+   }
+  },
+  {
+   "id": "D4",
+   "src": "handover 5D",
+   "text": "The cat can must run.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "can": "N:nsubj",
+     "must": "Modal:aux"
+    }
+   }
+  },
+  {
+   "id": "D5",
+   "src": "gold-role policy: a gold 'can' is a modal only",
+   "tiles": [
+    [
+     "kick",
+     "collected"
+    ],
+    [
+     "the",
+     "helper"
+    ],
+    [
+     "angry",
+     "collected"
+    ],
+    [
+     "can",
+     "helper"
+    ]
+   ],
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "D6",
+   "src": "gold-role policy: a blue 'can' keeps its noun reading",
+   "tiles": [
+    [
+     "kick",
+     "collected"
+    ],
+    [
+     "the",
+     "helper"
+    ],
+    [
+     "angry",
+     "collected"
+    ],
+    [
+     "can",
+     "collected"
+    ]
+   ],
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "can": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "E1",
+   "src": "handover 5E",
+   "text": "The garden fence can.",
+   "expect": {
+    "state": "recognised",
+    "type": "ellipsis",
+    "where": "canonical",
+    "roles": {
+     "garden": "N:compound",
+     "fence": "N:nsubj",
+     "can": "Modal:root"
+    }
+   }
+  },
+  {
+   "id": "E2",
+   "src": "handover 5E (the fragment reading must be offered; canonical is a genuine clause: [blossom and cat] [bag], bag = intransitive verb, WordNet frame 1)",
+   "text": "The vivid autumn blossom and the famous canvas cat bag.",
+   "expect": {
+    "state": "recognised",
+    "type": "fragment",
+    "where": "any",
+    "families": [
+     "noun_coordination"
+    ],
+    "roles": {
+     "blossom": "N:root",
+     "bag": "N:conj",
+     "canvas": "N:compound",
+     "cat": "N:compound"
+    }
+   }
+  },
+  {
+   "id": "E2b",
+   "src": "handover 5E: canonical reading is the clause with intransitive 'bag'",
+   "text": "The vivid autumn blossom and the famous canvas cat bag.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "blossom": "N:nsubj",
+     "cat": "N:conj",
+     "bag": "V:root"
+    }
+   }
+  },
+  {
+   "id": "E3",
+   "src": "handover 5E",
+   "text": "A cheap angry badge and a shallow silly chat can boil nice level stairs and the vocal timber table in the million citizen parade in the vivid autumn blossom.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "chat": "N:conj",
+     "boil": "V:root",
+     "stairs": "N:obj",
+     "million": [
+      "N:compound",
+      "Adj:amod"
+     ],
+     "citizen": "N:compound",
+     "parade": "N:pobj"
+    }
+   }
+  },
+  {
+   "id": "E4",
+   "src": "handover 5E (ERG: no reading)",
+   "text": "Clump the document and forget the half human hybrid fossil.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "any",
+    "roles": {
+     "half": "AdvDeg:advmod",
+     "human": "Adj:amod",
+     "hybrid": [
+      "N:compound",
+      "Adj:amod"
+     ],
+     "fossil": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "E5",
+   "src": "handover 5E",
+   "text": "Crumble the favorite document in fun and ensure the core dose can predict midnight security and taste vivid unknown ketchup.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "any",
+    "families": [
+     "complement_clause"
+    ],
+    "roles": {
+     "fun": [
+      "NIdiom:pobj",
+      "N:pobj"
+     ],
+     "ensure": "V:conj",
+     "dose": "N:nsubj",
+     "security": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "E6",
+   "src": "handover 5E",
+   "text": "Clean the favorite festival because angry jeans just know robust inner salad.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "families": [
+     "subordinate_clause"
+    ],
+    "roles": {
+     "because": "Sub:mark",
+     "jeans": "N:nsubj",
+     "just": "AdvPre:advmod",
+     "know": "V:advcl",
+     "salad": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "E7",
+   "src": "handover 5E",
+   "text": "Just joke and blame half human hybrid cat stairs.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "any",
+    "roles": {
+     "joke": "V:root",
+     "blame": "V:conj",
+     "stairs": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "E8",
+   "src": "handover 5E",
+   "text": "Taste vocal stairs today and guess famous angry autumn jeans.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "taste": "V:root",
+     "stairs": "N:obj",
+     "today": "AdvPost:advmod",
+     "guess": "V:conj",
+     "autumn": "N:compound",
+     "jeans": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "U1",
+   "src": "v1.1 session sentence 1",
+   "text": "Abandon barely fun festival salad and shiver because clean library jeans know robust news for the runway security man.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "any",
+    "roles": {
+     "barely": "AdvDeg:advmod",
+     "salad": "N:obj",
+     "shiver": "V:conj",
+     "jeans": "N:nsubj",
+     "news": "N:obj",
+     "man": "N:pobj"
+    }
+   }
+  },
+  {
+   "id": "U2",
+   "src": "v1.1 session sentence 2",
+   "text": "A cheap angry badge and a shallow silly chat can boil nice level stairs and the vocal timber table in the million citizen parade.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "badge": "N:nsubj",
+     "stairs": "N:obj",
+     "table": "N:conj"
+    }
+   }
+  },
+  {
+   "id": "U3",
+   "src": "v1.1 session sentence 3",
+   "text": "The vivid autumn blossom and the famous canvas cat bag crumble and observe the original midnight primary core on the inner coast.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "blossom": "N:nsubj",
+     "crumble": "V:root",
+     "observe": "V:conj",
+     "core": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "F1",
+   "src": "handover 5F: chat count",
+   "text": "A shallow silly chat.",
+   "expect": {
+    "state": "recognised",
+    "type": "fragment",
+    "where": "canonical",
+    "roles": {
+     "chat": "N:root"
+    }
+   }
+  },
+  {
+   "id": "F2",
+   "src": "handover 5F: chat mass",
+   "text": "Shallow silly chat.",
+   "expect": {
+    "state": "recognised",
+    "type": "fragment",
+    "where": "canonical"
+   }
+  },
+  {
+   "id": "F3",
+   "src": "handover 5F: 'symbol' is a noun adjunct, not an adjective",
+   "text": "The symbol cat can run.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "symbol": "N:compound"
+    }
+   }
+  },
+  {
+   "id": "F4",
+   "src": "handover 5F: 'symbol' is not a predicative adjective",
+   "text": "The cat is symbol.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "det_noun"
+   }
+  },
+  {
+   "id": "F5",
+   "src": "handover 5F: 'toward' is a preposition",
+   "text": "The cat can run toward the garden.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "toward": "P:obl"
+    }
+   }
+  },
+  {
+   "id": "F6",
+   "src": "handover 5F: no free adverbial 'toward'",
+   "text": "The cat can run toward.",
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "P1",
+   "src": "v1.1 defect: invariant noun with 'is'",
+   "text": "The fish is sad.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical"
+   }
+  },
+  {
+   "id": "P2",
+   "src": "v1.1 defect: three-way NP coordination",
+   "text": "The cat and the dog and the fish can run.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "noun_coordination"
+    ]
+   }
+  },
+  {
+   "id": "P3",
+   "src": "v1.1 defect: three-way VP coordination",
+   "text": "Run and jump and swim.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "verb_coordination"
+    ]
+   }
+  },
+  {
+   "id": "P4",
+   "src": "v1.1 defect: three copular clauses",
+   "text": "The dog is happy and the cat is sad and the fish is calm.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "clause_coordination"
+    ]
+   }
+  },
+  {
+   "id": "P5",
+   "src": "v1.1 defect: 'has' with a mass object",
+   "text": "The void has blame.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "has": "V:root",
+     "blame": "N:obj"
+    }
+   }
+  },
+  {
+   "id": "P6",
+   "src": "Buffalo-type reading accepted by v1.1: [cat dog fish] [bird] (to bird = birdwatch)",
+   "text": "Cat dog fish bird.",
+   "expect": {
+    "state": "recognised",
+    "where": "any",
+    "roles": {
+     "fish": "N:nsubj",
+     "bird": "V:root"
+    }
+   }
+  },
+  {
+   "id": "N1",
+   "src": "agreement",
+   "text": "The cat are happy.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "agreement"
+   }
+  },
+  {
+   "id": "N2",
+   "src": "article sound",
+   "text": "A angry cat can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "article"
+   }
+  },
+  {
+   "id": "N3",
+   "src": "article sound",
+   "text": "An cat can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "article"
+   }
+  },
+  {
+   "id": "N4",
+   "src": "bare singular count subject",
+   "text": "Cat can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "det_noun"
+   }
+  },
+  {
+   "id": "N5",
+   "src": "determiner number",
+   "text": "Many cat can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "det_noun"
+   }
+  },
+  {
+   "id": "N6",
+   "src": "pronoun case (object-only reflexive as subject; me/them are not available tiles)",
+   "text": "Myself can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "case"
+   }
+  },
+  {
+   "id": "N7",
+   "src": "missing object of a transitive-only verb",
+   "text": "The cat can ensure.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "verb_frame"
+   }
+  },
+  {
+   "id": "N8",
+   "src": "doubled determiner (ERG merged spans)",
+   "text": "The the cat can run.",
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "N9",
+   "src": "copula with no complement",
+   "text": "The cat is.",
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "N10",
+   "src": "agreement inside a relative clause",
+   "text": "The cat that are happy can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "agreement"
+   }
+  },
+  {
+   "id": "N11",
+   "src": "agreement with 'has'",
+   "text": "The cat and the dog has blame.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "agreement"
+   }
+  },
+  {
+   "id": "S1",
+   "src": "stress: 20-noun compound",
+   "text": "The prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey is bitter.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "journey": "N:nsubj"
+    }
+   }
+  },
+  {
+   "id": "S2",
+   "src": "stress: 12 coordinated clauses",
+   "text": "The dog can run and the cat can jump and the fish can swim and the bird can sing and the lion can dance and the horse can fly and the donkey can float and the eagle can shiver and the rabbit can blossom and the monkey can crumble and the tiger can arrive and the elephant can climb.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "clause_coordination"
+    ]
+   }
+  },
+  {
+   "id": "S3",
+   "src": "stress: nested subordination",
+   "text": "The dog can run because the cat can jump because the fish can swim because the bird can sing.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "subordinate_clause"
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "starpin-wordlab-grammar-phase0",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase 0 grammar prototype for Starpin Word Lab: declarative feature grammar, Earley parser, evidence-tiered BIP39 lexicon, automated test streams and ERG cross-check pipeline.",
+  "license": "UNLICENSED",
+  "engines": {"node": ">=18"},
+  "scripts": {
+    "test": "node tests/run_all.js",
+    "probes": "node tests/run_probes.js",
+    "generated": "node tests/run_generated.js 1500 20261019",
+    "stress": "node tests/stress.js",
+    "lexicon-report": "node tools/report_lexicon.js",
+    "erg:prepare": "node erg/prepare.js",
+    "erg:analyse": "node erg/analyse.js",
+    "bench": "node tools/build_bench.js",
+    "report": "node tests/run_generated.js 1500 20261019 > /dev/null && node tests/stress.js > /dev/null && node tools/report_lexicon.js > /dev/null && node erg/prepare.js && node tests/run_probes.js && node tools/build_bench.js && node tools/build_report.js"
+  }
+}
