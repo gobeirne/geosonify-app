@@ -1,0 +1,2412 @@
+{
+ "table": {
+  "generated_positive | ERG witness": {
+   "n": 286,
+   "before": 286,
+   "now": 230
+  },
+  "generated_positive | ERG no": {
+   "n": 114,
+   "before": 114,
+   "now": 42
+  },
+  "accepted | ERG no": {
+   "n": 186,
+   "before": 186,
+   "now": 88
+  },
+  "accepted | ERG witness": {
+   "n": 414,
+   "before": 414,
+   "now": 327
+  },
+  "rejected | ERG no": {
+   "n": 184,
+   "before": 0,
+   "now": 0
+  },
+  "rejected | ERG witness": {
+   "n": 116,
+   "before": 0,
+   "now": 0
+  }
+ },
+ "changes": [
+  {
+   "kind": "generated_positive",
+   "text": "Conduct capable or whale on ten country and just delay or march.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Culture or the upset orange industry or you.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Enough army or some energy will.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Enough aerobic genre very nuclear blind must not.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Tumble or wheel below asthma and input around you off couple.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Quit to waste or harvest and edit another, for just you of course grow swift and miss like all asthma.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Sleep or few industry or we or hunt or elite that do surface or shed of course must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Are we toward home that are not couple but double or two much utility cattle or they at issue?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Address, for we were not lazy and have hidden and exact he spread since debris or all.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Will an absent edge off earth and axis or energy account for industry or enemy and direct?",
+   "erg": "inverted_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Ask only just he or we that cost but bid that will not fat before all mixed or burst and left and rose.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Just neither and myself or axis or only army or you that quit but left that will drop to become and lift and minor.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Iron shed and bid but all or enemy do essay but you quit or we rose but we judge.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Confirm we about you shed and hurt or we spread while they rose.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Eight energy.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Want to present to work almost damp.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Are vintage enemy absurd?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Inform core and vault, for we or we and ivory and he or he or we and you spread away.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "They or the twist list can point other and indicate the innocent you and nothing.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Six pretty nuclear elite army.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Only that or smoke or series or you did not crawl between rally and run.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Can only tobacco grape or the input or that diet never omit to budget but parade but nurse but reform about you?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Because they bicycle or they spread but you mixed when she hurt or she bid neglect to have or base.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did you that were like local people buffalo make baby home?",
+   "erg": "inverted_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "She spread but they split because they or we click where when you letter they shed because enemy permit.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Ride idle or behave unable and radio where we that allow or current or you or it did not stamp and letter.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Just some fringe has van or has enemy and has you but has shed but was couple.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Make that they or they have quit and broken and become almost still.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "You or two axis.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "They or we between you or army or industry and enemy or elite.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Two engine fossil energy were not all or differ and mixed.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Craft but interest you but crash.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Again rain or wink, for alcohol or you with this or neither does not identify but fold and has team and has all.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Illegal ice tribe must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Wash august and gain.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "All craft but asthma left because they foam and industry choose while you mixed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Claim when we chase or elite bike where just all or you hurt or cost and they bid.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were two swarm industry that have cost and bid but topple and he from you ancient?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Fork but idle and social mixed until hair shed and you share or someone rose.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "All thank if all panic but she spread because axis quit or someone hurt or they puzzle.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "When quality or all or emotion mixed or burst seat you or iron where axis give or they hurt.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Twenty defense and axis or you and congress or track.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "We or they can not come awful or while lava burst just armor or enemy hurt and rose.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Is either or she or armor from view that has quit to ghost and open or thought they ring like twenty tribe?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Run urban.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Eight element almost simple sleep industry can not.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Account for seminar or nothing but retire and snow while we board or we mistake until magic rose or you acquire but axis depend.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "We that can whale on much salad but win to echo you or couple will.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Do you or credit elite account for almost rapid amount west that has spread and will not host or point?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Assist to ride other or trust.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did we tell that he has hurt but name the old or account air?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Ready to kick that just you shed but purse or quit toward any ecology.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Conduct bonus.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Enjoy to clump or list and supply.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Army or they do correct but follow and jeans or one shed and quit.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Solve where they bid and nothing split while we shed or army toss.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Will the blossom firm mass fall bleak or reveal she or they or crew never burst but cost?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Only he or thought or this above attitude or army must clerk or betray or has you.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did almost usual horror industry check that duty mixed but one shed but grab?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Until where energy write where she hurt industry venture but injury burst where you emerge before she split all must whale on crew.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Mean to own all or you or renew.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Addict some crew salmon but run to depart but spin.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Must only erosion energy army receive just you that frost and left but remember to code and circle tonight?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Can you slight all?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Some harsh almost alpha extra or change or she or he like enemy that must glass but trend at night.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Many enemy can not.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were we and you and they or army or forum that have broken but frozen but left almost fine?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Powder just swarm or ice that burst but bid and he or she split and spread.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did almost electric alcohol want that you mixed but energy rose but hazard?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Regret to okay but rent when they rose before this burst since you left and cheese bid.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "The oil is insane, for that forum axis draft evil has you that burst or gap in sight among deer or seminar.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were rigid energy asthma or company across all or marble from input?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "We or you off tribe or all or just they or only axis or that.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Can all report that snack quit and exercise burst but he split or drum and kick like all and move to wash?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Say cool.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Whale on clinic axis and ensure you jar but they left until we long but win to load or range and gas but right.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "You or axis or all were not old but before they cloud and they bid they shed or stock split.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Parrot that you or he or she near injury has frozen but split but cost.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "They or just swing or he beyond jeans and rent and armor or this and you or labor or axis must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Can he that split and quit or you or he into attitude that rose or hurt make almost okay?",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Label this or west van but speak.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Any amused evidence or more nation or a shy cream author or art that was this or an exit.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were ten elite current smart army or only you beyond all that quit and despair eternal?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "She or they or core that burst or rose into the army aspect or you or that under all for purchase.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "All can not network to people but oppose or faint but thrive and army or we and he are not almost amazing.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Was another or that sand into view to you or party?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Entry mixed when enemy hurt but you increase before all left or we drill.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "This earth did never guide but lumber or kick or will phone but plunge but waste and can not suspect that we hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Name the firm many jeans club but age and believe you quit.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "We at length from disease high cage energy family must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did enemy axis wash almost immune and offer to crane and bench or moon?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Reunion or they or you or he and he will.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Do energy enemy fan but fall urban but jar?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Spell but love to divide.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were you that must not fix to claim and flag but major and bird outside some credit?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Appear to play almost more or fall pretty clean or push to catch and exchange.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Three energy were not you and salmon and the unusual other enemy spread or burst but mixed and we record and enlist and assist.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Picture they quit and we rose and salmon left but captain and dial but adjust or page.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Expect to ball but cake but radio but point industry and one you that hurt.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Twelve stairs assault patrol must trim but awake but damage.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Like to round or clutch.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "This trade or you about all was all or enemy.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Aim to taste federal but carry and buzz toward home.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Question but smile when couple yellow and we check and you bridge but we burst and she quit but left but seminar feature.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "He was around only ecology or cattle or you or social but has quit.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Did some school eternal capable index trust all spread until it shed or state camp and he burst?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Squirrel but spoil to spoon you or orbit.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "He that is for use and did not run rigid or just any fish decline or she.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Do the rally spoil to turn royal?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Drive wet or call that industry tunnel or you hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Congress and he that left or rose or we below rally like all and you that shed or cost will.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Any awesome army hunt and many state seminar and all village and rally or axis must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Can card almost able seed remember to achieve that army transfer and they rose or you cost or spoon the text?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "You over all that observe but evoke or just we or she that burst that must mean to end and cradle.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Order just only they or he spread and bid.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Still run rather great or move unique.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Conduct almost dumb or call you exchange but they tongue.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "You or soup or deer must not sound but base and while party glide she spread and nothing hurt and we dust but quit.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Does a palm or some ecology place upper?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Label you this that split but hover.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "You burst or board walk and she shed because until we plunge industry march but axis do not whip.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Rent chicken the rib base, for we toward home cost and burst.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "They or he spread and escape shed and they bid until you stomach or energy assist but culture cost.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Since they spread and evidence quit before army ask or they cost lecture or awake before you hurt and exercise bid.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Were you and only action or axis and grit and all or the elite bleak?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Attack or slight but prevent and reunion or you or all that cost or left quit.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Before family mention but we cost they bid but either shed and they or you split but hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "generated_positive",
+   "text": "Nephew axis must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "Just he above either or you or orbit for rally that recycle or rose.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Move that army and they mixed and split or before you quote scissors spread or all cost and kick axis.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "The sunny grit since van or much action or only just he among evidence and you.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Elite or you was barely sad and quit to humor or reform or force but dice.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "You that gas toast or that hurt and did not manage to betray but is not industry and burst or cry must not.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Some original hunt prison empty salmon does abuse or did not evidence that we hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "You before output or many team toward home.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Just soap or you hurt where they cost and neither and energy wonder or all tone or salt left for core was ancient.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "object_drop",
+   "text": "Can some fit comic or only glass or she or she by race make to blind?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "You by army or we do clutch any shadow.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Was apple energy upper orbit axis more army?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "The industry average defense among you or myself that must not course all or police.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Does bag hour order olympic stairs book and always observe but skin or march?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Are we exercise swarm or you that enter or it?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Were you below deer that bid or left or spread or he or ecology that shed and hurt toward village or all toward home?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Must nation.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "Myself that can whale on much salad but win to echo you or couple will.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Absurd oxygen culture couple or you or much armor or the rifle.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Only you or army or all or orbit will swarm.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Did trash ride equal?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "He in you or just board or either since the axis.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Is he on you that arch but force upon student fruit off wild army?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Lunch, for we that know and cost and quit across odor or blind below neither are about reason.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "You can slight all.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Still ghost and home or inch on guard but confirm enemy oblige or we shed because we split and frequent.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "Just neither and he or axis or only army or you that quit but left that will drop to become and lift and minor.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Age because cheese bid but they cost and axis or forum must not train when he or she rose that hurt or mixed.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Live bicycle pretty social axis advice enemy tunnel.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Forget to move we better and we burst but trumpet labor or ski.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Know that you or action or she hurt or cost and almost conduct perfect.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Does some other elite staff energy arrange injury rose or cream dust but color cost or enjoy to wash innocent or reflect?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Enough half utility awful reunion will not.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Consider all cost or firm or split elite equal.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Were number rigid industry or people input?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Stand almost sick, for hour does fine or cluster and only couple or youth toward it that burst and cost shed but mixed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "The oil is insane, for forum axis draft evil has you that burst or gap in sight among deer or seminar.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Still ghost and home or inch on guard but confirm enemy oblige or we shed because we split you and frequent.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Sleep or few industry or we or hunt or elite that does surface or shed of course must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Name all state or people you or rice or tell there.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Only she that has you and has enemy.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Indoor almost original party.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Add that you split or quit.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Whale on club.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "While they mixed and army charge all or knock feel or fat because he cost before he split since it spread.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "This key ecology or some grass upon you beyond control that silver or noodle or enemy and all and this or myself.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Since hour spread when industry resist all hurt or quit or enemy burst.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Did some industry and you stuff or return any economy an edit but describe or claim or emerge but rice but trend?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Enemy have left or frozen but until we burst but she mixed you birth oxygen and rose.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Just she or only you off raven that split but provide or she or age outside energy army before some erosion congress oil.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Did two action cream taste random but choose you grass and he split and almost fall innocent but point sure?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Ask that deer hurt or shed or they whale.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Just he or you that shed and cost that do not blame soon toward seven rally or we.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "You inside ten exhaust energy that have cost nothing this or one but quit or frozen or myself or air.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "He that is for use and did not run rigid or just any decline fish or she.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "Does the rally spoil to turn royal?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "You behind more noble vicious axis or he or fat or she that bid and left or he that are by all must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Must each early envelope grant the action or you like iron or control we plunge but he rose or taste?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Inject that advice split where they bid but mixed person but industry evolve or stumble.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "agreement",
+   "text": "We to just axis or comfort or you that is not vintage into all and this artwork will.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Come exact but seek to make she did angle but you home.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Key ecology or some grass upon you beyond control that silver or noodle or enemy and all and this or he.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Orbit reunion arm and bronze and elite expand or shed, for social do not remember to wish to delay or hold but trap.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Family slight hurt and shed but they arch when all quit.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Earth did never guide but lumber or kick or will phone but plunge but waste and can not suspect that we hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "We to just axis or comfort or you that are not vintage into all and artwork will.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Does he or any uncle or he toward home account for many unaware axis?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Mind that hour mixed and we like but cable during all or you or leave more army hurry off energy or noodle.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Move they flame or direct and we split you before hurt or notice cost.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Ice illegal tribe must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Aim to decide that apology has cost.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Whale on all army or control that they shed or waste.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "Myself that did not rate siren in you but play extra will.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Were apple upper energy orbit axis more army?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Visa shrimp but arrange that only you or artwork before smoke quit but burst or become almost olympic.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Were evil actor blind happy?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Song can.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "det_drop",
+   "text": "Does evil find clock mixed or you blossom since excess burst but they retreat but that shed until we bid?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Pretty six nuclear elite army.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "case",
+   "text": "Myself or it that mixed or all or energy into axis from latin.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Fever garment attitude culture must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Is either or she or armor from view that has quit to ghost and open or thought they like ring twenty tribe?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Song can.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Whale on clinic and axis ensure you jar but they left until we long but win to load or range and gas but right.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Did almost electric alcohol want that you mixed but rose but hazard?",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Are we toward army or all and this engine and proof?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Must waste nation.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Almost work rival.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Barely drive veteran.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "The must.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Pledge and damp bird and you but find that she and rose army guess.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Drive half inside if lyrics brown or they left you or cost.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Air school hurt before you layer or shed army but square but ski but idle forward.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Act half supreme or risk she split or he or spread economy quit.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Some original hunt empty salmon do abuse or did not evidence that we hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Were other enemy core below any leisure staff?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Were axis or seminar or scissors until just you or print or all forum pretty?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Cry you that left but desert but drink.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Some enemy soup pass or butter and you and neglect and all few army.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Again sustain because we lumber or they bid all and you or armor supply or cost and hurt.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Two engine fossil energy were all or differ and mixed.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "She split and burst tribe from all topple or mixed before they rose but you hurt.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Must all try but neck for you or injury or fancy axis or left social stand?",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "They or he spread and shed escape and they bid until you stomach or energy assist but culture cost.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Were apple energy upper orbit axis more?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Culture or the upset industry orange or you.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "We for that did not whale on enemy or you but were not practice.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Twenty enemy.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Aim to select and better, for that just quality or you has shed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Is congress axis entry it or another or enemy or air that left?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Before family mention but we cost they bid but shed and they or you split but hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "You must play olympic.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "You below social by machine must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "She at length like only industry or earth or elite or axis or you toward the salmon by firm congress will.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Were ten elite smart current army or only you beyond all that quit and despair eternal?",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "You for almost mutual culture can.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Swear but hawk or lift over that or enemy like that and only add you.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Wear and account for you and ride solid.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Boring must axis couple crisp or move you.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Move energy more enemy.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Armor or you or art can divide and evoke and was not gallery but hurt.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Mind that hour mixed and we like cable during all or you or leave more army this hurry off energy or noodle.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Solve where they bid and nothing split while we shed or toss army.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Powder just swarm or that ice burst but bid and he or she split and spread.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Name any van you at birth over enemy or company.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Barely wear oval but reveal you arm or duck spread.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Industry axis.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Blame cost or she quit when rose priority and we split or comfort hurt if you shed and hunt spread but we bid.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "The industry and any almost illegal ranch and all or they or she that mixed or split before you or army that can quit.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Seven mercy gallery.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Acoustic seven mercy gallery.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Axis must.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "When all glue and all squirrel learn industry you or scissors if police bid all toast.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Just we or song inside you split but burst and hurt industry but mixed or spell.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Point that he mixed but it left and split.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Exercise very spare firm will enemy.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Resist before we split and hurt conduct while nothing rose or gallery burst and he bid.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Congress and he that left or rose or we below rally like all and you that shed or will.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Ready to kick that you just shed but purse or quit toward any ecology.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "More fish amused order or pretty other black social must not.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "She and she ranch and burst where industry indicate but you mouse or all debate print or spread.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Ice tribe must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Did output advice or she beyond escape or she spoil to provide the volume country elite?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Any army hunt and many state seminar and all village and rally or axis must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Capital enemy or some math to you must.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Did the axis make ugly but glue?",
+   "erg": "inverted_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Fancy that drill or she is robust and note you or cost.",
+   "erg": "robust_lexical",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Point that oyster or you bid but we hurt but we budget but all claw or deny industry group series and cost.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Truth and you shed and all cost or forum shadow where we figure enemy but hurt and all burst.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Stand almost sick, for neither hour does fine or cluster and only couple or youth toward it that burst and shed cost but mixed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Almost steel evidence access news or you with crowd by neither must not.",
+   "erg": "vp_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Bring ten mad staff twenty elite or you or army, for that or enough march wire is not olympic.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Play gentle and they despair and we question before you but tumble left.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Make half.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Only will series or they and it or you step mutual.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Any odor was below you until axis and she process or split and he mixed.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Some original prison hunt empty salmon do abuse or did not evidence that we hurt.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Hazard that that or you split or mixed but drill quit but spread energy since she burst.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Escape and describe they rose or this bid.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Axis are you but shadow enemy while she cost and feed mixed.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Play gentle and they despair and we question before you tumble left.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Stock axis will not.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "We to just axis or comfort or you that are not vintage into all and artwork will.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Dream where scrap enemy police hurt before team split but we burst.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Other core enemy below any leisure staff.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Twenty can enemy.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Some just fringe has van or has enemy and has you but has shed but was couple.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Acquire to fit ancient but check they bid and you shed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Wonder that axis because elite left but you equal.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Can he that split and quit or you or he into attitude that rose or hurt almost make okay?",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Only crew or some property.",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Does any evil find clock mixed or you blossom since excess burst but they retreat that but shed until we bid?",
+   "erg": "inverted_ellipsis",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "All and upset only evil or they or elite or army must.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Can all report that snack quit and exercise burst but he split or drum and kick all and move to wash?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Scrub escape and describe they rose or bid this.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Announce you or she split.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Ask that deer hurt or shed sleep or they whale.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "All craft asthma but left because they foam and industry choose while you mixed.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Ride idle or behave unable and radio where we allow or current or you or it did not stamp and letter.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Check to bring entry like you seminar or upset off alarm.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Drive wet or call that industry tunnel or hurt you.",
+   "erg": "other_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Account for that action aspect or service or sound endless type and skate next.",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Since they spread and evidence quit before army ask or they cost lecture or awake before you hurt and exercise.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "Must boring axis couple crisp or move?",
+   "erg": "np_fragment",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "adjacent_swap",
+   "text": "Are more desert south company into place?",
+   "erg": "full_clause",
+   "before": "accept",
+   "now": "reject"
+  },
+  {
+   "kind": "corruption_accepted",
+   "type": "token_delete",
+   "text": "She quit but axis did teach or manage industry and you state or this.",
+   "erg": "no_parse",
+   "before": "accept",
+   "now": "reject"
+  }
+ ]
+}

@@ -118,6 +118,12 @@ const V11_FRAME_MAP = Object.freeze({intransitive: 'intr', transitive: 'tr', dit
 
 // OEWN hypernyms marking a group of people or animals (CGEL ch. 5 collectives).
 const COLLECTIVE_ANCESTORS = new Set(['social group', 'animal group', 'gathering (of persons)', 'people']);
+// Evidence switches for measurement only (env WL_OFF), see erg/ablate.js.
+const LEX_OFF = new Set(String((typeof process !== 'undefined' && process.env && process.env.WL_OFF) || '').split(',').filter(Boolean));
+// Attested verb-frame types that passed the ERG validation rule (marginal
+// sentences ERG-analysed at >= 0.8 of the length-matched curated rate).
+const FRAME_VALIDATED = new Set((typeof process !== 'undefined' && process.env && process.env.WL_ALL_FRAMES) ? ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'] : ['intr']);
+const ZERO_PLURAL = new Set(['staff']);
 const MODAL_WORDS = new Set(['can', 'must', 'will']);
 // v1.1 fused-head list ("the sick"): kept as curated, not generalised.
 const FUSED_HEAD_ADJ = new Set(['sick', 'wise', 'innocent', 'young', 'old', 'rich', 'blind']);
@@ -166,16 +172,19 @@ function compileLexicon(v11, oewn, options = {}) {
         add(w, 'N', {num: n, cnt: c, on}, 'curated', 'v1.1');
       }
       const wik = (r.evidence && r.evidence.wiktionary_noun_attestations) || [];
-      if (nums.includes('sg') && wik.includes('mass') && !cnts.includes('mass'))
+      if (nums.includes('sg') && wik.includes('mass') && !cnts.includes('mass') && !LEX_OFF.has('MASS'))
         add(w, 'N', {num: 'sg', cnt: 'mass', on}, 'attested', 'Simple English Wiktionary (Kaikki) noun marked uncountable', 'mass reading');
       if (nums.includes('sg') && wik.includes('count') && !cnts.includes('count'))
         add(w, 'N', {num: 'sg', cnt: 'count', on}, 'attested', 'Simple English Wiktionary (Kaikki) noun marked countable', 'count reading');
+      // Zero-plural nouns (CGEL ch. 5): the singular form is also a true
+      // plural ("ten staff", "staff sign"). Curated, short and cited.
+      if (ZERO_PLURAL.has(w)) add(w, 'N', {num: 'pl', cnt: 'count', on}, 'attested', 'CGEL ch. 5 zero-plural noun', 'plural form identical to singular');
       const lf = lexfiles[w] || [];
       const first = (oewn && oewn.noun_first_sense_lexfile || {})[w];
       const anc = (oewn && oewn.noun_first_group_sense_ancestors || {})[w] || [];
       const humanOrAnimalGroup = anc.some(a => COLLECTIVE_ANCESTORS.has(a));
       if (nums.includes('sg') && first === 'noun.group' && humanOrAnimalGroup)
-        add(w, 'N', {num: 'pl', cnt: 'count', on}, 'derived', 'OEWN 2025 first-listed noun sense is noun.group + CGEL ch. 5 (collective nouns permit plural agreement in BrE/NZE)', 'collective: notional plural (staff are, many staff)');
+        add(w, 'N', {num: 'pl', cnt: 'coll', on}, 'derived', 'OEWN 2025 first-listed noun sense is noun.group + CGEL ch. 5 (collective nouns permit plural agreement in BrE/NZE)', 'collective: notional plural (staff are, many staff)');
       else if (nums.includes('sg') && lf.includes('noun.group'))
         policy.inferredPool.push({word: w, cat: 'N', f: {num: 'pl'}, premise: first === 'noun.group' ? 'first OEWN sense is noun.group but not a group of people or animals (e.g. an arrangement)' : 'a non-primary OEWN sense is noun.group'});
       const massNow = (lex.get(w) || []).some(x => x.cat === 'N' && x.f.cnt === 'mass');
@@ -224,9 +233,16 @@ function compileLexicon(v11, oewn, options = {}) {
       for (const t of ev.wiktionary_verb_usage_tags || []) for (const m of WIKT_TAG_MAP[t] || []) att.set(m, (att.get(m) || []).concat('Wiktionary ' + t));
       for (const [m, srcs] of att) {
         if (curatedFrames.has(m)) continue;
+        if (LEX_OFF.has('VF_' + m)) continue;
         // Verbs v1.1 marks as requiring a particle/preposition do not gain a bare frame.
         if ((a.requires_particle_or_preposition || []).length) continue;
-        for (const vf of vfs) add(w, 'V', {fr: m, vf}, 'attested', [...new Set(srcs)].join('; '), 'verb frame ' + m);
+        // ERG validation (2026-10-19, length-controlled): sentences admitted only
+        // by added intransitive frames were ERG-analysed at 0.82 of the curated
+        // rate; added tr/ditr/copular/to-infinitive/clause frames at 0.33-0.70.
+        // Those are demoted to 'inferred' (recorded, not enabled by default).
+        const tier = FRAME_VALIDATED.has(m) ? 'attested' : 'inferred';
+        if (tier === 'inferred') policy.inferredPool.push({word: w, cat: 'V', f: {fr: m}, premise: 'WordNet/Wiktionary ' + m + ' frame failed ERG validation (2026-10-19)'});
+        for (const vf of vfs) add(w, 'V', {fr: m, vf}, tier, [...new Set(srcs)].join('; '), 'verb frame ' + m);
       }
     }
     // ---- closed classes recorded in the lexicon
@@ -278,6 +294,7 @@ function compileLexicon(v11, oewn, options = {}) {
       if (!rs.some(x => x.cat === 'N' && x.f.num === 'sg' && x.f.cnt === 'count')) continue;
       if (rs.some(x => x.cat === 'N' && x.f.cnt === 'mass')) continue;
       if (rs.some(x => x.cat === 'Pron')) continue; // 'someone' etc. are already NPs
+      if (LEX_OFF.has('IDIOM')) continue;
       add(n, 'NIdiom', {p}, 'attested', src, 'bare noun after "' + p + '"');
       idioms.push(k);
     }

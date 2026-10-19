@@ -4,83 +4,83 @@
   "tokens": 13,
   "state": "recognised",
   "trees": 2,
-  "ms": 8.9
+  "ms": 7
  },
  {
   "name": "20-noun compound subject",
   "tokens": 23,
   "state": "recognised",
   "trees": 96,
-  "ms": 21.2
+  "ms": 17
  },
  {
   "name": "40-noun compound subject",
   "tokens": 43,
   "state": "recognised",
-  "trees": 1152,
-  "ms": 17.4
+  "trees": 768,
+  "ms": 16.1
  },
  {
   "name": "50-noun compound subject",
   "tokens": 53,
   "state": "recognised",
-  "trees": 2304,
-  "ms": 22.3
+  "trees": 1536,
+  "ms": 17.5
  },
  {
   "name": "4 stacked PPs (attachment ambiguity)",
   "tokens": 15,
   "state": "recognised",
   "trees": 84,
-  "ms": 13.1
+  "ms": 10.1
  },
  {
   "name": "6 stacked PPs (attachment ambiguity)",
   "tokens": 21,
   "state": "recognised",
   "trees": 858,
-  "ms": 3.8
+  "ms": 7.8
  },
  {
   "name": "8 stacked PPs (attachment ambiguity)",
   "tokens": 27,
   "state": "recognised",
   "trees": 19448,
-  "ms": 7.3
+  "ms": 6.7
  },
  {
   "name": "10 stacked PPs (attachment ambiguity)",
   "tokens": 33,
   "state": "recognised",
   "trees": 705432,
-  "ms": 21.1
+  "ms": 15.8
  },
  {
   "name": "8 coordinated clauses",
   "tokens": 39,
   "state": "recognised",
   "trees": 1,
-  "ms": 3
+  "ms": 3.1
  },
  {
   "name": "16 coordinated clauses",
   "tokens": 79,
   "state": "recognised",
   "trees": 1,
-  "ms": 8.3
+  "ms": 6.8
  },
  {
   "name": "40-token realistic",
   "tokens": 42,
   "state": "recognised",
   "trees": 11616,
-  "ms": 11.9
+  "ms": 11.6
  },
  {
   "name": "mixed subordination + coordination",
   "tokens": 29,
   "state": "recognised",
   "trees": 228,
-  "ms": 4
+  "ms": 3.9
  }
 ]

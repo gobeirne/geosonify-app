@@ -16,7 +16,7 @@
 
 const CATS = {
   // preterminals
-  N: {num: ['sg', 'pl'], cnt: ['count', 'mass'], on: ['v', 'c', 'x']},
+  N: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
   NIdiom: {p: 'PREP'}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
   AdvDeg: {pa: ['both', 'pred'], on: ['v', 'c', 'x']}, AdvPre: {}, AdvPost: {}, AdvFocus: {},
   V: {fr: ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'], vf: ['base', 'past', 'ppart', 'pres3']},
@@ -27,8 +27,8 @@ const CATS = {
   HaveAux: {ht: ['has', 'have']}, Not: {}, To: {}, Conj: {cj: ['and', 'or', 'but']}, ForCoord: {},
   Sub: {}, Comp: {}, Rel: {},
   // phrasal
-  Nom: {num: ['sg', 'pl'], cnt: ['count', 'mass'], on: ['v', 'c', 'x']},
-  Mod: {on: ['v', 'c', 'x']},
+  Nom: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
+  NomN: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
   AdjP: {u: ['attr', 'pred'], on: ['v', 'c', 'x']},
   NP: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], case: ['nom', 'acc', 'any', 'refl'], co: ['n', 'and', 'or']},
   NPx: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], case: ['nom', 'acc', 'any', 'refl'], co: ['and', 'or']},
@@ -44,7 +44,11 @@ const CATS = {
 // is itself an unbracketed coordination, so coordinations stay flat.
 const DEFAULTS = {co: 'n'};
 
+// 'coll' = notional plural of a collective noun (the army are): plural
+// agreement, but not countable-plural, so no numerals/'many'/'all' and no
+// bare use (*six army, *army sign). CGEL ch. 5.
 const DET_OK = (d, num, cnt, on) => {
+  if (cnt === 'coll' && !OFF.has('COLL')) return d === 'the' || d === 'any';
   switch (d) {
     case 'the': case 'any': return true;
     case 'a': return num === 'sg' && cnt === 'count';
@@ -80,8 +84,13 @@ const OBJ = c => c === 'acc' || c === 'any';
 // Reflexives ('myself') need a binding antecedent, which this grammar does
 // not model (no binding theory; 'I' is not an available tile). They are
 // therefore licensed only in non-sentential utterances ("Just myself.").
+// Fragments accept any case. (Banning nominative fragments such as "They."
+// cost 43 ERG-analysed sentences to catch 27, so it is not applied.)
 const FRAG_CASE = c => c !== null;
 
+// Policy switches that can be turned off (env WL_OFF=COLL,...) so each can be
+// measured against stored ERG results with erg/ablate.js.
+const OFF = new Set(String((typeof process !== 'undefined' && process.env && process.env.WL_OFF) || '').split(',').filter(Boolean));
 const R = [];
 function rule(id, lhs, rhs, o = {}) { R.push({id, lhs, rhs, ...o}); }
 const L = (cat, f = {}) => [cat, f];
@@ -92,13 +101,18 @@ const L = (cat, f = {}) => [cat, f];
 // rightmost noun is the head. Internal bracketing of compounds is deliberately
 // NOT represented: it is semantic, not syntactic, and enumerating it is
 // Catalan-explosive. There is no length ceiling.
-rule('nom_head', L('Nom', {num: '?n', cnt: '?c', on: '?o'}), [L('N', {num: '?n', cnt: '?c', on: '?o'})],
+// Premodifiers: a flat chain of attributive adjective phrases and noun
+// modifiers in any order, ending in the head noun (CGEL ch. 5, ch. 19). The
+// ERG cross-check (2026-10-19) showed that requiring adjectives to precede
+// noun modifiers rejected 33 ERG-analysed sentences to catch 14, so the order
+// is free. Compound bracketing is not enumerated; there is no length ceiling.
+rule('nom_head', L('NomN', {num: '?n', cnt: '?c', on: '?o'}), [L('N', {num: '?n', cnt: '?c', on: '?o'})],
   {fam: 'noun_head', head: 0, disp: null});
-rule('nom_mod', L('Nom', {num: '?n', cnt: '?c', on: '?o'}), [L('Mod', {on: '?o'}), L('Nom', {num: '?n', cnt: '?c'})],
-  {fam: 'np_premodifier', head: 1, deps: [[0, 'mod']], disp: null});
-rule('mod_adj', L('Mod', {on: '?o'}), [L('AdjP', {u: 'attr', on: '?o'})], {fam: 'adjective_modifier', head: 0, rel: 'amod', disp: null});
-rule('mod_noun', L('Mod', {on: '?o'}), [L('N', {on: '?o'})], {fam: 'noun_compound', head: 0, rel: 'compound', disp: null,
-  cost: 0.15}); // a word that is also an adjective is canonically read as one
+rule('nom_compound', L('NomN', {num: '?n', cnt: '?c', on: '?o'}), [L('N', {on: '?o', cnt: '?m'}), L('NomN', {num: '?n', cnt: '?c'})],
+  {fam: 'noun_compound', head: 1, deps: [[0, 'compound']], disp: null, cost: 0.15, when: (v) => v.m !== 'coll'}); // a word that is also an adjective is canonically read as one
+rule('nom_adj', L('NomN', {num: '?n', cnt: '?c', on: '?o'}), [L('AdjP', {u: 'attr', on: '?o'}), L('NomN', {num: '?n', cnt: '?c'})],
+  {fam: 'adjective_modifier', head: 1, deps: [[0, 'amod']], disp: null});
+rule('nom_n', L('Nom', {num: '?n', cnt: '?c', on: '?o'}), [L('NomN', {num: '?n', cnt: '?c', on: '?o'})], {fam: 'np_premodifier', head: 0, disp: null});
 rule('adjp', L('AdjP', {u: '?u', on: '?o'}), [L('Adj', {u: '?u', on: '?o'})], {fam: 'adjective', head: 0, disp: null});
 rule('adjp_deg', L('AdjP', {u: '?u', on: '?o'}), [L('AdvDeg', {pa: '?pa', on: '?o'}), L('Adj', {u: '?u'})],
   {fam: 'degree_modifier', head: 1, deps: [[0, 'advmod']], disp: 'AdjP', when: (v, C) => v.pa === 'both' || v.u === 'pred'});
@@ -109,12 +123,16 @@ rule('np_det', L('NP', {num: '?n', per: '3', case: 'any'}), [L('Det', {d: '?d'})
    when: (v, C) => C('det_noun', DET_OK(v.d, v.n, v.c)) && C('article', ONSET_OK(v.d, v.o))});
 // Bare NP: plural or mass head (CGEL ch. 5). Singular count nouns need a determiner.
 rule('np_bare', L('NP', {num: '?n', per: '3', case: 'any'}), [L('Nom', {num: '?n', cnt: '?c'})],
-  {fam: 'bare_np', head: 0, disp: 'NP', when: (v, C) => C('det_noun', v.n === 'pl' || v.c === 'mass')});
+  {fam: 'bare_np', head: 0, disp: 'NP', when: (v, C) => C('det_noun', (v.n === 'pl' && (v.c !== 'coll' || OFF.has('COLL'))) || v.c === 'mass')});
 rule('np_pron', L('NP', {num: '?n', per: '?p', case: '?k'}), [L('Pron', {num: '?n', per: '?p', case: '?k'})],
   {fam: 'pronoun', head: 0, disp: 'NP'});
 rule('np_fused', L('NP', {num: 'pl', per: '3', case: 'any'}), [L('Det', {d: 'the'}), L('AdjFused')],
   {fam: 'fused_head', head: 1, deps: [[0, 'det']], disp: 'NP'});
 // Postmodification: PP and subject relative clause.
+// Postmodifiers keep the head's case, so pronouns can be postmodified
+// ("we in New Zealand") without laundering case ("*they about industry" as
+// an object stays out). ERG cross-check: restricting this to case-neutral
+// NPs cost 121 analysed sentences to catch 48.
 rule('np_pp', L('NP', {num: '?n', per: '?p', case: '?k'}), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('PP')],
   {fam: 'prepositional_phrase', head: 0, deps: [[1, 'nmod_pp']], disp: 'NP'});
 rule('np_rel', L('NP', {num: '?n', per: '?p', case: '?k'}), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('Rel'), L('FP', {num: '?n', per: '?p'})],

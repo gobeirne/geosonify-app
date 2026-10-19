@@ -40,19 +40,42 @@ engine.parse(text, {pins: {20: 'V'}});                       // choose a reading
 | `npm run generated` | 1,500 generated derivations, typed corruptions, v1.1 differential, timing → `reports/` |
 | `npm run stress` | adversarial timing → `reports/stress_timing.json` |
 | `npm run lexicon-report` | `reports/lexical_policy.md` |
-| `npm run erg:prepare` | `erg/phase0_batch.jsonl` for the ERG notebook |
-| `npm run erg:analyse -- results.jsonl` | aggregates ERG output → `reports/erg_phase0_analysis.md` |
+| `npm run erg:prepare` | `erg/phase0b_batch.jsonl` for the ERG notebook |
+| `node erg/analyse.js <results> <batch> <tag>` | aggregates ERG output → `reports/<tag>_analysis.md` |
+| `node erg/ablate.js <tag> <tiles>` | measures each evidence source and restriction against ERG |
+| `node erg/rescore.js <tag> <tiles>` | current engine vs stored ERG results |
 | `npm run bench` | rebuilds `bench/wordlab_grammar_bench.html` |
 | `npm run report` | regenerates everything and `reports/PHASE0_REPORT.md` |
 
-## ERG cross-check (one Colab run)
+## ERG cross-check
 
-1. Open `erg/Starpin_ERG_Phase0.ipynb` in Colab.
-2. Set `ERG_DAT_URL` to the ERG 2025 grammar image used on 19 October, or upload the `.dat` file when asked.
-3. Upload `erg/phase0_batch.jsonl` when asked, then Runtime → Run all.
-4. Return the downloaded `erg_phase0_results.jsonl`.
+**First run (2026-10-19).**
+- Batch: `erg/phase0_batch.jsonl`.
+- Results: `erg/erg_phase0_results.jsonl`, kept in the repo.
+- Tiles for re-running the current engine on that batch: `erg/phase0_batch_tiles.jsonl`.
 
-The notebook records whether each ERG reading is a *clean witness*: every word has its own lexical entry (or a genuine multiword entry), with no merged spans and no generic/unknown entries. The analysis is by construction family, corruption type and lexical evidence tier; no sentence needs individual judgement. The notebook has not been run by its author, because the ACE/ERG host is not reachable from the build environment.
+Reproduce the analysis with:
+
+```
+node erg/analyse.js erg/erg_phase0_results.jsonl erg/phase0_batch.jsonl erg_phase0
+node erg/ablate.js  erg_phase0 erg/phase0_batch_tiles.jsonl   # evidence sources and restrictions vs ERG
+node erg/rescore.js erg_phase0 erg/phase0_batch_tiles.jsonl   # current engine vs the stored ERG results
+```
+
+A sentence counts as ERG-witnessed only if ERG's top-ranked derivation is all of the following:
+- a full clause, VP ellipsis with an overt subject, or an NP fragment;
+- free of robust/generic lexical entries;
+- giving every word its own terminal.
+
+A bare ERG parse is not enough. ERG also returns subjectless finite-VP fragments, capitalised words read as proper names, and other robustness analyses.
+
+**Optional second run.**
+1. In `erg/Starpin_ERG_Phase0.ipynb`, set `ERG_DAT_URL`, or upload the `.dat` when asked.
+2. Upload `erg/phase0b_batch.jsonl`, built from the current engine, which carries its own tiles.
+3. Run all, and return `erg_phase0b_results.jsonl`.
+4. Run `node erg/analyse.js <results> erg/phase0b_batch.jsonl erg_phase0b`.
+
+The notebook now stores the derivation of every inspected reading, not just the first.
 
 ## Phone benchmark
 
@@ -64,7 +87,8 @@ The notebook records whether each ERG reading is a *clean witness*: every word h
 src/        engine, grammar, parser, lexicon compiler, loader
 data/       v1_1_lexicon.json (extracted from the v1.1 game), oewn_evidence.json (extracted from OEWN 2025)
 tests/      probes.json, run_probes.js, generate.js, run_generated.js, stress.js, run_all.js
-erg/        prepare.js, Starpin_ERG_Phase0.ipynb, analyse.js, phase0_batch.jsonl
+erg/        prepare.js, analyse.js, ablate.js, rescore.js, Starpin_ERG_Phase0.ipynb,
+            phase0_batch.jsonl + phase0_batch_tiles.jsonl (+ your erg_phase0_results.jsonl), phase0b_batch.jsonl
 tools/      extract_oewn.py, extract_v11.js, report_lexicon.js, build_report.js, build_bench.js
 reference/  v1_1/ — v1.1 parser and scorer extracted verbatim, for differential tests only
 bench/      wordlab_grammar_bench.html
@@ -75,6 +99,10 @@ reports/    generated results (regenerate with npm run report)
 
 - `python3 tools/extract_oewn.py english-wordnet-2025.xml.gz data/v1_1_lexicon.json data/oewn_evidence.json` uses the release from github.com/globalwordnet/english-wordnet. The SHA-256 is recorded in the output.
 - `node tools/extract_v11.js Starpin_Word_Lab_v1_1_Starpin.html` re-extracts `reference/v1_1/`.
+
+## Policy switches (measurement only)
+
+`WL_OFF=COLL,MASS,IDIOM,VF_intr,...` turns individual restrictions or evidence sources off. `WL_ALL_FRAMES=1` re-enables the verb-frame types demoted after ERG validation. `erg/ablate.js` uses both; normal runs use neither.
 
 ## Data and licences (review before any public release)
 

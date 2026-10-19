@@ -95,12 +95,40 @@ push('## Lexical policy (measured; details in `reports/lexical_policy.md`)', '',
   '| Tier | What | Readings |', '|---|---|---:|',
   `| attested | mass readings (Wiktionary uncountable mark recorded but unused in v1.1) | ${cnt(c => c.cat === 'N' && c.f.cnt === 'mass')} |`,
   `| attested | count readings for v1.1 mass nouns | ${cnt(c => c.cat === 'N' && c.f.cnt === 'count' && c.tier === 'attested')} |`,
-  `| attested | verb frames from WordNet frames / Wiktionary tags | ${cnt(c => c.cat === 'V')} |`,
+  `| attested | intransitive frames from WordNet frames / Wiktionary tags (ERG-validated) | ${cnt(c => c.cat === 'V')} |`,
   `| attested | bare idiomatic PPs (${policy.idiomPPs.length} preposition + noun pairs) | ${cnt(c => c.cat === 'NIdiom')} |`,
   `| attested | degree modifiers *half*, *pretty* | ${cnt(c => c.cat === 'AdvDeg')} |`,
   `| derived | collective nouns with notional plural agreement | ${cnt(c => c.tier === 'derived')} |`,
-  `| inferred | recorded, **not enabled** | ${policy.inferredPool.length} |`, '',
+  `| inferred | recorded, **not enabled** (includes ${policy.inferredPool.filter(i => i.cat === 'V').length} verb-frame readings that failed ERG validation) | ${policy.inferredPool.length} |`, '',
   'Two first-draft evidence rules were too permissive and were tightened before this report: collective nouns originally required only *some* OEWN `noun.group` sense (admitting *run*, *table*, *matrix*), and the bare-PP miner originally counted ordinary mass uses and complex prepositions (850 readings; now ' + cnt(c => c.cat === 'NIdiom') + '). Both stories are why evidence tiers are recorded on every reading.', '');
+
+// ---------------------------------------------------------------- ERG
+const ergF = path.join(root, 'reports', 'erg_phase0_analysis.json');
+if (fs.existsSync(ergF)) {
+  const E = R('reports/erg_phase0_analysis.json');
+  const A = fs.existsSync(path.join(root, 'reports', 'erg_phase0_ablation.json')) ? R('reports/erg_phase0_ablation.json') : null;
+  const S = fs.existsSync(path.join(root, 'reports', 'erg_phase0_rescore.json')) ? R('reports/erg_phase0_rescore.json') : null;
+  push('## ERG cross-check (measured: 2026-10-19 Colab run, ERG 2025 + ACE 0.9.34)', '',
+    `${E.items.length} items (batch \`erg/phase0_batch.jsonl\`, built from the engine *before* the changes below). A sentence counts as ERG-witnessed only if ERG's top-ranked derivation is a full clause, VP ellipsis with an overt subject, or an NP fragment, with no robust/generic lexical entry and every word its own terminal. A bare ERG parse is not enough: ERG also returns subjectless finite-VP fragments, capitalised words read as proper names, and other robustness analyses. Full detail: \`reports/erg_phase0_analysis.md\`.`, '',
+    '| ERG analysis type (top-ranked derivation) | Witness | Items |', '|---|---|---:|');
+  for (const [k, v] of Object.entries(E.overall).sort((p, q) => q[1] - p[1])) push(`| ${k} | ${['full_clause', 'vp_ellipsis', 'np_fragment'].includes(k) ? 'yes' : 'no'} | ${v} |`);
+  push('', '**Where ERG analyses what Phase 0 rejects**, the causes are policy differences visible in ERG\'s own rule names, not missed grammar:', '', '| Cause | Items |', '|---|---:|');
+  for (const [k, v] of Object.entries(E.falseRejectionCauses || {}).sort((p, q) => q[1] - p[1])) push(`| ${k} | ${v} |`);
+  push('');
+  if (A) {
+    push('**Where Phase 0 accepts what ERG does not**, each lexical evidence source and restriction was measured by switching it off and on (`erg/ablate.js`). For evidence sources, the length-controlled ratio is ERG witnesses among the sentences the source alone admits, divided by the number expected at the curated-only rate for sentences of the same length. Rule: keep a source enabled if the ratio is ≥ 0.8.', '',
+      '| Source / restriction | Adds acceptances | …ERG-witnessed | Adds rejections | …ERG agrees | Length-controlled ratio | Phase 0 decision |', '|---|---:|---:|---:|---:|---:|---|');
+    const dec = {COLL: 'keep (most disagreements are ERG grinding)', MASS: 'keep', IDIOM: 'keep', VF_intr: 'keep', VF_tr: 'demote to inferred', VF_ditr: 'demote to inferred', VF_cop: 'demote to inferred', VF_toinf: 'demote to inferred', VF_clause: 'demote to inferred'};
+    const name = {COLL: 'collective nouns: no plural determiners, not bare', MASS: 'Wiktionary mass readings', IDIOM: 'OEWN bare idiomatic PPs', VF_intr: 'attested intransitive frames', VF_tr: 'attested transitive frames', VF_ditr: 'attested ditransitive frames', VF_cop: 'attested lexical-copula frames', VF_toinf: 'attested to-infinitive frames', VF_clause: 'attested clause-complement frames'};
+    for (const [k, v] of Object.entries(A)) push(`| ${name[k] || k} | ${v.addsAcceptances} | ${v.accAgree} | ${v.addsRejections} | ${v.rejAgree} | ${v.lengthControlledRatio ?? '—'} | ${dec[k] || ''} |`);
+    push('', 'Three grammar restrictions tried after the ERG run were measured the same way and **not** adopted, because ERG evidence ran against them: adjectives only before noun modifiers (would reject 33 ERG-analysed sentences to catch 14), no postmodification of case-marked pronouns (121 vs 48), no nominative-pronoun fragments (43 vs 27).', '');
+  }
+  if (S) {
+    push('**Current engine against the same ERG results** (`erg/rescore.js`):', '', '| Items | ERG | n | Accepted by engine at ERG run | Accepted now |', '|---|---|---:|---:|---:|');
+    for (const [k, v] of Object.entries(S.table).sort()) { const [x, y] = k.split(' | '); push(`| ${x} | ${y} | ${v.n} | ${v.before} | ${v.now} |`); }
+    push('', 'The engine now rejects most of the generated sentences ERG could not analyse, at the cost of some ERG-analysed sentences that depend on ERG grinding or on the demoted verb frames. Agreement with ERG is a signal, not ground truth: ERG ignores a/an, grinds any count noun to mass, and does not check reflexive binding.', '');
+  }
+}
 
 // ---------------------------------------------------------------- limitations
 push('## Known limitations (Phase 0)', '',
@@ -122,6 +150,6 @@ push('## Scoring invariants for Phase 2 (proposal, not implemented)', '',
   '- **P6** The score is computed on the canonical (or player-pinned) reading, chosen without consulting the score; score spread across readings is a tracked metric.',
   '- **P7** Portfolio score is the order-independent sum of sentence scores.', '');
 
-push('## Next step', '', 'Run `erg/Starpin_ERG_Phase0.ipynb` once on `erg/phase0_batch.jsonl` and return `erg_phase0_results.jsonl`; `node erg/analyse.js <results>` turns it into family-level and lexical-tier findings. No sentence-level adjudication is needed.', '');
+push('## Next step', '', 'Optional second ERG run on `erg/phase0b_batch.jsonl` (built from the current engine; the notebook now stores every inspected reading\'s derivation, so fragment-ranked-first cases can be resolved). Then `node erg/analyse.js <results> erg/phase0b_batch.jsonl erg_phase0b`. After that, Phase 2 (scoring) can start on a validated grammar.', '');
 fs.writeFileSync(path.join(root, 'reports', 'PHASE0_REPORT.md'), L.join('\n'));
 console.log('wrote reports/PHASE0_REPORT.md (' + L.length + ' lines)');

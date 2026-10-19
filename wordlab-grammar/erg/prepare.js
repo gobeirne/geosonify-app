@@ -6,14 +6,15 @@
  *
  * Inputs: tests/probes.json, reports/generated_positives.jsonl,
  *         reports/corruption_results.jsonl (run tests/run_generated.js first).
- * Output: erg/phase0_batch.jsonl  — one {id, kind, text, ours…} per line.
- * Usage:  node erg/prepare.js [positives=400] [acceptedCorruptions=600] [rejectedCorruptions=300]
+ * Output: erg/<name>.jsonl — one {id, kind, text, tiles, ours…} per line.
+ * Usage:  node erg/prepare.js [name=phase0b_batch] [positives=400] [acceptedCorruptions=600] [rejectedCorruptions=300]
  */
 const fs = require('fs'), path = require('path');
 const {load} = require('../src/load');
 const {makeRng} = require('../tests/generate');
 const root = path.join(__dirname, '..');
-const [NP = 400, NA = 600, NR = 300] = process.argv.slice(2).map(Number);
+const NAME = process.argv[2] || 'phase0b_batch';
+const [NP = 400, NA = 600, NR = 300] = process.argv.slice(3).map(Number);
 const rnd = makeRng(4242);
 const engine = load();
 const readJsonl = f => fs.readFileSync(path.join(root, f), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
@@ -39,17 +40,17 @@ const probes = JSON.parse(fs.readFileSync(path.join(root, 'tests', 'probes.json'
 for (const p of probes) {
   if (p.tiles) continue;
   const r = engine.parse(p.text);
-  batch.push({id: 'probe:' + p.id, kind: 'probe', text: p.text, ours: r.state, families: r.canonical ? r.canonical.families : [], expect: p.expect.state});
+  batch.push({id: 'probe:' + p.id, kind: 'probe', text: p.text, tiles: null, ours: r.state, families: r.canonical ? r.canonical.families : [], expect: p.expect.state});
 }
 const pos = readJsonl('reports/generated_positives.jsonl');
 for (const [i, p] of stratified(pos, x => x.utype || '?', NP).entries())
-  batch.push({id: 'gen:' + i, kind: 'generated_positive', text: orth(p.text, p.utype, p.families), ours: 'recognised', families: p.families, utype: p.utype});
+  batch.push({id: 'gen:' + i, kind: 'generated_positive', text: orth(p.text, p.utype, p.families), tiles: p.tiles, ours: 'recognised', families: p.families, utype: p.utype});
 const corr = readJsonl('reports/corruption_results.jsonl');
 const acc = corr.filter(c => c.ours === 'recognised'), rej = corr.filter(c => c.ours !== 'recognised');
 for (const [i, c] of stratified(acc, x => x.type, NA).entries())
-  batch.push({id: 'corrA:' + i, kind: 'corruption_accepted', type: c.type, target: c.target, text: orth(c.text, c.utype, c.families), original: c.original, ours: c.ours, families: c.families, nonCurated: c.nonCuratedReadings});
+  batch.push({id: 'corrA:' + i, kind: 'corruption_accepted', type: c.type, tiles: c.tiles, target: c.target, text: orth(c.text, c.utype, c.families), original: c.original, ours: c.ours, families: c.families, nonCurated: c.nonCuratedReadings});
 for (const [i, c] of stratified(rej, x => x.type, NR).entries())
-  batch.push({id: 'corrR:' + i, kind: 'corruption_rejected', type: c.type, target: c.target, text: orth(c.text, null, []), original: c.original, ours: c.ours, conflict: c.conflict});
-fs.writeFileSync(path.join(__dirname, 'phase0_batch.jsonl'), batch.map(b => JSON.stringify(b)).join('\n') + '\n');
+  batch.push({id: 'corrR:' + i, kind: 'corruption_rejected', type: c.type, tiles: c.tiles, target: c.target, text: orth(c.text, null, []), original: c.original, ours: c.ours, conflict: c.conflict});
+fs.writeFileSync(path.join(__dirname, NAME + '.jsonl'), batch.map(b => JSON.stringify(b)).join('\n') + '\n');
 const tally = {}; for (const b of batch) tally[b.kind] = (tally[b.kind] || 0) + 1;
-console.log('wrote erg/phase0_batch.jsonl', tally);
+console.log('wrote erg/' + NAME + '.jsonl', tally);

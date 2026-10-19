@@ -4,8 +4,8 @@
  * everything is reported by construction family, corruption type and lexical
  * evidence tier.
  *
- * Usage: node erg/analyse.js path/to/erg_phase0_results.jsonl
- * Writes reports/erg_phase0_analysis.md and reports/erg_phase0_analysis.json.
+ * Usage: node erg/analyse.js <results.jsonl> [batch=erg/phase0_batch.jsonl] [tag=erg_phase0]
+ * Writes reports/<tag>_analysis.md and .json.
  *
  * Witness classes (per ERG reading):
  *   strict  — every input word is its own lexical terminal, no generic entry;
@@ -21,7 +21,9 @@ const root = path.join(__dirname, '..');
 const resultsPath = process.argv[2];
 if (!resultsPath) { console.error('usage: node erg/analyse.js erg_phase0_results.jsonl'); process.exit(2); }
 const readJsonl = f => fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
-const batch = new Map(readJsonl(path.join(__dirname, 'phase0_batch.jsonl')).map(b => [b.id, b]));
+const batchPath = process.argv[3] || path.join(__dirname, 'phase0_batch.jsonl');
+const TAG = process.argv[4] || 'erg_phase0';
+const batch = new Map(readJsonl(batchPath).map(b => [b.id, b]));
 const results = readJsonl(resultsPath);
 
 const words = s => (s.match(/[A-Za-z']+/g) || []);
@@ -35,26 +37,63 @@ function classify(r) {
   if (r.words_covered !== undefined && r.words_covered < (r.n_words || 0)) return 'merged';
   return multi.length ? 'mwe' : 'strict';
 }
+// Analysis type of ERG's TOP-RANKED derivation (the 19 Oct notebook output
+// stores only the first derivation). A witness must be an analysis type the
+// game itself recognises: a full clause (declarative, imperative, polar
+// question, coordination), VP ellipsis with an overt subject, or an NP
+// fragment. Excluded: other fragment rules (*frg*, e.g. subjectless finite VP
+// "Was the innocent of course"), robust/generic lexical entries (e.g. a
+// capitalised "Does" read as a proper name), merged spans.
+const ruleNames = d => d ? [...d.matchAll(/\((\d+) ([A-Za-z0-9_\-]+) -?[\d.]+ \d+ \d+/g)].map(m => m[2]) : [];
+const NP_FRAG = new Set(['np_frg_c', 'np_nb-frg_c', 'np_cnj-frg_c']);
+// Type of one reading: derivation string + its inspected lexical record.
+function readingType(deriv, insp, nWords) {
+  const rules = ruleNames(deriv);
+  const first = insp || {};
+  const lexClass = classify({...first, n_words: nWords});
+  if (lexClass === 'generic' || rules.some(x => /^generic_|^robust_/.test(x))) return 'robust_lexical';
+  if (lexClass === 'merged') return 'merged_span';
+  const top = rules[0] || '';
+  const frag = rules.filter(x => /frg|frag/.test(x));
+  if (frag.length) {
+    if (NP_FRAG.has(top) || (frag.every(x => NP_FRAG.has(x)) && /^np/.test(top))) return 'np_fragment';
+    return 'other_fragment';
+  }
+  if (rules.some(x => /-sb-inv-ell/.test(x))) return 'inverted_ellipsis';
+  if (rules.some(x => /_aux-.*ell/.test(x))) return 'vp_ellipsis';
+  return 'full_clause';
+}
+// Item type: the best type over all stored readings. Results from the
+// 2026-10-19 notebook store only the first derivation; later notebooks store
+// one per inspected reading.
+const TYPE_RANK = ['full_clause', 'vp_ellipsis', 'np_fragment', 'inverted_ellipsis', 'other_fragment', 'merged_span', 'robust_lexical'];
+function ergType(r) {
+  if (!r.erg_parsed) return r.ace_error ? 'ace_error' : 'no_parse';
+  const ins = r.inspected || [];
+  const types = ins.some(x => x.derivation) ? ins.filter(x => x.derivation).map(x => readingType(x.derivation, x, r.n_words))
+    : [readingType(r.first_derivation, ins[0], r.n_words)];
+  return types.sort((x, y) => TYPE_RANK.indexOf(x) - TYPE_RANK.indexOf(y))[0];
+}
+const WITNESS_TYPES = new Set(['full_clause', 'vp_ellipsis', 'np_fragment']);
 const items = [];
 for (const r of results) {
   const b = batch.get(r.id); if (!b) continue;
-  const classes = (r.inspected || []).map(x => classify({...x, n_words: r.n_words}));
-  const witnessed = classes.some(c => c === 'strict' || c === 'mwe');
-  const best = witnessed ? (classes.includes('strict') ? 'strict' : 'mwe') : r.erg_parsed ? (classes.includes('merged') ? 'merged' : classes.includes('generic') ? 'generic' : 'other') : r.ace_error ? 'ace_error' : 'no_parse';
-  items.push({...b, erg: best, witnessed, parsed: !!r.erg_parsed, readings: r.readings, ms: r.ms});
+  const t = ergType(r);
+  items.push({...b, erg: t, witnessed: WITNESS_TYPES.has(t), parsed: !!r.erg_parsed, readings: r.readings, ms: r.ms,
+    topRules: ruleNames(r.first_derivation).slice(0, 6).join(' '), allRules: ruleNames(r.first_derivation)});
 }
 const pct = (a, b) => b ? (100 * a / b).toFixed(1) + '%' : '—';
 const count = (xs, f) => xs.filter(f).length;
 const by = (xs, k) => { const o = {}; for (const x of xs) (o[k(x)] = o[k(x)] || []).push(x); return o; };
 
 const out = {source: path.basename(resultsPath), items: items.length};
-const md = ['# Phase 0 — ERG cross-check analysis', '', `Results: \`${path.basename(resultsPath)}\` · ${items.length} items joined to the batch.`, '',
-  '"Witnessed" means at least one of ERG\'s inspected readings gives every word its own lexical entry (or a genuine multiword entry) with no generic/unknown entry. A bare parse with merged spans or generic entries does not count (19 October finding).', ''];
+const md = ['# Phase 0 — ERG cross-check analysis', '', `Results: \`${path.basename(resultsPath)}\` · batch \`${path.basename(batchPath)}\` · ${items.length} items joined.`, '',
+  '"Witnessed" means ERG\'s top-ranked derivation is an analysis type the game recognises (full clause, VP ellipsis with an overt subject, or NP fragment), uses no robust/generic lexical entry, and gives every word its own terminal. ERG\'s other fragment rules (e.g. subjectless finite VP), capitalised words read as proper names, and merged spans do not count.', ''];
 
 // overall
 const classes = by(items, x => x.erg);
-md.push('## Witness quality overall', '', '| ERG outcome | Items |', '|---|---:|');
-for (const [k, v] of Object.entries(classes).sort((a, b) => b[1].length - a[1].length)) md.push(`| ${k} | ${v.length} |`);
+md.push('## ERG analysis type of the top-ranked derivation', '', '| ERG analysis type | Counts as witness | Items |', '|---|---|---:|');
+for (const [k, v] of Object.entries(classes).sort((a, b) => b[1].length - a[1].length)) md.push(`| ${k} | ${WITNESS_TYPES.has(k) ? 'yes' : 'no'} | ${v.length} |`);
 md.push('');
 out.overall = Object.fromEntries(Object.entries(classes).map(([k, v]) => [k, v.length]));
 
@@ -112,12 +151,32 @@ for (const [k, v] of Object.entries(lex).sort((a, b) => b[1] - a[1]).slice(0, 40
 md.push('');
 out.overAcceptance = {count: cand.length, byFamily: famOver, byLexicalReading: lex, sample: cand.slice(0, 40).map(c => ({type: c.type, text: c.text, erg: c.erg}))};
 const frej = rej.filter(x => x.witnessed);
+// Why does ERG analyse what Phase 0 rejects? Policy differences, identified
+// from ERG's own rule and lexical-entry names in its top derivation.
+function causes(x) {
+  const rs = x.allRules || [], c = [];
+  if (rs.includes('n_ms-cnt_ilr')) c.push('ERG count→mass coercion ("grinding")');
+  if (rs.includes('np_nb-frg_c')) c.push('ERG bare N-bar fragment (headline style)');
+  if (x.type === 'article') c.push('ERG does not check a/an');
+  if (x.type === 'case' && /myself/i.test(x.text)) c.push('ERG does not check reflexive binding');
+  if (x.type === 'agreement' && / or /.test(x.text)) c.push('ERG agreement with or-coordination');
+  if (rs.some(r => /^do2$|^will_v1$/.test(r))) c.push('lexical do/will (gold do is auxiliary-only)');
+  return c.length ? c : ['other'];
+}
+const causeTally = {};
+for (const x of frej) for (const c of causes(x)) causeTally[c] = (causeTally[c] || 0) + 1;
+out.falseRejectionCauses = causeTally;
+out.falseRejectionOther = frej.filter(x => causes(x)[0] === 'other').map(x => ({type: x.type, text: x.text, ours: x.ours, conflict: x.conflict}));
+md.push('### Why ERG analyses sentences Phase 0 rejects', '', '| Cause | Items |', '|---|---:|');
+for (const [k, v] of Object.entries(causeTally).sort((p, q) => q[1] - p[1])) md.push(`| ${k} | ${v} |`);
+md.push('');
+out.items = items.map(x => ({id: x.id, kind: x.kind, type: x.type, text: x.text, ours: x.ours, conflict: x.conflict, expect: x.expect, families: x.families, erg: x.erg, topRules: x.topRules}));
 out.falseRejectionCandidates = {count: frej.length, sample: frej.slice(0, 40).map(c => ({type: c.type, text: c.text, ours: c.ours, conflict: c.conflict}))};
 md.push('### Samples (for rule-level triage, not for sentence adjudication)', '');
 md.push('Over-acceptance candidates:', ''); for (const c of cand.slice(0, 15)) md.push(`- [${c.type}] ${c.text} — ERG: ${c.erg}`);
 md.push('', 'False-rejection candidates:', ''); for (const c of frej.slice(0, 15)) md.push(`- [${c.type}] ${c.text} — ours: ${c.ours}${c.conflict ? ' (' + c.conflict + ')' : ''}`);
 md.push('');
 fs.mkdirSync(path.join(root, 'reports'), {recursive: true});
-fs.writeFileSync(path.join(root, 'reports', 'erg_phase0_analysis.md'), md.join('\n'));
-fs.writeFileSync(path.join(root, 'reports', 'erg_phase0_analysis.json'), JSON.stringify(out, null, 1));
-console.log('wrote reports/erg_phase0_analysis.{md,json}');
+fs.writeFileSync(path.join(root, 'reports', TAG + '_analysis.md'), md.join('\n'));
+fs.writeFileSync(path.join(root, 'reports', TAG + '_analysis.json'), JSON.stringify(out, null, 1));
+console.log('wrote reports/' + TAG + '_analysis.{md,json}');
