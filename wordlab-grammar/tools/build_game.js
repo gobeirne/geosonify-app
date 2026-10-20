@@ -313,6 +313,7 @@ $('builder').addEventListener('keydown',e=>{const tile=e.target.closest('[data-t
   else if(e.key==='Enter'||e.key===' '){e.preventDefault();tile.click();}});
 
 // ---- typed entry with BIP39 four-letter completion ----
+const typeEl=$('typeEntry');
 const HELPER_BIP=new Set(HELPER_CANDIDATES.filter(w=>bip39.has(w)));
 const BIP_LIST=[...bip39].sort();
 function typedSource(w){
@@ -321,12 +322,39 @@ function typedSource(w){
   if(HELPER_CANDIDATES.includes(w))return 'locked';
   return null;
 }
-function completeTyped(w){
-  const src=typedSource(w);
-  if(src==='taken'){setNotice('“'+w+'” is already in this draft or another sentence.','bad');renderAll();return false;}
-  if(src==='locked'){setNotice('Unlock the helper “'+w+'” first (Helpers).','bad');renderAll();return false;}
-  if(!src){setNotice('“'+w+'” is not a BIP39 word or a helper.','bad');renderAll();return false;}
-  addTile(w,src);return true;
+// Resolve a typed token to a word: exact BIP39/helper word, or a unique
+// BIP39 prefix (four letters always suffice).
+function resolveTyped(tok){if(bip39.has(tok)||HELPER_CANDIDATES.includes(tok))return tok;const m=BIP_LIST.filter(x=>x.startsWith(tok));return m.length===1?m[0]:null;}
+// Insert one typed word without re-rendering (callers render once).
+// A collected word already used elsewhere becomes a purple preview tile, as in
+// v1.1: you can experiment, and Commit asks you to reallocate it first.
+function insertTyped(w){
+  let src=typedSource(w);
+  if(src==='locked'){setNotice('Unlock the helper “'+w+'” first (Helpers).','bad');return false;}
+  if(!src){setNotice('“'+w+'” is not a BIP39 word or a helper.','bad');return false;}
+  if(src==='taken'){
+    if(state.draft.some(t=>t.word===w&&t.source!=='helper')){setNotice('“'+w+'” is already in this sentence.','bad');return false;}
+    src='hypothetical';state.typedPreview=(state.typedPreview||0)+1;}
+  if(src==='hypothetical'&&state.draft.some(t=>t.word===w&&t.source!=='helper')){setNotice('“'+w+'” is already in this sentence.','bad');return false;}
+  state.draft.splice(state.insertIndex,0,{word:w,source:src});state.insertIndex++;state.selectedTile=null;return true;
+}
+function completeTyped(w){state.typedPreview=0;const ok=insertTyped(w);if(ok)setNotice(state.typedPreview?'“'+w+'” is already used in another sentence, so it is added as a purple preview tile.':'');renderAll();scheduleAutosave();return ok;}
+// Process everything in the field: words followed by a space or punctuation
+// become tiles (so a pasted sentence works); a trailing partial word stays.
+function processTyped(){
+  const raw=typeEl.value.toLowerCase(),endsOpen=/[a-z']$/.test(raw);
+  const toks=raw.split(/[^a-z']+/).filter(Boolean);
+  const partial=endsOpen?toks.pop():'';
+  let added=0,stopAt=-1;state.typedPreview=0;
+  for(let i=0;i<toks.length;i++){const w=resolveTyped(toks[i].replace(/'/g,''));
+    if(!w){setNotice('“'+toks[i]+'” is not a BIP39 word or a helper.','bad');stopAt=i;break;}
+    if(!insertTyped(w)){stopAt=i;break;}added++;}
+  let rest=stopAt>=0?toks.slice(stopAt).join(' ')+(partial?' '+partial:''):partial;
+  // Nothing is accepted until a space, Enter or punctuation follows it, so
+  // touch-typists are never overtaken; Space then takes the highlighted word.
+  typeEl.value=rest;
+  if(added){if(stopAt<0)setNotice(state.typedPreview?state.typedPreview+' word'+(state.typedPreview===1?' is':'s are')+' already used in another sentence, so '+(state.typedPreview===1?'it was':'they were')+' added as purple preview tiles.':'');renderAll();scheduleAutosave();}
+  else if(stopAt>=0)renderAll();
 }
 function typedCandidates(p){
   if(!p)return [];
@@ -337,24 +365,19 @@ function typedCandidates(p){
   return out.slice(0,8);
 }
 function renderTyped(){
-  const el=$('typeEntry'),p=el.value.trim().toLowerCase(),c=typedCandidates(p);
-  $('typeSuggest').innerHTML=c.map(([w,s])=>'<button type="button" class="type-chip '+s+'" data-typeword="'+htmlEscape(w)+'">'+htmlEscape(w)+(s==='hypothetical'?' <small>try</small>':'')+'</button>').join('');
+  const el=$('typeEntry'),p=el.value.trim().toLowerCase().split(/[^a-z']+/).pop()||'',c=typedCandidates(p),next=p?resolveTyped(p):null;
+  // The chip Space would accept is highlighted and listed first.
+  if(next&&!c.some(([w])=>w===next))c.unshift([next,typedSource(next)==='taken'?'hypothetical':typedSource(next)||'hypothetical']);
+  c.sort((a,b)=>(b[0]===next)-(a[0]===next));
+  $('typeSuggest').innerHTML=c.slice(0,8).map(([w,s])=>'<button type="button" class="type-chip '+s+(w===next?' next':'')+'" data-typeword="'+htmlEscape(w)+'">'+htmlEscape(w)+(s==='hypothetical'?' <small>try</small>':'')+(w===next?' <small class="key">space</small>':'')+'</button>').join('');
 }
-const typeEl=$('typeEntry');
-typeEl.addEventListener('input',()=>{
-  let v=typeEl.value.toLowerCase();
-  if(/\\s$/.test(v)){const w=v.trim();if(w){const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w);const m=BIP_LIST.filter(x=>x.startsWith(w));
-      const pick=exact?w:(m.length===1?m[0]:null);if(pick&&completeTyped(pick))typeEl.value='';else typeEl.value=w;}else typeEl.value='';}
-  else{const w=v.trim();
-    // BIP39: the first four letters identify a word uniquely. Complete at 4+
-    // letters unless what is typed is itself a complete word or helper ("some").
-    if(w.length>=4&&!bip39.has(w)&&!HELPER_CANDIDATES.includes(w)){const m=BIP_LIST.filter(x=>x.startsWith(w));if(m.length===1&&completeTyped(m[0]))typeEl.value='';}}
-  renderTyped();});
+typeEl.addEventListener('input',()=>{processTyped();renderTyped();});
 typeEl.addEventListener('keydown',e=>{
   if(e.key==='Backspace'&&typeEl.value===''&&state.insertIndex>0){e.preventDefault();const i=state.insertIndex-1,t=state.draft[i];
     state.draft.splice(i,1);state.insertIndex=i;state.selectedTile=null;typeEl.value=t.word;renderAll();renderTyped();}
-  else if(e.key==='Enter'){e.preventDefault();const w=typeEl.value.trim().toLowerCase();if(!w)return;
-    const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w),c=typedCandidates(w),pick=exact?w:(c.length?c[0][0]:null);
+  else if(e.key==='Enter'){e.preventDefault();const v=typeEl.value.trim().toLowerCase();if(!v)return;
+    if(/\s/.test(v)){typeEl.value=v+' ';processTyped();renderTyped();return;}
+    const exact=bip39.has(v)||HELPER_CANDIDATES.includes(v),c=typedCandidates(v),pick=exact?v:(c.length?c[0][0]:null);
     if(pick&&completeTyped(pick))typeEl.value='';renderTyped();}});
 $('typeSuggest').addEventListener('click',e=>{const b=e.target.closest('[data-typeword]');if(!b)return;if(completeTyped(b.dataset.typeword))typeEl.value='';renderTyped();typeEl.focus();});
 bindEvents();attachHelperInsertion();`, 'interaction');
@@ -396,7 +419,7 @@ body = once(body, '<div class="setting"><label for="adjectiveLimit">Reward how m
 body = once(body, '<input id="bankFilter"', '<input hidden id="bankFilter"', 'hide bank search');
 body = once(body, '<input id="composeBankFilter"', '<input hidden id="composeBankFilter"', 'hide compose search');
 body = once(body, '<div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>',
-  '<div class="type-entry"><input id="typeEntry" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="done" placeholder="Type a sentence: four letters complete a word" aria-label="Type a sentence; four letters complete a BIP39 word"><div id="typeSuggest" class="type-suggest" aria-live="polite"></div></div>'
+  '<div class="type-entry"><input id="typeEntry" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="done" placeholder="Type or paste a sentence; Space accepts each word" aria-label="Type or paste a sentence; Space accepts the highlighted word; four letters identify any BIP39 word"><div id="typeSuggest" class="type-suggest" aria-live="polite"></div></div>'
   + '<div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>'
   + '<div id="tileBin" class="tile-bin" hidden>Drop here to remove</div><div id="undoToast" class="undo-toast" role="status" hidden></div>', 'typing + bin');
 const css = `<style>
@@ -418,6 +441,8 @@ const css = `<style>
 .type-chip{font:inherit;font-size:.92rem;padding:.35rem .7rem;border-radius:.5rem;border:1px solid #8ab4c9;background:var(--bluelight,#e7f2f8);color:#1d6281;cursor:pointer;min-height:36px}
 .type-chip.helper{border-color:#e2c28c;border-style:dashed;background:var(--goldlight,#fbf1df);color:#8f631e}
 .type-chip.hypothetical{border-style:dotted;opacity:.85}
+.type-chip.next{outline:2px solid #116d6a;outline-offset:1px;font-weight:700}
+.type-chip small.key{font-size:.7rem;font-weight:600;opacity:.7;margin-left:.2rem;text-transform:uppercase;letter-spacing:.04em}
 .compose-word-bank{max-height:200px}
 .word-bank.more-below,.compose-word-bank.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent)}
 .verdict.pending{border-color:var(--gold,#b8901c)}

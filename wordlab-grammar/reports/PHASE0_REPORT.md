@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 502 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 730 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 346 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 434 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -348,7 +348,9 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | ambiguous draft offers choice points | pass |
 | tapping a reading pins it | pass |
 | editing the sentence drops stale pins | pass |
-| typing four letters completes a BIP39 word into a blue tile | pass |
+| typing alone never accepts a word (no surprise completion) | pass |
+| the word Space would accept is highlighted | pass — affair |
+| four letters + Space completes the unique BIP39 word into a blue tile | pass |
 | a helper completes on space (gold) | pass |
 | a complete helper word is not swallowed by a longer BIP39 word (some/someone) | pass |
 | Backspace into a completed word returns it for editing | pass |
@@ -362,6 +364,8 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | long-press drag onto the remove zone deletes (with Undo) | pass |
 | keyboard Delete removes the focused tile | pass |
 | coach opens on request and closes when the sentence changes | pass |
+| pasting a sentence turns every word into a tile | pass |
+| a paste stops at a locked helper and keeps the rest in the field | pass |
 | word tray shows every word; no search box; no static suggestions | pass |
 | Satoshi is capitalised as a name | pass — Satoshi can. |
 | autosave writes a version-2 snapshot | pass |

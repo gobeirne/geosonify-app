@@ -82,7 +82,15 @@
   "ok": true,
   "detail": ""
  },
- "typing four letters completes a BIP39 word into a blue tile": {
+ "typing alone never accepts a word (no surprise completion)": {
+  "ok": true,
+  "detail": []
+ },
+ "the word Space would accept is highlighted": {
+  "ok": true,
+  "detail": "affair"
+ },
+ "four letters + Space completes the unique BIP39 word into a blue tile": {
   "ok": true,
   "detail": [
    "affair:c"
@@ -171,6 +179,31 @@
   "detail": [
    true,
    false
+  ]
+ },
+ "pasting a sentence turns every word into a tile": {
+  "ok": true,
+  "detail": [
+   [
+    "the",
+    "affair",
+    "can",
+    "consider",
+    "the",
+    "banana",
+    "banner"
+   ],
+   ""
+  ]
+ },
+ "a paste stops at a locked helper and keeps the rest in the field": {
+  "ok": true,
+  "detail": [
+   [
+    "the",
+    "affair"
+   ],
+   "of banana"
   ]
  },
  "word tray shows every word; no search box; no static suggestions": {
