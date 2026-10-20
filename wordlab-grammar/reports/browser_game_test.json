@@ -218,6 +218,62 @@
   "ok": true,
   "detail": "Satoshi can."
  },
+ "a challenge shows only its hand (tray and collection)": {
+  "ok": true,
+  "detail": [
+   41,
+   41
+  ]
+ },
+ "a challenge starts with no sentences": {
+  "ok": true,
+  "detail": ""
+ },
+ "challenge status shows placed words and bot par": {
+  "ok": true,
+  "detail": "0 / 41 words placed (stretch 37) \u00b7 0 points (bot par 557)"
+ },
+ "a sentence can be committed inside the challenge": {
+  "ok": true,
+  "detail": "the banana can abandon"
+ },
+ "free play is untouched and restored": {
+  "ok": true,
+  "detail": [
+   4,
+   167
+  ]
+ },
+ "the challenge keeps its own sentences": {
+  "ok": true,
+  "detail": ""
+ },
+ "helper simulation: 0 cells = 6 starter helpers, 3 cells = 15": {
+  "ok": true,
+  "detail": [
+   6,
+   15
+  ]
+ },
+ "challenge slot and helper simulation survive a reload": {
+  "ok": true,
+  "detail": [
+   1,
+   15
+  ]
+ },
+ "\"Actual unlocks\" restores your real helpers": {
+  "ok": true,
+  "detail": ""
+ },
+ "build stamp is visible": {
+  "ok": true,
+  "detail": ""
+ },
+ "parser/LLM sentence removed": {
+  "ok": true,
+  "detail": ""
+ },
  "autosave writes a version-2 snapshot": {
   "ok": true,
   "detail": ""

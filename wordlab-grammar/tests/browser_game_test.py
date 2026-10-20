@@ -171,6 +171,41 @@ with sync_playwright() as p:
         txt = pg.evaluate("document.getElementById('sentenceText').textContent")
         check('Satoshi is capitalised as a name', 'Satoshi' in txt, txt)
     pg.evaluate(f"{L}.cancelDraft()")
+
+    # ---------------- challenges and helper simulation ----------------
+    ch = json.loads((root / 'challenges' / 'retrospective_2026-08_to_10.json').read_text())['challenges'][0]
+    free_before = pg.evaluate(f"()=>{L}.getState()")
+    pg.select_option('#challengeSelect', ch['id'])
+    s = pg.evaluate(f"()=>{L}.getState()")
+    tray = pg.evaluate("[...document.querySelectorAll('#wordBank [data-word],#composeWordBank [data-composeword]')].map(b=>b.dataset.word||b.dataset.composeword)")
+    check('a challenge shows only its hand (tray and collection)', sorted(s['inventory']) == sorted(ch['hand']) and set(tray) <= set(ch['hand']) and len(set(tray)) > 0, (len(s['inventory']), len(set(tray))))
+    check('a challenge starts with no sentences', len(s['committed']) == 0)
+    status = pg.evaluate("document.getElementById('challengeStatus').innerText")
+    check('challenge status shows placed words and bot par', '/ %d' % ch['handSize'] in status and 'bot par' in status, status)
+    # make one sentence in the challenge from its hand
+    built = pg.evaluate("""(hand)=>{const L=window.StarpinWordLab;const st=L.getState();
+      for(const a of hand)for(const b of hand){if(a===b)continue;const ws=['the',a,'can',b];const r=L.parse(ws,{owned:st.inventory,helpers:st.unlocked,tokenTypes:['helper','collected','helper','collected']});
+        if(r.valid){L.cancelDraft();L.addTile('the','helper');L.addTile(a,'collected');L.addTile('can','helper');L.addTile(b,'collected');L.saveDraft();L.commitSandbox();return ws.join(' ');}}return null}""", ch['hand'])
+    s2 = pg.evaluate(f"()=>{L}.getState()")
+    check('a sentence can be committed inside the challenge', built is not None and len(s2['committed']) == 1, built)
+    pg.select_option('#challengeSelect', 'free')
+    s3b = pg.evaluate(f"()=>{L}.getState()")
+    check('free play is untouched and restored', len(s3b['committed']) == len(free_before['committed']) and len(s3b['inventory']) == len(free_before['inventory']), (len(s3b['committed']), len(s3b['inventory'])))
+    pg.select_option('#challengeSelect', ch['id'])
+    check('the challenge keeps its own sentences', len(pg.evaluate(f"()=>{L}.getState()")['committed']) == 1)
+    actual = set(pg.evaluate(f"()=>{L}.getState()")['unlocked'])
+    pg.select_option('#helperSim', '0'); u0 = pg.evaluate(f"()=>{L}.getState()")['unlocked']
+    pg.select_option('#helperSim', '3'); u3 = pg.evaluate(f"()=>{L}.getState()")['unlocked']
+    check('helper simulation: 0 cells = 6 starter helpers, 3 cells = 15', len(u0) == 6 and len(u3) == 15, (len(u0), len(u3)))
+    pg.wait_for_timeout(700); pg.reload(); pg.wait_for_function('window.StarpinWordLab && window.StarpinWordLab.getState')
+    sr = pg.evaluate(f"()=>{L}.getState()")
+    check('challenge slot and helper simulation survive a reload', len(sr['committed']) == 1 and len(sr['unlocked']) == 15 and pg.evaluate("document.getElementById('challengeSelect').value") == ch['id'], (len(sr['committed']), len(sr['unlocked'])))
+    pg.select_option('#helperSim', 'actual')
+    check('"Actual unlocks" restores your real helpers', set(pg.evaluate(f"()=>{L}.getState()")['unlocked']) == actual)
+    pg.select_option('#challengeSelect', 'free')
+    import re
+    check('build stamp is visible', re.search(r'build \d{4}·[0-9a-f]{6}', pg.evaluate("document.body.innerText").lower()) is not None)
+    check('parser/LLM sentence removed', 'not an LLM' not in pg.content())
     pg.screenshot(path='/tmp/game_build.png', full_page=False)
     pg.wait_for_timeout(800)  # autosave debounce
     v2 = pg.evaluate("localStorage.getItem('starpin-word-lab-v2-local-snapshot')")

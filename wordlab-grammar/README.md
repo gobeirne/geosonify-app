@@ -47,6 +47,16 @@ What happens on first load:
 
 The interface adapter is `src/game_adapter.js`. Each build patch must match the v1.1 source exactly once, so a changed v1.1 file stops the build rather than producing a broken game.
 
+## Challenges
+
+Challenge files live in `challenges/*.json` and are built into the game. To set new ones from a fresh Starpin export:
+
+```
+node tools/reconstruct_finds.js starpin-records-YYYY-MM-DD.json path/to/starpin/sources finds.json
+```
+
+This gives the dated BIP39 words of every find. Group them by window to form hands (see `challenges/retrospective_2026-08_to_10.json` for the format).
+
 ## Scoring (Phase 2)
 
 `src/score.js` scores one reading (canonical or player-pinned) from the tiles' provenance:

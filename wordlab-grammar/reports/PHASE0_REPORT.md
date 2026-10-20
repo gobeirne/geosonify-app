@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 346 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 434 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 365 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 506 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -330,6 +330,9 @@ Built from the v1.1 single-file game by `tools/build_game.js`; the v1.1 file is 
 - **Cleaner tiles:** tiles show only the word (gold helpers have a dashed border); controls appear only on the selected tile. Drag to reorder (long-press on touch), drag to the floating “Drop here to remove” zone to delete, keyboard arrows/Delete on a focused tile; every removal offers Undo.
 - **Word tray:** every available word is shown (no “Show all”), with a fade when more words are below; the search box and the static “suggestions, not guarantees” rows are removed; the part-of-speech filter stays.
 - **Coach:** tips come from the actual analysis (conflict to fix, unscored link, missing link type, tapering stack, list, phrase versus sentence, size bonus); the button steps through them and the coach closes when the sentence changes.
+- **Challenges:** a Play selector switches between free play and challenge slots. A challenge’s collection is its hand (only words you actually found in the window); the tray, typing and allocation see only the hand; each slot keeps its own sentences; free play is saved and restored untouched. A status line shows words placed, the stretch target (90% of the hand), score and bot par. Challenges are loaded from `challenges/*.json` at build time (currently four retrospective ones, August–October 2026, reconstructed from the Starpin record export by `tools/reconstruct_finds.js`).
+- **Helpers never expire; simulated progression for testing:** a Helpers selector sets the unlocked helpers to what N completed cells would give under a proposed schedule (6 starter helpers, then 3 per cell in order of general usefulness: in/on/to, are/not/of, with/for/but, or/was/has, because/that/it, do/does/did, were/at/from, when/if/while, will/must/this, he/she/we, they/some/all, by/before/where, each/many/inside, into/toward). “Actual unlocks” restores the real set. The schedule is a proposal, not a ratified rule.
+- **Build stamp:** the header shows `build MMDD·hash` so the running copy can be identified (useful when browser caches serve an old file).
 - **Proper names:** the seven nouns the v1.1 lexicon marks as proper names (April, December, February, Latin, March, October, Satoshi) are bare singular NPs (*Satoshi can run*); their common-noun readings stay (*a satoshi*). Months and Latin are always capitalised in display; Satoshi and March when read as names.
 
 End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone viewport, seeded with the v1.1 session):
@@ -368,6 +371,17 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | a paste stops at a locked helper and keeps the rest in the field | pass |
 | word tray shows every word; no search box; no static suggestions | pass |
 | Satoshi is capitalised as a name | pass — Satoshi can. |
+| a challenge shows only its hand (tray and collection) | pass |
+| a challenge starts with no sentences | pass |
+| challenge status shows placed words and bot par | pass — 0 / 41 words placed (stretch 37) · 0 points (bot par 557) |
+| a sentence can be committed inside the challenge | pass — the banana can abandon |
+| free play is untouched and restored | pass |
+| the challenge keeps its own sentences | pass |
+| helper simulation: 0 cells = 6 starter helpers, 3 cells = 15 | pass |
+| challenge slot and helper simulation survive a reload | pass |
+| "Actual unlocks" restores your real helpers | pass |
+| build stamp is visible | pass |
+| parser/LLM sentence removed | pass |
 | autosave writes a version-2 snapshot | pass |
 | reload resumes v2 snapshot (no re-migration) | pass — 4 committed |
 | history preserved across reload | pass |

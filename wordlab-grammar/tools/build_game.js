@@ -239,7 +239,7 @@ function renderCoach(info){
 }`);
 
 // Sentence tiles: just the word; one small bar on the selected tile only.
-ui = between(ui, "  if(!draft.length)s='<div class=\"empty-message\">", "  $('builder').innerHTML=s;", `  if(!draft.length)s='<div class="empty-message">Type below, or tap a word in the tray, to begin.<br>Blue words score; gold helpers are unlimited.</div>';
+ui = between(ui, "  if(!draft.length)s='<div class=\"empty-message\">", "  $('builder').innerHTML=s;", `  if(!draft.length)s='<div class="empty-message">Type above, or tap a word in the tray, to begin.<br>Blue words score; gold helpers are unlimited.</div>';
   for(let i=0;i<=draft.length;i++){
     s+=\`<button class="insert-slot \${state.insertIndex===i?'selected':''}" data-insert="\${i}" aria-label="Insert a word at position \${i+1}" title="Insert here">+</button>\`;
     if(i===draft.length)continue;
@@ -382,6 +382,65 @@ typeEl.addEventListener('keydown',e=>{
 $('typeSuggest').addEventListener('click',e=>{const b=e.target.closest('[data-typeword]');if(!b)return;if(completeTyped(b.dataset.typeword))typeEl.value='';renderTyped();typeEl.focus();});
 bindEvents();attachHelperInsertion();`, 'interaction');
 
+
+// ================================================================ challenges + helper simulation (2026-10-20)
+// Proposed helper progression (open design question): a starter set, then
+// three helpers per completed cell, most generally useful first. Helpers never
+// expire. Used here to simulate "what would I have after N cells?".
+const HELPER_SCHEDULE_JS = JSON.stringify([
+  ['the', 'a', 'an', 'and', 'is', 'can'],
+  ['in', 'on', 'to'], ['are', 'not', 'of'], ['with', 'for', 'but'], ['or', 'was', 'has'], ['because', 'that', 'it'],
+  ['do', 'does', 'did'], ['were', 'at', 'from'], ['when', 'if', 'while'], ['will', 'must', 'this'], ['he', 'she', 'we'],
+  ['they', 'some', 'all'], ['by', 'before', 'where'], ['each', 'many', 'inside'], ['into', 'toward']]);
+ui = once(ui, "function renderAll(){", "function renderAll(){renderChallenge();", 'renderAll hook');
+ui = all(ui, "draft:state.draft,draftPins:state.draftPins,editingId:state.editingId,",
+  "draft:state.draft,draftPins:state.draftPins,slots:state.slots||null,activeSlot:state.activeSlot||'free',helperSim:state.helperSim??null,actualUnlocked:state.actualUnlocked||null,editingId:state.editingId,", 'save slots', 2);
+ui = once(ui, "state.draft=clone(obj.draft);state.draftPins=obj.draftPins||null;",
+  "state.draft=clone(obj.draft);state.draftPins=obj.draftPins||null;state.slots=obj.slots||null;state.activeSlot=obj.activeSlot||'free';state.helperSim=obj.helperSim??null;state.actualUnlocked=obj.actualUnlocked||null;", 'import slots');
+ui = once(ui, "\nbindEvents();attachHelperInsertion();", `
+// ---- challenges: each is a separate slot whose collection is the hand ----
+const CHALLENGES=(window.STARPIN_CHALLENGES&&window.STARPIN_CHALLENGES.challenges)||[];
+const HELPER_SCHEDULE=${HELPER_SCHEDULE_JS};
+const helpersForCells=n=>HELPER_SCHEDULE.slice(0,n+1).flat();
+function slotSnapshot(){return {inventory:[...state.inventory],committed:clone(state.committed),sandbox:state.sandbox?clone(state.sandbox):null,draft:clone(state.draft),draftPins:state.draftPins?clone(state.draftPins):null,editingId:state.editingId};}
+function slotRestore(x){state.inventory=new Set(x.inventory);state.committed=clone(x.committed||[]);state.sandbox=x.sandbox?clone(x.sandbox):null;state.draft=clone(x.draft||[]);
+  state.draftPins=x.draftPins||null;state.editingId=x.editingId??null;state.insertIndex=state.draft.length;state.selectedTile=null;}
+function switchSlot(id){
+  const cur=state.activeSlot||'free';if(id===cur)return;
+  state.slots=state.slots||{};state.slots[cur]=slotSnapshot();
+  if(id==='free'){if(state.slots.free)slotRestore(state.slots.free);}
+  else{const c=CHALLENGES.find(x=>x.id===id);if(!c)return;
+    // You get what you get: the hand is only words you actually found.
+    const found=new Set(state.slots.free?state.slots.free.inventory:[...state.inventory]);
+    const x=state.slots[id]||{committed:[],sandbox:null,draft:[],draftPins:null,editingId:null};x.inventory=c.hand.filter(w=>found.has(w));slotRestore(x);}
+  state.activeSlot=id;refreshHistory();
+  setNotice(id==='free'?'Back to free play: all your words and sentences.':'Challenge: '+CHALLENGES.find(x=>x.id===id).title+'. Only this hand’s words are available.','good');
+  renderAll();scheduleAutosave();
+}
+function applyHelperSim(v){
+  if(v==='actual'){if(state.actualUnlocked)state.unlocked=new Set(state.actualUnlocked);state.helperSim=null;state.actualUnlocked=null;}
+  else{if(state.helperSim==null)state.actualUnlocked=[...state.unlocked];state.helperSim=Number(v);state.unlocked=new Set(helpersForCells(state.helperSim));}
+  renderAll();scheduleAutosave();
+}
+function renderChallenge(){
+  const sel=$('challengeSelect'),hs=$('helperSim');if(!sel)return;
+  if(!sel.options.length){sel.innerHTML='<option value="free">Free play (all words)</option>'+CHALLENGES.map(c=>'<option value="'+htmlEscape(c.id)+'">'+htmlEscape(c.title)+' · '+c.handSize+' words</option>').join('');}
+  if(!hs.options.length){hs.innerHTML='<option value="actual">Actual unlocks</option>'+HELPER_SCHEDULE.map((g,n)=>'<option value="'+n+'">'+n+' cell'+(n===1?'':'s')+' completed ('+helpersForCells(n).length+' helpers)</option>').join('');}
+  sel.value=state.activeSlot||'free';hs.value=state.helperSim==null?'actual':String(state.helperSim);
+  const c=CHALLENGES.find(x=>x.id===state.activeSlot),box=$('challengeStatus');
+  if(!c){box.hidden=true;return;}
+  let score=0,pending=0;const placed=new Set();
+  for(const s of state.committed){const r=evaluateIgnoringCollection(s.tiles,s.pins);if(r.valid)score+=r.score.score;else if(r.pending)pending++;
+    s.tiles.forEach(t=>{if(t.source==='collected')placed.add(t.word);});}
+  const hand=state.inventory.size;
+  box.hidden=false;
+  box.innerHTML='<b>'+placed.size+' / '+hand+'</b> words placed (stretch '+Math.min(hand,c.stretchTiles)+') · <b>'+score+'</b> points'+(c.botPar?' (bot par '+c.botPar+')':'')+(pending?' · '+pending+' pending':'')
+    +(placed.size>=Math.min(hand,c.stretchTiles)?' · <b>stretch reached ✓</b>':'')+(score>(c.botPar||Infinity)?' · <b>par beaten ✓</b>':'');
+}
+$('challengeSelect').addEventListener('change',e=>switchSlot(e.target.value));
+$('helperSim').addEventListener('change',e=>applyHelperSim(e.target.value));
+bindEvents();attachHelperInsertion();`, 'challenge code');
+
 // ---------------------------------------------------------------- coach text
 // (coach text now comes from getCoachHints above)
 
@@ -399,7 +458,10 @@ ${modules.map(m => `__mods['./${m}']=function(module,exports,require){\n${read('
 window.__wl2req=function req(n){if(__cache[n])return __cache[n].exports;const module={exports:{}};__cache[n]=module;__mods[n](module,module.exports,req);return module.exports;};
 })();`;
 const ergNotice = '/* English Resource Grammar lexicon data (verb frames), MIT licence: ' + read('data/ERG_LICENSE.txt').replace(/\*\//g, '* /').trim().split('\n').slice(0, 3).join(' ') + ' Full text: data/ERG_LICENSE.txt */';
+const challenges = fs.existsSync(path.join(root, 'challenges')) ? fs.readdirSync(path.join(root, 'challenges')).filter(f => f.endsWith('.json')).sort()
+  .flatMap(f => JSON.parse(read('challenges/' + f)).challenges) : [];
 const inject = `<script>
+window.STARPIN_CHALLENGES={challenges:${JSON.stringify(challenges)}};
 /* Open English WordNet 2025 evidence (CC BY 4.0, https://github.com/globalwordnet/english-wordnet) */
 window.STARPIN_OEWN=${JSON.stringify(slimOewn)};
 ${ergNotice}
@@ -422,7 +484,13 @@ body = once(body, '<div id="builder" class="builder" aria-label="Sentence tile a
   '<div class="type-entry"><input id="typeEntry" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="done" placeholder="Type or paste a sentence; Space accepts each word" aria-label="Type or paste a sentence; Space accepts the highlighted word; four letters identify any BIP39 word"><div id="typeSuggest" class="type-suggest" aria-live="polite"></div></div>'
   + '<div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>'
   + '<div id="tileBin" class="tile-bin" hidden>Drop here to remove</div><div id="undoToast" class="undo-toast" role="status" hidden></div>', 'typing + bin');
+body = once(body, '<div class="type-entry">', '<div class="mode-bar"><label>Play <select id="challengeSelect" aria-label="Free play or a challenge"></select></label><label>Helpers <select id="helperSim" aria-label="Simulate helpers for a number of completed cells"></select></label></div><div id="challengeStatus" class="challenge-status" role="status" hidden></div><div class="type-entry">', 'mode bar');
+body = once(body, '<p class="muted tiny">The tree is produced by the deterministic JS parser, not an LLM. When a sentence fails,', '<p class="muted tiny">When a sentence fails,', 'remove LLM sentence');
 const css = `<style>
+.mode-bar{display:flex;flex-wrap:wrap;gap:.5rem 1rem;align-items:center;margin:0 0 .5rem;font-size:.88rem;color:#4c5e48}
+.mode-bar select{font:inherit;font-size:16px;padding:.3rem .4rem;border:1px solid #b9c9c4;border-radius:.45rem;background:#fff;color:inherit;max-width:16rem}
+.challenge-status{margin:0 0 .6rem;padding:.5rem .7rem;border-radius:.55rem;background:#eef6ea;border:1px solid #cfe3c4;font-size:.9rem}
+.challenge-status[hidden]{display:none}
 .tile.gold{border-style:dashed}
 .tile-bar{display:inline-flex;gap:3px;margin-left:4px}
 .builder .insert-slot{opacity:0;transition:opacity .15s}
@@ -459,7 +527,9 @@ const css = `<style>
 body = once(body, '</head>', css + '</head>', 'css');
 
 
-body = once(body, '<div class="eyebrow light">STARPiN · WORD LAB 1.1</div>', '<div class="eyebrow light">STARPiN · WORD LAB 2.0</div>', 'header version');
+// Build stamp: date + short hash of everything injected, so the running copy can be identified.
+const stamp = new Date().toISOString().slice(5, 10).replace('-', '') + '·' + require('crypto').createHash('sha1').update(ui + inject).digest('hex').slice(0, 6);
+body = once(body, '<div class="eyebrow light">STARPiN · WORD LAB 1.1</div>', '<div class="eyebrow light">STARPiN · WORD LAB 2.0 · build ' + stamp + '</div>', 'header version');
 body = body.replace(/<title>([^<]*)<\/title>/, (m, t) => '<title>' + t.replace(/v1\.1/g, 'v2.0') + '</title>');
 fs.mkdirSync(path.dirname(out), {recursive: true});
 fs.writeFileSync(out, body);
