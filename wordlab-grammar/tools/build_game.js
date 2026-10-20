@@ -180,9 +180,187 @@ bindEvents();attachHelperInsertion();`, 'pin handler');
 // Expose cancelDraft on the page API (used by tests and automation).
 ui = once(ui, "addTile,saveDraft,commitSandbox,cancelSandbox", "addTile,cancelDraft,saveDraft,commitSandbox,cancelSandbox", 'api cancelDraft');
 
+// ================================================================ UI clean-up (v2.0, 2026-10-20)
+function between(text, startMarker, endMarker, code, label) {
+  const a = text.indexOf(startMarker), b = text.indexOf(endMarker, a);
+  if (a < 0 || b < 0 || text.indexOf(startMarker, a + 1) >= 0) throw new Error('patch "' + label + '": markers not unique');
+  return text.slice(0, a) + code + text.slice(b);
+}
+function lineStarting(text, prefix, code, label) {
+  const lines = text.split('\n'); const idx = lines.map((l, i) => l.startsWith(prefix) ? i : -1).filter(i => i >= 0);
+  if (idx.length !== 1) throw new Error('patch "' + label + '": expected 1 line, found ' + idx.length);
+  lines[idx[0]] = code; return lines.join('\n');
+}
+// Word tray: show every word; no "Show all" button; no search box (part-of-speech filter kept).
+ui = once(ui, "const visible=state.bankExpanded?filtered:filtered.slice(0,64);", "const visible=filtered;", 'bank all');
+ui = lineStarting(ui, "  $('bankMore').innerHTML=", "  $('bankMore').innerHTML='';scrollCue($('wordBank'));", 'bank more');
+ui = once(ui, "const limit=state.composeBankExpanded?matching.length:70;", "const limit=matching.length;", 'compose all');
+ui = lineStarting(ui, "  $('composeBankMore').innerHTML=", "  $('composeBankMore').innerHTML='';scrollCue($('composeWordBank'));", 'compose more');
+// A fade at the bottom of a word tray when more words are hidden below.
+ui = once(ui, "\nfunction renderBank(){", `
+function scrollCue(el){if(!el)return;const upd=()=>el.classList.toggle('more-below',el.scrollTop+el.clientHeight<el.scrollHeight-2);
+  if(!el.dataset.cue){el.dataset.cue='1';el.addEventListener('scroll',upd,{passive:true});}requestAnimationFrame(upd);}
+function renderBank(){`, 'scroll cue');
+// Static "suggestions, not guarantees" picks: removed.
+ui = replaceFunction(ui, 'renderSmartPicks', "function renderSmartPicks(){$('smartPicks').innerHTML='';}");
+
+// Coach: tips from the actual analysis; closes when the sentence changes.
+ui = replaceFunction(ui, 'getCoachHints', `
+function getCoachHints(info){
+  if(!state.draft.length)return [{head:'Start small',body:'A noun and a verb make a sentence: for example a collected noun, a gold “can”, and a verb.',terms:['noun phrase','verb phrase']}];
+  if(!info.valid&&info.pending){
+    if(info.reason==='grammar_conflict')return [{head:'One fix away',body:info.diagnostic.detail,terms:[]}];
+    return [{head:'Connect the pieces',body:info.diagnostic.detail+' A verb, or a joining word such as “and” or “because”, can link the pieces into one sentence.',terms:['clause']}];}
+  if(!info.valid)return [{head:'Check the tiles',body:reasonText(info),terms:[]}];
+  const b=info.score.breakdown,tips=[],types=new Set(b.distinctLinkTypes),kind=info.parse?.kind;
+  if(kind==='fragment')tips.push({head:'Make it a sentence',body:'This is a phrase, so it scores at 0.6×. Add a verb (with a gold “can” if you like) to make a full sentence.',terms:['verb phrase']});
+  if(b.unanchoredLinks.length)tips.push({head:'Give the joined part more weight',body:'The link to “'+b.unanchoredLinks[0].dep+'” is not scored yet: each linked part needs at least two blue words.',terms:['clause']});
+  if(!types.size&&kind!=='fragment')tips.push({head:'Join a second idea',body:'Add a second clause with its own blue subject and verb, joined by “and” or “because”. Links between substantial clauses earn bonuses.',terms:['coordination','subordinate clause']});
+  else if(types.size&&types.size<3)tips.push({head:'Try a different kind of link',body:'You have '+[...types].map(t=>t.replace(/_/g,' ')).join(' and ')+'. A new kind of link — a reason (because …), a relative clause (that …) or an infinitive (decide to …) — earns far more than another “and”.',terms:['subordinate clause']});
+  if(b.tiles.some(t=>/stack/.test(t.note||'')))tips.push({head:'Swap an adjective for a noun',body:'Each extra adjective on one noun earns less. Noun compounds (“banana menu output”) keep paying for longer.',terms:['noun compound']});
+  if(b.tiles.some(t=>t.note==='list item'))tips.push({head:'Lists taper',body:'Plain lists earn less from the third item. Give the items words of their own instead.',terms:['coordination']});
+  if(b.blueTiles<6&&kind!=='fragment')tips.push({head:'Longer sentences pay more per word',body:'Your size bonus is ×'+b.sizeMultiplier.toFixed(2)+'; it rises towards ×1.6 as you add blue words.',terms:['complexity']});
+  if(!tips.length)tips.push({head:'A strong sentence',body:'Nothing obvious to add. Check the reading in the Syntax view, or save it and start another.',terms:[]});
+  return tips;
+}`);
+ui = replaceFunction(ui, 'renderCoach', `
+function renderCoach(info){
+  const sig=state.draft.map(t=>t.word+'/'+t.source).join(' ');
+  if(state.coachOpen&&state.coachSig!==undefined&&state.coachSig!==sig){state.coachOpen=false;state.hintIndex=0;}
+  state.coachSig=sig;
+  const hints=getCoachHints(info);
+  if(state.coachOpen&&state.hintIndex>=hints.length){state.coachOpen=false;state.hintIndex=0;}
+  const panel=$('coachPanel');panel.hidden=!state.coachOpen;
+  $('coachButton').setAttribute('aria-expanded',String(state.coachOpen));
+  $('coachButton').textContent=!state.coachOpen?'Get a tip ✨':state.hintIndex+1<hints.length?'Next tip ›':'Close tip';
+  if(!state.coachOpen)return;
+  const hint=hints[state.hintIndex];
+  panel.innerHTML='<strong>'+htmlEscape(hint.head)+'</strong><p>'+htmlEscape(hint.body)+'</p>'+(hints.length>1?'<p class="tiny muted">Tip '+(state.hintIndex+1)+' of '+hints.length+'</p>':'')+(hint.terms.length?'<p class="tiny muted">Learn: '+hint.terms.map(t=>termLink(t)).join(' · ')+'</p>':'');
+}`);
+
+// Sentence tiles: just the word; one small bar on the selected tile only.
+ui = between(ui, "  if(!draft.length)s='<div class=\"empty-message\">", "  $('builder').innerHTML=s;", `  if(!draft.length)s='<div class="empty-message">Type below, or tap a word in the tray, to begin.<br>Blue words score; gold helpers are unlimited.</div>';
+  for(let i=0;i<=draft.length;i++){
+    s+=\`<button class="insert-slot \${state.insertIndex===i?'selected':''}" data-insert="\${i}" aria-label="Insert a word at position \${i+1}" title="Insert here">+</button>\`;
+    if(i===draft.length)continue;
+    const t=draft[i],both=state.inventory.has(t.word)&&state.unlocked.has(t.word),sel=state.selectedTile===i;
+    const kind=t.source==='helper'?'gold helper, unlimited':t.source==='hypothetical'?'try tile, not collected':'collected word';
+    const ew=htmlEscape(t.word);
+    s+=\`<div class="tile \${t.source==='helper'?'gold':t.source==='hypothetical'?'ghost':''} \${sel?'selected-tile':''}" data-tile="\${i}" tabindex="0" role="button" aria-label="\${ew}, \${kind}. Arrow keys move; Delete removes." aria-pressed="\${sel}" draggable="true" title="\${ew} — \${kind}\${both?' · ↔ switches blue/gold':''}"><span class="tile-word">\${displayWord(t.word,i)}</span>\`
+      +(sel?\`<span class="tile-bar">\${both?\`<button class="tile-op" data-swap="\${i}" aria-label="Switch \${ew} between blue and gold">↔</button>\`:''}<button class="tile-op" data-move="\${i}" data-dir="-1" aria-label="Move \${ew} left">‹</button><button class="tile-op" data-move="\${i}" data-dir="1" aria-label="Move \${ew} right">›</button><button class="tile-op" data-remove="\${i}" aria-label="Remove \${ew}">×</button></span>\`:'')+'</div>';
+  }
+`, 'tiles');
+// Capitalise proper names in the sentence display, using the reading.
+ui = once(ui, "$('sentenceText').textContent=draft.length?formatSentence(draft,getDraftInfo().parse?.kind):'Start adding tiles…';",
+  "$('sentenceText').textContent=draft.length?(i=>formatSentence(draft,i.parse?.kind,i.reading))(getDraftInfo()):'Start adding tiles…';", 'sentence caps');
+ui = once(ui, "htmlEscape(formatSentence(entry.tiles,r.parse?.kind))", "htmlEscape(formatSentence(entry.tiles,r.parse?.kind,r.reading))", 'row caps');
+ui = once(ui, "const formatSentence=(tiles,kind=null)=>{\n  if(!tiles.length)return '';\n  const words=tiles.map(t=>t.word);",
+  "const formatSentence=(tiles,kind=null,reading=null)=>{\n  if(!tiles.length)return '';\n  const words=tiles.map((t,i)=>nameCase(t.word,reading&&reading.roles[i]));", 'formatSentence');
+ui = once(ui, "const formatSentence=", `// Months and Latin are always capitalised; satoshi and march only when the
+// reading uses them as names (a satoshi, the march stay lower-case).
+const ALWAYS_CAP=new Set(['april','december','february','latin','october']);
+function nameCase(w,role){return ALWAYS_CAP.has(w)||(role&&role.pos==='PropN')?w.charAt(0).toUpperCase()+w.slice(1):w;}
+function displayWord(w,i){return htmlEscape(ALWAYS_CAP.has(w)?nameCase(w):w);}
+const formatSentence=`, 'name case');
+
+// Removal with undo (tile bar ×, mobile remove, drag to remove zone, Delete key).
+ui = once(ui, "const rm=e.target.closest('[data-remove]');if(rm){const i=Number(rm.dataset.remove);state.draft.splice(i,1);",
+  "const rm=e.target.closest('[data-remove]');if(rm){const i=Number(rm.dataset.remove);showUndo(state.draft[i],i);state.draft.splice(i,1);", 'remove undo');
+ui = once(ui, "mobileRemoveTile').addEventListener('click',()=>{const i=state.selectedTile;if(i===null)return;state.draft.splice(i,1);",
+  "mobileRemoveTile').addEventListener('click',()=>{const i=state.selectedTile;if(i===null)return;showUndo(state.draft[i],i);state.draft.splice(i,1);", 'mobile remove undo');
+ui = once(ui, "\nbindEvents();attachHelperInsertion();", `
+// ---- removal, undo, drag to remove, long-press drag on touch, keyboard ----
+let undoTimer=null;
+// Float above the mobile action dock (measured, since its height varies).
+function placeFloating(el){const d=document.getElementById('mobileActionDock');const r=d&&d.getBoundingClientRect();
+  const visible=r&&r.height>0&&getComputedStyle(d).display!=='none'&&r.top<innerHeight;el.style.bottom=(visible?Math.round(innerHeight-r.top)+12:24)+'px';}
+function showUndo(tile,index){if(!tile)return;state.lastRemoved={tile:clone(tile),index};const u=$('undoToast');
+  u.innerHTML='Removed “'+htmlEscape(tile.word)+'” <button type="button" id="undoRemove">Undo</button>';u.hidden=false;placeFloating(u);
+  clearTimeout(undoTimer);undoTimer=setTimeout(()=>{u.hidden=true;},6000);}
+function removeTileAt(i){if(i<0||i>=state.draft.length)return;showUndo(state.draft[i],i);state.draft.splice(i,1);state.insertIndex=Math.min(i,state.draft.length);state.selectedTile=null;renderAll();scheduleAutosave();}
+document.addEventListener('click',e=>{if(!e.target.closest('#undoRemove'))return;const r=state.lastRemoved;if(!r)return;
+  state.draft.splice(Math.min(r.index,state.draft.length),0,r.tile);state.lastRemoved=null;$('undoToast').hidden=true;state.insertIndex=r.index+1;renderAll();scheduleAutosave();});
+const bin=$('tileBin');
+bin.addEventListener('dragover',e=>{e.preventDefault();bin.classList.add('hot');});
+bin.addEventListener('dragleave',()=>bin.classList.remove('hot'));
+bin.addEventListener('drop',e=>{e.preventDefault();bin.classList.remove('hot');const p=state.dragPayload;if(p&&p.from==='draft')removeTileAt(p.index);bin.hidden=true;document.body.classList.remove('tile-dragging');});
+$('builder').addEventListener('dragstart',e=>{if(e.target.closest('[data-tile]')){bin.hidden=false;$('undoToast').hidden=true;placeFloating(bin);document.body.classList.add('tile-dragging');}});
+$('builder').addEventListener('dragend',()=>{bin.hidden=true;document.body.classList.remove('tile-dragging');});
+(function touchDrag(){
+  const B=$('builder');let lp=null,suppressUntil=0;
+  B.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse')return;const tile=e.target.closest('[data-tile]');if(!tile||e.target.closest('.tile-op'))return;
+    const s={x:e.clientX,y:e.clientY,i:Number(tile.dataset.tile),id:e.pointerId,tile,active:false};
+    s.timer=setTimeout(()=>{s.active=true;tile.classList.add('is-dragging','lifted');bin.hidden=false;$('undoToast').hidden=true;placeFloating(bin);document.body.classList.add('tile-dragging');try{tile.setPointerCapture(s.id);}catch(_){}if(navigator.vibrate)navigator.vibrate(10);},320);lp=s;});
+  B.addEventListener('touchmove',e=>{if(lp&&lp.active)e.preventDefault();},{passive:false});
+  const move=e=>{if(!lp)return;if(!lp.active){if(Math.hypot(e.clientX-lp.x,e.clientY-lp.y)>8){clearTimeout(lp.timer);lp=null;}return;}
+    e.preventDefault();lp.tile.style.transform='translate('+(e.clientX-lp.x)+'px,'+(e.clientY-lp.y)+'px)';
+    lp.tile.style.pointerEvents='none';const el=document.elementFromPoint(e.clientX,e.clientY);lp.tile.style.pointerEvents='';
+    bin.classList.toggle('hot',!!(el&&el.closest('#tileBin')));};
+  const end=e=>{if(!lp)return;clearTimeout(lp.timer);const s=lp;lp=null;if(!s.active)return;suppressUntil=Date.now()+450;
+    s.tile.style.pointerEvents='none';const el=document.elementFromPoint(e.clientX,e.clientY);s.tile.style.pointerEvents='';
+    s.tile.style.transform='';s.tile.classList.remove('is-dragging','lifted');bin.hidden=true;bin.classList.remove('hot');document.body.classList.remove('tile-dragging');
+    if(e.type==='pointercancel')return renderAll();
+    if(el&&el.closest('#tileBin'))return removeTileAt(s.i);
+    const slot=el&&el.closest('[data-insert]'),t2=el&&el.closest('[data-tile]');let at=null;
+    if(slot)at=Number(slot.dataset.insert);else if(t2){const r=t2.getBoundingClientRect();at=Number(t2.dataset.tile)+(e.clientX>r.left+r.width/2?1:0);}
+    if(at!==null&&at!==s.i&&at!==s.i+1)handleDrop({from:'draft',index:s.i},at);else renderAll();};
+  B.addEventListener('pointermove',move);B.addEventListener('pointerup',end);B.addEventListener('pointercancel',end);
+  B.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.stopPropagation();e.preventDefault();}},true);
+})();
+$('builder').addEventListener('keydown',e=>{const tile=e.target.closest('[data-tile]');if(!tile)return;const i=Number(tile.dataset.tile);
+  if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeTileAt(i);const n=$('builder').querySelector('[data-tile="'+Math.max(0,i-1)+'"]');if(n)n.focus();}
+  else if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&(e.altKey||e.shiftKey||state.selectedTile===i)){e.preventDefault();const to=i+(e.key==='ArrowLeft'?-1:1);moveDraft(i,to);const n=$('builder').querySelector('[data-tile="'+to+'"]');if(n)n.focus();}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();tile.click();}});
+
+// ---- typed entry with BIP39 four-letter completion ----
+const HELPER_BIP=new Set(HELPER_CANDIDATES.filter(w=>bip39.has(w)));
+const BIP_LIST=[...bip39].sort();
+function typedSource(w){
+  if(state.unlocked.has(w)&&(!bip39.has(w)||HELPER_BIP.has(w)))return 'helper';
+  if(bip39.has(w)){if(state.inventory.has(w))return allocated().has(w)?'taken':'collected';return 'hypothetical';}
+  if(HELPER_CANDIDATES.includes(w))return 'locked';
+  return null;
+}
+function completeTyped(w){
+  const src=typedSource(w);
+  if(src==='taken'){setNotice('“'+w+'” is already in this draft or another sentence.','bad');renderAll();return false;}
+  if(src==='locked'){setNotice('Unlock the helper “'+w+'” first (Helpers).','bad');renderAll();return false;}
+  if(!src){setNotice('“'+w+'” is not a BIP39 word or a helper.','bad');renderAll();return false;}
+  addTile(w,src);return true;
+}
+function typedCandidates(p){
+  if(!p)return [];
+  const out=[],seen=new Set(),push=(w,src)=>{if(!seen.has(w)){seen.add(w);out.push([w,src]);}};
+  for(const w of [...state.unlocked].sort())if(w.startsWith(p))push(w,'helper');
+  for(const w of BIP_LIST)if(w.startsWith(p)){const s=typedSource(w);if(s==='collected'||s==='helper')push(w,s);}
+  if(p.length>=2)for(const w of BIP_LIST)if(w.startsWith(p)&&typedSource(w)==='hypothetical')push(w,'hypothetical');
+  return out.slice(0,8);
+}
+function renderTyped(){
+  const el=$('typeEntry'),p=el.value.trim().toLowerCase(),c=typedCandidates(p);
+  $('typeSuggest').innerHTML=c.map(([w,s])=>'<button type="button" class="type-chip '+s+'" data-typeword="'+htmlEscape(w)+'">'+htmlEscape(w)+(s==='hypothetical'?' <small>try</small>':'')+'</button>').join('');
+}
+const typeEl=$('typeEntry');
+typeEl.addEventListener('input',()=>{
+  let v=typeEl.value.toLowerCase();
+  if(/\\s$/.test(v)){const w=v.trim();if(w){const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w);const m=BIP_LIST.filter(x=>x.startsWith(w));
+      const pick=exact?w:(m.length===1?m[0]:null);if(pick&&completeTyped(pick))typeEl.value='';else typeEl.value=w;}else typeEl.value='';}
+  else{const w=v.trim();
+    // BIP39: the first four letters identify a word uniquely. Complete at 4+
+    // letters unless what is typed is itself a complete word or helper ("some").
+    if(w.length>=4&&!bip39.has(w)&&!HELPER_CANDIDATES.includes(w)){const m=BIP_LIST.filter(x=>x.startsWith(w));if(m.length===1&&completeTyped(m[0]))typeEl.value='';}}
+  renderTyped();});
+typeEl.addEventListener('keydown',e=>{
+  if(e.key==='Backspace'&&typeEl.value===''&&state.insertIndex>0){e.preventDefault();const i=state.insertIndex-1,t=state.draft[i];
+    state.draft.splice(i,1);state.insertIndex=i;state.selectedTile=null;typeEl.value=t.word;renderAll();renderTyped();}
+  else if(e.key==='Enter'){e.preventDefault();const w=typeEl.value.trim().toLowerCase();if(!w)return;
+    const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w),c=typedCandidates(w),pick=exact?w:(c.length?c[0][0]:null);
+    if(pick&&completeTyped(pick))typeEl.value='';renderTyped();}});
+$('typeSuggest').addEventListener('click',e=>{const b=e.target.closest('[data-typeword]');if(!b)return;if(completeTyped(b.dataset.typeword))typeEl.value='';renderTyped();typeEl.focus();});
+bindEvents();attachHelperInsertion();`, 'interaction');
+
 // ---------------------------------------------------------------- coach text
-ui = once(ui, "You can add words to any sentence, but new grammatical relationships unlock the biggest complexity rewards. A third modifier on the same noun adds no points.",
-  "You can add words to any sentence, but a new kind of link between two substantial clauses earns the biggest rewards. Extra adjectives on one noun earn less each time; noun compounds keep paying for longer.", 'coach');
+// (coach text now comes from getCoachHints above)
 
 // ---------------------------------------------------------------- evidence + engine bundle
 const v11 = JSON.parse(read('data/v1_1_lexicon.json'));
@@ -215,7 +393,33 @@ let body = html.slice(0, uiStart) + inject + '<script>' + ui + '</script>' + htm
 // ---------------------------------------------------------------- page text and styles
 body = once(body, '<div class="setting"><label for="adjectiveLimit">Reward how many modifiers per noun?</label>',
   '<div class="setting" hidden><label for="adjectiveLimit">Not used in v2: modifier stacks taper instead</label>', 'hide adjective limit');
+body = once(body, '<input id="bankFilter"', '<input hidden id="bankFilter"', 'hide bank search');
+body = once(body, '<input id="composeBankFilter"', '<input hidden id="composeBankFilter"', 'hide compose search');
+body = once(body, '<div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>',
+  '<div class="type-entry"><input id="typeEntry" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="done" placeholder="Type a sentence: four letters complete a word" aria-label="Type a sentence; four letters complete a BIP39 word"><div id="typeSuggest" class="type-suggest" aria-live="polite"></div></div>'
+  + '<div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>'
+  + '<div id="tileBin" class="tile-bin" hidden>Drop here to remove</div><div id="undoToast" class="undo-toast" role="status" hidden></div>', 'typing + bin');
 const css = `<style>
+.tile.gold{border-style:dashed}
+.tile-bar{display:inline-flex;gap:3px;margin-left:4px}
+.builder .insert-slot{opacity:0;transition:opacity .15s}
+.builder:hover .insert-slot,.builder .insert-slot.selected,.builder .insert-slot:focus-visible,body.tile-dragging .builder .insert-slot{opacity:1}
+.tile.lifted{z-index:5;box-shadow:0 8px 18px rgba(0,0,0,.2);position:relative}
+.tile-bin{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);z-index:2000;padding:.9rem;border:2px dashed #c98f80;border-radius:.7rem;text-align:center;color:#8a3b2a;font-weight:650;background:#fff8f6;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+@media (min-width:871px){.undo-toast{bottom:24px;left:50%;right:auto;transform:translateX(-50%);width:min(420px,90vw)}.tile-bin{bottom:24px;left:50%;right:auto;transform:translateX(-50%);width:min(420px,90vw)}}
+.tile-bin.hot{background:#fbe9e5;border-color:#c0533c}
+.undo-toast{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);z-index:2001;padding:.6rem .85rem;box-shadow:0 6px 18px rgba(0,0,0,.2);border-radius:.55rem;background:#20302a;color:#fff;font-size:.92rem;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
+.undo-toast[hidden],.tile-bin[hidden],.type-entry [hidden]{display:none!important}
+.undo-toast button{font:inherit;font-weight:700;background:transparent;border:0;color:#f1d27a;cursor:pointer;padding:.2rem .3rem}
+.type-entry{margin:0 0 .6rem}
+#typeEntry{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:.65rem .8rem;border:1px solid #b9c9c4;border-radius:.6rem;background:#fff;color:inherit}
+#typeEntry:focus-visible{outline:3px solid #b8901c;outline-offset:1px}
+.type-suggest{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.4rem}
+.type-chip{font:inherit;font-size:.92rem;padding:.35rem .7rem;border-radius:.5rem;border:1px solid #8ab4c9;background:var(--bluelight,#e7f2f8);color:#1d6281;cursor:pointer;min-height:36px}
+.type-chip.helper{border-color:#e2c28c;border-style:dashed;background:var(--goldlight,#fbf1df);color:#8f631e}
+.type-chip.hypothetical{border-style:dotted;opacity:.85}
+.compose-word-bank{max-height:200px}
+.word-bank.more-below,.compose-word-bank.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent)}
 .verdict.pending{border-color:var(--gold,#b8901c)}
 .sentence-row.pending{opacity:.85;border-left:3px solid var(--gold,#b8901c)}
 .reading-chooser{margin:0 0 .8rem;padding:.6rem .7rem;border:1px solid var(--line,#ccd);border-radius:.6rem}

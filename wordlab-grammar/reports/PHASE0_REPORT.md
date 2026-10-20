@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7924 atomic rules, relaxed 19555, 596 symbols · strict-grammar compile 319 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 403 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 502 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 730 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -8,7 +8,7 @@ Status labels: **measured** = produced by the scripts in this folder; **proposal
 
 | Criterion | Result |
 |---|---|
-| Every handover §5 probe yields its intended roles | 59/59 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
+| Every handover §5 probe yields its intended roles | 63/63 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
 | Generated derivations recognised and exactly recovered | 1595/1595 |
 | Typed corruptions caught, with the right constraint named | see corruption table |
 | p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 16.1 ms; generated 21–24 tokens p95 12.4 ms |
@@ -17,7 +17,7 @@ Status labels: **measured** = produced by the scripts in this folder; **proposal
 
 ## What Phase 0 is
 
-A declarative feature grammar (`src/grammar.js`: 81 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
+A declarative feature grammar (`src/grammar.js`: 82 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
 
 Each parse returns one of three states:
 
@@ -89,6 +89,10 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 | L6 | Phase 1: ERG object required (bless := v_np_le) | conflict (verb_frame) | reject | — |  |
 | L7 | Phase 1: ERG optional object in coordination | recognised | reject | 35 | `[Imp [VP [VP bless [NP the cat]] or [VP decide]]]` |
 | L8 | Phase 1: ERG to-infinitive frame (decide := v_vp_seq_le) | recognised | accept (clause) | 42 | `[S [NP the cat] [FP can [VP decide to [VP run]]]]` |
+| PN1 | proper name (v1.1 proper_name_reading) | recognised | accept (clause) | 28 | `[S [NP satoshi] [FP can [VP run]]]` |
+| PN2 | proper name in a PP | recognised | accept (clause) | 42 | `[S [NP the cat] [FP can [VP [VP run] [PP in [NP april]]]]]` |
+| PN3 | common-noun reading kept (a satoshi = unit) | recognised | accept (clause) | 28 | `[S [NP a satoshi] [FP can [VP run]]]` |
+| PN4 | no proper-name reading for ordinary nouns | conflict (det_noun) | reject | — |  |
 | S1 | stress: 20-noun compound | recognised | reject | 190 | `[S [NP the prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey] [FP is bitter]]` |
 | S2 | stress: 12 coordinated clauses | recognised | accept (clause) | 427 | `[S [S [NP the dog] [FP can [VP run]]] and [S [NP the cat] [FP can [VP jump]]] and [S [NP the fish] [FP can [VP swim]]] and [S [NP the bird] [FP can [VP sing]]] and [S [NP the lion] [FP can [VP dance]]] and [S [NP the horse] [FP can [VP fly]]] and [S [NP the donkey] [FP can [VP float]]] and [S [NP the eagle] [FP can [VP shiver]]] and [S [NP the rabbit] [FP can [VP blossom]]] and [S [NP the monkey] [FP can [VP crumble]]] and [S [NP the tiger] [FP can [VP arrive]]] and [S [NP the elephant] [FP can [VP climb]]]]` |
 | S3 | stress: nested subordination | recognised | accept (clause) | 162 | `[S [S [NP the dog] [FP can [VP run]]] [SubCl because [S [S [NP the cat] [FP can [VP jump]]] [SubCl because [S [S [NP the fish] [FP can [VP swim]]] [SubCl because [S [NP the bird] [FP can [VP sing]]]]]]]]]` |
@@ -322,6 +326,11 @@ Built from the v1.1 single-file game by `tools/build_game.js`; the v1.1 file is 
 - **Reading choice:** the syntax view lists only the words whose role differs between readings; tapping a role pins it and the score follows. Pins belong to the exact word sequence, so editing drops them.
 - **Score panel:** blue tiles, word-role points, size multiplier, clause links, link-type and embedding bonuses, per-word points, and notes when a link is not scored or a list/adjective stack tapers.
 - The obsolete “modifiers per noun” setting is hidden (stacks taper instead).
+- **Typed entry:** a text field above the tiles; four letters complete a BIP39 word (BIP39 words are unique by their first four letters), shorter words and helpers complete on space or Enter, Backspace on an empty field returns the last word for editing. Collected words become blue tiles and leave the tray; uncollected words become purple “try” tiles; helper words that are also BIP39 words (can, all, because …) default to gold when unlocked (tap ↔ to switch).
+- **Cleaner tiles:** tiles show only the word (gold helpers have a dashed border); controls appear only on the selected tile. Drag to reorder (long-press on touch), drag to the floating “Drop here to remove” zone to delete, keyboard arrows/Delete on a focused tile; every removal offers Undo.
+- **Word tray:** every available word is shown (no “Show all”), with a fade when more words are below; the search box and the static “suggestions, not guarantees” rows are removed; the part-of-speech filter stays.
+- **Coach:** tips come from the actual analysis (conflict to fix, unscored link, missing link type, tapering stack, list, phrase versus sentence, size bonus); the button steps through them and the coach closes when the sentence changes.
+- **Proper names:** the seven nouns the v1.1 lexicon marks as proper names (April, December, February, Latin, March, October, Satoshi) are bare singular NPs (*Satoshi can run*); their common-noun readings stay (*a satoshi*). Months and Latin are always capitalised in display; Satoshi and March when read as names.
 
 End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone viewport, seeded with the v1.1 session):
 
@@ -339,6 +348,22 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | ambiguous draft offers choice points | pass |
 | tapping a reading pins it | pass |
 | editing the sentence drops stale pins | pass |
+| typing four letters completes a BIP39 word into a blue tile | pass |
+| a helper completes on space (gold) | pass |
+| a complete helper word is not swallowed by a longer BIP39 word (some/someone) | pass |
+| Backspace into a completed word returns it for editing | pass |
+| several words typed in a row become tiles | pass |
+| no per-tile controls until a tile is selected | pass |
+| selecting a tile shows one small bar | pass |
+| no found/∞ subscripts on sentence tiles | pass |
+| removing shows Undo, and Undo restores the tile | pass |
+| the Undo notice actually disappears after Undo | pass |
+| long-press drag reorders on touch | pass |
+| long-press drag onto the remove zone deletes (with Undo) | pass |
+| keyboard Delete removes the focused tile | pass |
+| coach opens on request and closes when the sentence changes | pass |
+| word tray shows every word; no search box; no static suggestions | pass |
+| Satoshi is capitalised as a name | pass — Satoshi can. |
 | autosave writes a version-2 snapshot | pass |
 | reload resumes v2 snapshot (no re-migration) | pass — 4 committed |
 | history preserved across reload | pass |

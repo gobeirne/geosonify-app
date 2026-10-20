@@ -175,6 +175,7 @@ function compileLexicon(v11, oewn, options = {}) {
         if (n === 'pl' && c === 'mass') continue;
         add(w, 'N', {num: n, cnt: c, on}, 'curated', 'v1.1');
       }
+      if (a.proper_name_reading) add(w, 'PropN', {}, 'curated', 'v1.1 proper_name_reading', 'proper name');
       const wik = (r.evidence && r.evidence.wiktionary_noun_attestations) || [];
       if (nums.includes('sg') && wik.includes('mass') && !cnts.includes('mass') && !LEX_OFF.has('MASS'))
         add(w, 'N', {num: 'sg', cnt: 'mass', on}, 'attested', 'Simple English Wiktionary (Kaikki) noun marked uncountable', 'mass reading');

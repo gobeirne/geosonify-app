@@ -75,7 +75,7 @@ function compileGrammar(G, {preps, idiomPreps, relax = []} = {}) {
     rec(0);
   }
   // Remove useless rules: keep productive (derives terminals) and reachable.
-  const preterminalCats = new Set(['N', 'NIdiom', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'V', 'VPrep', 'Det', 'Pron', 'P',
+  const preterminalCats = new Set(['N', 'NIdiom', 'PropN', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'V', 'VPrep', 'Det', 'Pron', 'P',
     'Modal', 'Cop', 'Be', 'Do', 'HaveAux', 'Not', 'To', 'Conj', 'ForCoord', 'Sub', 'Comp', 'Rel']);
   const preFlag = new Uint8Array(names.length);
   names.forEach((n, i) => { preFlag[i] = preterminalCats.has(n.split('[')[0]) ? 1 : 0; });

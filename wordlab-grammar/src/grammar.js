@@ -17,7 +17,7 @@
 const CATS = {
   // preterminals
   N: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
-  NIdiom: {p: 'PREP'}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
+  NIdiom: {p: 'PREP'}, PropN: {}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
   AdvDeg: {pa: ['both', 'pred'], on: ['v', 'c', 'x']}, AdvPre: {}, AdvPost: {}, AdvFocus: {},
   V: {fr: ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'], vf: ['base', 'past', 'ppart', 'pres3']},
   VPrep: {p: 'PREP', vf: ['base', 'past', 'ppart', 'pres3']},
@@ -126,6 +126,10 @@ rule('np_bare', L('NP', {num: '?n', per: '3', case: 'any'}), [L('Nom', {num: '?n
   {fam: 'bare_np', head: 0, disp: 'NP', when: (v, C) => C('det_noun', (v.n === 'pl' && (v.c !== 'coll' || OFF.has('COLL'))) || v.c === 'mass')});
 rule('np_pron', L('NP', {num: '?n', per: '?p', case: '?k'}), [L('Pron', {num: '?n', per: '?p', case: '?k'})],
   {fam: 'pronoun', head: 0, disp: 'NP'});
+// Proper names (CGEL ch. 5): a bare singular NP needing no determiner
+// ("Satoshi can run", "in April"). Lexically licensed: only nouns the v1.1
+// lexicon marks with a proper-name reading.
+rule('np_name', L('NP', {num: 'sg', per: '3', case: 'any'}), [L('PropN')], {fam: 'proper_noun', head: 0, disp: 'NP'});
 rule('np_fused', L('NP', {num: 'pl', per: '3', case: 'any'}), [L('Det', {d: 'the'}), L('AdjFused')],
   {fam: 'fused_head', head: 1, deps: [[0, 'det']], disp: 'NP'});
 // Postmodification: PP and subject relative clause.

@@ -796,6 +796,52 @@
    }
   },
   {
+   "id": "PN1",
+   "src": "proper name (v1.1 proper_name_reading)",
+   "text": "Satoshi can run.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "satoshi": "PropN:nsubj"
+    }
+   }
+  },
+  {
+   "id": "PN2",
+   "src": "proper name in a PP",
+   "text": "The cat can run in April.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "april": "PropN:pobj"
+    }
+   }
+  },
+  {
+   "id": "PN3",
+   "src": "common-noun reading kept (a satoshi = unit)",
+   "text": "A satoshi can run.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "satoshi": "N:nsubj"
+    }
+   }
+  },
+  {
+   "id": "PN4",
+   "src": "no proper-name reading for ordinary nouns",
+   "text": "Cat can run.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "det_noun"
+   }
+  },
+  {
    "id": "S1",
    "src": "stress: 20-noun compound",
    "text": "The prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey is bitter.",

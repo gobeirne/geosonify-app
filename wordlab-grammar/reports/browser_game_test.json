@@ -82,6 +82,109 @@
   "ok": true,
   "detail": ""
  },
+ "typing four letters completes a BIP39 word into a blue tile": {
+  "ok": true,
+  "detail": [
+   "affair:c"
+  ]
+ },
+ "a helper completes on space (gold)": {
+  "ok": true,
+  "detail": [
+   "affair:c",
+   "the:h"
+  ]
+ },
+ "a complete helper word is not swallowed by a longer BIP39 word (some/someone)": {
+  "ok": true,
+  "detail": [
+   [],
+   "some"
+  ]
+ },
+ "Backspace into a completed word returns it for editing": {
+  "ok": true,
+  "detail": [
+   [],
+   "banana"
+  ]
+ },
+ "several words typed in a row become tiles": {
+  "ok": true,
+  "detail": [
+   "affair:c",
+   "banana:c",
+   "banner:c"
+  ]
+ },
+ "no per-tile controls until a tile is selected": {
+  "ok": true,
+  "detail": 0
+ },
+ "selecting a tile shows one small bar": {
+  "ok": true,
+  "detail": 3
+ },
+ "no found/\u221e subscripts on sentence tiles": {
+  "ok": true,
+  "detail": ""
+ },
+ "removing shows Undo, and Undo restores the tile": {
+  "ok": true,
+  "detail": [
+   [
+    "affair",
+    "banner"
+   ],
+   [
+    "affair",
+    "banana",
+    "banner"
+   ]
+  ]
+ },
+ "the Undo notice actually disappears after Undo": {
+  "ok": true,
+  "detail": ""
+ },
+ "long-press drag reorders on touch": {
+  "ok": true,
+  "detail": [
+   "banana",
+   "banner",
+   "affair"
+  ]
+ },
+ "long-press drag onto the remove zone deletes (with Undo)": {
+  "ok": true,
+  "detail": [
+   "banner",
+   "affair"
+  ]
+ },
+ "keyboard Delete removes the focused tile": {
+  "ok": true,
+  "detail": ""
+ },
+ "coach opens on request and closes when the sentence changes": {
+  "ok": true,
+  "detail": [
+   true,
+   false
+  ]
+ },
+ "word tray shows every word; no search box; no static suggestions": {
+  "ok": true,
+  "detail": {
+   "more": "",
+   "search": false,
+   "smart": ""
+  }
+ },
+ "Satoshi is capitalised as a name": {
+  "ok": true,
+  "detail": "Satoshi can."
+ },
  "autosave writes a version-2 snapshot": {
   "ok": true,
   "detail": ""
