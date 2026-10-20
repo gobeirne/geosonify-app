@@ -244,6 +244,26 @@ body{background:var(--paper);color:var(--text);font-family:-apple-system,BlinkMa
 @media(prefers-reduced-motion:reduce){.btn,.tile,.word-pick,.coach-button{transition:none!important}}
 </style>
 <style>
+.tile.gold{border-style:dashed}
+.tile-bar{display:inline-flex;gap:3px;margin-left:4px}
+.builder .insert-slot{opacity:0;transition:opacity .15s}
+.builder:hover .insert-slot,.builder .insert-slot.selected,.builder .insert-slot:focus-visible,body.tile-dragging .builder .insert-slot{opacity:1}
+.tile.lifted{z-index:5;box-shadow:0 8px 18px rgba(0,0,0,.2);position:relative}
+.tile-bin{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);z-index:2000;padding:.9rem;border:2px dashed #c98f80;border-radius:.7rem;text-align:center;color:#8a3b2a;font-weight:650;background:#fff8f6;box-shadow:0 6px 18px rgba(0,0,0,.15)}
+@media (min-width:871px){.undo-toast{bottom:24px;left:50%;right:auto;transform:translateX(-50%);width:min(420px,90vw)}.tile-bin{bottom:24px;left:50%;right:auto;transform:translateX(-50%);width:min(420px,90vw)}}
+.tile-bin.hot{background:#fbe9e5;border-color:#c0533c}
+.undo-toast{position:fixed;left:14px;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 92px);z-index:2001;padding:.6rem .85rem;box-shadow:0 6px 18px rgba(0,0,0,.2);border-radius:.55rem;background:#20302a;color:#fff;font-size:.92rem;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
+.undo-toast[hidden],.tile-bin[hidden],.type-entry [hidden]{display:none!important}
+.undo-toast button{font:inherit;font-weight:700;background:transparent;border:0;color:#f1d27a;cursor:pointer;padding:.2rem .3rem}
+.type-entry{margin:0 0 .6rem}
+#typeEntry{width:100%;box-sizing:border-box;font:inherit;font-size:16px;padding:.65rem .8rem;border:1px solid #b9c9c4;border-radius:.6rem;background:#fff;color:inherit}
+#typeEntry:focus-visible{outline:3px solid #b8901c;outline-offset:1px}
+.type-suggest{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.4rem}
+.type-chip{font:inherit;font-size:.92rem;padding:.35rem .7rem;border-radius:.5rem;border:1px solid #8ab4c9;background:var(--bluelight,#e7f2f8);color:#1d6281;cursor:pointer;min-height:36px}
+.type-chip.helper{border-color:#e2c28c;border-style:dashed;background:var(--goldlight,#fbf1df);color:#8f631e}
+.type-chip.hypothetical{border-style:dotted;opacity:.85}
+.compose-word-bank{max-height:200px}
+.word-bank.more-below,.compose-word-bank.more-below{-webkit-mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent);mask-image:linear-gradient(to bottom,#000 calc(100% - 26px),transparent)}
 .verdict.pending{border-color:var(--gold,#b8901c)}
 .sentence-row.pending{opacity:.85;border-left:3px solid var(--gold,#b8901c)}
 .reading-chooser{margin:0 0 .8rem;padding:.6rem .7rem;border:1px solid var(--line,#ccd);border-radius:.6rem}
@@ -268,7 +288,7 @@ body{background:var(--paper);color:var(--text);font-family:-apple-system,BlinkMa
     <div class="explore-box"><div class="explore-heading"><strong>Simulate exploration</strong><span class="tiny">No location needed</span></div><div class="button-row"><button class="btn btn-sea" id="discoverFour">+ Four address words</button><button class="btn btn-outline" id="discoverTwenty">+ 20 finds</button></div><div id="lastFind" class="last-find" aria-live="polite">New discoveries appear here.</div></div>
     <div class="field"><label for="addWordInput">Find or collect a specific BIP39 word</label><div class="input-row"><input id="addWordInput" list="bipSuggestions" autocomplete="off" placeholder="e.g. panther" spellcheck="false"><button class="btn btn-outline" id="collectWordBtn">Collect</button><button class="btn btn-soft" id="tryWordBtn" title="Insert a hypothetical uncollected word into the sentence">Try</button></div><datalist id="bipSuggestions"></datalist><p class="muted tiny">“Try” adds a hypothetical tile to the sentence. It cannot be saved until collected.</p></div>
     <div class="rule"></div>
-    <div class="field"><div class="split-label"><label for="bankFilter">Word tiles</label><span class="tiny" id="availableCount"></span></div><div class="input-row"><input id="bankFilter" placeholder="Filter words…" autocomplete="off" spellcheck="false"><select id="posFilter" class="pos-select" aria-label="Filter part of speech"><option value="all">All</option><option value="noun">N</option><option value="verb">V</option><option value="adjective">Adj</option><option value="adverb">Adv</option></select></div></div>
+    <div class="field"><div class="split-label"><label for="bankFilter">Word tiles</label><span class="tiny" id="availableCount"></span></div><div class="input-row"><input hidden id="bankFilter" placeholder="Filter words…" autocomplete="off" spellcheck="false"><select id="posFilter" class="pos-select" aria-label="Filter part of speech"><option value="all">All</option><option value="noun">N</option><option value="verb">V</option><option value="adjective">Adj</option><option value="adverb">Adv</option></select></div></div>
     <div class="word-bank" id="wordBank" role="group" aria-label="Available collected words"></div><div id="bankMore" class="bank-more"></div>
     <div class="legend"><span><i class="legend-dot dot-blue"></i> Collected, single use</span><span><i class="legend-dot dot-gold"></i> Helper, unlimited</span><span><i class="legend-dot dot-ghost"></i> Hypothetical</span></div>
   </aside>
@@ -285,10 +305,10 @@ body{background:var(--paper);color:var(--text);font-family:-apple-system,BlinkMa
 <div id="coachPanel" class="coach-panel" hidden aria-live="polite"></div>
 </section>
 <div class="builder-head"><label>Word tiles <span class="muted small-regular desktop-hint">· tap a gap or drag a tile</span></label><div class="builder-head-actions"><button class="text-button mobile-only" id="mobileStartQuick" type="button">At start</button><button class="text-button" id="clearDraft">Clear</button></div></div>
-      <div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div>
+      <div class="type-entry"><input id="typeEntry" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" enterkeyhint="done" placeholder="Type a sentence: four letters complete a word" aria-label="Type a sentence; four letters complete a BIP39 word"><div id="typeSuggest" class="type-suggest" aria-live="polite"></div></div><div id="builder" class="builder" aria-label="Sentence tile arrangement" role="group"></div><div id="tileBin" class="tile-bin" hidden>Drop here to remove</div><div id="undoToast" class="undo-toast" role="status" hidden></div>
       <div class="mobile-tile-tools" id="mobileTileTools" aria-live="polite"><span class="mobile-insert-label" id="mobileInsertLabel">Add words at the end</span><div class="mobile-tile-controls"><button id="mobilePlaceStart" type="button">Start</button><button id="mobilePlaceEnd" type="button">End</button><button id="mobileMoveLeft" type="button" aria-label="Move selected word left">← Move</button><button id="mobileMoveRight" type="button" aria-label="Move selected word right">Move →</button><button id="mobileSwitchSource" type="button" aria-label="Swap selected word source">⇄ Tile</button><button id="mobileRemoveTile" type="button" aria-label="Remove selected word">Remove</button></div></div>
       <div class="builder-help">Tap a <b>+</b> to choose an insertion point; use arrows or drag a tile to reorder. Blue words are reserved once you save.</div>
-      <section class="compose-tray" id="composeTray" aria-label="Choose words to add"><div class="compose-tray-head"><div><strong>Add to your sentence</strong><small id="composeAvailableCount">Tap a word to insert it</small></div><div class="compose-tray-tabs" role="tablist" aria-label="Word tile sources"><button type="button" data-tray="words" role="tab" aria-selected="true" class="active">Words</button><button type="button" data-tray="helpers" role="tab" aria-selected="false">Helpers</button><button type="button" data-tray="try" role="tab" aria-selected="false">Try</button></div></div><div class="compose-tray-pane" data-tray-pane="words"><div class="compose-tray-search"><input id="composeBankFilter" type="search" placeholder="Find a collected word…" autocomplete="off" aria-label="Search collected words" spellcheck="false"><select id="composePosFilter" aria-label="Filter word type"><option value="all">All types</option><option value="noun">Nouns</option><option value="verb">Verbs</option><option value="adjective">Adjectives</option><option value="adverb">Adverbs</option></select></div><div id="smartPicks" class="smart-picks" aria-live="polite"></div><div id="composeWordBank" class="compose-word-bank" aria-label="Available collected word tiles"></div><div id="composeBankMore" class="compose-bank-more"></div></div><div class="compose-tray-pane" data-tray-pane="helpers" hidden><div class="compose-helper-copy">Unlimited golden tiles, already unlocked.</div><div id="composeHelperBank" class="compose-word-bank"></div><button type="button" id="mobileUnlockMore" class="tray-link">Unlock or lock helpers →</button></div><div class="compose-tray-pane" data-tray-pane="try" hidden><p class="tiny muted">Try any BIP39 word, including one assigned to a saved sentence. Purple preview tiles score provisionally but cannot be committed until you collect or reallocate a blue copy.</p><div class="input-row"><input type="search" id="composeTryInput" list="bipSuggestions" placeholder="e.g. panther" autocomplete="off" spellcheck="false"><button type="button" class="btn btn-soft" id="composeTryBtn">Try word</button></div></div></section>
+      <section class="compose-tray" id="composeTray" aria-label="Choose words to add"><div class="compose-tray-head"><div><strong>Add to your sentence</strong><small id="composeAvailableCount">Tap a word to insert it</small></div><div class="compose-tray-tabs" role="tablist" aria-label="Word tile sources"><button type="button" data-tray="words" role="tab" aria-selected="true" class="active">Words</button><button type="button" data-tray="helpers" role="tab" aria-selected="false">Helpers</button><button type="button" data-tray="try" role="tab" aria-selected="false">Try</button></div></div><div class="compose-tray-pane" data-tray-pane="words"><div class="compose-tray-search"><input hidden id="composeBankFilter" type="search" placeholder="Find a collected word…" autocomplete="off" aria-label="Search collected words" spellcheck="false"><select id="composePosFilter" aria-label="Filter word type"><option value="all">All types</option><option value="noun">Nouns</option><option value="verb">Verbs</option><option value="adjective">Adjectives</option><option value="adverb">Adverbs</option></select></div><div id="smartPicks" class="smart-picks" aria-live="polite"></div><div id="composeWordBank" class="compose-word-bank" aria-label="Available collected word tiles"></div><div id="composeBankMore" class="compose-bank-more"></div></div><div class="compose-tray-pane" data-tray-pane="helpers" hidden><div class="compose-helper-copy">Unlimited golden tiles, already unlocked.</div><div id="composeHelperBank" class="compose-word-bank"></div><button type="button" id="mobileUnlockMore" class="tray-link">Unlock or lock helpers →</button></div><div class="compose-tray-pane" data-tray-pane="try" hidden><p class="tiny muted">Try any BIP39 word, including one assigned to a saved sentence. Purple preview tiles score provisionally but cannot be committed until you collect or reallocate a blue copy.</p><div class="input-row"><input type="search" id="composeTryInput" list="bipSuggestions" placeholder="e.g. panther" autocomplete="off" spellcheck="false"><button type="button" class="btn btn-soft" id="composeTryBtn">Try word</button></div></div></section>
       <details class="preset-wrap" id="exampleDisclosure" open><summary>Load an example</summary><div class="preset-buttons"><button class="small-chip" data-example="featured">Complex</button><button class="small-chip" data-example="actual">My 156 words</button><button class="small-chip" data-example="crumble">Crumble + ensure</button><button class="small-chip" data-example="user_clean">Clean + because</button><button class="small-chip" data-example="user_joke">Half-human cat stairs</button><button class="small-chip" data-example="user_taste">Taste + guess</button><button class="small-chip" data-example="user_garden">Garden fence</button><button class="small-chip" data-example="short_phrase">Noun phrase</button><button class="small-chip" data-example="long_phrase">Long sentence</button><button class="small-chip" data-example="question_demo">Question</button><button class="small-chip" data-example="invalid_demo">Explain why (demo)</button><button class="small-chip" data-example="curtain">Curtain (verb)</button><button class="small-chip" data-example="whale">Whale (verb)</button><button class="small-chip" data-example="squirrel">Squirrel away</button><button class="small-chip" data-example="online">Chat online</button><button class="small-chip" data-example="sick">The sick</button><button class="small-chip" data-example="account">Account for</button><button class="small-chip" data-example="zero">No helpers</button><button class="small-chip" data-example="adjectives">Adjective padding</button><button class="small-chip" data-example="list">Noun list</button><button class="small-chip" data-example="dump">Word dump</button></div></details>
       <div class="quick-helper-shelf"><div class="quick-helper-head"><label>Unlocked helper tiles</label><span class="tiny muted">Tap to add or drag into the sentence</span></div><div id="unlimitedTiles" class="helper-insert-row"></div></div>
       <div class="quick-actions"><button class="btn btn-sea" id="saveDraft">Save to sandbox</button><button class="btn btn-outline" id="cancelDraft">Discard draft</button><button class="btn btn-outline" id="cancelSandbox">Cancel all changes</button><button class="btn btn-main" id="commitSandbox">Commit sandbox</button></div>
@@ -1407,6 +1427,7 @@ function compileLexicon(v11, oewn, options = {}) {
         if (n === 'pl' && c === 'mass') continue;
         add(w, 'N', {num: n, cnt: c, on}, 'curated', 'v1.1');
       }
+      if (a.proper_name_reading) add(w, 'PropN', {}, 'curated', 'v1.1 proper_name_reading', 'proper name');
       const wik = (r.evidence && r.evidence.wiktionary_noun_attestations) || [];
       if (nums.includes('sg') && wik.includes('mass') && !cnts.includes('mass') && !LEX_OFF.has('MASS'))
         add(w, 'N', {num: 'sg', cnt: 'mass', on}, 'attested', 'Simple English Wiktionary (Kaikki) noun marked uncountable', 'mass reading');
@@ -1593,7 +1614,7 @@ __mods['./grammar']=function(module,exports,require){
 const CATS = {
   // preterminals
   N: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
-  NIdiom: {p: 'PREP'}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
+  NIdiom: {p: 'PREP'}, PropN: {}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
   AdvDeg: {pa: ['both', 'pred'], on: ['v', 'c', 'x']}, AdvPre: {}, AdvPost: {}, AdvFocus: {},
   V: {fr: ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'], vf: ['base', 'past', 'ppart', 'pres3']},
   VPrep: {p: 'PREP', vf: ['base', 'past', 'ppart', 'pres3']},
@@ -1702,6 +1723,10 @@ rule('np_bare', L('NP', {num: '?n', per: '3', case: 'any'}), [L('Nom', {num: '?n
   {fam: 'bare_np', head: 0, disp: 'NP', when: (v, C) => C('det_noun', (v.n === 'pl' && (v.c !== 'coll' || OFF.has('COLL'))) || v.c === 'mass')});
 rule('np_pron', L('NP', {num: '?n', per: '?p', case: '?k'}), [L('Pron', {num: '?n', per: '?p', case: '?k'})],
   {fam: 'pronoun', head: 0, disp: 'NP'});
+// Proper names (CGEL ch. 5): a bare singular NP needing no determiner
+// ("Satoshi can run", "in April"). Lexically licensed: only nouns the v1.1
+// lexicon marks with a proper-name reading.
+rule('np_name', L('NP', {num: 'sg', per: '3', case: 'any'}), [L('PropN')], {fam: 'proper_noun', head: 0, disp: 'NP'});
 rule('np_fused', L('NP', {num: 'pl', per: '3', case: 'any'}), [L('Det', {d: 'the'}), L('AdjFused')],
   {fam: 'fused_head', head: 1, deps: [[0, 'det']], disp: 'NP'});
 // Postmodification: PP and subject relative clause.
@@ -1957,7 +1982,7 @@ function compileGrammar(G, {preps, idiomPreps, relax = []} = {}) {
     rec(0);
   }
   // Remove useless rules: keep productive (derives terminals) and reachable.
-  const preterminalCats = new Set(['N', 'NIdiom', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'V', 'VPrep', 'Det', 'Pron', 'P',
+  const preterminalCats = new Set(['N', 'NIdiom', 'PropN', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'V', 'VPrep', 'Det', 'Pron', 'P',
     'Modal', 'Cop', 'Be', 'Do', 'HaveAux', 'Not', 'To', 'Conj', 'ForCoord', 'Sub', 'Comp', 'Rel']);
   const preFlag = new Uint8Array(names.length);
   names.forEach((n, i) => { preFlag[i] = preterminalCats.has(n.split('[')[0]) ? 1 : 0; });
@@ -2289,7 +2314,7 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
   // terminals {kind:'terminal', label, word, index}; helper categories spliced.
   const KIND = {S: 'clause', NP: 'noun_phrase', VP: 'verb_phrase', FP: 'finite_predicate', PP: 'prepositional_phrase', AdjP: 'adjective',
     Imp: 'imperative', Q: 'question', Frag: 'fragment', Utt: 'utterance', SubCl: 'subordinate_clause', Ellipsis: 'ellipsis'};
-  const TAG = {N: 'N', NIdiom: 'N', Adj: 'Adj', AdjFused: 'Adj', AdvDeg: 'Deg', AdvPre: 'Adv', AdvPost: 'Adv', AdvFocus: 'Adv', V: 'V', VPrep: 'V', Det: 'Det',
+  const TAG = {N: 'N', NIdiom: 'N', PropN: 'Name', Adj: 'Adj', AdjFused: 'Adj', AdvDeg: 'Deg', AdvPre: 'Adv', AdvPost: 'Adv', AdvFocus: 'Adv', V: 'V', VPrep: 'V', Det: 'Det',
     Pron: 'Pron', P: 'P', Modal: 'Mod', Cop: 'Aux', Be: 'Aux', Do: 'Aux', HaveAux: 'Aux', Not: 'Neg', To: 'To', Conj: 'Conj', ForCoord: 'Conj', Sub: 'Sub', Comp: 'Comp', Rel: 'Rel'};
   function dispTree(n, words) {
     const flat = x => {
@@ -2878,9 +2903,14 @@ const SAVE_KEY='starpin-word-lab-v2-local-snapshot',LEGACY_SAVE_KEY='starpin-wor
 let saveTimer=null;
 
 const titleCase=t=>t? t[0].toUpperCase()+t.slice(1):'';
-const formatSentence=(tiles,kind=null)=>{
+// Months and Latin are always capitalised; satoshi and march only when the
+// reading uses them as names (a satoshi, the march stay lower-case).
+const ALWAYS_CAP=new Set(['april','december','february','latin','october']);
+function nameCase(w,role){return ALWAYS_CAP.has(w)||(role&&role.pos==='PropN')?w.charAt(0).toUpperCase()+w.slice(1):w;}
+function displayWord(w,i){return htmlEscape(ALWAYS_CAP.has(w)?nameCase(w):w);}
+const formatSentence=(tiles,kind=null,reading=null)=>{
   if(!tiles.length)return '';
-  const words=tiles.map(t=>t.word);let out='';
+  const words=tiles.map((t,i)=>nameCase(t.word,reading&&reading.roles[i]));let out='';
   for(let i=0;i<words.length;i++){
     const joinHyphen=i>0 && words[i-1]==='half'&&words[i]==='human'&&i+1<words.length &&
       (mainPos(words[i+1]).includes('adjective')||mainPos(words[i+1]).includes('noun'));
@@ -3099,14 +3129,16 @@ function toggleHelper(word){
   }else{state.unlocked.add(word);setNotice(`Unlocked unlimited ${word}. If you also own the blue tile, both are now available.`,'good');}
   renderAll();
 }
+function scrollCue(el){if(!el)return;const upd=()=>el.classList.toggle('more-below',el.scrollTop+el.clientHeight<el.scrollHeight-2);
+  if(!el.dataset.cue){el.dataset.cue='1';el.addEventListener('scroll',upd,{passive:true});}requestAnimationFrame(upd);}
 function renderBank(){
   const used=allocated(),filter=state.bankFilter.toLowerCase();
   const available=[...state.inventory].sort().filter(w=>!used.has(w));
   let filtered=available.filter(w=>w.includes(filter) && (state.posFilter==='all'||mainPos(w).includes(state.posFilter)));
-  const visible=state.bankExpanded?filtered:filtered.slice(0,64);
+  const visible=filtered;
   $('wordBank').innerHTML=visible.map(w=>`<button class="word-pick draggable" draggable="true" data-source="collected" data-word="${htmlEscape(w)}" title="Tap to insert ${htmlEscape(w)}; or drag into a gap"><span>${htmlEscape(w)}</span><small>${htmlEscape(posLabel(w))}</small></button>`).join('')||'<span class="muted tiny">No available words match this filter.</span>';
   $('availableCount').textContent=`${available.length} available · ${state.inventory.size-available.length} placed or in draft`;
-  $('bankMore').innerHTML=filtered.length>64?`<button type="button" id="bankExpand">${state.bankExpanded?'Show fewer':`Show all ${filtered.length} matching words`}</button>`:'';
+  $('bankMore').innerHTML='';scrollCue($('wordBank'));
   $('vocabStat').textContent=state.inventory.size;
   $('lastFind').textContent=state.lastFind||'New discoveries appear here.';
 }
@@ -3119,20 +3151,18 @@ function renderBuilder(){
   const draft=state.draft;
   $('builder').classList.toggle('empty',draft.length===0);
   let s='';
-  if(!draft.length)s='<div class="empty-message">Tap a word in the tray below to begin. <br>Blue words score; gold helpers are unlimited.</div>';
+  if(!draft.length)s='<div class="empty-message">Type below, or tap a word in the tray, to begin.<br>Blue words score; gold helpers are unlimited.</div>';
   for(let i=0;i<=draft.length;i++){
     s+=`<button class="insert-slot ${state.insertIndex===i?'selected':''}" data-insert="${i}" aria-label="Insert a word at position ${i+1}" title="Insert here">+</button>`;
     if(i===draft.length)continue;
-    const t=draft[i];const both=state.inventory.has(t.word)&&state.unlocked.has(t.word);
-    s+=`<div class="tile ${t.source==='helper'?'gold':t.source==='hypothetical'?'ghost':''} ${both?'can-swap':''} ${state.selectedTile===i?'selected-tile':''}" data-tile="${i}" tabindex="0" role="button" aria-label="Select ${htmlEscape(t.word)}; insert after this word" aria-pressed="${state.selectedTile===i?'true':'false'}" draggable="true" title="${htmlEscape(t.word)} (${htmlEscape(t.source)})">
-    <span class="tile-drag" data-draghandle="${i}" title="Drag to reorder">⠿</span><span class="tile-word">${htmlEscape(t.word)}</span>
-    <span class="tile-source" data-swap="${i}" title="${both?'Switch blue/gold source':'Tile type'}">${sourceTag(t)}${both?' ↔':''}</span>
-    <button class="tile-op" data-move="${i}" data-dir="-1" title="Move left" aria-label="Move ${htmlEscape(t.word)} left">‹</button>
-    <button class="tile-op" data-move="${i}" data-dir="1" title="Move right" aria-label="Move ${htmlEscape(t.word)} right">›</button>
-    <button class="tile-op" data-remove="${i}" title="Remove tile" aria-label="Remove ${htmlEscape(t.word)}">×</button></div>`;
+    const t=draft[i],both=state.inventory.has(t.word)&&state.unlocked.has(t.word),sel=state.selectedTile===i;
+    const kind=t.source==='helper'?'gold helper, unlimited':t.source==='hypothetical'?'try tile, not collected':'collected word';
+    const ew=htmlEscape(t.word);
+    s+=`<div class="tile ${t.source==='helper'?'gold':t.source==='hypothetical'?'ghost':''} ${sel?'selected-tile':''}" data-tile="${i}" tabindex="0" role="button" aria-label="${ew}, ${kind}. Arrow keys move; Delete removes." aria-pressed="${sel}" draggable="true" title="${ew} — ${kind}${both?' · ↔ switches blue/gold':''}"><span class="tile-word">${displayWord(t.word,i)}</span>`
+      +(sel?`<span class="tile-bar">${both?`<button class="tile-op" data-swap="${i}" aria-label="Switch ${ew} between blue and gold">↔</button>`:''}<button class="tile-op" data-move="${i}" data-dir="-1" aria-label="Move ${ew} left">‹</button><button class="tile-op" data-move="${i}" data-dir="1" aria-label="Move ${ew} right">›</button><button class="tile-op" data-remove="${i}" aria-label="Remove ${ew}">×</button></span>`:'')+'</div>';
   }
   $('builder').innerHTML=s;
-  $('sentenceText').textContent=draft.length?formatSentence(draft,getDraftInfo().parse?.kind):'Start adding tiles…';
+  $('sentenceText').textContent=draft.length?(i=>formatSentence(draft,i.parse?.kind,i.reading))(getDraftInfo()):'Start adding tiles…';
   $('workIndicator').textContent=state.editingId!==null?'Editing sandbox sentence':state.sandbox?'Sandbox open':'Draft (not saved)';
   $('workIndicator').classList.toggle('active',!!state.sandbox);
   $('saveDraft').disabled=!draft.length;
@@ -3170,7 +3200,7 @@ function renderPortfolio(){
   const source=bankCommitted(),current=evaluateCollection(state.committed),working=evaluateCollection(source);
   $('portfolioList').innerHTML=working.evaluated.map(entry=>{
     const r=entry.result,hasGhost=entry.tiles.some(t=>t.source==='hypothetical');
-    return `<article class="sentence-row ${r.valid?'':r.pending?'pending':'invalid'}"><div><p>${htmlEscape(formatSentence(entry.tiles,r.parse?.kind))}</p><small>${r.valid?(hasGhost?'Provisional · reallocate or collect before commit':`${entry.tiles.filter(t=>t.source==='collected').length} collected tiles · ${r.score.score} points${htmlEscape(historyNote(entry))}`):r.pending?'Pending · 0 points for now · re-checked on grammar updates'+htmlEscape(historyNote(entry)):htmlEscape(reasonText(r))}</small><div class="row-actions"><button data-edit="${entry.id}">Experiment</button><button data-delete="${entry.id}">Remove</button></div></div><div class="row-score">${r.valid?`${hasGhost?'~':''}${r.score.score}`:'—'}</div></article>`;
+    return `<article class="sentence-row ${r.valid?'':r.pending?'pending':'invalid'}"><div><p>${htmlEscape(formatSentence(entry.tiles,r.parse?.kind,r.reading))}</p><small>${r.valid?(hasGhost?'Provisional · reallocate or collect before commit':`${entry.tiles.filter(t=>t.source==='collected').length} collected tiles · ${r.score.score} points${htmlEscape(historyNote(entry))}`):r.pending?'Pending · 0 points for now · re-checked on grammar updates'+htmlEscape(historyNote(entry)):htmlEscape(reasonText(r))}</small><div class="row-actions"><button data-edit="${entry.id}">Experiment</button><button data-delete="${entry.id}">Remove</button></div></div><div class="row-score">${r.valid?`${hasGhost?'~':''}${r.score.score}`:'—'}</div></article>`;
   }).join('')||'<div class="empty-state">No saved sentences. Save your draft into the sandbox, then commit the arrangement.</div>';
   $('portfolioStats').textContent=`${source.length} sentence${source.length===1?'':'s'}`;
   $('committedBest').textContent=current.best;
@@ -3370,31 +3400,7 @@ function setComposeTray(tab){
 
 // The word tray must be useful with 150+ unique finds. Contextual suggestions
 // filter the player's *unused* collection; they are not grammar guarantees.
-function renderSmartPicks(){
-  const available=[...state.inventory].filter(w=>!allocated().has(w));
-  const before=state.draft[state.insertIndex-1]?.word||'';
-  const after=state.draft[state.insertIndex]?.word||'';
-  let category='noun',label='Nouns you could try';
-  if(['can','will','must','should','to'].includes(before)){category='verb';label='Verbs after “'+before+'”';}
-  else if(['a','an','the','this','that','every','each'].includes(before)){category='adjective';label='Words to describe the next noun';}
-  else if(['because','when','if','while'].includes(before)){category='noun';label='Start a new clause';}
-  else if(after && mainPos(after).includes('noun')){category='adjective';label='Modifiers before “'+after+'”';}
-  else if(before && mainPos(before).includes('noun')){category='verb';label='Try following with a verb';}
-  const candidates=available.filter(w=>mainPos(w).includes(category)).slice(0,10);
-  $('smartPicks').innerHTML=candidates.length?'<div class="smart-title">✦ '+htmlEscape(label)+' · suggestions, not guarantees</div><div class="smart-row">'+candidates.map(w=>'<button type="button" data-suggest="'+htmlEscape(w)+'">+ '+htmlEscape(w)+'</button>').join('')+'</div>':'';
-}
-const GLOSSARY=Object.freeze({
-  adverbial:['Adverbial','A word or phrase that adds when, how, where or why something happens.','“Shiver today” — today tells us when.'],
-  'noun phrase':['Noun phrase','A noun plus the words that describe or identify it. A noun phrase can sometimes stand alone as an answer or caption.','“The vivid autumn blossom” is a noun phrase.'],
-  'noun compound':['Noun compound','A noun used to describe another noun. This does not turn the first noun into an adjective.','“Garden fence” and “autumn blossom”.'],
-  'subordinate clause':['Subordinate clause','A clause that depends on another clause, often giving a reason, condition or time.','“because the jeans know salad” explains a reason.'],
-  'verb phrase':['Verb phrase','A verb with the words that belong to it, such as objects or adverbs.','“can boil the stairs” is a verb phrase.'],
-  coordination:['Coordination','Joining grammatical units with words such as “and”, “or” or “but”.','“joke and shiver” joins two actions.'],
-  ellipsis:['Ellipsis','Words can sometimes be understood from conversation and left unsaid. The grammar depends on context.','“The garden fence can.” answers “What can keep the dog in?”.'],
-  'mass noun':['Mass noun','A noun that can be used without “a” or “an”, often for substances or activities. Some nouns have both mass and count uses.','“shallow silly chat” and “a silly chat” can both work.'],
-  'relative clause':['Relative clause','A clause that describes a noun, commonly using “that”, “who” or “which”.','“the cat that can chase the dog”.'],
-  complexity:['Complexity multiplier','The game rewards different kinds of grammatical structure much more than piling up extra nouns or adjectives.','A reason clause can earn more than another modifier.']
-});
+function renderSmartPicks(){$('smartPicks').innerHTML='';}
 function termLink(key,label=key){return '<button type="button" class="glossary-term" data-glossary="'+htmlEscape(key)+'">'+htmlEscape(label)+'</button>';}
 function openGlossary(key){
   const info=GLOSSARY[key];if(!info)return;
@@ -3402,39 +3408,41 @@ function openGlossary(key){
   const dlg=$('grammarGlossary');if(!dlg.open)dlg.showModal();
 }
 function getCoachHints(info){
-  if(!state.draft.length)return [{head:'Start with a tiny sentence!',body:'Choose a noun, then a verb. Even very short valid sentences earn points.',terms:['noun phrase','verb phrase'],need:'noun'}];
-  if(!info.valid)return [{head:'Every experiment teaches something',body:'Use Explain why to see what the parser recognised. An unsupported sentence is not automatically bad English.',terms:['noun phrase'],need:null}];
-  if(info.parse?.kind==='fragment')return [{head:'You have a complete noun phrase!',body:'Phrases and captions earn points too. Add an action to create a complete clause and unlock bigger rewards.',terms:['noun phrase','verb phrase'],need:'verb'}];
-  if(info.parse?.kind==='ellipsis')return [{head:'A valid conversational answer',body:'The missing action is understood from context. Try writing it out for a full clause, which scores more.',terms:['ellipsis','verb phrase'],need:'verb'}];
-  const feat=new Set(info.score?.features||[]),tips=[];
-  if(!feat.has('subordinate_clause'))tips.push({head:'Give a reason',body:'Could you add a reason using “because”? Combining a main action with a dependent clause earns a strong complexity bonus.',terms:['subordinate clause','complexity'],need:'because'});
-  if(!feat.has('verb_coordination')&&!feat.has('clause_coordination'))tips.push({head:'Join two ideas',body:'Try two actions joined by “and”, or two complete clauses joined together. That creates a new grammatical relationship.',terms:['coordination'],need:'verb'});
-  if(!feat.has('prepositional_phrase'))tips.push({head:'Add a little setting',body:'Can you say where or how the action happened? “In the garage” is one possible prepositional phrase.',terms:['adverbial'],need:'noun'});
-  if(!feat.has('verb_adverb')&&!feat.has('temporal_modifier'))tips.push({head:'When or how?',body:'Try an adverbial after an action, such as “today”, “online” or “later”, if you have the right word.',terms:['adverbial'],need:'adverb'});
-  if(!feat.has('adjective_modifier'))tips.push({head:'Paint a clearer picture',body:'Find an adjective for a noun you already used. One modifier is more valuable than piling up four.',terms:['noun phrase'],need:'adjective'});
-  tips.push({head:'A new kind of structure beats extra padding',body:'You can add words to any sentence, but a new kind of link between two substantial clauses earns the biggest rewards. Extra adjectives on one noun earn less each time; noun compounds keep paying for longer.',terms:['complexity','noun compound'],need:null});
+  if(!state.draft.length)return [{head:'Start small',body:'A noun and a verb make a sentence: for example a collected noun, a gold “can”, and a verb.',terms:['noun phrase','verb phrase']}];
+  if(!info.valid&&info.pending){
+    if(info.reason==='grammar_conflict')return [{head:'One fix away',body:info.diagnostic.detail,terms:[]}];
+    return [{head:'Connect the pieces',body:info.diagnostic.detail+' A verb, or a joining word such as “and” or “because”, can link the pieces into one sentence.',terms:['clause']}];}
+  if(!info.valid)return [{head:'Check the tiles',body:reasonText(info),terms:[]}];
+  const b=info.score.breakdown,tips=[],types=new Set(b.distinctLinkTypes),kind=info.parse?.kind;
+  if(kind==='fragment')tips.push({head:'Make it a sentence',body:'This is a phrase, so it scores at 0.6×. Add a verb (with a gold “can” if you like) to make a full sentence.',terms:['verb phrase']});
+  if(b.unanchoredLinks.length)tips.push({head:'Give the joined part more weight',body:'The link to “'+b.unanchoredLinks[0].dep+'” is not scored yet: each linked part needs at least two blue words.',terms:['clause']});
+  if(!types.size&&kind!=='fragment')tips.push({head:'Join a second idea',body:'Add a second clause with its own blue subject and verb, joined by “and” or “because”. Links between substantial clauses earn bonuses.',terms:['coordination','subordinate clause']});
+  else if(types.size&&types.size<3)tips.push({head:'Try a different kind of link',body:'You have '+[...types].map(t=>t.replace(/_/g,' ')).join(' and ')+'. A new kind of link — a reason (because …), a relative clause (that …) or an infinitive (decide to …) — earns far more than another “and”.',terms:['subordinate clause']});
+  if(b.tiles.some(t=>/stack/.test(t.note||'')))tips.push({head:'Swap an adjective for a noun',body:'Each extra adjective on one noun earns less. Noun compounds (“banana menu output”) keep paying for longer.',terms:['noun compound']});
+  if(b.tiles.some(t=>t.note==='list item'))tips.push({head:'Lists taper',body:'Plain lists earn less from the third item. Give the items words of their own instead.',terms:['coordination']});
+  if(b.blueTiles<6&&kind!=='fragment')tips.push({head:'Longer sentences pay more per word',body:'Your size bonus is ×'+b.sizeMultiplier.toFixed(2)+'; it rises towards ×1.6 as you add blue words.',terms:['complexity']});
+  if(!tips.length)tips.push({head:'A strong sentence',body:'Nothing obvious to add. Check the reading in the Syntax view, or save it and start another.',terms:[]});
   return tips;
 }
 function renderCoach(info){
+  const sig=state.draft.map(t=>t.word+'/'+t.source).join(' ');
+  if(state.coachOpen&&state.coachSig!==undefined&&state.coachSig!==sig){state.coachOpen=false;state.hintIndex=0;}
+  state.coachSig=sig;
+  const hints=getCoachHints(info);
+  if(state.coachOpen&&state.hintIndex>=hints.length){state.coachOpen=false;state.hintIndex=0;}
   const panel=$('coachPanel');panel.hidden=!state.coachOpen;
   $('coachButton').setAttribute('aria-expanded',String(state.coachOpen));
-  $('coachButton').textContent=state.coachOpen?'Another idea ✦':'Get a tip ✨';
+  $('coachButton').textContent=!state.coachOpen?'Get a tip ✨':state.hintIndex+1<hints.length?'Next tip ›':'Close tip';
   if(!state.coachOpen)return;
-  const hints=getCoachHints(info),hint=hints[state.hintIndex%hints.length];
-  const available=[...state.inventory].filter(w=>!allocated().has(w));
-  let suggestions=[];
-  if(hint.need==='because')suggestions=[...state.unlocked].filter(w=>w==='because').concat(available.filter(w=>w==='because'));
-  else if(hint.need){suggestions=available.filter(w=>mainPos(w).includes(hint.need)).slice(0,6);}
-  panel.innerHTML='<strong>'+htmlEscape(hint.head)+'</strong><p>'+htmlEscape(hint.body)+'</p>'+
-    '<p class="tiny muted">Learn: '+hint.terms.map(t=>termLink(t)).join(' · ')+'</p>'+
-    (suggestions.length?'<div class="coach-words"><span class="muted tiny">In your collection:</span>'+suggestions.map(w=>'<button type="button" class="coach-word" data-coachword="'+htmlEscape(w)+'">'+htmlEscape(w)+'</button>').join('')+'</div>':'');
+  const hint=hints[state.hintIndex];
+  panel.innerHTML='<strong>'+htmlEscape(hint.head)+'</strong><p>'+htmlEscape(hint.body)+'</p>'+(hints.length>1?'<p class="tiny muted">Tip '+(state.hintIndex+1)+' of '+hints.length+'</p>':'')+(hint.terms.length?'<p class="tiny muted">Learn: '+hint.terms.map(t=>termLink(t)).join(' · ')+'</p>':'');
 }
 function renderComposeTray(){
   const used=allocated(),available=[...state.inventory].sort().filter(w=>!used.has(w));
   const matching=available.filter(w=>w.includes(state.composeFilter)&& (state.composePosFilter==='all'||mainPos(w).includes(state.composePosFilter)));
-  const limit=state.composeBankExpanded?matching.length:70;
+  const limit=matching.length;
   $('composeWordBank').innerHTML=matching.slice(0,limit).map(w=>`<button type="button" class="word-pick" data-composeword="${htmlEscape(w)}"><span>${htmlEscape(w)}</span><small>${htmlEscape(posLabel(w))}</small></button>`).join('')||'<span class="muted tiny">Nothing available matches. Try another search or collect more words.</span>';
-  $('composeBankMore').innerHTML=matching.length>70?`<button type="button" id="composeExpand">${state.composeBankExpanded?'Show fewer':`Show all ${matching.length} words`}</button>`:'';
+  $('composeBankMore').innerHTML='';scrollCue($('composeWordBank'));
   $('composeAvailableCount').textContent=`${available.length} available · ${state.insertIndex===state.draft.length?'adding at end':state.insertIndex===0?'adding at start':`adding after “${state.draft[state.insertIndex-1]?.word}”`}`;
   renderSmartPicks();
   $('composeHelperBank').innerHTML=[...state.unlocked].sort().map(w=>`<button type="button" class="helper-pick unlocked" data-composehelper="${htmlEscape(w)}">+ ${htmlEscape(w)} <small>∞</small></button>`).join('')||'<span class="muted tiny">No helpers unlocked yet. Open the Helpers tab to try some.</span>';
@@ -3484,7 +3492,7 @@ function bindMobileEvents(){
   $('mobilePlaceEnd').addEventListener('click',()=>{state.selectedTile=null;state.insertIndex=state.draft.length;renderBuilder();renderComposeTray();});
   $('mobileMoveLeft').addEventListener('click',()=>{if(state.selectedTile!==null)moveDraft(state.selectedTile,state.selectedTile-1);});
   $('mobileMoveRight').addEventListener('click',()=>{if(state.selectedTile!==null)moveDraft(state.selectedTile,state.selectedTile+1);});
-  $('mobileRemoveTile').addEventListener('click',()=>{const i=state.selectedTile;if(i===null)return;state.draft.splice(i,1);state.selectedTile=null;state.insertIndex=Math.min(i,state.draft.length);renderAll();});
+  $('mobileRemoveTile').addEventListener('click',()=>{const i=state.selectedTile;if(i===null)return;showUndo(state.draft[i],i);state.draft.splice(i,1);state.selectedTile=null;state.insertIndex=Math.min(i,state.draft.length);renderAll();});
   $('mobileSwitchSource').addEventListener('click',()=>{if(state.selectedTile!==null)convertSource(state.selectedTile);});
   $('mobileDiscard').addEventListener('click',()=>state.draft.length?cancelDraft():cancelSandbox());
   $('mobileSave').addEventListener('click',saveDraft);
@@ -3520,7 +3528,7 @@ function bindEvents(){
   // Helper tiles are also exposed in the collector by a dedicated tap-to-add
   // strip inserted after the helper bank (see setup below).
   $('builder').addEventListener('click',e=>{
-    const rm=e.target.closest('[data-remove]');if(rm){const i=Number(rm.dataset.remove);state.draft.splice(i,1);state.insertIndex=Math.min(i,state.draft.length);state.selectedTile=null;renderAll();return;}
+    const rm=e.target.closest('[data-remove]');if(rm){const i=Number(rm.dataset.remove);showUndo(state.draft[i],i);state.draft.splice(i,1);state.insertIndex=Math.min(i,state.draft.length);state.selectedTile=null;renderAll();return;}
     const mov=e.target.closest('[data-move]');if(mov){moveDraft(Number(mov.dataset.move),Number(mov.dataset.move)+Number(mov.dataset.dir));return;}
     const sw=e.target.closest('[data-swap]');if(sw){convertSource(Number(sw.dataset.swap));return;}
     const ins=e.target.closest('[data-insert]');if(ins){state.insertIndex=Number(ins.dataset.insert);state.selectedTile=null;renderBuilder();renderComposeTray();return;}
@@ -3612,6 +3620,94 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-pin-index]
   const sig=state.draft.map(t=>t.word).join(' ');const prev=(state.draftPins&&state.draftPins.sig===sig)?{...state.draftPins.pins}:{};
   const i=b.dataset.pinIndex,p=b.dataset.pinPos;if(p)prev[i]=p;else delete prev[i];
   state.draftPins=Object.keys(prev).length?{sig,pins:prev}:null;renderAll();scheduleAutosave();});
+// ---- removal, undo, drag to remove, long-press drag on touch, keyboard ----
+let undoTimer=null;
+// Float above the mobile action dock (measured, since its height varies).
+function placeFloating(el){const d=document.getElementById('mobileActionDock');const r=d&&d.getBoundingClientRect();
+  const visible=r&&r.height>0&&getComputedStyle(d).display!=='none'&&r.top<innerHeight;el.style.bottom=(visible?Math.round(innerHeight-r.top)+12:24)+'px';}
+function showUndo(tile,index){if(!tile)return;state.lastRemoved={tile:clone(tile),index};const u=$('undoToast');
+  u.innerHTML='Removed “'+htmlEscape(tile.word)+'” <button type="button" id="undoRemove">Undo</button>';u.hidden=false;placeFloating(u);
+  clearTimeout(undoTimer);undoTimer=setTimeout(()=>{u.hidden=true;},6000);}
+function removeTileAt(i){if(i<0||i>=state.draft.length)return;showUndo(state.draft[i],i);state.draft.splice(i,1);state.insertIndex=Math.min(i,state.draft.length);state.selectedTile=null;renderAll();scheduleAutosave();}
+document.addEventListener('click',e=>{if(!e.target.closest('#undoRemove'))return;const r=state.lastRemoved;if(!r)return;
+  state.draft.splice(Math.min(r.index,state.draft.length),0,r.tile);state.lastRemoved=null;$('undoToast').hidden=true;state.insertIndex=r.index+1;renderAll();scheduleAutosave();});
+const bin=$('tileBin');
+bin.addEventListener('dragover',e=>{e.preventDefault();bin.classList.add('hot');});
+bin.addEventListener('dragleave',()=>bin.classList.remove('hot'));
+bin.addEventListener('drop',e=>{e.preventDefault();bin.classList.remove('hot');const p=state.dragPayload;if(p&&p.from==='draft')removeTileAt(p.index);bin.hidden=true;document.body.classList.remove('tile-dragging');});
+$('builder').addEventListener('dragstart',e=>{if(e.target.closest('[data-tile]')){bin.hidden=false;$('undoToast').hidden=true;placeFloating(bin);document.body.classList.add('tile-dragging');}});
+$('builder').addEventListener('dragend',()=>{bin.hidden=true;document.body.classList.remove('tile-dragging');});
+(function touchDrag(){
+  const B=$('builder');let lp=null,suppressUntil=0;
+  B.addEventListener('pointerdown',e=>{if(e.pointerType==='mouse')return;const tile=e.target.closest('[data-tile]');if(!tile||e.target.closest('.tile-op'))return;
+    const s={x:e.clientX,y:e.clientY,i:Number(tile.dataset.tile),id:e.pointerId,tile,active:false};
+    s.timer=setTimeout(()=>{s.active=true;tile.classList.add('is-dragging','lifted');bin.hidden=false;$('undoToast').hidden=true;placeFloating(bin);document.body.classList.add('tile-dragging');try{tile.setPointerCapture(s.id);}catch(_){}if(navigator.vibrate)navigator.vibrate(10);},320);lp=s;});
+  B.addEventListener('touchmove',e=>{if(lp&&lp.active)e.preventDefault();},{passive:false});
+  const move=e=>{if(!lp)return;if(!lp.active){if(Math.hypot(e.clientX-lp.x,e.clientY-lp.y)>8){clearTimeout(lp.timer);lp=null;}return;}
+    e.preventDefault();lp.tile.style.transform='translate('+(e.clientX-lp.x)+'px,'+(e.clientY-lp.y)+'px)';
+    lp.tile.style.pointerEvents='none';const el=document.elementFromPoint(e.clientX,e.clientY);lp.tile.style.pointerEvents='';
+    bin.classList.toggle('hot',!!(el&&el.closest('#tileBin')));};
+  const end=e=>{if(!lp)return;clearTimeout(lp.timer);const s=lp;lp=null;if(!s.active)return;suppressUntil=Date.now()+450;
+    s.tile.style.pointerEvents='none';const el=document.elementFromPoint(e.clientX,e.clientY);s.tile.style.pointerEvents='';
+    s.tile.style.transform='';s.tile.classList.remove('is-dragging','lifted');bin.hidden=true;bin.classList.remove('hot');document.body.classList.remove('tile-dragging');
+    if(e.type==='pointercancel')return renderAll();
+    if(el&&el.closest('#tileBin'))return removeTileAt(s.i);
+    const slot=el&&el.closest('[data-insert]'),t2=el&&el.closest('[data-tile]');let at=null;
+    if(slot)at=Number(slot.dataset.insert);else if(t2){const r=t2.getBoundingClientRect();at=Number(t2.dataset.tile)+(e.clientX>r.left+r.width/2?1:0);}
+    if(at!==null&&at!==s.i&&at!==s.i+1)handleDrop({from:'draft',index:s.i},at);else renderAll();};
+  B.addEventListener('pointermove',move);B.addEventListener('pointerup',end);B.addEventListener('pointercancel',end);
+  B.addEventListener('click',e=>{if(Date.now()<suppressUntil){e.stopPropagation();e.preventDefault();}},true);
+})();
+$('builder').addEventListener('keydown',e=>{const tile=e.target.closest('[data-tile]');if(!tile)return;const i=Number(tile.dataset.tile);
+  if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();removeTileAt(i);const n=$('builder').querySelector('[data-tile="'+Math.max(0,i-1)+'"]');if(n)n.focus();}
+  else if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&(e.altKey||e.shiftKey||state.selectedTile===i)){e.preventDefault();const to=i+(e.key==='ArrowLeft'?-1:1);moveDraft(i,to);const n=$('builder').querySelector('[data-tile="'+to+'"]');if(n)n.focus();}
+  else if(e.key==='Enter'||e.key===' '){e.preventDefault();tile.click();}});
+
+// ---- typed entry with BIP39 four-letter completion ----
+const HELPER_BIP=new Set(HELPER_CANDIDATES.filter(w=>bip39.has(w)));
+const BIP_LIST=[...bip39].sort();
+function typedSource(w){
+  if(state.unlocked.has(w)&&(!bip39.has(w)||HELPER_BIP.has(w)))return 'helper';
+  if(bip39.has(w)){if(state.inventory.has(w))return allocated().has(w)?'taken':'collected';return 'hypothetical';}
+  if(HELPER_CANDIDATES.includes(w))return 'locked';
+  return null;
+}
+function completeTyped(w){
+  const src=typedSource(w);
+  if(src==='taken'){setNotice('“'+w+'” is already in this draft or another sentence.','bad');renderAll();return false;}
+  if(src==='locked'){setNotice('Unlock the helper “'+w+'” first (Helpers).','bad');renderAll();return false;}
+  if(!src){setNotice('“'+w+'” is not a BIP39 word or a helper.','bad');renderAll();return false;}
+  addTile(w,src);return true;
+}
+function typedCandidates(p){
+  if(!p)return [];
+  const out=[],seen=new Set(),push=(w,src)=>{if(!seen.has(w)){seen.add(w);out.push([w,src]);}};
+  for(const w of [...state.unlocked].sort())if(w.startsWith(p))push(w,'helper');
+  for(const w of BIP_LIST)if(w.startsWith(p)){const s=typedSource(w);if(s==='collected'||s==='helper')push(w,s);}
+  if(p.length>=2)for(const w of BIP_LIST)if(w.startsWith(p)&&typedSource(w)==='hypothetical')push(w,'hypothetical');
+  return out.slice(0,8);
+}
+function renderTyped(){
+  const el=$('typeEntry'),p=el.value.trim().toLowerCase(),c=typedCandidates(p);
+  $('typeSuggest').innerHTML=c.map(([w,s])=>'<button type="button" class="type-chip '+s+'" data-typeword="'+htmlEscape(w)+'">'+htmlEscape(w)+(s==='hypothetical'?' <small>try</small>':'')+'</button>').join('');
+}
+const typeEl=$('typeEntry');
+typeEl.addEventListener('input',()=>{
+  let v=typeEl.value.toLowerCase();
+  if(/\s$/.test(v)){const w=v.trim();if(w){const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w);const m=BIP_LIST.filter(x=>x.startsWith(w));
+      const pick=exact?w:(m.length===1?m[0]:null);if(pick&&completeTyped(pick))typeEl.value='';else typeEl.value=w;}else typeEl.value='';}
+  else{const w=v.trim();
+    // BIP39: the first four letters identify a word uniquely. Complete at 4+
+    // letters unless what is typed is itself a complete word or helper ("some").
+    if(w.length>=4&&!bip39.has(w)&&!HELPER_CANDIDATES.includes(w)){const m=BIP_LIST.filter(x=>x.startsWith(w));if(m.length===1&&completeTyped(m[0]))typeEl.value='';}}
+  renderTyped();});
+typeEl.addEventListener('keydown',e=>{
+  if(e.key==='Backspace'&&typeEl.value===''&&state.insertIndex>0){e.preventDefault();const i=state.insertIndex-1,t=state.draft[i];
+    state.draft.splice(i,1);state.insertIndex=i;state.selectedTile=null;typeEl.value=t.word;renderAll();renderTyped();}
+  else if(e.key==='Enter'){e.preventDefault();const w=typeEl.value.trim().toLowerCase();if(!w)return;
+    const exact=bip39.has(w)||HELPER_CANDIDATES.includes(w),c=typedCandidates(w),pick=exact?w:(c.length?c[0][0]:null);
+    if(pick&&completeTyped(pick))typeEl.value='';renderTyped();}});
+$('typeSuggest').addEventListener('click',e=>{const b=e.target.closest('[data-typeword]');if(!b)return;if(completeTyped(b.dataset.typeword))typeEl.value='';renderTyped();typeEl.focus();});
 bindEvents();attachHelperInsertion();
 let resumed=false;
 try{const saved=localStorage.getItem(SAVE_KEY);
