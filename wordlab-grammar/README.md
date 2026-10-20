@@ -1,6 +1,6 @@
-# Starpin Word Lab — grammar and scoring prototype (Phases 0–2)
+# Starpin Word Lab — grammar, scoring and game (Phases 0–3)
 
-A standalone Node prototype of a replacement grammar engine and scorer for Word Lab. It does **not** modify the Word Lab game, its HTML, or any saved session. Node ≥ 18, no dependencies.
+A replacement grammar engine and scorer for Word Lab, and the v2.0 game built from them. It does **not** modify the Word Lab game, its HTML, or any saved session. Node ≥ 18, no dependencies.
 
 Start with `reports/PHASE0_REPORT.md` (results), then `reports/probe_analyses.md` (actual analyses) and `reports/lexical_policy.md` (every lexical change and its evidence).
 
@@ -30,6 +30,22 @@ engine.parse([{word: 'kick', source: 'collected'}, {word: 'the', source: 'helper
               {word: 'angry', source: 'collected'}, {word: 'can', source: 'helper'}]);
 engine.parse(text, {pins: {20: 'V'}});                       // choose a reading
 ```
+
+## The game (Phase 3)
+
+`dist/Starpin_Word_Lab_v2_0.html` is the playable single-file game. Rebuild it from the v1.1 file, which is left unchanged:
+
+```
+node tools/build_game.js path/to/Starpin_Word_Lab_v1_1_Starpin.html   # -> dist/Starpin_Word_Lab_v2_0.html
+python3 tests/browser_game_test.py /tmp/legacy_session.json           # end-to-end check (Playwright + Chromium)
+```
+
+What happens on first load:
+- The v1.1 browser snapshot (`starpin-word-lab-v1.1-local-snapshot`) is migrated on the device, and is never modified.
+- Progress is saved under `starpin-word-lab-v2-local-snapshot`.
+- Exported v1.1 and v2 session files both import.
+
+The interface adapter is `src/game_adapter.js`. Each build patch must match the v1.1 source exactly once, so a changed v1.1 file stops the build rather than producing a broken game.
 
 ## Scoring (Phase 2)
 

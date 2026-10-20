@@ -122,7 +122,10 @@ const COLLECTIVE_ANCESTORS = new Set(['social group', 'animal group', 'gathering
 const LEX_OFF = new Set(String((typeof process !== 'undefined' && process.env && process.env.WL_OFF) || '').split(',').filter(Boolean));
 // Attested verb-frame types that passed the ERG validation rule (marginal
 // sentences ERG-analysed at >= 0.8 of the length-matched curated rate).
-const FRAME_VALIDATED = new Set((typeof process !== 'undefined' && process.env && process.env.WL_ALL_FRAMES) ? ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'] : ['intr']);
+// Run 3 (held out, Phase 1 engine): the residual WordNet/Wiktionary intransitive
+// frames scored 0.68, so no WordNet/Wiktionary frame type is enabled; ERG
+// lexicon frames (intransitive, optional object, etc.) supply verb frames.
+const FRAME_VALIDATED = new Set((typeof process !== 'undefined' && process.env && process.env.WL_ALL_FRAMES) ? ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'] : []);
 const ZERO_PLURAL = new Set(['staff']);
 const MODAL_WORDS = new Set(['can', 'must', 'will']);
 // v1.1 fused-head list ("the sick"): kept as curated, not generalised.
@@ -249,10 +252,10 @@ function compileLexicon(v11, oewn, options = {}) {
         if (LEX_OFF.has('VF_' + m)) continue;
         // Verbs v1.1 marks as requiring a particle/preposition do not gain a bare frame.
         if ((a.requires_particle_or_preposition || []).length) continue;
-        // ERG validation (2026-10-19, length-controlled): sentences admitted only
-        // by added intransitive frames were ERG-analysed at 0.82 of the curated
-        // rate; added tr/ditr/copular/to-infinitive/clause frames at 0.33-0.70.
-        // Those are demoted to 'inferred' (recorded, not enabled by default).
+        // ERG validation (length-controlled): tr/ditr/copular/to-infinitive/clause
+        // frames failed in run 1 (0.33-0.70); intransitive frames failed in the
+        // held-out run 3 (0.68) once ERG frames were added. All are 'inferred'
+        // (recorded, not enabled by default).
         const tier = FRAME_VALIDATED.has(m) ? 'attested' : 'inferred';
         if (tier === 'inferred') policy.inferredPool.push({word: w, cat: 'V', f: {fr: m}, premise: 'WordNet/Wiktionary ' + m + ' frame failed ERG validation (2026-10-19)'});
         for (const vf of vfs) add(w, 'V', {fr: m, vf}, tier, [...new Set(srcs)].join('; '), 'verb frame ' + m);

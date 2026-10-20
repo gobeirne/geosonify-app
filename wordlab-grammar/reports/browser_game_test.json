@@ -1,0 +1,101 @@
+{
+ "migration keeps inventory, helpers and sentences": {
+  "ok": true,
+  "detail": "167 words, 9 helpers, 3 sentences"
+ },
+ "each migrated sentence keeps its v1.1 score in history": {
+  "ok": true,
+  "detail": "v1.1 [418, 165, 216] -> v2 [259, 232, 239]"
+ },
+ "migration notice shown": {
+  "ok": true,
+  "detail": ""
+ },
+ "v1.1 snapshot left untouched": {
+  "ok": true,
+  "detail": ""
+ },
+ "draft is scored": {
+  "ok": true,
+  "detail": [
+   "the august affair can consider the banana banner",
+   {
+    "valid": true,
+    "pending": false,
+    "reason": null,
+    "score": 64,
+    "kind": "clause",
+    "cps": 0,
+    "pinned": false
+   }
+  ]
+ },
+ "a grammar-level failure is pending, not blocked": {
+  "ok": true,
+  "detail": {
+   "valid": false,
+   "pending": true,
+   "reason": "outside_supported_grammar",
+   "score": null,
+   "kind": null,
+   "cps": 0,
+   "pinned": false
+  }
+ },
+ "pending sentence can be saved and committed": {
+  "ok": true,
+  "detail": "4 committed"
+ },
+ "pending sentence reserves its blue tiles": {
+  "ok": true,
+  "detail": "reusing \"buyer\" -> refused={'len': 0, 'text': True}"
+ },
+ "portfolio shows pending and v1.1 history": {
+  "ok": true,
+  "detail": ""
+ },
+ "ambiguous draft offers choice points": {
+  "ok": true,
+  "detail": [
+   "the garage can oppose the steel ketchup",
+   {
+    "valid": true,
+    "pending": false,
+    "reason": null,
+    "score": 57,
+    "kind": "clause",
+    "cps": 1,
+    "pinned": false
+   }
+  ]
+ },
+ "tapping a reading pins it": {
+  "ok": true,
+  "detail": {
+   "clicked": "N",
+   "pinned": true,
+   "valid": true,
+   "score": 57
+  }
+ },
+ "editing the sentence drops stale pins": {
+  "ok": true,
+  "detail": ""
+ },
+ "autosave writes a version-2 snapshot": {
+  "ok": true,
+  "detail": ""
+ },
+ "reload resumes v2 snapshot (no re-migration)": {
+  "ok": true,
+  "detail": "4 committed"
+ },
+ "history preserved across reload": {
+  "ok": true,
+  "detail": ""
+ },
+ "no JavaScript errors": {
+  "ok": true,
+  "detail": []
+ }
+}

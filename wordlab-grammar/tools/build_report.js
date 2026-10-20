@@ -33,7 +33,7 @@ function v11Verdict(p) {
 
 const L = [];
 const push = (...xs) => L.push(...xs);
-push('# Starpin Word Lab — grammar and scoring prototype (Phases 0–2): report', '',
+push('# Starpin Word Lab — grammar, scoring and game (Phases 0–3): report', '',
   `Engine \`${engine.VERSION}\` · strict grammar ${engine.stats.strictRules} atomic rules, relaxed ${engine.stats.relaxedRules}, ${engine.stats.symbols} symbols · strict-grammar compile ${engine.compileMs.toFixed(0)} ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in ${engine.relaxedCompileMs.toFixed(0)} ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.`, '',
   'Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.', '');
 
@@ -163,6 +163,34 @@ if (fs.existsSync(path.join(root, 'reports', 'erg_phase0b_analysis.json'))) {
   push('');
 }
 
+// ---------------------------------------------------------------- ERG run 3
+if (fs.existsSync(path.join(root, 'reports', 'erg_phase1_analysis.json'))) {
+  const E3 = R('reports/erg_phase1_analysis.json');
+  const A3 = fs.existsSync(path.join(root, 'reports', 'erg_phase1_ablation.json')) ? R('reports/erg_phase1_ablation.json') : null;
+  push('## ERG held-out check of Phase 1 (measured: third Colab run)', '',
+    `Batch \`erg/phase1_batch.jsonl\` (${E3.items.length} items) from the Phase 1 engine. ERG witnesses **${(100 * E3.positiveWitnessRate).toFixed(1)}%** of generated sentences.`, '');
+  if (A3) push('Retained evidence sources, held out: ' + ['MASS', 'IDIOM', 'VF_intr'].map(k => ({MASS: 'Wiktionary mass readings', IDIOM: 'OEWN idiomatic PPs', VF_intr: 'residual WordNet/Wiktionary intransitive frames'}[k] + ' ' + A3[k].lengthControlledRatio + ' (n ' + A3[k].addsAcceptances + ')')).join('; ') + '. The residual WordNet/Wiktionary intransitive frames fell below 0.8, so, as committed after run 2, no WordNet/Wiktionary frame type is enabled any longer; ERG lexicon frames (intransitive and optional-object) supply verb frames. One probe changed as a result: the canonical reading of *the vivid autumn blossom and the famous canvas cat bag* is now the intended noun-phrase fragment (intransitive *bag* came only from a WordNet frame).', '');
+  push('| Why ERG analyses what the engine rejects (run 3) | Items |', '|---|---:|');
+  for (const [k, v] of Object.entries(E3.falseRejectionCauses || {}).sort((p, q) => q[1] - p[1])) push(`| ${k} | ${v} |`);
+  push('');
+}
+
+// ---------------------------------------------------------------- Phase 3
+const BT = fs.existsSync(path.join(root, 'reports', 'browser_game_test.json')) ? R('reports/browser_game_test.json') : null;
+push('## Phase 3: the game (`dist/Starpin_Word_Lab_v2_0.html`)', '',
+  'Built from the v1.1 single-file game by `tools/build_game.js`; the v1.1 file is not modified, and every patch must match the v1.1 source exactly once. The interface keeps its layout; the grammar, scorer, score panel, explanation, tree and portfolio rows are replaced, and the v1.1 parser is kept only to record each migrated sentence\'s v1.1 score.', '',
+  '- **Migration on the device:** on first load, the v1.1 browser snapshot is imported (inventory, helpers including *has*, sentences, sandbox, draft); the v1.1 snapshot is left untouched; a v2 snapshot is written. Exported v1.1 session files import too.',
+  '- **Version history:** every sentence records its score under each grammar/scorer version (migrated sentences start with their v1.1 score), shown as “was … under …” in the portfolio.',
+  '- **Pending sentences:** a grammar-level failure (named conflict, or outside the grammar) can be saved and committed; it reserves its blue tiles, scores 0, and is re-checked whenever the grammar or scorer changes. Tile problems (uncollected, already used, helper locked) still block saving.',
+  '- **Reading choice:** the syntax view lists only the words whose role differs between readings; tapping a role pins it and the score follows. Pins belong to the exact word sequence, so editing drops them.',
+  '- **Score panel:** blue tiles, word-role points, size multiplier, clause links, link-type and embedding bonuses, per-word points, and notes when a link is not scored or a list/adjective stack tapers.',
+  '- The obsolete “modifiers per noun” setting is hidden (stacks taper instead).', '');
+if (BT) {
+  push('End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone viewport, seeded with the v1.1 session):', '', '| Check | Result |', '|---|---|');
+  for (const [k, v] of Object.entries(BT)) push(`| ${k} | ${v.ok ? 'pass' : 'FAIL'}${v.detail && typeof v.detail === 'string' ? ' — ' + v.detail.replace(/\|/g, '/') : ''} |`);
+  push('');
+}
+
 // ---------------------------------------------------------------- decisions
 push('## Recorded policy decisions', '',
   '- **Count→mass coercion ("grinding") is excluded from the default grammar** (Greg O\'Beirne, 2026-10-19). A singular count noun is used bare only where a mass reading is attested. This keeps determiner choice meaningful; grinding may later become a separately flagged rare reading.',
@@ -255,6 +283,6 @@ push('## Scoring invariants for Phase 2 (proposal, not implemented)', '',
   '- **P6** The score is computed on the canonical (or player-pinned) reading, chosen without consulting the score; score spread across readings is a tracked metric.',
   '- **P7** Portfolio score is the order-independent sum of sentence scores.', '');
 
-push('## Next steps', '', '- **Phase 3 (integration into the game):** replace the v1.1 parser and scorer, three-state display with conflict spans, reading choice by pinning, versioned session migration (tiles, provenance, has), pending sentences re-scored on grammar updates, and an iPhone persistence/touch test.', '- Optional: a third ERG run on `erg/phase1_batch.jsonl` (built from the Phase 1 engine) to measure the post-auxiliary ellipsis and ERG-frame changes on held-out data.', '');
+push('## Next steps', '', '- Play-test `dist/Starpin_Word_Lab_v2_0.html` on the iPhone (real touch, real storage, the live v1.1 session).', '- Not yet built: competition mode with frozen grammar/scorer versions; Starpin collection-log verification for leaderboards; morphology helpers (-s, -ed, -ing).', '');
 fs.writeFileSync(path.join(root, 'reports', 'PHASE0_REPORT.md'), L.join('\n'));
 console.log('wrote reports/PHASE0_REPORT.md (' + L.length + ' lines)');

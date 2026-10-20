@@ -64,7 +64,9 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
   }
 
   // ------------------------------------------------------------ analysis
+  const leafCatName = new Map();
   function analyse(tree, tiles, leafInfo, cg) {
+    leafCatName.clear(); cg.names.forEach((nm, id) => leafCatName.set(id, nm));
     const words = tiles.map(t => t.word);
     const rel = [], fam = new Set(), roles = new Array(tiles.length).fill(null), viol = [];
     let utype = null;
@@ -105,8 +107,9 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
     // A declarative whose root is an auxiliary is an elliptical utterance.
     if (utype === 'declarative' && roles[root] && ['Modal', 'Cop', 'Do', 'HaveAux'].includes(roles[root].pos)) utype = 'ellipsis';
     const bracket = brk(tree, words);
+    const display = dispTree(tree, words);
     const prefCost = treeCost(tree, leafInfo);
-    return {utteranceType: utype, bracket, roles, relations: rel, families: [...fam].sort(), violations: viol, cost: prefCost,
+    return {utteranceType: utype, bracket, tree: display, roles, relations: rel, families: [...fam].sort(), violations: viol, cost: prefCost,
       signature: bracket + ' | ' + roles.map(r => r.pos + ':' + r.role).join(' ')};
   }
   function topType(n) {
@@ -120,6 +123,24 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
     if (n.leaf) { const r = leafInfo[n.tok].get(n.sym); return r ? lexicon.TIER_COST[r.tier] : 0; }
     return n.rule.cost + n.kids.reduce((a, k) => a + treeCost(k, leafInfo), 0);
   }
+  // Display tree for interfaces: {label, kind, start, end, children} with
+  // terminals {kind:'terminal', label, word, index}; helper categories spliced.
+  const KIND = {S: 'clause', NP: 'noun_phrase', VP: 'verb_phrase', FP: 'finite_predicate', PP: 'prepositional_phrase', AdjP: 'adjective',
+    Imp: 'imperative', Q: 'question', Frag: 'fragment', Utt: 'utterance', SubCl: 'subordinate_clause', Ellipsis: 'ellipsis'};
+  const TAG = {N: 'N', NIdiom: 'N', Adj: 'Adj', AdjFused: 'Adj', AdvDeg: 'Deg', AdvPre: 'Adv', AdvPost: 'Adv', AdvFocus: 'Adv', V: 'V', VPrep: 'V', Det: 'Det',
+    Pron: 'Pron', P: 'P', Modal: 'Mod', Cop: 'Aux', Be: 'Aux', Do: 'Aux', HaveAux: 'Aux', Not: 'Neg', To: 'To', Conj: 'Conj', ForCoord: 'Conj', Sub: 'Sub', Comp: 'Comp', Rel: 'Rel'};
+  function dispTree(n, words) {
+    const flat = x => {
+      if (x.leaf) { const cat = cgNameCat(x); return [{kind: 'terminal', label: TAG[cat] || cat, word: words[x.tok], index: x.tok, start: x.tok, end: x.tok + 1, children: []}]; }
+      const kids = x.kids.flatMap(flat);
+      const d = x.rule.spec.disp;
+      if (!d) return kids;
+      return [{label: d, kind: KIND[d] || d.toLowerCase(), start: kids[0].start, end: kids[kids.length - 1].end, children: kids}];
+    };
+    const top = flat(n);
+    return top.length === 1 && top[0].kind !== 'terminal' ? top[0] : {label: 'UTT', kind: 'utterance', start: 0, end: words.length, children: top};
+  }
+  function cgNameCat(leaf) { return (leafCatName.get(leaf.sym) || '').split('[')[0]; }
   // Display bracketing: phrasal labels only; helper categories are spliced.
   function brk(n, words) {
     if (n.leaf) return words[n.tok];

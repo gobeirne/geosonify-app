@@ -24,15 +24,15 @@
   "violations": 0
  },
  "P6": {
-  "sentencesWithAlternatives": 520,
+  "sentencesWithAlternatives": 506,
   "medianRelativeSpread": 0,
   "p90RelativeSpread": 0.269
  },
- "P2readingChanges": 21,
+ "P2readingChanges": 23,
  "P2": {
-  "insertions": 729,
+  "insertions": 717,
   "violations": 0,
-  "insertionsThatChangeStructure": 21
+  "insertionsThatChangeStructure": 23
  },
  "P3": {
   "goldOnlySentences": 150,
@@ -349,7 +349,7 @@
   "compound": 100.00000000000003
  },
  "J": {
-  "joins": 14,
+  "joins": 10,
   "violations": 0
  },
  "S": [
@@ -461,187 +461,188 @@
   "candidates": 6000,
   "perTileBySize": {
    "1-2": {
-    "n": 699,
+    "n": 696,
     "median": 10,
     "p90": 10.9
    },
    "3-4": {
-    "n": 1771,
+    "n": 1782,
     "median": 10.5,
     "p90": 12.3
    },
    "5-6": {
-    "n": 1478,
-    "median": 12,
+    "n": 1486,
+    "median": 11.8,
     "p90": 14.2
    },
    "7-9": {
-    "n": 1446,
+    "n": 1423,
     "median": 12.6,
-    "p90": 16.7
+    "p90": 16.3
    },
    "10+": {
-    "n": 606,
-    "median": 14.7,
-    "p90": 18
+    "n": 613,
+    "median": 14.5,
+    "p90": 17.8
    }
   },
   "greedyByPointsPerTile": {
-   "sentences": 62,
-   "blueTilesUsed": 145,
-   "total": 1939,
-   "perTile": 13.37,
+   "sentences": 61,
+   "blueTilesUsed": 141,
+   "total": 1817,
+   "perTile": 12.89,
    "meanBluePerSentence": 2.3,
    "utteranceTypes": {
-    "imperative": 28,
-    "declarative": 3,
+    "imperative": 20,
+    "declarative": 2,
     "question": 13,
-    "ellipsis": 6,
-    "fragment": 12
+    "ellipsis": 3,
+    "fragment": 23
    },
    "structuralShare": 0.14,
-   "listItems": 3,
+   "listItems": 2,
    "topFamilies": [
     [
      "noun_head",
-     40
+     48
     ],
     [
      "np_premodifier",
-     40
+     48
     ],
     [
      "determiner",
-     34
+     45
     ],
     [
-     "imperative",
-     28
-    ],
-    [
-     "intransitive",
-     28
-    ],
-    [
-     "adjective",
-     13
-    ],
-    [
-     "question",
-     13
-    ],
-    [
-     "bare_np",
-     12
-    ],
-    [
-     "clause",
-     12
-    ],
-    [
-     "verb_coordination",
-     12
-    ]
-   ],
-   "best": [
-    {
-     "score": 308,
-     "text": "holiday and joke later because all can and jeans renew for the nation say stairs can and can and must"
-    },
-    {
-     "score": 197,
-     "text": "abandon and measure tonight in autumn and message ketchup and void just junk and taste civil"
-    },
-    {
-     "score": 118,
-     "text": "level a canvas october and barely castle and melt and leaf"
-    },
-    {
-     "score": 94,
-     "text": "the affair core can consider staff need"
-    },
-    {
-     "score": 86,
-     "text": "can a chase figure and fix a second uniform"
-    }
-   ]
-  },
-  "greedyByScore": {
-   "sentences": 51,
-   "blueTilesUsed": 141,
-   "total": 1889,
-   "perTile": 13.4,
-   "meanBluePerSentence": 2.8,
-   "utteranceTypes": {
-    "imperative": 25,
-    "question": 11,
-    "ellipsis": 6,
-    "fragment": 9
-   },
-   "structuralShare": 0.13,
-   "listItems": 4,
-   "topFamilies": [
-    [
-     "noun_head",
-     33
-    ],
-    [
-     "np_premodifier",
-     33
-    ],
-    [
-     "determiner",
-     29
-    ],
-    [
-     "imperative",
-     25
-    ],
-    [
-     "intransitive",
+     "nominal_utterance",
      23
     ],
     [
-     "verb_coordination",
-     14
+     "intransitive",
+     21
+    ],
+    [
+     "imperative",
+     20
     ],
     [
      "adjective",
-     12
+     15
     ],
     [
      "question",
-     11
+     13
+    ],
+    [
+     "verb_coordination",
+     12
     ],
     [
      "adjective_modifier",
-     10
-    ],
-    [
-     "bare_np",
      9
     ]
    ],
    "best": [
     {
      "score": 308,
-     "text": "holiday and joke later because all can and jeans renew for the nation say stairs can and can and must"
+     "text": "holiday and joke later because all can and jeans retire for the nation say stairs canvas and can and can"
     },
     {
-     "score": 205,
-     "text": "can plug salad for the unknown original core sign and spend output and taste august and raise and coast"
+     "score": 197,
+     "text": "abandon and list tonight in autumn and message ketchup and void just junk and taste civil"
     },
     {
-     "score": 118,
-     "text": "level a canvas october and barely castle and melt and leaf"
-    },
-    {
-     "score": 102,
-     "text": "hint and filter for staff and win warfare security"
+     "score": 94,
+     "text": "the affair core can consider staff mistake"
     },
     {
      "score": 86,
      "text": "can a chase figure and fix a second uniform"
+    },
+    {
+     "score": 76,
+     "text": "is a nice inch win october half cheap"
+    }
+   ]
+  },
+  "greedyByScore": {
+   "sentences": 54,
+   "blueTilesUsed": 135,
+   "total": 1706,
+   "perTile": 12.64,
+   "meanBluePerSentence": 2.5,
+   "utteranceTypes": {
+    "imperative": 19,
+    "question": 12,
+    "declarative": 2,
+    "ellipsis": 3,
+    "fragment": 18
+   },
+   "structuralShare": 0.12,
+   "listItems": 4,
+   "topFamilies": [
+    [
+     "noun_head",
+     38
+    ],
+    [
+     "np_premodifier",
+     38
+    ],
+    [
+     "determiner",
+     35
+    ],
+    [
+     "intransitive",
+     24
+    ],
+    [
+     "imperative",
+     19
+    ],
+    [
+     "nominal_utterance",
+     18
+    ],
+    [
+     "adjective",
+     14
+    ],
+    [
+     "question",
+     12
+    ],
+    [
+     "verb_coordination",
+     10
+    ],
+    [
+     "adjective_modifier",
+     10
+    ]
+   ],
+   "best": [
+    {
+     "score": 308,
+     "text": "holiday and joke later because all can and jeans retire for the nation say stairs canvas and can and can"
+    },
+    {
+     "score": 210,
+     "text": "can the original table ketchup affair october melody taste young and barely shiver and win in need and chat"
+    },
+    {
+     "score": 187,
+     "text": "must the fun angry salad figure the output toward timber and the inch can speed in autumn and journey"
+    },
+    {
+     "score": 81,
+     "text": "text and hint today and bottom tonight and crumble and staff"
+    },
+    {
+     "score": 80,
+     "text": "consider man in just tissue the script umbrella"
     }
    ]
   }

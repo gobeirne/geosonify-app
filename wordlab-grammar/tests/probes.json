@@ -275,16 +275,15 @@
   },
   {
    "id": "E2b",
-   "src": "handover 5E: canonical reading is the clause with intransitive 'bag'",
+   "src": "handover 5E: canonical is the intended fragment (intransitive bag came only from a WordNet frame, demoted after ERG run 3)",
    "text": "The vivid autumn blossom and the famous canvas cat bag.",
    "expect": {
     "state": "recognised",
-    "type": "declarative",
+    "type": "fragment",
     "where": "canonical",
     "roles": {
-     "blossom": "N:nsubj",
-     "cat": "N:conj",
-     "bag": "V:root"
+     "blossom": "N:root",
+     "bag": "N:conj"
     }
    }
   },

@@ -168,7 +168,8 @@ function causes(x) {
   // VP ellipsis after a non-modal auxiliary ("He has.", "She did.", "They were."):
   // Phase 0 supports ellipsis after modals only.
   const d = x.bestDeriv || '';
-  if (rs.some(r => /_aux-.*ell/.test(r)) && rs.some(r => /^(has_aux|have_fin_aux|have_bse_aux|had_aux|did1_pos|do1_pos|does1_pos|be_[a-z]+_(is|are|was|were))$/.test(r))) c.push('ellipsis after has/do/be (Phase 0: modals only)');
+  // (Ellipsis after has/do/be is supported since Phase 1, so it is no longer
+  // a cause; such sentences are rejected for one of the reasons below.)
   // ERG's optional-complement rule lets a transitive verb omit its object
   // ("Detect.", "She reads."); Phase 0 needs an attested intransitive frame.
   if (rs.includes('hd_optcmp_c')) c.push('ERG verb object omission (optional complement)');

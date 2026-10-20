@@ -1,6 +1,6 @@
-# Starpin Word Lab — grammar and scoring prototype (Phases 0–2): report
+# Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7924 atomic rules, relaxed 19555, 596 symbols · strict-grammar compile 263 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 364 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.1.0` · strict grammar 7924 atomic rules, relaxed 19555, 596 symbols · strict-grammar compile 319 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 403 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -9,9 +9,9 @@ Status labels: **measured** = produced by the scripts in this folder; **proposal
 | Criterion | Result |
 |---|---|
 | Every handover §5 probe yields its intended roles | 59/59 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
-| Generated derivations recognised and exactly recovered | 1599/1599 |
+| Generated derivations recognised and exactly recovered | 1595/1595 |
 | Typed corruptions caught, with the right constraint named | see corruption table |
-| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 14.5 ms; generated 21–24 tokens p95 9.12 ms |
+| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 16.1 ms; generated 21–24 tokens p95 12.4 ms |
 | ERG batch emitted | 49 probe, 400 generated positive, 600 corruption accepted, 300 corruption rejected |
 | Phone timing | **not yet measured**: open `bench/wordlab_grammar_bench.html` on an iPhone |
 
@@ -47,8 +47,8 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 | D5 | gold-role policy: a gold 'can' is a modal only | unrecognised | accept (imperative) | — |  |
 | D6 | gold-role policy: a blue 'can' keeps its noun reading | recognised | accept (imperative) | 35 | `[Imp [VP kick [NP the angry can]]]` |
 | E1 | handover 5E | recognised | accept (ellipsis) | 28 | `[S [NP the garden fence] [FP can]]` |
-| E2 | handover 5E (the fragment reading must be offered; canonical is a genuine clause: [blossom and cat] [bag], bag = intransitive verb, WordNet frame 1) | recognised | accept (fragment) | 96 | `[S [NP [NP the vivid autumn blossom] and [NP the famous canvas cat]] [FP [VP bag]]]` |
-| E2b | handover 5E: canonical reading is the clause with intransitive 'bag' | recognised | accept (fragment) | 96 | `[S [NP [NP the vivid autumn blossom] and [NP the famous canvas cat]] [FP [VP bag]]]` |
+| E2 | handover 5E (the fragment reading must be offered; canonical is a genuine clause: [blossom and cat] [bag], bag = intransitive verb, WordNet frame 1) | recognised | accept (fragment) | 57 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
+| E2b | handover 5E: canonical is the intended fragment (intransitive bag came only from a WordNet frame, demoted after ERG run 3) | recognised | accept (fragment) | 57 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
 | E3 | handover 5E | recognised | accept (clause) | 289 | `[S [NP [NP a cheap angry badge] and [NP a shallow silly chat]] [FP can [VP [VP [VP boil [NP [NP nice level stairs] and [NP the vocal timber table]]] [PP in [NP the million citizen parade]]] [PP in [NP the vivid autumn blossom]]]]]` |
 | E4 | handover 5E (ERG: no reading) | recognised | accept (imperative) | 107 | `[Imp [VP [VP clump [NP the document]] and [VP forget [NP the half human hybrid fossil]]]]` |
 | E5 | handover 5E | recognised | accept (imperative) | 239 | `[Imp [VP [VP [VP crumble [NP the favorite document]] [PP in [NP fun]]] and [VP ensure [S [NP the core dose] [FP can [VP [VP predict [NP midnight security]] and [VP taste [NP vivid unknown ketchup]]]]]]]]` |
@@ -95,57 +95,57 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 
 ## Construction-level coverage (measured)
 
-1500 random derivations plus 99 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
+1500 random derivations plus 95 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
 
 | Construction family | Generated sentences | Recovered | v1.1 rejected |
 |---|---:|---:|---:|
-| adjective | 435 | 435 | 83% |
+| adjective | 436 | 436 | 83% |
 | adjective_modifier | 316 | 316 | 83% |
-| bare_idiomatic_pp | 143 | 143 | 100% |
-| bare_np | 706 | 706 | 95% |
-| causal_for_coordination | 42 | 42 | 100% |
-| clause | 630 | 630 | 98% |
-| clause_coordination | 372 | 372 | 100% |
-| complement_clause | 198 | 198 | 99% |
-| copula | 40 | 40 | 90% |
-| degree_modifier | 279 | 279 | 90% |
-| determiner | 521 | 521 | 81% |
-| ditransitive | 57 | 57 | 96% |
+| bare_idiomatic_pp | 142 | 142 | 100% |
+| bare_np | 703 | 703 | 95% |
+| causal_for_coordination | 41 | 41 | 100% |
+| clause | 636 | 636 | 99% |
+| clause_coordination | 377 | 377 | 100% |
+| complement_clause | 209 | 209 | 100% |
+| copula | 40 | 40 | 93% |
+| degree_modifier | 274 | 274 | 91% |
+| determiner | 517 | 517 | 82% |
+| ditransitive | 58 | 58 | 97% |
 | do_support | 40 | 40 | 98% |
 | focus_modifier | 250 | 250 | 100% |
 | fused_head | 40 | 40 | 88% |
-| imperative | 579 | 579 | 87% |
+| imperative | 582 | 582 | 87% |
 | imperative_declarative_coordination | 40 | 40 | 100% |
-| infinitive | 145 | 145 | 99% |
-| intransitive | 781 | 781 | 96% |
-| lexical_copula | 207 | 207 | 85% |
-| modal | 40 | 40 | 100% |
-| negation | 99 | 99 | 97% |
-| nominal_utterance | 359 | 359 | 67% |
-| noun_compound | 338 | 338 | 77% |
-| noun_coordination | 629 | 629 | 97% |
-| noun_head | 1062 | 1062 | 88% |
-| np_premodifier | 1062 | 1062 | 88% |
-| past_tense | 258 | 258 | 100% |
+| infinitive | 148 | 148 | 99% |
+| intransitive | 785 | 785 | 96% |
+| lexical_copula | 200 | 200 | 84% |
+| modal | 41 | 41 | 100% |
+| negation | 103 | 103 | 97% |
+| nominal_utterance | 352 | 352 | 68% |
+| noun_compound | 333 | 333 | 77% |
+| noun_coordination | 625 | 625 | 97% |
+| noun_head | 1058 | 1058 | 88% |
+| np_premodifier | 1058 | 1058 | 88% |
+| past_tense | 260 | 260 | 100% |
 | perfect | 41 | 41 | 100% |
-| postverbal_adverb | 55 | 55 | 96% |
-| predicate_adjective | 145 | 145 | 99% |
-| predicate_coordination | 361 | 361 | 100% |
-| predicate_nominal | 50 | 50 | 98% |
-| predicate_prepositional | 69 | 69 | 94% |
-| prepositional_phrase | 435 | 435 | 98% |
-| prepositional_verb | 92 | 92 | 85% |
-| present_tense | 148 | 148 | 100% |
+| postverbal_adverb | 57 | 57 | 96% |
+| predicate_adjective | 152 | 152 | 99% |
+| predicate_coordination | 360 | 360 | 100% |
+| predicate_nominal | 47 | 47 | 98% |
+| predicate_prepositional | 66 | 66 | 97% |
+| prepositional_phrase | 427 | 427 | 98% |
+| prepositional_verb | 90 | 90 | 86% |
+| present_tense | 150 | 150 | 100% |
 | preverbal_adverb | 73 | 73 | 95% |
-| pronoun | 1151 | 1151 | 96% |
-| question | 368 | 368 | 96% |
-| relative_clause | 262 | 262 | 99% |
-| subordinate_clause | 293 | 293 | 100% |
-| verb_coordination | 532 | 532 | 99% |
-| verb_object | 117 | 117 | 89% |
-| vp_ellipsis | 724 | 724 | 99% |
+| pronoun | 1149 | 1149 | 96% |
+| question | 369 | 369 | 96% |
+| relative_clause | 260 | 260 | 99% |
+| subordinate_clause | 291 | 291 | 100% |
+| verb_coordination | 545 | 545 | 99% |
+| verb_object | 120 | 120 | 89% |
+| vp_ellipsis | 726 | 726 | 99% |
 
-Overall v1.1 accepts 217/1599 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
+Overall v1.1 accepts 209/1595 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
 
 ## Typed corruptions (measured)
 
@@ -153,13 +153,13 @@ Each generated sentence is corrupted using its own tree, so each corruption know
 
 | Corruption | n | Phase 0 accepted | Phase 0 conflict naming the attacked constraint | v1.1 accepted |
 |---|---:|---:|---:|---:|
-| agreement | 1207 | 78 | 1094 | 0/1207 |
-| case | 1430 | 109 | 1295 | 19/1430 |
-| adjacent swap | 1476 | 250 | — | 68/1476 |
-| token delete | 1477 | 551 | — | 92/1477 |
-| article | 36 | 0 | 36 | 0/36 |
-| det drop | 174 | 44 | 128 | 4/174 |
-| object drop | 38 | 9 (verb kept as verb: 0) | 29 | 0/38 |
+| agreement | 1208 | 75 | 1103 | 0/1208 |
+| case | 1434 | 104 | 1300 | 19/1434 |
+| adjacent swap | 1477 | 266 | — | 81/1477 |
+| token delete | 1477 | 522 | — | 90/1477 |
+| article | 35 | 0 | 35 | 0/35 |
+| det drop | 174 | 42 | 131 | 3/174 |
+| object drop | 60 | 9 (verb kept as verb: 0) | 50 | 0/60 |
 
 Defects found by this stream and fixed during Phase 0: case was checked on the first conjunct only (*me and he can run*); PP and relative postmodifiers dropped pronoun case (*they about industry* as an object); NP-level *but* (*the cat but the dog*); mixed *and/or* chains flattened with the wrong number; reflexive *myself* without an antecedent; over-broad collective-noun and bare-PP evidence rules (see lexical policy).
 
@@ -167,29 +167,29 @@ Defects found by this stream and fixed during Phase 0: case was checked on the f
 
 | Generated length | n | p50 ms | p95 ms | max ms |
 |---|---:|---:|---:|---:|
-| 1-8 tokens | 577 | 0.58 | 2.22 | 21.11 |
-| 9-14 tokens | 463 | 1.52 | 5.15 | 20.04 |
-| 15-20 tokens | 388 | 2.51 | 7.19 | 17.38 |
-| 21-24 tokens | 171 | 3.63 | 9.12 | 42.2 |
+| 1-8 tokens | 571 | 0.61 | 4.77 | 29.77 |
+| 9-14 tokens | 465 | 1.58 | 7.33 | 21.29 |
+| 15-20 tokens | 387 | 2.45 | 10.01 | 36.31 |
+| 21-24 tokens | 172 | 3.33 | 12.4 | 37.42 |
 
 Adversarial inputs (full API: 24-best readings, diverse root readings, choice points):
 
 | Case | Tokens | State | Complete trees | ms |
 |---|---:|---|---:|---:|
-| 10-noun compound subject | 13 | recognised | 2 | 6.8 |
-| 20-noun compound subject | 23 | recognised | 96 | 14.2 |
-| 40-noun compound subject | 43 | recognised | 768 | 16.6 |
-| 50-noun compound subject | 53 | recognised | 1536 | 14.3 |
-| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 8.2 |
-| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 6.1 |
-| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 7.2 |
-| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 16.9 |
-| 8 coordinated clauses | 39 | recognised | 1 | 3 |
-| 16 coordinated clauses | 79 | recognised | 1 | 7.6 |
-| 40-token realistic | 42 | recognised | 11616 | 14.5 |
-| mixed subordination + coordination | 29 | recognised | 258 | 5.1 |
+| 10-noun compound subject | 13 | recognised | 2 | 7.3 |
+| 20-noun compound subject | 23 | recognised | 96 | 16.1 |
+| 40-noun compound subject | 43 | recognised | 768 | 18.5 |
+| 50-noun compound subject | 53 | recognised | 1536 | 26.7 |
+| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 13.4 |
+| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 14.7 |
+| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 9.1 |
+| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 38.6 |
+| 8 coordinated clauses | 39 | recognised | 1 | 3.5 |
+| 16 coordinated clauses | 79 | recognised | 1 | 8.6 |
+| 40-token realistic | 42 | recognised | 11616 | 16.1 |
+| mixed subordination + coordination | 29 | recognised | 258 | 11.4 |
 
-The largest single-sentence time in the generated run was 42.2 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
+The largest single-sentence time in the generated run was 37.42 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
 
 Phone figures are unmeasured; expect several times slower. The runtime lexicon is currently compiled at start-up from raw evidence; Phase 3 should ship a precompiled grammar and lexicon.
 
@@ -199,11 +199,11 @@ Phone figures are unmeasured; expect several times slower. The runtime lexicon i
 |---|---|---:|
 | attested | mass readings (Wiktionary uncountable mark recorded but unused in v1.1) | 250 |
 | attested | count readings for v1.1 mass nouns | 10 |
-| attested | intransitive frames from WordNet frames / Wiktionary tags (ERG-validated) | 542 |
+| attested | intransitive frames from WordNet frames / Wiktionary tags (ERG-validated) | 388 |
 | attested | bare idiomatic PPs (189 preposition + noun pairs) | 189 |
 | attested | degree modifiers *half*, *pretty* | 2 |
 | derived | collective nouns with notional plural agreement | 45 |
-| inferred | recorded, **not enabled** (includes 335 verb-frame readings that failed ERG validation) | 606 |
+| inferred | recorded, **not enabled** (includes 598 verb-frame readings that failed ERG validation) | 869 |
 
 Two first-draft evidence rules were too permissive and were tightened before this report: collective nouns originally required only *some* OEWN `noun.group` sense (admitting *run*, *table*, *matrix*), and the bare-PP miner originally counted ordinary mass uses and complex prepositions (850 readings; now 189). Both stories are why evidence tiers are recorded on every reading.
 
@@ -295,6 +295,55 @@ Where ERG analyses what Phase 0 rejects (held out), read from the ERG reading th
 | ERG bare N-bar fragment (headline style) | 12 | policy: excluded |
 | lexical do/will (gold do is auxiliary-only) | 2 | policy: gold-role rule |
 
+## ERG held-out check of Phase 1 (measured: third Colab run)
+
+Batch `erg/phase1_batch.jsonl` (1357 items) from the Phase 1 engine. ERG witnesses **83.8%** of generated sentences.
+
+Retained evidence sources, held out: Wiktionary mass readings 0.9 (n 306); OEWN idiomatic PPs 0.89 (n 106); residual WordNet/Wiktionary intransitive frames 0.68 (n 92). The residual WordNet/Wiktionary intransitive frames fell below 0.8, so, as committed after run 2, no WordNet/Wiktionary frame type is enabled any longer; ERG lexicon frames (intransitive and optional-object) supply verb frames. One probe changed as a result: the canonical reading of *the vivid autumn blossom and the famous canvas cat bag* is now the intended noun-phrase fragment (intransitive *bag* came only from a WordNet frame).
+
+| Why ERG analyses what the engine rejects (run 3) | Items |
+|---|---:|
+| ERG count→mass coercion ("grinding") | 96 |
+| ERG verb object omission (optional complement) | 58 |
+| ERG does not check a/an | 31 |
+| ERG does not check reflexive binding | 25 |
+| ERG agreement with or-coordination | 20 |
+| lexical do/will (gold do is auxiliary-only) | 16 |
+| ERG bare N-bar fragment (headline style) | 13 |
+| other | 11 |
+
+## Phase 3: the game (`dist/Starpin_Word_Lab_v2_0.html`)
+
+Built from the v1.1 single-file game by `tools/build_game.js`; the v1.1 file is not modified, and every patch must match the v1.1 source exactly once. The interface keeps its layout; the grammar, scorer, score panel, explanation, tree and portfolio rows are replaced, and the v1.1 parser is kept only to record each migrated sentence's v1.1 score.
+
+- **Migration on the device:** on first load, the v1.1 browser snapshot is imported (inventory, helpers including *has*, sentences, sandbox, draft); the v1.1 snapshot is left untouched; a v2 snapshot is written. Exported v1.1 session files import too.
+- **Version history:** every sentence records its score under each grammar/scorer version (migrated sentences start with their v1.1 score), shown as “was … under …” in the portfolio.
+- **Pending sentences:** a grammar-level failure (named conflict, or outside the grammar) can be saved and committed; it reserves its blue tiles, scores 0, and is re-checked whenever the grammar or scorer changes. Tile problems (uncollected, already used, helper locked) still block saving.
+- **Reading choice:** the syntax view lists only the words whose role differs between readings; tapping a role pins it and the score follows. Pins belong to the exact word sequence, so editing drops them.
+- **Score panel:** blue tiles, word-role points, size multiplier, clause links, link-type and embedding bonuses, per-word points, and notes when a link is not scored or a list/adjective stack tapers.
+- The obsolete “modifiers per noun” setting is hidden (stacks taper instead).
+
+End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone viewport, seeded with the v1.1 session):
+
+| Check | Result |
+|---|---|
+| migration keeps inventory, helpers and sentences | pass — 167 words, 9 helpers, 3 sentences |
+| each migrated sentence keeps its v1.1 score in history | pass — v1.1 [418, 165, 216] -> v2 [259, 232, 239] |
+| migration notice shown | pass |
+| v1.1 snapshot left untouched | pass |
+| draft is scored | pass |
+| a grammar-level failure is pending, not blocked | pass |
+| pending sentence can be saved and committed | pass — 4 committed |
+| pending sentence reserves its blue tiles | pass — reusing "buyer" -> refused={'len': 0, 'text': True} |
+| portfolio shows pending and v1.1 history | pass |
+| ambiguous draft offers choice points | pass |
+| tapping a reading pins it | pass |
+| editing the sentence drops stale pins | pass |
+| autosave writes a version-2 snapshot | pass |
+| reload resumes v2 snapshot (no re-migration) | pass — 4 committed |
+| history preserved across reload | pass |
+| no JavaScript errors | pass |
+
 ## Recorded policy decisions
 
 - **Count→mass coercion ("grinding") is excluded from the default grammar** (Greg O'Beirne, 2026-10-19). A singular count noun is used bare only where a mass reading is attested. This keeps determiner choice meaningful; grinding may later become a separately flagged rare reading.
@@ -333,12 +382,12 @@ Gold tiles earn no lexical points. There is no fixed per-sentence bonus. Portfol
 | Check | Result |
 |---|---|
 | P1 recognised + blue tile ⇒ score > 0 | 0 violations in 800 generated sentences |
-| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 729 insertions (21 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
+| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 717 insertions (23 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
 | P3′ gold-only material earns nothing; unanchored links earn nothing | 0 non-zero of 150 gold-only sentences; anchor cases all as expected |
 | P4′ chains converge; another *and* adds 4.32 structural points, a new relation type (relative clause) adds 46.32 | 0 failures |
 | P5 compound stack ≫ adjective stack (8 modifiers: 56.94 vs 31.41; bounds 100 vs 33) | 0 failures |
 | P6 score spread across alternative readings (tracked) | median 0, 90th percentile 0.269 of the canonical score |
-| Join test: clause-level join ≥ separate sum | 0 violations in 14 joins |
+| Join test: clause-level join ≥ separate sum | 0 violations in 10 joins |
 
 Clause chains (same words; scores after 1–10 clauses):
 
@@ -377,15 +426,15 @@ Points per blue tile by strategy:
 | session sentence 1 | 16 | 259 | 16.17 |
 | embedding + relative | 9 | 134 | 14.89 |
 
-**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 62 sentences, 145 blue tiles, 1939 points (13.37 per tile); structural points 14% of the total; 3 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
+**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 61 sentences, 141 blue tiles, 1817 points (12.89 per tile); structural points 14% of the total; 2 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
 
 | Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |
 |---|---:|---:|---:|
-| 1-2 | 699 | 10 | 10.9 |
-| 3-4 | 1771 | 10.5 | 12.3 |
-| 5-6 | 1478 | 12 | 14.2 |
-| 7-9 | 1446 | 12.6 | 16.7 |
-| 10+ | 606 | 14.7 | 18 |
+| 1-2 | 696 | 10 | 10.9 |
+| 3-4 | 1782 | 10.5 | 12.3 |
+| 5-6 | 1486 | 11.8 | 14.2 |
+| 7-9 | 1423 | 12.6 | 16.3 |
+| 10+ | 613 | 14.5 | 17.8 |
 
 The first scorer draft (v0.1) failed this search: tiny elliptical or bare-verb structures (*project all can and canvas*: 3 blue tiles, 95 points) collected clause-link and diversity bonuses with almost no content, and *Run.* out-scored the handover sentences per tile. The substantive-link rule and the size multiplier were introduced in response.
 
@@ -423,5 +472,5 @@ Scales differ (v1.1 multiplied up to 6.8×), so compare rankings, not magnitudes
 
 ## Next steps
 
-- **Phase 3 (integration into the game):** replace the v1.1 parser and scorer, three-state display with conflict spans, reading choice by pinning, versioned session migration (tiles, provenance, has), pending sentences re-scored on grammar updates, and an iPhone persistence/touch test.
-- Optional: a third ERG run on `erg/phase1_batch.jsonl` (built from the Phase 1 engine) to measure the post-auxiliary ellipsis and ERG-frame changes on held-out data.
+- Play-test `dist/Starpin_Word_Lab_v2_0.html` on the iPhone (real touch, real storage, the live v1.1 session).
+- Not yet built: competition mode with frozen grammar/scorer versions; Starpin collection-log verification for leaderboards; morphology helpers (-s, -ed, -ing).
