@@ -5,34 +5,31 @@
   "ADJ": 10,
   "ADJ_R": 0.7,
   "CMP": 10,
-  "CMP_R": 0.9,
   "LIST_R": 0.7,
   "SIZE": 0.6,
   "SIZE_R": 0.85,
-  "LINK": 12,
-  "LINK_R": 0.6,
-  "LINK_MIN_BLUE": 2,
-  "TYPE_A": 10,
-  "TYPE_B": 6,
+  "REPEAT": 0.4,
+  "CLAUSE_MIN_BLUE": 2,
   "EMBED": 8,
   "EMBED_MAX": 3,
-  "FRAGMENT": 0.6
+  "FRAGMENT": 0.6,
+  "CONS_FULL": 8
  },
  "failures": [],
  "P1": {
-  "n": 800,
+  "n": 600,
   "violations": 0
  },
  "P6": {
-  "sentencesWithAlternatives": 506,
-  "medianRelativeSpread": 0,
-  "p90RelativeSpread": 0.269
+  "sentencesWithAlternatives": 387,
+  "medianRelativeSpread": 0.048,
+  "p90RelativeSpread": 0.275
  },
- "P2readingChanges": 23,
+ "P2readingChanges": 13,
  "P2": {
-  "insertions": 717,
+  "insertions": 627,
   "violations": 0,
-  "insertionsThatChangeStructure": 23
+  "insertionsThatChangeStructure": 13
  },
  "P3": {
   "goldOnlySentences": 150,
@@ -59,247 +56,247 @@
   "and": [
    {
     "clauses": 1,
-    "score": 22,
-    "structural": 0
+    "score": 23,
+    "structural": 0.86
    },
    {
     "clauses": 2,
-    "score": 71,
-    "structural": 22
+    "score": 66,
+    "structural": 16.46
    },
    {
     "clauses": 3,
-    "score": 109,
-    "structural": 29.2
+    "score": 108,
+    "structural": 28.11
    },
    {
     "clauses": 4,
-    "score": 146,
-    "structural": 33.52
+    "score": 152,
+    "structural": 39.74
    },
    {
     "clauses": 5,
-    "score": 182,
-    "structural": 36.11
+    "score": 186,
+    "structural": 39.9
    },
    {
     "clauses": 6,
-    "score": 218,
-    "structural": 37.67
+    "score": 220,
+    "structural": 39.96
    },
    {
     "clauses": 7,
-    "score": 252,
-    "structural": 38.6
+    "score": 254,
+    "structural": 39.98
    },
    {
     "clauses": 8,
-    "score": 287,
-    "structural": 39.16
+    "score": 288,
+    "structural": 39.99
    },
    {
     "clauses": 9,
     "score": 321,
-    "structural": 39.5
+    "structural": 40
    },
    {
     "clauses": 10,
-    "score": 354,
-    "structural": 39.7
+    "score": 355,
+    "structural": 40
    }
   ],
   "because": [
    {
     "clauses": 1,
-    "score": 22,
-    "structural": 0
+    "score": 23,
+    "structural": 0.86
    },
    {
     "clauses": 2,
-    "score": 79,
-    "structural": 22
+    "score": 89,
+    "structural": 32.23
    },
    {
     "clauses": 3,
-    "score": 117,
-    "structural": 29.2
+    "score": 154,
+    "structural": 65.62
    },
    {
     "clauses": 4,
-    "score": 154,
-    "structural": 33.52
+    "score": 205,
+    "structural": 84.62
    },
    {
     "clauses": 5,
-    "score": 190,
-    "structural": 36.11
+    "score": 242,
+    "structural": 87.85
    },
    {
     "clauses": 6,
-    "score": 225,
-    "structural": 37.67
+    "score": 277,
+    "structural": 89.14
    },
    {
     "clauses": 7,
-    "score": 260,
-    "structural": 38.6
+    "score": 311,
+    "structural": 89.66
    },
    {
     "clauses": 8,
-    "score": 294,
-    "structural": 39.16
+    "score": 345,
+    "structural": 89.86
    },
    {
     "clauses": 9,
-    "score": 328,
-    "structural": 39.5
+    "score": 378,
+    "structural": 89.94
    },
    {
     "clauses": 10,
-    "score": 361,
-    "structural": 39.7
+    "score": 412,
+    "structural": 89.98
    }
   ],
   "alternating": [
    {
     "clauses": 1,
-    "score": 22,
-    "structural": 0
+    "score": 23,
+    "structural": 0.86
    },
    {
     "clauses": 2,
-    "score": 71,
-    "structural": 22
+    "score": 66,
+    "structural": 16.46
    },
    {
     "clauses": 3,
-    "score": 139,
-    "structural": 51.2
+    "score": 163,
+    "structural": 74.88
    },
    {
     "clauses": 4,
-    "score": 176,
-    "structural": 55.52
+    "score": 208,
+    "structural": 87.74
    },
    {
     "clauses": 5,
-    "score": 212,
-    "structural": 58.11
+    "score": 273,
+    "structural": 119.1
    },
    {
     "clauses": 6,
-    "score": 247,
-    "structural": 59.67
+    "score": 307,
+    "structural": 119.16
    },
    {
     "clauses": 7,
-    "score": 282,
-    "structural": 60.6
+    "score": 353,
+    "structural": 131.66
    },
    {
     "clauses": 8,
-    "score": 316,
-    "structural": 61.16
+    "score": 387,
+    "structural": 131.67
    },
    {
     "clauses": 9,
-    "score": 350,
-    "structural": 61.5
+    "score": 425,
+    "structural": 136.67
    },
    {
     "clauses": 10,
-    "score": 383,
-    "structural": 61.7
+    "score": 458,
+    "structural": 136.67
    }
   ],
   "and/because/while/before": [
    {
     "clauses": 1,
-    "score": 22,
-    "structural": 0
+    "score": 23,
+    "structural": 0.86
    },
    {
     "clauses": 2,
-    "score": 71,
-    "structural": 22
+    "score": 66,
+    "structural": 16.46
    },
    {
     "clauses": 3,
-    "score": 139,
-    "structural": 51.2
+    "score": 163,
+    "structural": 74.88
    },
    {
     "clauses": 4,
-    "score": 176,
-    "structural": 55.52
+    "score": 228,
+    "structural": 106.94
    },
    {
     "clauses": 5,
-    "score": 220,
-    "structural": 58.11
+    "score": 277,
+    "structural": 114.78
    },
    {
     "clauses": 6,
-    "score": 255,
-    "structural": 59.67
+    "score": 322,
+    "structural": 126.84
    },
    {
     "clauses": 7,
-    "score": 290,
-    "structural": 60.6
+    "score": 359,
+    "structural": 129.94
    },
    {
     "clauses": 8,
-    "score": 324,
-    "structural": 61.16
+    "score": 394,
+    "structural": 131.17
    },
    {
     "clauses": 9,
-    "score": 357,
-    "structural": 61.5
+    "score": 427,
+    "structural": 131.67
    },
    {
     "clauses": 10,
-    "score": 390,
-    "structural": 61.7
+    "score": 465,
+    "structural": 136.47
    }
   ],
   "extension": {
-   "base": 51.2,
-   "addAnotherAnd": 4.32,
-   "addRelativeClause": 46.32
+   "base": 74.88,
+   "addAnotherAnd": 12.86,
+   "addRelativeClause": 69.86
   }
  },
  "split": [
   {
    "clauses": 4,
-   "joined": 146.1,
-   "splitInTwo": 142.5,
-   "splitGainPct": -2.5
+   "joined": 152.4,
+   "splitInTwo": 131.4,
+   "splitGainPct": -13.7
   },
   {
    "clauses": 6,
-   "joined": 217.6,
-   "splitInTwo": 218.5,
-   "splitGainPct": 0.4
+   "joined": 219.9,
+   "splitInTwo": 216.3,
+   "splitGainPct": -1.7
   },
   {
    "clauses": 8,
-   "joined": 286.8,
-   "splitInTwo": 292.3,
-   "splitGainPct": 1.9
+   "joined": 287.6,
+   "splitInTwo": 304.7,
+   "splitGainPct": 5.9
   },
   {
    "clauses": 10,
-   "joined": 354.2,
-   "splitInTwo": 364.4,
-   "splitGainPct": 2.9
+   "joined": 354.5,
+   "splitInTwo": 372,
+   "splitGainPct": 4.9
   },
   {
    "clauses": 12,
-   "joined": 420.5,
-   "splitInTwo": 435.2,
-   "splitGainPct": 3.5
+   "joined": 420.6,
+   "splitInTwo": 439.8,
+   "splitGainPct": 4.6
   }
  ],
  "P5": [
@@ -311,45 +308,45 @@
   {
    "modifiers": 2,
    "adjectiveStack": 17,
-   "compoundStack": 19
+   "compoundStack": 20
   },
   {
    "modifiers": 3,
    "adjectiveStack": 21.9,
-   "compoundStack": 27.1
+   "compoundStack": 30
   },
   {
    "modifiers": 4,
    "adjectiveStack": 25.33,
-   "compoundStack": 34.39
+   "compoundStack": 40
   },
   {
    "modifiers": 5,
    "adjectiveStack": 27.73,
-   "compoundStack": 40.95
+   "compoundStack": 50
   },
   {
    "modifiers": 6,
    "adjectiveStack": 29.41,
-   "compoundStack": 46.85
+   "compoundStack": 60
   },
   {
    "modifiers": 7,
    "adjectiveStack": 30.59,
-   "compoundStack": 52.16
+   "compoundStack": 70
   },
   {
    "modifiers": 8,
    "adjectiveStack": 31.41,
-   "compoundStack": 56.94
+   "compoundStack": 80
   }
  ],
  "P5bounds": {
   "adjective": 33.33333333333333,
-  "compound": 100.00000000000003
+  "compound": "linear (10 per modifier)"
  },
  "J": {
-  "joins": 10,
+  "joins": 8,
   "violations": 0
  },
  "S": [
@@ -364,85 +361,85 @@
    "strategy": "noun list fragment",
    "text": "The cat or the dog or the fish or the bird or the lion or the horse.",
    "blueTiles": 6,
-   "score": 48,
-   "perBlueTile": 8
+   "score": 58,
+   "perBlueTile": 9.72
   },
   {
    "strategy": "bare noun list fragment",
    "text": "Ketchup or salad or juice or sugar or honey or pepper.",
    "blueTiles": 6,
-   "score": 30,
-   "perBlueTile": 5.03
+   "score": 40,
+   "perBlueTile": 6.75
   },
   {
    "strategy": "adjective stack",
    "text": "Prevent the able absent absurd acoustic actual aerobic ketchup.",
    "blueTiles": 8,
-   "score": 70,
-   "perBlueTile": 8.69
+   "score": 89,
+   "perBlueTile": 11.06
   },
   {
    "strategy": "noun compound",
    "text": "Prevent the ability accident actor actress advice affair ketchup.",
    "blueTiles": 8,
-   "score": 94,
-   "perBlueTile": 11.76
+   "score": 132,
+   "perBlueTile": 16.45
   },
   {
    "strategy": "compound fragment",
    "text": "The ability accident actor actress advice affair ketchup.",
    "blueTiles": 7,
-   "score": 47,
-   "perBlueTile": 6.69
+   "score": 63,
+   "perBlueTile": 8.97
   },
   {
    "strategy": "8-clause and-chain",
    "text": "the dog can run and the cat can jump and the fish can swim and the bird can sing and the lion can dance and the horse can fly and the donkey can float and the eagle can shiver.",
    "blueTiles": 16,
-   "score": 287,
-   "perBlueTile": 17.92
+   "score": 288,
+   "perBlueTile": 17.98
   },
   {
    "strategy": "8-clause because-chain",
    "text": "the dog can run because the cat can jump because the fish can swim because the bird can sing because the lion can dance because the horse can fly because the donkey can float because the eagle can shiver.",
    "blueTiles": 17,
-   "score": 294,
-   "perBlueTile": 17.31
+   "score": 345,
+   "perBlueTile": 20.29
   },
   {
    "strategy": "8-clause alternating chain",
    "text": "the dog can run and the cat can jump because the fish can swim and the bird can sing because the lion can dance and the horse can fly because the donkey can float and the eagle can shiver.",
    "blueTiles": 17,
-   "score": 316,
-   "perBlueTile": 18.6
+   "score": 387,
+   "perBlueTile": 22.75
   },
   {
    "strategy": "handover A",
    "text": "Prevent prison patient parrot ketchup in all bitter banana menu output.",
    "blueTiles": 10,
-   "score": 134,
-   "perBlueTile": 13.44
+   "score": 198,
+   "perBlueTile": 19.81
   },
   {
    "strategy": "handover C",
    "text": "The unknown civil void has just blame and the bitter October symbol can oppose the joke journey.",
    "blueTiles": 11,
-   "score": 181,
-   "perBlueTile": 16.41
+   "score": 225,
+   "perBlueTile": 20.48
   },
   {
    "strategy": "session sentence 1",
    "text": "Abandon barely fun festival salad and shiver because clean library jeans know robust news for the runway security man.",
    "blueTiles": 16,
-   "score": 259,
-   "perBlueTile": 16.17
+   "score": 370,
+   "perBlueTile": 23.1
   },
   {
    "strategy": "embedding + relative",
    "text": "The angry cat that can sing can decide to run because the dog can swim.",
    "blueTiles": 9,
-   "score": 134,
-   "perBlueTile": 14.89
+   "score": 175,
+   "perBlueTile": 19.49
   }
  ],
  "O": {
@@ -461,62 +458,137 @@
   "candidates": 6000,
   "perTileBySize": {
    "1-2": {
-    "n": 696,
+    "n": 771,
     "median": 10,
-    "p90": 10.9
+    "p90": 12.2
    },
    "3-4": {
-    "n": 1782,
-    "median": 10.5,
-    "p90": 12.3
+    "n": 1797,
+    "median": 13,
+    "p90": 16.2
    },
    "5-6": {
-    "n": 1486,
-    "median": 11.8,
-    "p90": 14.2
+    "n": 1470,
+    "median": 15.6,
+    "p90": 20.5
    },
    "7-9": {
-    "n": 1423,
-    "median": 12.6,
-    "p90": 16.3
+    "n": 1361,
+    "median": 19.2,
+    "p90": 25.3
    },
    "10+": {
-    "n": 613,
-    "median": 14.5,
-    "p90": 17.8
+    "n": 601,
+    "median": 21.5,
+    "p90": 26.3
    }
   },
   "greedyByPointsPerTile": {
-   "sentences": 61,
-   "blueTilesUsed": 141,
-   "total": 1817,
-   "perTile": 12.89,
+   "sentences": 58,
+   "blueTilesUsed": 136,
+   "total": 2245,
+   "perTile": 16.5,
    "meanBluePerSentence": 2.3,
    "utteranceTypes": {
-    "imperative": 20,
-    "declarative": 2,
-    "question": 13,
-    "ellipsis": 3,
-    "fragment": 23
+    "imperative": 23,
+    "question": 15,
+    "ellipsis": 4,
+    "declarative": 1,
+    "fragment": 15
    },
-   "structuralShare": 0.14,
-   "listItems": 2,
+   "structuralShare": 0.33,
+   "listItems": 3,
    "topFamilies": [
     [
      "noun_head",
-     48
+     41
     ],
     [
      "np_premodifier",
-     48
+     41
     ],
     [
      "determiner",
-     45
+     33
+    ],
+    [
+     "imperative",
+     23
+    ],
+    [
+     "intransitive",
+     21
+    ],
+    [
+     "question",
+     15
     ],
     [
      "nominal_utterance",
-     23
+     15
+    ],
+    [
+     "adjective",
+     13
+    ],
+    [
+     "bare_np",
+     11
+    ],
+    [
+     "verb_coordination",
+     10
+    ]
+   ],
+   "best": [
+    {
+     "score": 282,
+     "text": "win jeans october on display for text and all on the umbrella nation can"
+    },
+    {
+     "score": 249,
+     "text": "just taste barely civil for a wheel is the unknown august swamp"
+    },
+    {
+     "score": 197,
+     "text": "can a favorite joke know and bind in speed and abandon and boil and level"
+    },
+    {
+     "score": 191,
+     "text": "can inner output shiver because chat is staff parade"
+    },
+    {
+     "score": 85,
+     "text": "angry melody has and is stairs and security"
+    }
+   ]
+  },
+  "greedyByScore": {
+   "sentences": 50,
+   "blueTilesUsed": 135,
+   "total": 2188,
+   "perTile": 16.21,
+   "meanBluePerSentence": 2.7,
+   "utteranceTypes": {
+    "imperative": 20,
+    "question": 13,
+    "ellipsis": 2,
+    "fragment": 15
+   },
+   "structuralShare": 0.3,
+   "listItems": 5,
+   "topFamilies": [
+    [
+     "noun_head",
+     35
+    ],
+    [
+     "np_premodifier",
+     35
+    ],
+    [
+     "determiner",
+     30
     ],
     [
      "intransitive",
@@ -527,122 +599,46 @@
      20
     ],
     [
-     "adjective",
+     "nominal_utterance",
      15
+    ],
+    [
+     "verb_coordination",
+     13
     ],
     [
      "question",
      13
     ],
     [
-     "verb_coordination",
-     12
+     "adjective",
+     10
     ],
     [
-     "adjective_modifier",
+     "bare_np",
      9
     ]
    ],
    "best": [
     {
-     "score": 308,
-     "text": "holiday and joke later because all can and jeans retire for the nation say stairs canvas and can and can"
+     "score": 411,
+     "text": "taste fossil and bind all and choice and october observe and must and reopen and output can and has because jeans crumble"
     },
     {
-     "score": 197,
-     "text": "abandon and list tonight in autumn and message ketchup and void just junk and taste civil"
-    },
-    {
-     "score": 94,
-     "text": "the affair core can consider staff mistake"
-    },
-    {
-     "score": 86,
-     "text": "can a chase figure and fix a second uniform"
-    },
-    {
-     "score": 76,
-     "text": "is a nice inch win october half cheap"
-    }
-   ]
-  },
-  "greedyByScore": {
-   "sentences": 54,
-   "blueTilesUsed": 135,
-   "total": 1706,
-   "perTile": 12.64,
-   "meanBluePerSentence": 2.5,
-   "utteranceTypes": {
-    "imperative": 19,
-    "question": 12,
-    "declarative": 2,
-    "ellipsis": 3,
-    "fragment": 18
-   },
-   "structuralShare": 0.12,
-   "listItems": 4,
-   "topFamilies": [
-    [
-     "noun_head",
-     38
-    ],
-    [
-     "np_premodifier",
-     38
-    ],
-    [
-     "determiner",
-     35
-    ],
-    [
-     "intransitive",
-     24
-    ],
-    [
-     "imperative",
-     19
-    ],
-    [
-     "nominal_utterance",
-     18
-    ],
-    [
-     "adjective",
-     14
-    ],
-    [
-     "question",
-     12
-    ],
-    [
-     "verb_coordination",
-     10
-    ],
-    [
-     "adjective_modifier",
-     10
-    ]
-   ],
-   "best": [
-    {
-     "score": 308,
-     "text": "holiday and joke later because all can and jeans retire for the nation say stairs canvas and can and can"
-    },
-    {
-     "score": 210,
-     "text": "can the original table ketchup affair october melody taste young and barely shiver and win in need and chat"
+     "score": 317,
+     "text": "can august unknown warfare barely bottom and wheel for display and win and speed and consider the banana the staff"
     },
     {
      "score": 187,
-     "text": "must the fun angry salad figure the output toward timber and the inch can speed in autumn and journey"
+     "text": "is the original news half fun shallow salad in the text and a melt"
     },
     {
-     "score": 81,
-     "text": "text and hint today and bottom tonight and crumble and staff"
+     "score": 150,
+     "text": "fix the coast toward man and chat stairs and need"
     },
     {
-     "score": 80,
-     "text": "consider man in just tissue the script umbrella"
+     "score": 84,
+     "text": "parade and clump today and boil and retire"
     }
    ]
   }

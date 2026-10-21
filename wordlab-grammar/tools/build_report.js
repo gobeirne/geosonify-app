@@ -215,28 +215,31 @@ push('## Phase 1 grammar additions (measured)', '',
 
 // ---------------------------------------------------------------- Phase 2
 const SR = fs.existsSync(path.join(root, 'reports', 'scoring_report.json')) ? R('reports/scoring_report.json') : null;
+const {WEIGHTS} = require('../src/score');
 push(`## Phase 2 scoring (\`src/score.js\`, version ${SCORE_VERSION})`, '',
   'A sentence is scored from one reading only: the canonical reading, or the one the player pinned. Conflicts and unrecognised sentences score 0 and are marked pending.', '',
+  '**Why v0.4 (2026-10-21).** Under v0.3, which paid per clause link and tapered noun compounds, the best August portfolio found by search was a mechanical chain of “X can V Y and X can V Y …” clauses (725 points), ahead of the player’s varied, more satisfying sentences (677). v0.4 pays for *variety of construction* instead, never tapers noun compounds, and scales construction points with sentence substance. Under v0.4 the player’s portfolio scores 923 and the best chain portfolio found by the same search scores 909.', '',
   '| Component | Rule |', '|---|---|',
-  `| Blue tile, core role (argument or predicate head) | ${PARAMS.CORE} |`,
-  `| Blue tile in a closed-class role (e.g. blue *can* as modal) | ${PARAMS.FUNCTION} |`,
+  `| Blue tile, core role | ${PARAMS.CORE} |`,
+  `| Blue tile in a closed-class role | ${PARAMS.FUNCTION} |`,
   `| Adjective/adverb modifiers of one head | ${PARAMS.ADJ} × ${PARAMS.ADJ_R}^k (bound ${(PARAMS.ADJ / (1 - PARAMS.ADJ_R)).toFixed(0)}) |`,
-  `| Noun-compound modifiers of one head | ${PARAMS.CMP} × ${PARAMS.CMP_R}^k (bound ${(PARAMS.CMP / (1 - PARAMS.CMP_R)).toFixed(0)}) |`,
-  `| Bare one-word conjuncts (lists), third onward | × ${PARAMS.LIST_R}^(k−2) |`,
-  `| Size multiplier on lexical points, B = blue tiles | 1 + ${PARAMS.SIZE}·(1 − ${PARAMS.SIZE_R}^(B−1)) (bound ${1 + PARAMS.SIZE}) |`,
-  `| Clause links (coordination, causal *for*, subordination, complement, infinitive, relative) | ${PARAMS.LINK} × ${PARAMS.LINK_R}^k per sentence, whatever the conjunction; each linked side must be blue-anchored and hold ≥ ${PARAMS.LINK_MIN_BLUE} blue tiles |`,
-  `| Distinct link types T | ${PARAMS.TYPE_A}·T + ${PARAMS.TYPE_B}·T·(T−1) = 10, 32, 66, 112, 170, 240 |`,
-  `| Argument-clause embedding depth | ${PARAMS.EMBED} per level, up to ${PARAMS.EMBED_MAX} |`,
+  `| Noun-compound modifiers | flat ${PARAMS.CMP} each (no taper, by decision) |`,
+  `| Bare one-word list items, third onward | × ${PARAMS.LIST_R}^(k−2) |`,
+  `| Size multiplier on word points, B = blue tiles | 1 + ${PARAMS.SIZE}·(1 − ${PARAMS.SIZE_R}^(B−1)) (bound ${1 + PARAMS.SIZE}) |`,
+  `| Constructions | each kind present earns its weight (below); each repeat in the sentence earns ${PARAMS.REPEAT}× the previous; anchored by blue tiles; joined clauses need ≥ ${PARAMS.CLAUSE_MIN_BLUE} blue tiles on each side |`,
+  `| Construction substance | construction points × min(1, (B−1)/(${PARAMS.CONS_FULL}−1)): full from ${PARAMS.CONS_FULL} blue tiles, none for one |`,
+  `| Argument-clause embedding beyond the first level | ${PARAMS.EMBED} per level, up to ${PARAMS.EMBED_MAX} |`,
   `| Nominal fragment | × ${PARAMS.FRAGMENT} |`, '',
-  'Gold tiles earn no lexical points. There is no fixed per-sentence bonus. Portfolio score is the plain sum.', '');
+  'Construction weights (first instance): ' + Object.entries(WEIGHTS).sort((x, y) => y[1] - x[1]).map(([k, v]) => k.replace(/_/g, ' ') + ' ' + v).join(', ') + '.', '',
+  'The weights were set so that construction points are roughly 25–50% of a sentence’s score (word placement stays central), and the substance threshold so that points per blue tile rise with sentence length (short, construction-dense sentences do not win). Gold tiles earn no word points. No fixed per-sentence bonus. Portfolio score is the plain sum.', '');
 if (SR) {
   push('### Invariant tests (measured, `tests/run_scoring.js`, all on real parses)', '',
     '| Check | Result |', '|---|---|',
     `| P1 recognised + blue tile ⇒ score > 0 | ${SR.P1.violations} violations in ${SR.P1.n} generated sentences |`,
     `| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | ${SR.P2.violations} violations in ${SR.P2.insertions} insertions (${SR.P2.insertionsThatChangeStructure} further insertions re-bracketed the sentence and are a reading change, not a P2 case) |`,
     `| P3′ gold-only material earns nothing; unanchored links earn nothing | ${SR.P3.goldOnlyNonzero} non-zero of ${SR.P3.goldOnlySentences} gold-only sentences; anchor cases ${SR.P3.anchorCases.every(a => a.scoringLinks === a.expected) ? 'all as expected' : 'FAIL'} |`,
-    `| P4′ chains converge; another *and* adds ${SR.P4.extension.addAnotherAnd} structural points, a new relation type (relative clause) adds ${SR.P4.extension.addRelativeClause} | ${SR.failures.filter(f => f.check === "P4'").length} failures |`,
-    `| P5 compound stack ≫ adjective stack (8 modifiers: ${SR.P5[7].compoundStack} vs ${SR.P5[7].adjectiveStack}; bounds ${Math.round(SR.P5bounds.compound)} vs ${Math.round(SR.P5bounds.adjective)}) | ${SR.failures.filter(f => f.check === 'P5').length} failures |`,
+    `| P4′ repeated constructions converge; another *and* adds ${SR.P4.extension.addAnotherAnd} structural points, a new kind (relative clause) adds ${SR.P4.extension.addRelativeClause} | ${SR.failures.filter(f => f.check === "P4'").length} failures |`,
+    `| P5 adjective stacks bounded (≤ ${Math.round(SR.P5bounds.adjective)}); noun compounds linear and always ahead (8 modifiers: ${SR.P5[7].compoundStack} vs ${SR.P5[7].adjectiveStack}) | ${SR.failures.filter(f => f.check === 'P5').length} failures |`,
     `| P6 score spread across alternative readings (tracked) | median ${SR.P6.medianRelativeSpread}, 90th percentile ${SR.P6.p90RelativeSpread} of the canonical score |`,
     `| Join test: clause-level join ≥ separate sum | ${SR.J.violations} violations in ${SR.J.joins} joins |`, '');
   push('Clause chains (same words; scores after 1–10 clauses):', '', '| Pattern | Scores |', '|---|---|');
@@ -250,7 +253,7 @@ if (SR) {
     push('', `**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers ${SR.O.helpers.join(', ')}: ${SR.O.candidates} distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: ${g.sentences} sentences, ${g.blueTilesUsed} blue tiles, ${g.total} points (${g.perTile} per tile); structural points ${Math.round(100 * g.structuralShare)}% of the total; ${g.listItems} tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:`, '',
       '| Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |', '|---|---:|---:|---:|');
     for (const [k, v] of Object.entries(SR.O.perTileBySize)) push(`| ${k} | ${v.n} | ${v.median} | ${v.p90} |`);
-    push('', 'The first scorer draft (v0.1) failed this search: tiny elliptical or bare-verb structures (*project all can and canvas*: 3 blue tiles, 95 points) collected clause-link and diversity bonuses with almost no content, and *Run.* out-scored the handover sentences per tile. The substantive-link rule and the size multiplier were introduced in response.', '');
+    push('', 'Earlier drafts failed this search and were corrected: v0.1 let tiny elliptical structures farm link bonuses (*project all can and canvas*: 3 blue tiles, 95 points); the first v0.4 draft let short, construction-dense questions and fragments win per tile. The substantive-link rule, the size multiplier and the construction-substance scaling were introduced in response.', '');
   }
 }
 // v1.1 vs Phase 2 on the handover/session sentences

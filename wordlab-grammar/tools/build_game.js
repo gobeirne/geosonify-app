@@ -124,15 +124,18 @@ function renderScore(info){
   $('draftScore').textContent=info.valid?info.score.score:info.pending?'0':'—';
   $('scoreSub').textContent=info.valid?(info.provisional?'Provisional score · commit requires available blue tiles':'Scored on '+(info.pinned?'your chosen':'the preferred')+' reading · scorer '+scoreEngine.version):info.pending?'Can be saved as pending (0 points for now)':'Fix the tiles first.';
   if(!info.valid){$('scoreBreakdown').innerHTML=info.pending?'<p class="muted tiny">Pending sentences keep their blue tiles and are re-checked automatically whenever the grammar is updated. If a later version recognises one, it scores from then on.</p>':'';return;}
-  const b=info.score.breakdown,linkPts=b.links.reduce((a,l)=>a+l.points,0);
-  const lines=[['Blue tiles',String(b.blueTiles)],['Word roles','+'+b.lexicalBase.toFixed(1)],['Sentence size','× '+b.sizeMultiplier.toFixed(2)],['Clause links',b.links.length?'+'+linkPts.toFixed(1)+' ('+b.links.length+')':'—'],['Different kinds of link',b.typeBonus?'+'+b.typeBonus:'—'],['Clauses inside clauses',b.embedBonus?'+'+b.embedBonus:'—']];
+  const b=info.score.breakdown;
+  const lines=[['Blue tiles',String(b.blueTiles)],['Word roles','+'+b.lexicalBase.toFixed(1)],['Sentence size','× '+b.sizeMultiplier.toFixed(2)],
+    ['Constructions',b.constructionPoints?'+'+b.constructionPoints.toFixed(1)+(b.substance<1?' ('+Math.round(100*b.substance)+'%)':''):'—'],['Clauses inside clauses',b.embedBonus?'+'+(b.embedBonus*b.substance).toFixed(1):'—']];
   if(b.fragmentFactor<1)lines.push(['Phrase, not a full sentence','× '+b.fragmentFactor]);
   const tags=b.tiles.filter(t=>t.points>0).map(t=>'<span class="bonus-tag" title="'+htmlEscape(t.class+(t.note?' · '+t.note:''))+'">'+htmlEscape(t.word)+' +'+t.points.toFixed(1)+'</span>').join('')
-    +b.links.map(l=>'<span class="bonus-tag" title="Clause link">'+htmlEscape(l.type.replace(/_/g,' '))+' +'+l.points.toFixed(1)+'</span>').join('');
+    +(b.constructions||[]).map(c=>'<span class="bonus-tag cons" title="Construction'+(c.count>1?' · repeats earn less':'')+'">'+htmlEscape(c.label)+(c.count>1?' ×'+c.count:'')+' +'+(c.points*b.substance).toFixed(1)+'</span>').join('');
   const notes=[];
-  if(b.unanchoredLinks.length)notes.push(b.unanchoredLinks.length+' clause link'+(b.unanchoredLinks.length===1?' is':'s are')+' not scored: each linked part needs at least two blue tiles.');
+  if(b.substance<1)notes.push('Constructions count fully from 8 blue words (this sentence has '+b.blueTiles+').');
+  if(b.unanchoredLinks.length)notes.push(b.unanchoredLinks.length+' joined part'+(b.unanchoredLinks.length===1?' is':'s are')+' not scored: each needs at least two blue words.');
+  if((b.constructions||[]).some(c=>c.count>2))notes.push('Repeating the same construction earns less each time; a new kind earns in full.');
   if(b.tiles.some(t=>t.note==='list item'))notes.push('Plain lists earn less from the third item on.');
-  if(b.tiles.some(t=>/stack/.test(t.note||'')))notes.push('Each extra adjective on the same noun earns less; noun compounds keep paying for longer.');
+  if(b.tiles.some(t=>/stack/.test(t.note||'')))notes.push('Each extra adjective on one noun earns less; every word in a noun compound earns in full.');
   $('scoreBreakdown').innerHTML=lines.map(([label,value])=>'<div class="score-line"><span>'+htmlEscape(label)+'</span><b>'+htmlEscape(value)+'</b></div>').join('')+'<div class="score-line total"><span>Potential score</span><b>'+info.score.score+'</b></div><div class="bonus-tags">'+tags+'</div>'+(notes.length?'<p class="muted tiny">'+htmlEscape(notes.join(' '))+'</p>':'');
 }`);
 ui = once(ui, "$('mobileScore').textContent=valid?info.score.score:'—';", "$('mobileScore').textContent=valid?info.score.score:(info.pending?'0':'—');", 'mobile score');
@@ -215,8 +218,10 @@ function getCoachHints(info){
   const b=info.score.breakdown,tips=[],types=new Set(b.distinctLinkTypes),kind=info.parse?.kind;
   if(kind==='fragment')tips.push({head:'Make it a sentence',body:'This is a phrase, so it scores at 0.6×. Add a verb (with a gold “can” if you like) to make a full sentence.',terms:['verb phrase']});
   if(b.unanchoredLinks.length)tips.push({head:'Give the joined part more weight',body:'The link to “'+b.unanchoredLinks[0].dep+'” is not scored yet: each linked part needs at least two blue words.',terms:['clause']});
-  if(!types.size&&kind!=='fragment')tips.push({head:'Join a second idea',body:'Add a second clause with its own blue subject and verb, joined by “and” or “because”. Links between substantial clauses earn bonuses.',terms:['coordination','subordinate clause']});
-  else if(types.size&&types.size<3)tips.push({head:'Try a different kind of link',body:'You have '+[...types].map(t=>t.replace(/_/g,' ')).join(' and ')+'. A new kind of link — a reason (because …), a relative clause (that …) or an infinitive (decide to …) — earns far more than another “and”.',terms:['subordinate clause']});
+  const cons=b.constructions||[],repeated=cons.filter(c=>c.count>2);
+  if(repeated.length)tips.push({head:'Vary the construction',body:'You repeat '+repeated.map(c=>'“'+c.label+'”').join(' and ')+'. Each repeat earns less; a new kind (an “is” predicate, a shared subject, a prepositional phrase, a reason with “because” …) earns in full.',terms:['clause']});
+  if(!types.size&&kind!=='fragment')tips.push({head:'Join a second idea',body:'Join a second part with its own blue words, with “and” (or “because”, if unlocked). Joined parts need at least two blue words each to count.',terms:['coordination','subordinate clause']});
+  if(b.substance<1&&kind!=='fragment')tips.push({head:'Constructions need substance',body:'Constructions count fully from 8 blue words; this sentence has '+b.blueTiles+'. Add a describer or a compound noun to bring them up to full value.',terms:['noun compound']});
   if(b.tiles.some(t=>/stack/.test(t.note||'')))tips.push({head:'Swap an adjective for a noun',body:'Each extra adjective on one noun earns less. Noun compounds (“banana menu output”) keep paying for longer.',terms:['noun compound']});
   if(b.tiles.some(t=>t.note==='list item'))tips.push({head:'Lists taper',body:'Plain lists earn less from the third item. Give the items words of their own instead.',terms:['coordination']});
   if(b.blueTiles<6&&kind!=='fragment')tips.push({head:'Longer sentences pay more per word',body:'Your size bonus is ×'+b.sizeMultiplier.toFixed(2)+'; it rises towards ×1.6 as you add blue words.',terms:['complexity']});
@@ -522,6 +527,7 @@ const css = `<style>
 .pin-opt{font:inherit;font-size:.85rem;padding:.25rem .6rem;border-radius:1rem;border:1px solid var(--line,#99a);background:transparent;color:inherit;cursor:pointer}
 .pin-opt.on{background:var(--blue,#2f6690);border-color:var(--blue,#2f6690);color:#fff}
 .pin-opt.clear{border-style:dashed}
+.bonus-tag.cons{background:#eef4fb;border-color:#b8cde0}
 .pin-opt:focus-visible{outline:3px solid var(--gold,#b8901c);outline-offset:2px}
 </style>`;
 body = once(body, '</head>', css + '</head>', 'css');

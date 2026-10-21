@@ -59,10 +59,10 @@ This gives the dated BIP39 words of every find. Group them by window to form han
 
 ## Scoring (Phase 2)
 
-`src/score.js` scores one reading (canonical or player-pinned) from the tiles' provenance:
-- blue tiles earn role points, with tapering for stacked modifiers and list items, and a saturating size multiplier;
-- clause links between substantive constituents share one tapering budget per sentence;
-- a nonlinear bonus rewards distinct link types;
+`src/score.js` (v0.4) scores one reading (canonical or player-pinned) from the tiles' provenance:
+- blue tiles earn role points; adjective stacks taper, noun compounds never do; a saturating size multiplier rewards long sentences;
+- each *kind* of construction in a sentence earns points, repeats earn 0.4× the previous, so varied sentences beat repetitive chains;
+- construction points scale with the sentence's substance (full from 8 blue tiles);
 - conflicts and unrecognised sentences score 0 and are marked pending.
 
 ```js

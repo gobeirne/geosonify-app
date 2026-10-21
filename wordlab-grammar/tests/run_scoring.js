@@ -128,8 +128,11 @@ for (const name of Object.keys(pats)) {
   const rows = out.P4[name].filter(r => r.score !== null);
   const s = rows.map(r => r.structural);
   if (s.some((x, i) => i > 0 && x < s[i - 1] - 1e-9)) fail("P4'", {msg: 'structural points decreased along chain', name});
-  const tail = s[s.length - 1] - s[s.length - 2];
-  if (tail > 2) fail("P4'", {msg: 'chain not converging', name, lastMarginal: tail});
+  // Convergence: over the last three clauses of a 10-clause chain, structural
+  // points may grow by at most 8% of the total (alternating patterns zig-zag
+  // as each kind returns at its next, smaller repeat value).
+  const growth = s[s.length - 1] - s[s.length - 4];
+  if (growth > 0.08 * s[s.length - 1]) fail("P4'", {msg: 'chain not converging', name, lastThreeGrowth: growth, total: s[s.length - 1]});
 }
 
 // Splitting a long homogeneous chain: joined vs split into two halves.
@@ -153,7 +156,9 @@ for (let k = 1; k <= 8; k++) {
   out.P5.push({modifiers: k, adjectiveStack: a.s && +mod(a).toFixed(2), compoundStack: c.s && +mod(c).toFixed(2)});
   if (k >= 2 && a.s && c.s && !(mod(c) > mod(a))) fail('P5', {k});
 }
-out.P5bounds = {adjective: PARAMS.ADJ / (1 - PARAMS.ADJ_R), compound: PARAMS.CMP / (1 - PARAMS.CMP_R)};
+// v0.4: adjective stacks are bounded; noun compounds grow linearly (flat 10 per modifier, by decision).
+out.P5bounds = {adjective: PARAMS.ADJ / (1 - PARAMS.ADJ_R), compound: 'linear (10 per modifier)'};
+if (out.P5.some((r, i) => i > 0 && r.adjectiveStack > PARAMS.ADJ / (1 - PARAMS.ADJ_R) + 1e-9)) fail('P5', {msg: 'adjective stack exceeds its bound'});
 
 // ------------------------------------------------------------ J join vs split
 let jn = 0, jv = 0;

@@ -11,7 +11,7 @@
  },
  "versions": {
   "grammar": "phase0-0.1.0",
-  "scorer": "phase2-0.3.0"
+  "scorer": "phase2-0.4.0"
  },
  "challenges": [
   {
@@ -65,9 +65,9 @@
     "wheel"
    ],
    "handSize": 41,
-   "botPar": 557,
-   "botParSentences": 16,
-   "botParTilesUsed": 39,
+   "botPar": 815,
+   "botParSentences": 15,
+   "botParTilesUsed": 38,
    "stretchTiles": 37
   },
   {
@@ -124,9 +124,9 @@
     "warfare"
    ],
    "handSize": 44,
-   "botPar": 593,
+   "botPar": 942,
    "botParSentences": 12,
-   "botParTilesUsed": 41,
+   "botParTilesUsed": 42,
    "stretchTiles": 40
   },
   {
@@ -208,9 +208,9 @@
     "win"
    ],
    "handSize": 69,
-   "botPar": 806,
-   "botParSentences": 23,
-   "botParTilesUsed": 57,
+   "botPar": 1086,
+   "botParSentences": 19,
+   "botParTilesUsed": 56,
    "stretchTiles": 63
   },
   {
@@ -269,8 +269,8 @@
    "handSize": 44,
    "note": "One outing produced 44 new words: a one-day sprint.",
    "stretchTiles": 40,
-   "botPar": 532,
-   "botParSentences": 16,
+   "botPar": 779,
+   "botParSentences": 13,
    "botParTilesUsed": 39
   }
  ]

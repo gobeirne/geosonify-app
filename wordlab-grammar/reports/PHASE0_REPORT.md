@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 365 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 506 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 447 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 717 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -33,43 +33,43 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 
 | Probe | Source | Phase 0 | v1.1 | Score | Canonical bracketing |
 |---|---|---|---|---:|---|
-| A1 | handover 5A | recognised | reject | 134 | `[Imp [VP [VP prevent [NP prison patient parrot ketchup]] [PP in [NP all bitter banana menu output]]]]` |
-| A2 | handover 5A (patient as noun adjunct) | recognised | reject | 134 | `[Imp [VP [VP prevent [NP prison patient parrot ketchup]] [PP in [NP all bitter banana menu output]]]]` |
-| B1 | handover 5B, intended reading via one pin | recognised | reject | 297 | `[Utt [Imp [VP [VP [VP [VP fix [NP the fossil figure]] [PP in [NP the favorite filter]]] and [VP forget [NP the grid gadget]]] [PP in [NP the garage]]]] for [S [NP [NP staff] [PP on stage]] [FP [VP sign [NP steel soldier script output]]]]]` |
-| B2 | handover 5B (unpinned: causal 'for' must be offered) | recognised | reject | 294 | `[Utt [Imp [VP [VP [VP [VP fix [NP the fossil figure]] [PP in [NP the favorite filter]]] and [VP forget [NP the grid gadget]]] [PP in [NP the garage]]]] for [S [NP [NP staff] [PP on [NP stage sign steel soldier script]]] [FP [VP output]]]]` |
-| B3 | handover 5B / ERG bake-off | recognised | reject | 57 | `[S [NP [NP staff] [PP on stage]] [FP can [VP sign [NP the script]]]]` |
-| C1 | handover 5C | recognised | reject | 188 | `[S [S [NP the unknown civil void] [FP [VP has [NP just blame]]]] and [S [NP the bitter october symbol] [FP can [VP oppose [NP the joke journey]]]]]` |
-| C2 | handover 5C (focus reading also offered) | recognised | reject | 188 | `[S [S [NP the unknown civil void] [FP [VP has [NP just blame]]]] and [S [NP the bitter october symbol] [FP can [VP oppose [NP the joke journey]]]]]` |
-| D1 | handover 5D | recognised | accept (clause) | 35 | `[S [NP the cat can] [FP can [VP run]]]` |
-| D2 | handover 5D | recognised | accept (question) | 35 | `[Q can [NP the cat can] [VP run]]` |
+| A1 | handover 5A | recognised | reject | 198 | `[Imp [VP [VP prevent [NP prison patient parrot ketchup]] [PP in [NP all bitter banana menu output]]]]` |
+| A2 | handover 5A (patient as noun adjunct) | recognised | reject | 198 | `[Imp [VP [VP prevent [NP prison patient parrot ketchup]] [PP in [NP all bitter banana menu output]]]]` |
+| B1 | handover 5B, intended reading via one pin | recognised | reject | 416 | `[Utt [Imp [VP [VP [VP [VP fix [NP the fossil figure]] [PP in [NP the favorite filter]]] and [VP forget [NP the grid gadget]]] [PP in [NP the garage]]]] for [S [NP [NP staff] [PP on stage]] [FP [VP sign [NP steel soldier script output]]]]]` |
+| B2 | handover 5B (unpinned: causal 'for' must be offered) | recognised | reject | 391 | `[Utt [Imp [VP [VP [VP [VP fix [NP the fossil figure]] [PP in [NP the favorite filter]]] and [VP forget [NP the grid gadget]]] [PP in [NP the garage]]]] for [S [NP [NP staff] [PP on [NP stage sign steel soldier script]]] [FP [VP output]]]]` |
+| B3 | handover 5B / ERG bake-off | recognised | reject | 93 | `[S [NP [NP staff] [PP on stage]] [FP can [VP sign [NP the script]]]]` |
+| C1 | handover 5C | recognised | reject | 233 | `[S [S [NP the unknown civil void] [FP [VP has [NP just blame]]]] and [S [NP the bitter october symbol] [FP can [VP oppose [NP the joke journey]]]]]` |
+| C2 | handover 5C (focus reading also offered) | recognised | reject | 233 | `[S [S [NP the unknown civil void] [FP [VP has [NP just blame]]]] and [S [NP the bitter october symbol] [FP can [VP oppose [NP the joke journey]]]]]` |
+| D1 | handover 5D | recognised | accept (clause) | 38 | `[S [NP the cat can] [FP can [VP run]]]` |
+| D2 | handover 5D | recognised | accept (question) | 42 | `[Q can [NP the cat can] [VP run]]` |
 | D3 | handover 5D: grammatical, but 'may' is neither BIP39 nor a helper | invalid_tiles | reject | — |  |
-| D4 | handover 5D | recognised | accept (clause) | 42 | `[S [NP the cat can] [FP must [VP run]]]` |
+| D4 | handover 5D | recognised | accept (clause) | 47 | `[S [NP the cat can] [FP must [VP run]]]` |
 | D5 | gold-role policy: a gold 'can' is a modal only | unrecognised | accept (imperative) | — |  |
-| D6 | gold-role policy: a blue 'can' keeps its noun reading | recognised | accept (imperative) | 35 | `[Imp [VP kick [NP the angry can]]]` |
-| E1 | handover 5E | recognised | accept (ellipsis) | 28 | `[S [NP the garden fence] [FP can]]` |
-| E2 | handover 5E (the fragment reading must be offered; canonical is a genuine clause: [blossom and cat] [bag], bag = intransitive verb, WordNet frame 1) | recognised | accept (fragment) | 57 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
-| E2b | handover 5E: canonical is the intended fragment (intransitive bag came only from a WordNet frame, demoted after ERG run 3) | recognised | accept (fragment) | 57 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
-| E3 | handover 5E | recognised | accept (clause) | 289 | `[S [NP [NP a cheap angry badge] and [NP a shallow silly chat]] [FP can [VP [VP [VP boil [NP [NP nice level stairs] and [NP the vocal timber table]]] [PP in [NP the million citizen parade]]] [PP in [NP the vivid autumn blossom]]]]]` |
-| E4 | handover 5E (ERG: no reading) | recognised | accept (imperative) | 107 | `[Imp [VP [VP clump [NP the document]] and [VP forget [NP the half human hybrid fossil]]]]` |
-| E5 | handover 5E | recognised | accept (imperative) | 239 | `[Imp [VP [VP [VP crumble [NP the favorite document]] [PP in [NP fun]]] and [VP ensure [S [NP the core dose] [FP can [VP [VP predict [NP midnight security]] and [VP taste [NP vivid unknown ketchup]]]]]]]]` |
-| E6 | handover 5E | recognised | accept (imperative) | 172 | `[Imp [Imp [VP clean [NP the favorite festival]]] [SubCl because [S [NP angry jeans] [FP [VP just [VP know [NP robust inner salad]]]]]]]` |
-| E7 | handover 5E | recognised | accept (imperative) | 123 | `[Imp [VP [VP just [VP joke]] and [VP blame [NP half human hybrid cat stairs]]]]` |
-| E8 | handover 5E | recognised | accept (imperative) | 147 | `[Imp [VP [VP [VP taste [NP vocal stairs]] today] and [VP guess [NP famous angry autumn jeans]]]]` |
-| U1 | v1.1 session sentence 1 | recognised | accept (imperative) | 259 | `[Imp [Imp [VP [VP abandon [NP [AdjP barely fun] festival salad]] and [VP shiver]]] [SubCl because [S [NP clean library jeans] [FP [VP [VP know [NP robust news]] [PP for [NP the runway security man]]]]]]]` |
-| U2 | v1.1 session sentence 2 | recognised | accept (clause) | 240 | `[S [NP [NP a cheap angry badge] and [NP a shallow silly chat]] [FP can [VP [VP boil [NP [NP nice level stairs] and [NP the vocal timber table]]] [PP in [NP the million citizen parade]]]]]` |
-| U3 | v1.1 session sentence 3 | recognised | accept (clause) | 239 | `[S [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]] [FP [FP [VP crumble]] and [FP [VP [VP observe [NP the original midnight primary core]] [PP on [NP the inner coast]]]]]]` |
-| F1 | handover 5F: chat count | recognised | accept (fragment) | 19 | `[Frag [NP a shallow silly chat]]` |
-| F2 | handover 5F: chat mass | recognised | accept (fragment) | 19 | `[Frag [NP shallow silly chat]]` |
-| F3 | handover 5F: 'symbol' is a noun adjunct, not an adjective | recognised | accept (clause) | 42 | `[S [NP the symbol cat] [FP can [VP run]]]` |
+| D6 | gold-role policy: a blue 'can' keeps its noun reading | recognised | accept (imperative) | 39 | `[Imp [VP kick [NP the angry can]]]` |
+| E1 | handover 5E | recognised | accept (ellipsis) | 30 | `[S [NP the garden fence] [FP can]]` |
+| E2 | handover 5E (the fragment reading must be offered; canonical is a genuine clause: [blossom and cat] [bag], bag = intransitive verb, WordNet frame 1) | recognised | accept (fragment) | 79 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
+| E2b | handover 5E: canonical is the intended fragment (intransitive bag came only from a WordNet frame, demoted after ERG run 3) | recognised | accept (fragment) | 79 | `[Frag [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]]]` |
+| E3 | handover 5E | recognised | accept (clause) | 398 | `[S [NP [NP a cheap angry badge] and [NP a shallow silly chat]] [FP can [VP [VP [VP boil [NP [NP nice level stairs] and [NP the vocal timber table]]] [PP in [NP the million citizen parade]]] [PP in [NP the vivid autumn blossom]]]]]` |
+| E4 | handover 5E (ERG: no reading) | recognised | accept (imperative) | 124 | `[Imp [VP [VP clump [NP the document]] and [VP forget [NP the half human hybrid fossil]]]]` |
+| E5 | handover 5E | recognised | accept (imperative) | 304 | `[Imp [VP [VP [VP crumble [NP the favorite document]] [PP in [NP fun]]] and [VP ensure [S [NP the core dose] [FP can [VP [VP predict [NP midnight security]] and [VP taste [NP vivid unknown ketchup]]]]]]]]` |
+| E6 | handover 5E | recognised | accept (imperative) | 238 | `[Imp [Imp [VP clean [NP the favorite festival]]] [SubCl because [S [NP angry jeans] [FP [VP just [VP know [NP robust inner salad]]]]]]]` |
+| E7 | handover 5E | recognised | accept (imperative) | 168 | `[Imp [VP [VP just [VP joke]] and [VP blame [NP half human hybrid cat stairs]]]]` |
+| E8 | handover 5E | recognised | accept (imperative) | 195 | `[Imp [VP [VP [VP taste [NP vocal stairs]] today] and [VP guess [NP famous angry autumn jeans]]]]` |
+| U1 | v1.1 session sentence 1 | recognised | accept (imperative) | 370 | `[Imp [Imp [VP [VP abandon [NP [AdjP barely fun] festival salad]] and [VP shiver]]] [SubCl because [S [NP clean library jeans] [FP [VP [VP know [NP robust news]] [PP for [NP the runway security man]]]]]]]` |
+| U2 | v1.1 session sentence 2 | recognised | accept (clause) | 343 | `[S [NP [NP a cheap angry badge] and [NP a shallow silly chat]] [FP can [VP [VP boil [NP [NP nice level stairs] and [NP the vocal timber table]]] [PP in [NP the million citizen parade]]]]]` |
+| U3 | v1.1 session sentence 3 | recognised | accept (clause) | 334 | `[S [NP [NP the vivid autumn blossom] and [NP the famous canvas cat bag]] [FP [FP [VP crumble]] and [FP [VP [VP observe [NP the original midnight primary core]] [PP on [NP the inner coast]]]]]]` |
+| F1 | handover 5F: chat count | recognised | accept (fragment) | 20 | `[Frag [NP a shallow silly chat]]` |
+| F2 | handover 5F: chat mass | recognised | accept (fragment) | 20 | `[Frag [NP shallow silly chat]]` |
+| F3 | handover 5F: 'symbol' is a noun adjunct, not an adjective | recognised | accept (clause) | 47 | `[S [NP the symbol cat] [FP can [VP run]]]` |
 | F4 | handover 5F: 'symbol' is not a predicative adjective | conflict (det_noun) | reject | — |  |
-| F5 | handover 5F: 'toward' is a preposition | recognised | accept (clause) | 49 | `[S [NP the cat] [FP can [VP [VP run] [PP toward [NP the garden]]]]]` |
+| F5 | handover 5F: 'toward' is a preposition | recognised | accept (clause) | 72 | `[S [NP the cat] [FP can [VP [VP run] [PP toward [NP the garden]]]]]` |
 | F6 | handover 5F: no free adverbial 'toward' | unrecognised | reject | — |  |
-| P1 | v1.1 defect: invariant noun with 'is' | recognised | reject | 22 | `[S [NP the fish] [FP is sad]]` |
-| P2 | v1.1 defect: three-way NP coordination | recognised | reject | 57 | `[S [NP [NP the cat] and [NP the dog] and [NP the fish]] [FP can [VP run]]]` |
+| P1 | v1.1 defect: invariant noun with 'is' | recognised | reject | 25 | `[S [NP the fish] [FP is sad]]` |
+| P2 | v1.1 defect: three-way NP coordination | recognised | reject | 74 | `[S [NP [NP the cat] and [NP the dog] and [NP the fish]] [FP can [VP run]]]` |
 | P3 | v1.1 defect: three-way VP coordination | recognised | reject | 31 | `[Imp [VP [VP run] and [VP jump] and [VP swim]]]` |
-| P4 | v1.1 defect: three copular clauses | recognised | reject | 109 | `[S [S [NP the dog] [FP is happy]] and [S [NP the cat] [FP is sad]] and [S [NP the fish] [FP is calm]]]` |
-| P5 | v1.1 defect: 'has' with a mass object | recognised | reject | 22 | `[S [NP the void] [FP [VP has [NP blame]]]]` |
-| P6 | Buffalo-type reading accepted by v1.1: [cat dog fish] [bird] (to bird = birdwatch) | recognised | accept (clause) | 48 | `[S [NP cat dog fish] [FP [VP bird]]]` |
+| P4 | v1.1 defect: three copular clauses | recognised | reject | 128 | `[S [S [NP the dog] [FP is happy]] and [S [NP the cat] [FP is sad]] and [S [NP the fish] [FP is calm]]]` |
+| P5 | v1.1 defect: 'has' with a mass object | recognised | reject | 23 | `[S [NP the void] [FP [VP has [NP blame]]]]` |
+| P6 | Buffalo-type reading accepted by v1.1: [cat dog fish] [bird] (to bird = birdwatch) | recognised | accept (clause) | 53 | `[S [NP cat dog fish] [FP [VP bird]]]` |
 | N1 | agreement | conflict (agreement) | reject | — |  |
 | N2 | article sound | conflict (article) | reject | — |  |
 | N3 | article sound | conflict (article) | reject | — |  |
@@ -83,19 +83,19 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 | N11 | agreement with 'has' | conflict (agreement) | reject | — |  |
 | L1 | Phase 1: ellipsis after has | recognised | reject | 10 | `[S [NP the void] [FP has]]` |
 | L2 | Phase 1: negated do-ellipsis | recognised | reject | 0 | `[S [NP she] [FP did not]]` |
-| L3 | Phase 1: ellipsis inside a subordinate clause | recognised | reject | 71 | `[S [S [NP the cat] [FP can [VP run]]] [SubCl because [S [NP the dog] [FP did]]]]` |
+| L3 | Phase 1: ellipsis inside a subordinate clause | recognised | reject | 80 | `[S [S [NP the cat] [FP can [VP run]]] [SubCl because [S [NP the dog] [FP did]]]]` |
 | L4 | Phase 1: agreement still applies under ellipsis | conflict (agreement) | reject | — |  |
 | L5 | Phase 1: ERG optional object (detect := v_np*_le) | recognised | reject | 10 | `[Imp [VP detect]]` |
 | L6 | Phase 1: ERG object required (bless := v_np_le) | conflict (verb_frame) | reject | — |  |
-| L7 | Phase 1: ERG optional object in coordination | recognised | reject | 35 | `[Imp [VP [VP bless [NP the cat]] or [VP decide]]]` |
-| L8 | Phase 1: ERG to-infinitive frame (decide := v_vp_seq_le) | recognised | accept (clause) | 42 | `[S [NP the cat] [FP can [VP decide to [VP run]]]]` |
-| PN1 | proper name (v1.1 proper_name_reading) | recognised | accept (clause) | 28 | `[S [NP satoshi] [FP can [VP run]]]` |
-| PN2 | proper name in a PP | recognised | accept (clause) | 42 | `[S [NP the cat] [FP can [VP [VP run] [PP in [NP april]]]]]` |
-| PN3 | common-noun reading kept (a satoshi = unit) | recognised | accept (clause) | 28 | `[S [NP a satoshi] [FP can [VP run]]]` |
+| L7 | Phase 1: ERG optional object in coordination | recognised | reject | 38 | `[Imp [VP [VP bless [NP the cat]] or [VP decide]]]` |
+| L8 | Phase 1: ERG to-infinitive frame (decide := v_vp_seq_le) | recognised | accept (clause) | 44 | `[S [NP the cat] [FP can [VP decide to [VP run]]]]` |
+| PN1 | proper name (v1.1 proper_name_reading) | recognised | accept (clause) | 30 | `[S [NP satoshi] [FP can [VP run]]]` |
+| PN2 | proper name in a PP | recognised | accept (clause) | 59 | `[S [NP the cat] [FP can [VP [VP run] [PP in [NP april]]]]]` |
+| PN3 | common-noun reading kept (a satoshi = unit) | recognised | accept (clause) | 30 | `[S [NP a satoshi] [FP can [VP run]]]` |
 | PN4 | no proper-name reading for ordinary nouns | conflict (det_noun) | reject | — |  |
-| S1 | stress: 20-noun compound | recognised | reject | 190 | `[S [NP the prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey] [FP is bitter]]` |
+| S1 | stress: 20-noun compound | recognised | reject | 369 | `[S [NP the prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey] [FP is bitter]]` |
 | S2 | stress: 12 coordinated clauses | recognised | accept (clause) | 427 | `[S [S [NP the dog] [FP can [VP run]]] and [S [NP the cat] [FP can [VP jump]]] and [S [NP the fish] [FP can [VP swim]]] and [S [NP the bird] [FP can [VP sing]]] and [S [NP the lion] [FP can [VP dance]]] and [S [NP the horse] [FP can [VP fly]]] and [S [NP the donkey] [FP can [VP float]]] and [S [NP the eagle] [FP can [VP shiver]]] and [S [NP the rabbit] [FP can [VP blossom]]] and [S [NP the monkey] [FP can [VP crumble]]] and [S [NP the tiger] [FP can [VP arrive]]] and [S [NP the elephant] [FP can [VP climb]]]]` |
-| S3 | stress: nested subordination | recognised | accept (clause) | 162 | `[S [S [NP the dog] [FP can [VP run]]] [SubCl because [S [S [NP the cat] [FP can [VP jump]]] [SubCl because [S [S [NP the fish] [FP can [VP swim]]] [SubCl because [S [NP the bird] [FP can [VP sing]]]]]]]]]` |
+| S3 | stress: nested subordination | recognised | accept (clause) | 213 | `[S [S [NP the dog] [FP can [VP run]]] [SubCl because [S [S [NP the cat] [FP can [VP jump]]] [SubCl because [S [S [NP the fish] [FP can [VP swim]]] [SubCl because [S [NP the bird] [FP can [VP sing]]]]]]]]]` |
 
 ## Construction-level coverage (measured)
 
@@ -340,7 +340,7 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | Check | Result |
 |---|---|
 | migration keeps inventory, helpers and sentences | pass — 167 words, 9 helpers, 3 sentences |
-| each migrated sentence keeps its v1.1 score in history | pass — v1.1 [418, 165, 216] -> v2 [259, 232, 239] |
+| each migrated sentence keeps its v1.1 score in history | pass — v1.1 [418, 165, 216] -> v2 [370, 335, 334] |
 | migration notice shown | pass |
 | v1.1 snapshot left untouched | pass |
 | draft is scored | pass |
@@ -373,7 +373,7 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 | Satoshi is capitalised as a name | pass — Satoshi can. |
 | a challenge shows only its hand (tray and collection) | pass |
 | a challenge starts with no sentences | pass |
-| challenge status shows placed words and bot par | pass — 0 / 41 words placed (stretch 37) · 0 points (bot par 557) |
+| challenge status shows placed words and bot par | pass — 0 / 41 words placed (stretch 37) · 0 points (bot par 815) |
 | a sentence can be committed inside the challenge | pass — the banana can abandon |
 | free play is untouched and restored | pass |
 | the challenge keeps its own sentences | pass |
@@ -401,95 +401,99 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 - **Specific conflicts** now report one or two named violations with spans (e.g. *myself … are*: pronoun case and agreement); three or more is reported as outside the grammar.
 - **Family review:** with sentence length controlled, every construction family with n ≥ 15 is ERG-witnessed at ≥ 0.79 of its expected rate; the weakest (infinitives) is explained by v1.1 verb readings that ERG does not list (*to friend*, *to hole*). No grammar change.
 
-## Phase 2 scoring (`src/score.js`, version phase2-0.3.0)
+## Phase 2 scoring (`src/score.js`, version phase2-0.4.0)
 
 A sentence is scored from one reading only: the canonical reading, or the one the player pinned. Conflicts and unrecognised sentences score 0 and are marked pending.
 
+**Why v0.4 (2026-10-21).** Under v0.3, which paid per clause link and tapered noun compounds, the best August portfolio found by search was a mechanical chain of “X can V Y and X can V Y …” clauses (725 points), ahead of the player’s varied, more satisfying sentences (677). v0.4 pays for *variety of construction* instead, never tapers noun compounds, and scales construction points with sentence substance. Under v0.4 the player’s portfolio scores 923 and the best chain portfolio found by the same search scores 909.
+
 | Component | Rule |
 |---|---|
-| Blue tile, core role (argument or predicate head) | 10 |
-| Blue tile in a closed-class role (e.g. blue *can* as modal) | 4 |
+| Blue tile, core role | 10 |
+| Blue tile in a closed-class role | 4 |
 | Adjective/adverb modifiers of one head | 10 × 0.7^k (bound 33) |
-| Noun-compound modifiers of one head | 10 × 0.9^k (bound 100) |
-| Bare one-word conjuncts (lists), third onward | × 0.7^(k−2) |
-| Size multiplier on lexical points, B = blue tiles | 1 + 0.6·(1 − 0.85^(B−1)) (bound 1.6) |
-| Clause links (coordination, causal *for*, subordination, complement, infinitive, relative) | 12 × 0.6^k per sentence, whatever the conjunction; each linked side must be blue-anchored and hold ≥ 2 blue tiles |
-| Distinct link types T | 10·T + 6·T·(T−1) = 10, 32, 66, 112, 170, 240 |
-| Argument-clause embedding depth | 8 per level, up to 3 |
+| Noun-compound modifiers | flat 10 each (no taper, by decision) |
+| Bare one-word list items, third onward | × 0.7^(k−2) |
+| Size multiplier on word points, B = blue tiles | 1 + 0.6·(1 − 0.85^(B−1)) (bound 1.6) |
+| Constructions | each kind present earns its weight (below); each repeat in the sentence earns 0.4× the previous; anchored by blue tiles; joined clauses need ≥ 2 blue tiles on each side |
+| Construction substance | construction points × min(1, (B−1)/(8−1)): full from 8 blue tiles, none for one |
+| Argument-clause embedding beyond the first level | 8 per level, up to 3 |
 | Nominal fragment | × 0.6 |
 
-Gold tiles earn no lexical points. There is no fixed per-sentence bonus. Portfolio score is the plain sum.
+Construction weights (first instance): subordinate clause 48, relative clause 48, complement clause 48, causal for coordination 48, infinitive 42, imperative declarative coordination 36, clause coordination 30, predicate coordination 30, ditransitive 30, verb coordination 24, noun coordination 24, copula 24, lexical copula 24, prepositional phrase 24, vp ellipsis 24, perfect 24, prepositional verb 24, bare idiomatic pp 24, question 18, focus modifier 18, degree modifier 18, postverbal adverb 18, preverbal adverb 18, negation 18, proper noun 12, do support 12, verb object 9, adjective modifier 6, noun compound 6, modal 6.
+
+The weights were set so that construction points are roughly 25–50% of a sentence’s score (word placement stays central), and the substance threshold so that points per blue tile rise with sentence length (short, construction-dense sentences do not win). Gold tiles earn no word points. No fixed per-sentence bonus. Portfolio score is the plain sum.
 
 ### Invariant tests (measured, `tests/run_scoring.js`, all on real parses)
 
 | Check | Result |
 |---|---|
-| P1 recognised + blue tile ⇒ score > 0 | 0 violations in 800 generated sentences |
-| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 717 insertions (23 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
+| P1 recognised + blue tile ⇒ score > 0 | 0 violations in 600 generated sentences |
+| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 627 insertions (13 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
 | P3′ gold-only material earns nothing; unanchored links earn nothing | 0 non-zero of 150 gold-only sentences; anchor cases all as expected |
-| P4′ chains converge; another *and* adds 4.32 structural points, a new relation type (relative clause) adds 46.32 | 0 failures |
-| P5 compound stack ≫ adjective stack (8 modifiers: 56.94 vs 31.41; bounds 100 vs 33) | 0 failures |
-| P6 score spread across alternative readings (tracked) | median 0, 90th percentile 0.269 of the canonical score |
-| Join test: clause-level join ≥ separate sum | 0 violations in 10 joins |
+| P4′ repeated constructions converge; another *and* adds 12.86 structural points, a new kind (relative clause) adds 69.86 | 0 failures |
+| P5 adjective stacks bounded (≤ 33); noun compounds linear and always ahead (8 modifiers: 80 vs 31.41) | 0 failures |
+| P6 score spread across alternative readings (tracked) | median 0.048, 90th percentile 0.275 of the canonical score |
+| Join test: clause-level join ≥ separate sum | 0 violations in 8 joins |
 
 Clause chains (same words; scores after 1–10 clauses):
 
 | Pattern | Scores |
 |---|---|
-| and | 22, 71, 109, 146, 182, 218, 252, 287, 321, 354 |
-| because | 22, 79, 117, 154, 190, 225, 260, 294, 328, 361 |
-| alternating | 22, 71, 139, 176, 212, 247, 282, 316, 350, 383 |
-| and/because/while/before | 22, 71, 139, 176, 220, 255, 290, 324, 357, 390 |
+| and | 23, 66, 108, 152, 186, 220, 254, 288, 321, 355 |
+| because | 23, 89, 154, 205, 242, 277, 311, 345, 378, 412 |
+| alternating | 23, 66, 163, 208, 273, 307, 353, 387, 425, 458 |
+| and/because/while/before | 23, 66, 163, 228, 277, 322, 359, 394, 427, 465 |
 
 Splitting a long homogeneous chain into two sentences (the residual cost of keeping a plain portfolio sum with per-sentence link tapering):
 
 | Clauses | Joined | Split in two | Split gain |
 |---:|---:|---:|---:|
-| 4 | 146.1 | 142.5 | -2.5% |
-| 6 | 217.6 | 218.5 | 0.4% |
-| 8 | 286.8 | 292.3 | 1.9% |
-| 10 | 354.2 | 364.4 | 2.9% |
-| 12 | 420.5 | 435.2 | 3.5% |
+| 4 | 152.4 | 131.4 | -13.7% |
+| 6 | 219.9 | 216.3 | -1.7% |
+| 8 | 287.6 | 304.7 | 5.9% |
+| 10 | 354.5 | 372 | 4.9% |
+| 12 | 420.6 | 439.8 | 4.6% |
 
 Points per blue tile by strategy:
 
 | Strategy | Blue tiles | Score | Per blue tile |
 |---|---:|---:|---:|
 | one-word imperative | 1 | 10 | 10 |
-| noun list fragment | 6 | 48 | 8 |
-| bare noun list fragment | 6 | 30 | 5.03 |
-| adjective stack | 8 | 70 | 8.69 |
-| noun compound | 8 | 94 | 11.76 |
-| compound fragment | 7 | 47 | 6.69 |
-| 8-clause and-chain | 16 | 287 | 17.92 |
-| 8-clause because-chain | 17 | 294 | 17.31 |
-| 8-clause alternating chain | 17 | 316 | 18.6 |
-| handover A | 10 | 134 | 13.44 |
-| handover C | 11 | 181 | 16.41 |
-| session sentence 1 | 16 | 259 | 16.17 |
-| embedding + relative | 9 | 134 | 14.89 |
+| noun list fragment | 6 | 58 | 9.72 |
+| bare noun list fragment | 6 | 40 | 6.75 |
+| adjective stack | 8 | 89 | 11.06 |
+| noun compound | 8 | 132 | 16.45 |
+| compound fragment | 7 | 63 | 8.97 |
+| 8-clause and-chain | 16 | 288 | 17.98 |
+| 8-clause because-chain | 17 | 345 | 20.29 |
+| 8-clause alternating chain | 17 | 387 | 22.75 |
+| handover A | 10 | 198 | 19.81 |
+| handover C | 11 | 225 | 20.48 |
+| session sentence 1 | 16 | 370 | 23.1 |
+| embedding + relative | 9 | 175 | 19.49 |
 
-**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 61 sentences, 141 blue tiles, 1817 points (12.89 per tile); structural points 14% of the total; 2 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
+**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 58 sentences, 136 blue tiles, 2245 points (16.5 per tile); structural points 33% of the total; 3 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
 
 | Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |
 |---|---:|---:|---:|
-| 1-2 | 696 | 10 | 10.9 |
-| 3-4 | 1782 | 10.5 | 12.3 |
-| 5-6 | 1486 | 11.8 | 14.2 |
-| 7-9 | 1423 | 12.6 | 16.3 |
-| 10+ | 613 | 14.5 | 17.8 |
+| 1-2 | 771 | 10 | 12.2 |
+| 3-4 | 1797 | 13 | 16.2 |
+| 5-6 | 1470 | 15.6 | 20.5 |
+| 7-9 | 1361 | 19.2 | 25.3 |
+| 10+ | 601 | 21.5 | 26.3 |
 
-The first scorer draft (v0.1) failed this search: tiny elliptical or bare-verb structures (*project all can and canvas*: 3 blue tiles, 95 points) collected clause-link and diversity bonuses with almost no content, and *Run.* out-scored the handover sentences per tile. The substantive-link rule and the size multiplier were introduced in response.
+Earlier drafts failed this search and were corrected: v0.1 let tiny elliptical structures farm link bonuses (*project all can and canvas*: 3 blue tiles, 95 points); the first v0.4 draft let short, construction-dense questions and fragments win per tile. The substantive-link rule, the size multiplier and the construction-substance scaling were introduced in response.
 
 ### v1.1 score versus Phase 2 score
 
 | Sentence | v1.1 | Phase 2 | Phase 2 breakdown |
 |---|---:|---:|---|
-| A | — | 134 | lexical 92 × 1.461, links 0, types — |
-| C | — | 188 | lexical 111 × 1.5, links 1, types coordination |
-| Session 1 | 418 | 259 | lexical 153 × 1.548, links 1, types subordination |
-| Session 2 | 166 | 240 | lexical 154 × 1.555, links 0, types — |
-| Session 3 | 216 | 239 | lexical 140.9 × 1.538, links 1, types coordination |
+| A | — | 198 | lexical 94 × 1.461, links 0, types — |
+| C | — | 233 | lexical 111 × 1.5, links 1, types clause_coordination |
+| Session 1 | 418 | 370 | lexical 154 × 1.548, links 1, types subordinate_clause |
+| Session 2 | 166 | 343 | lexical 155 × 1.555, links 0, types — |
+| Session 3 | 216 | 334 | lexical 141.9 × 1.538, links 1, types predicate_coordination |
 
 Scales differ (v1.1 multiplied up to 6.8×), so compare rankings, not magnitudes.
 

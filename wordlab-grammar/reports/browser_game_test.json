@@ -5,7 +5,7 @@
  },
  "each migrated sentence keeps its v1.1 score in history": {
   "ok": true,
-  "detail": "v1.1 [418, 165, 216] -> v2 [259, 232, 239]"
+  "detail": "v1.1 [418, 165, 216] -> v2 [370, 335, 334]"
  },
  "migration notice shown": {
   "ok": true,
@@ -23,7 +23,7 @@
     "valid": true,
     "pending": false,
     "reason": null,
-    "score": 64,
+    "score": 80,
     "kind": "clause",
     "cps": 0,
     "pinned": false
@@ -62,7 +62,7 @@
     "valid": true,
     "pending": false,
     "reason": null,
-    "score": 57,
+    "score": 69,
     "kind": "clause",
     "cps": 1,
     "pinned": false
@@ -75,7 +75,7 @@
    "clicked": "N",
    "pinned": true,
    "valid": true,
-   "score": 57
+   "score": 69
   }
  },
  "editing the sentence drops stale pins": {
@@ -231,7 +231,7 @@
  },
  "challenge status shows placed words and bot par": {
   "ok": true,
-  "detail": "0 / 41 words placed (stretch 37) \u00b7 0 points (bot par 557)"
+  "detail": "0 / 41 words placed (stretch 37) \u00b7 0 points (bot par 815)"
  },
  "a sentence can be committed inside the challenge": {
   "ok": true,
