@@ -163,16 +163,16 @@
 <p>The <strong>Your own map imagery</strong> card at the bottom of the FAQ tab has a paste field for any tile source of your own. Two URL shapes work:</p>
 <ul>
   <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
-  <li>An <strong>ArcGIS hosted-tile URL</strong> - one ending in <code>/MapServer</code>; Geosonify appends the tile path for you.</li>
+  <li>An <strong>ArcGIS map service URL</strong> - one ending in <code>/MapServer</code>, in any projection.</li>
 </ul>
-<p>Dynamic ArcGIS image services (ending in <code>/ImageServer</code>, or a bare REST root) aren't tiled the way a web map needs, so those are declined with a note telling you what to paste instead. If a source you paste contains an access key or token, Geosonify warns you, because a display link carrying it would show the key to anyone you share it with. If imagery fails to load, the map falls back to the standard street map rather than going blank.</p>
+<p>For an ArcGIS map service, Geosonify first reads the service's own description. If it is cached as standard web-map tiles, those tiles are loaded directly. If it uses another projection - many national and regional imagery services do, such as New Zealand Transverse Mercator (NZTM2000) - or has no tile cache at all, Geosonify asks the ArcGIS server for one image of the view at a time, already reprojected to fit the map, so it lines up with the streets, grids and shapes with no setup. A service that offers only tiles in another projection, and won't draw images on request, is declined with a note explaining why. Image services (<code>/ImageServer</code>), single layers (<code>/MapServer/0</code>) and bare REST directories are declined too, with a note on what to paste instead. If a source you paste contains an access key or token, Geosonify warns you, because a display link carrying it would show the key to anyone you share it with. If imagery never loads, the map falls back to the standard street map rather than going blank.</p>
 
 <table>
   <tr><th>Value</th><th>Shows</th></tr>
   <tr><td><code>aerial</code></td><td>Worldwide satellite / aerial (Esri)</td></tr>
   <tr><td><code>topo</code></td><td>Topographic / terrain (Esri)</td></tr>
   <tr><td><code>osm</code> or omitted</td><td>Standard street map (default)</td></tr>
-  <tr><td>a pasted URL</td><td>Your own XYZ or ArcGIS hosted-tile source</td></tr>
+  <tr><td>a pasted URL</td><td>Your own XYZ tile source or ArcGIS map service</td></tr>
 </table>
 <p>A note on imagery rights: the built-in aerial and topographic layers come from Esri's public basemap services, free for this kind of use with attribution shown on the map. Anything you paste carries its own provider's terms - worth a glance if you're publishing widely.</p>
 </div>

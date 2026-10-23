@@ -28,13 +28,19 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.5: a pasted ArcGIS …/MapServer URL is inspected by MapManager before it
+  is drawn (any projection; see map-manager v1.1), so applying it can be
+  pending: the card says it is checking, then reports the result. The active
+  basemap is recorded only once it is actually showing, and cleared again if
+  the source falls back to the standard map.
+
   No external dependencies.
 */
 
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.4';
+  const __FAQ_UI_VER__ = 'v1.5';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -412,7 +418,7 @@
       <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
       <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
     </div>
-    <p class="basemap-note">Any XYZ tile URL, or an ArcGIS hosted-tile URL ending in /MapServer. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
+    <p class="basemap-note">Any XYZ tile URL, or an ArcGIS map service URL ending in /MapServer, in any projection. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
     <p class="basemap-warn" id="basemapPasteWarn"></p>`;
   }
 
@@ -634,7 +640,12 @@
     if (typeof MapManager === 'undefined' || !MapManager.setBasemap) return { ok: false, error: 'Map not ready.' };
     const res = MapManager.setBasemap(source, {
       attribution: attribution,
-      onError: msg => { if (ui && ui.warn) { ui.warn.textContent = msg; ui.warn.classList.add('show'); } }
+      onError: msg => {
+        if (ui && ui.warn) { ui.warn.textContent = msg; ui.warn.classList.add('show'); }
+        // The map went back to Standard: don't keep claiming the failed source.
+        _writeBasemapParam(null);
+        _resyncChips();
+      }
     });
     return res;
   }
@@ -715,11 +726,21 @@
       if (!source) { setWarn('Paste an imagery URL first.'); return; }
       const res = leaveSkyThen(() => _applyBasemap(source, '', ui));
       if (!res.ok) { setWarn(res.error); return; }
-      setWarn(_basemapHasSecret(source)
-        ? 'Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.'
-        : 'Applied. The map now shows this imagery.');
-      _writeBasemapParam(source);
-      _resyncChips();
+      const shown = (note) => {
+        setWarn(_basemapHasSecret(source)
+          ? 'Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.'
+          : (note || 'Applied. The map now shows this imagery.'));
+        _writeBasemapParam(source);
+        _resyncChips();
+      };
+      if (!res.pending) { shown(); return; }
+      // An ArcGIS map service is read first; the current imagery stays meanwhile.
+      setWarn('Checking this map service…');
+      res.promise.then(r => {
+        if (!r || r.stale) return;                 // another imagery was chosen since
+        if (!r.ok) { setWarn(r.error); return; }
+        shown(r.note);
+      });
     };
     applyBtn.addEventListener('click', applyPasted);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
@@ -773,9 +794,19 @@
     if (!source) return null;
     global.__GEOSONIFY_BASEMAP_ACTIVE = source;
     if (typeof MapManager !== 'undefined' && MapManager.setBasemap) {
-      MapManager.setBasemap(source, {
+      const res = MapManager.setBasemap(source, {
         onError: () => { global.__GEOSONIFY_BASEMAP_ACTIVE = null; }
       });
+      if (!res || res.ok === false) {
+        global.__GEOSONIFY_BASEMAP_ACTIVE = null;
+      } else if (res.pending) {
+        res.promise.then(r => {
+          if (r && !r.ok && !r.stale) {
+            global.__GEOSONIFY_BASEMAP_ACTIVE = null;
+            try { console.warn('[geosonify] basemap from link not shown: ' + r.error); } catch (e) {}
+          }
+        });
+      }
     }
     return source;
   }

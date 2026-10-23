@@ -1,5 +1,12 @@
 /**
- * geosonify-map-manager.js v1.0
+ * geosonify-map-manager.js v1.1
+ *
+ * v1.1 (2026-10-23): a pasted ArcGIS …/MapServer URL is inspected (?f=json)
+ * before drawing. Standard Web Mercator caches load as tiles; caches in any
+ * other projection, and dynamic services, are drawn through the server's
+ * /export operation (Esri Leaflet dynamicMapLayer, loaded on demand), which
+ * reprojects to Web Mercator. A source now falls back to OSM only if it never
+ * loads anything.
  * 
  * Leaflet map management module for Geosonify.
  * Handles map initialization, markers, layers, shape drawing, and resize controls.
@@ -214,6 +221,7 @@
 
   let _basemapLayer = null;
   let _basemapMaxZoom = 22;
+  let _basemapSeq = 0;          // bumps on every setBasemap; late async results for an older call are dropped
   const _OSM_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
   const _OSM_ATTRIB = '© OpenStreetMap contributors';
 
@@ -231,12 +239,183 @@
     }
   };
 
+  // ---- ArcGIS MapServer support -------------------------------------------
+  //
+  // A pasted …/MapServer URL is inspected (…/MapServer?f=json) before it is
+  // drawn. Two ways to draw it:
+  //   'tiles'  — the service has a fused tile cache on the standard Web
+  //              Mercator tiling scheme: plain L.tileLayer on /tile/{z}/{y}/{x}
+  //              (with tile size, zoom offset and native zoom range taken from
+  //              the cache's levels of detail).
+  //   'export' — anything else (a cache in another projection, e.g. NZTM2000
+  //              EPSG:2193, or a dynamic service): Esri Leaflet's
+  //              dynamicMapLayer asks the server's /export operation for one
+  //              image of the current view with bboxSR = imageSR = 3857, so the
+  //              server reprojects and the Leaflet map stays Web Mercator.
+  // ArcGIS draws an export of a cached service from its cache tiles unless the
+  // service has dynamic layers enabled, so cached imagery comes back as imagery.
+  //
+  // Security: metadata is read with fetch (CORS) only, never JSONP, because a
+  // ?basemap= display link can name any server and JSONP would run that
+  // server's script in this page. The export layer uses f=image, so its images
+  // are plain <img> loads with no script and no CORS requirement.
+
+  const ESRI_LEAFLET_URL = 'https://unpkg.com/esri-leaflet@3.0.19/dist/esri-leaflet.js';
+  const ESRI_LEAFLET_SRI = 'sha384-2EpnechKmjshAhcJgZr0/dexkJdbcRJm+qsQtCjFsfBP/u5HZmrSa9lpmD7u2t5T';
+  const META_TIMEOUT_MS = 10000;
+  const WEB_MERCATOR_WKIDS = [3857, 102100, 102113, 900913, 3785];
+  const WM_HALF = 20037508.342787;            // Web Mercator origin offset (m)
+  const WM_RES0 = 156543.03392800014;         // m/px at zoom 0 for 256-px tiles
+
+  let _esriLoad = null;
+  function _loadEsriLeaflet() {
+    if (global.L && L.esri && L.esri.dynamicMapLayer) return Promise.resolve();
+    if (_esriLoad) return _esriLoad;
+    _esriLoad = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = ESRI_LEAFLET_URL;
+      s.integrity = ESRI_LEAFLET_SRI;
+      s.crossOrigin = 'anonymous';
+      s.async = true;
+      const t = setTimeout(() => { _esriLoad = null; reject(new Error('timeout')); }, 20000);
+      s.onload = () => {
+        clearTimeout(t);
+        if (global.L && L.esri && L.esri.dynamicMapLayer) resolve();
+        else { _esriLoad = null; reject(new Error('esri-leaflet did not register')); }
+      };
+      s.onerror = () => { clearTimeout(t); _esriLoad = null; reject(new Error('load failed')); };
+      document.head.appendChild(s);
+    });
+    return _esriLoad;
+  }
+
+  function _escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  // Split a pasted MapServer URL into its service root and token (if any).
+  // Accepts …/MapServer, …/MapServer/, …/MapServer?token=… . Returns null if
+  // the URL is not a MapServer service root.
+  function _parseMapServerUrl(raw) {
+    let u;
+    try { u = new URL(String(raw || '').trim()); } catch (e) { return null; }
+    if (!/^https?:$/.test(u.protocol)) return null;
+    const m = u.pathname.match(/^(.*\/MapServer)\/?$/i);
+    if (!m) return null;
+    return { root: u.origin + m[1], token: u.searchParams.get('token') || '' };
+  }
+
+  function _srWkid(sr) {
+    if (!sr) return null;
+    return sr.latestWkid || sr.wkid || null;
+  }
+
   /**
-   * Normalise a user-supplied imagery URL into a Leaflet-ready XYZ template.
-   * - Already-templated XYZ ({z}/{x}/{y} in any order)         → as-is
-   * - ArcGIS hosted tile service root (…/MapServer)            → append /tile/{z}/{y}/{x}
-   * - ArcGIS dynamic image service (…/ImageServer) or REST root → unsupported (needs esri-leaflet)
-   * Returns { url } on success or { error } describing what to paste instead.
+   * Decide how to draw a MapServer from its ?f=json metadata. Pure function
+   * (no DOM, no network) so it can be tested on its own.
+   * Returns { mode:'tiles', tileSize, zoomOffset, minNativeZoom, maxNativeZoom, ... }
+   *      or { mode:'export', format, ... }
+   *      or { error }.
+   * Common fields: wkid, attrib (plain text or ''), bounds ([[s,w],[n,e]] or null).
+   */
+  function _classifyMapServer(meta) {
+    if (!meta || typeof meta !== 'object') {
+      return { error: 'That service sent back something that isn\'t an ArcGIS service description.' };
+    }
+    if (meta.error) {
+      const code = meta.error.code;
+      if (code === 499 || code === 498 || code === 401 || code === 403) {
+        return { error: 'That ArcGIS service needs a sign-in token. Add ?token=… from its owner, or use a public service.' };
+      }
+      return { error: 'The ArcGIS server said: ' + (meta.error.message || ('error ' + code)) + '.' };
+    }
+
+    const attrib = String(meta.copyrightText || '').trim().slice(0, 200);
+    const ti = meta.tileInfo;
+    const wkid = _srWkid(ti && ti.spatialReference) || _srWkid(meta.spatialReference);
+    const isWM = WEB_MERCATOR_WKIDS.indexOf(wkid) !== -1;
+
+    // Coverage as lat/lon bounds, when the extent is in Web Mercator or WGS84.
+    let bounds = null;
+    const ext = meta.fullExtent;
+    if (ext && isFinite(ext.xmin) && isFinite(ext.ymin) && isFinite(ext.xmax) && isFinite(ext.ymax)) {
+      const ew = _srWkid(ext.spatialReference);
+      if (WEB_MERCATOR_WKIDS.indexOf(ew) !== -1) {
+        const toLL = (x, y) => {
+          const lon = x / WM_HALF * 180;
+          const lat = (2 * Math.atan(Math.exp(y / 6378137)) - Math.PI / 2) * 180 / Math.PI;
+          return [lat, lon];
+        };
+        bounds = [toLL(ext.xmin, ext.ymin), toLL(ext.xmax, ext.ymax)];
+      } else if (ew === 4326) {
+        bounds = [[ext.ymin, ext.xmin], [ext.ymax, ext.xmax]];
+      }
+      // Whole-world extents are no use as a request filter.
+      if (bounds && (bounds[1][1] - bounds[0][1] >= 359)) bounds = null;
+    }
+
+    // 1. A fused cache on the standard Web Mercator scheme → plain tiles.
+    if (meta.singleFusedMapCache && ti && isWM && ti.origin && Array.isArray(ti.lods) && ti.lods.length) {
+      const T = ti.rows;
+      const originOK = Math.abs(ti.origin.x + WM_HALF) < 1 && Math.abs(ti.origin.y - WM_HALF) < 1;
+      if (originOK && ti.rows === ti.cols && (T === 256 || T === 512)) {
+        let offset = null, zMin = Infinity, zMax = -Infinity, consistent = true;
+        for (const lod of ti.lods) {
+          const zf = Math.log2(WM_RES0 / lod.resolution);
+          const z = Math.round(zf);
+          if (Math.abs(zf - z) > 1e-3) { consistent = false; break; }
+          const off = lod.level - z;
+          if (offset === null) offset = off;
+          else if (off !== offset) { consistent = false; break; }
+          zMin = Math.min(zMin, z); zMax = Math.max(zMax, z);
+        }
+        if (consistent) {
+          return {
+            mode: 'tiles', wkid, attrib, bounds,
+            tileSize: T, zoomOffset: offset,
+            minNativeZoom: Math.max(0, zMin), maxNativeZoom: zMax
+          };
+        }
+      }
+    }
+
+    // 2. Anything else is drawn through /export, which needs the Map capability.
+    const caps = String(meta.capabilities || '');
+    if (caps && !/(^|,)\s*Map\s*(,|$)/i.test(caps)) {
+      return { error: 'That ArcGIS service only offers ready-made tiles in its own projection' +
+        (wkid ? ' (EPSG:' + wkid + ')' : '') + ' and doesn\'t allow map images to be drawn on request, so it can\'t be lined up with this map.' };
+    }
+    const formats = String(meta.supportedImageFormatTypes || '').toUpperCase().split(',');
+    const cacheFmt = String(ti && ti.format || '').toUpperCase();
+    // Photographic caches as JPEG (far smaller); everything else keeps transparency.
+    const format = ((cacheFmt === 'JPEG' || cacheFmt === 'JPG' || cacheFmt === 'MIXED') && formats.indexOf('JPG') !== -1)
+      ? 'jpg' : 'png32';
+    return { mode: 'export', wkid, attrib, bounds, format };
+  }
+
+  async function _fetchMapServerMeta(root, token) {
+    const url = root + '?f=json' + (token ? '&token=' + encodeURIComponent(token) : '');
+    const ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    const t = ctrl ? setTimeout(() => ctrl.abort(), META_TIMEOUT_MS) : null;
+    try {
+      const r = await fetch(url, { credentials: 'omit', signal: ctrl ? ctrl.signal : undefined });
+      const text = await r.text();
+      try { return { meta: JSON.parse(text) }; }
+      catch (e) { return { unreadable: true }; }
+    } catch (e) {
+      return { unreadable: true };   // network failure, timeout, or CORS refusal
+    } finally {
+      if (t) clearTimeout(t);
+    }
+  }
+
+  /**
+   * Normalise a user-supplied imagery URL.
+   * - Already-templated XYZ ({z}/{x}/{y} in any order)  → { url }
+   * - ArcGIS MapServer root (…/MapServer[?token=…])     → { mapServer:{root,token} }
+   *   (inspected asynchronously by setBasemap)
+   * - ArcGIS ImageServer or bare REST root              → { error }
    */
   function _resolveBasemapUrl(raw) {
     const url = String(raw || '').trim();
@@ -245,63 +424,38 @@
     if (/\{z\}/.test(url) && /\{x\}/.test(url) && /\{y\}/.test(url)) {
       return { url };
     }
-    // ArcGIS hosted tile service: …/services/<name>/MapServer  (no /tile yet)
-    const mapServer = url.match(/^(https?:\/\/.+?\/MapServer)\/?$/i);
-    if (mapServer) {
-      return { url: mapServer[1] + '/tile/{z}/{y}/{x}' };
+    const ms = _parseMapServerUrl(url);
+    if (ms) return { mapServer: ms };
+    if (/\/MapServer\/\d+\/?(\?|$)/i.test(url)) {
+      return { error: 'That is one layer of an ArcGIS map service. Paste the service itself: the URL up to and including /MapServer.' };
     }
-    // Dynamic image service — not XYZ-tiled, needs esri-leaflet which we don't load
-    if (/\/ImageServer\/?$/i.test(url) || /\/arcgis\/rest\/?$/i.test(url)) {
-      return { error: 'That looks like a dynamic ArcGIS image service. Paste the hosted-tile URL instead — it ends in /MapServer or contains {z}/{x}/{y}.' };
+    if (/\/ImageServer\/?(\?|$)/i.test(url) || /\/arcgis\/rest\/?(services\/?)?$/i.test(url)) {
+      return { error: 'That looks like an ArcGIS image service or directory. Paste a map service URL ending in /MapServer, or an XYZ template containing {z}/{x}/{y}.' };
     }
-    // Unknown shape — let Leaflet try only if it has placeholders; otherwise reject
-    return { error: 'Unrecognised imagery URL. Use an XYZ template (with {z}/{x}/{y}) or an ArcGIS hosted-tile URL ending in /MapServer.' };
+    return { error: 'Unrecognised imagery URL. Use an XYZ template (with {z}/{x}/{y}) or an ArcGIS map service URL ending in /MapServer.' };
   }
 
-  /**
-   * Swap the basemap. `source` is a raw URL (XYZ template or ArcGIS hosted
-   * tile root) or the literal 'osm'. On tile-load failure the map falls back
-   * to OSM and calls options.onError so the UI can tell the user.
-   * Returns { ok, url } or { ok:false, error }.
-   */
-  function setBasemap(source, options = {}) {
-    if (!map) return { ok: false, error: 'Map not ready.' };
-    const attribution = options.attribution || '';
-
-    let tileUrl, attrib, isImagery;
-    const aliasKey = String(source || '').trim().toLowerCase();
-    if (!source || BASEMAP_ALIASES[aliasKey]) {
-      const alias = BASEMAP_ALIASES[aliasKey] || BASEMAP_ALIASES.osm;
-      tileUrl = alias.url;
-      attrib = alias.attrib;
-      // osm and topo are light maps (purple reads fine); everything else is
-      // treated as aerial-style imagery (switch shapes to yellow).
-      isImagery = !(aliasKey === 'osm' || aliasKey === 'topo' || !source);
-    } else {
-      const resolved = _resolveBasemapUrl(source);
-      if (resolved.error) return { ok: false, error: resolved.error };
-      tileUrl = resolved.url;
-      attrib = attribution || 'Imagery © its provider';
-      isImagery = true;   // any pasted custom basemap is assumed to be imagery
-    }
-
-    const newLayer = L.tileLayer(tileUrl, {
-      attribution: attrib,
-      maxNativeZoom: 19,
-      maxZoom: _basemapMaxZoom
-    });
-
-    // Fallback: if imagery tiles fail to load, revert to OSM once.
-    if (tileUrl !== _OSM_URL) {
-      let failed = false;
-      newLayer.on('tileerror', () => {
-        if (failed) return;
-        failed = true;
-        if (typeof options.onError === 'function') {
-          options.onError('That imagery source didn’t load — back on the standard map.');
+  // Install a new basemap layer: swap layers, fallback-on-failure, recolour.
+  // `watch` wires the layer's success/failure events: it receives
+  // (onLoad, onFail) and must call them as the layer reports.
+  function _installBasemap(newLayer, isImagery, isOSM, options, watch) {
+    // Fallback: if the source never manages to load anything, revert to OSM
+    // once. A source that has drawn at least once stays (gaps at the edge of
+    // a regional cache are not a reason to throw the whole layer away).
+    if (!isOSM) {
+      let loadedAny = false, failed = false;
+      watch(
+        () => { loadedAny = true; },
+        () => {
+          if (loadedAny || failed) return;
+          if (_basemapLayer !== newLayer) return;      // already replaced
+          failed = true;
+          if (typeof options.onError === 'function') {
+            options.onError('That imagery source didn’t load — back on the standard map.');
+          }
+          setBasemap('osm');
         }
-        setBasemap('osm');
-      });
+      );
     }
 
     newLayer.addTo(map);
@@ -316,7 +470,126 @@
     if (typeof callbacks.onBasemapChange === 'function') {
       try { callbacks.onBasemapChange(_shapeColor, _areaColor); } catch (e) { /* non-fatal */ }
     }
+  }
 
+  function _tileWatch(layer) {
+    return (onLoad, onFail) => {
+      layer.on('tileload', onLoad);
+      layer.on('tileerror', onFail);
+    };
+  }
+
+  async function _applyMapServer(ms, attribution, options, seq) {
+    const fetched = await _fetchMapServerMeta(ms.root, ms.token);
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+
+    let plan;
+    if (fetched.unreadable) {
+      // The description can't be read from the browser. /export as an image
+      // needs no CORS, and is right in any projection, so try that.
+      plan = { mode: 'export', wkid: null, attrib: '', bounds: null, format: 'png32', blind: true };
+    } else {
+      plan = _classifyMapServer(fetched.meta);
+      if (plan.error) return { ok: false, error: plan.error };
+    }
+
+    const attrib = attribution
+      || (plan.attrib ? _escapeHTML(plan.attrib) : 'Imagery © its provider');
+    const tokenQS = ms.token ? '?token=' + encodeURIComponent(ms.token) : '';
+
+    if (plan.mode === 'tiles') {
+      const tileUrl = ms.root + '/tile/{z}/{y}/{x}' + tokenQS;
+      const opts = {
+        attribution: attrib,
+        tileSize: plan.tileSize,
+        zoomOffset: plan.zoomOffset,
+        minNativeZoom: plan.minNativeZoom,
+        maxNativeZoom: Math.min(plan.maxNativeZoom, _basemapMaxZoom),
+        maxZoom: _basemapMaxZoom
+      };
+      if (plan.bounds) opts.bounds = L.latLngBounds(plan.bounds).pad(0.02);
+      const layer = L.tileLayer(tileUrl, opts);
+      _installBasemap(layer, true, false, options, _tileWatch(layer));
+      return { ok: true, mode: 'tiles', url: tileUrl };
+    }
+
+    // Export mode.
+    try { await _loadEsriLeaflet(); }
+    catch (e) {
+      if (seq !== _basemapSeq) return { ok: false, stale: true };
+      return { ok: false, error: 'This service needs a helper library (Esri Leaflet) that didn’t load. Check your connection and try again.' };
+    }
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+
+    const layer = L.esri.dynamicMapLayer({
+      url: ms.root,
+      token: ms.token || undefined,
+      f: 'image',              // plain <img> per view; no JSON request, no output directory
+      format: plan.format,
+      transparent: true,
+      useCors: false,          // the image is only displayed, never read back
+      pane: 'tilePane',        // below the HEALPix lattice (350) and every shape (overlayPane 400)
+      position: 'back',
+      attribution: attrib
+    });
+    _installBasemap(layer, true, false, options, (onLoad, onFail) => {
+      layer.on('load', onLoad);
+      layer.on('error', onFail);
+    });
+    return {
+      ok: true, mode: 'export', url: ms.root,
+      note: plan.blind
+        ? 'Applied. The server doesn’t let a browser read its description, so it is drawn as images on request; if nothing appears, it doesn’t allow that either.'
+        : (plan.wkid && WEB_MERCATOR_WKIDS.indexOf(plan.wkid) === -1
+            ? 'Applied. This service is in EPSG:' + plan.wkid + ', so its server redraws each view to fit this map.'
+            : 'Applied. This service is drawn as an image of each view.')
+    };
+  }
+
+  /**
+   * Swap the basemap. `source` is a raw URL (XYZ template or ArcGIS MapServer
+   * root) or a preset name ('osm', 'aerial', 'topo'). If the source never
+   * loads, the map falls back to OSM and calls options.onError so the UI can
+   * tell the user.
+   * Returns { ok, url } or { ok:false, error } at once, except for a MapServer
+   * URL, which returns { ok:true, pending:true, promise } — the service is
+   * inspected first and the current imagery stays until it is ready. The
+   * promise resolves to { ok:true, mode, url, note? } or { ok:false, error }
+   * (or { ok:false, stale:true } if another basemap was chosen meanwhile).
+   */
+  function setBasemap(source, options = {}) {
+    if (!map) return { ok: false, error: 'Map not ready.' };
+    const seq = ++_basemapSeq;
+    const attribution = options.attribution || '';
+
+    let tileUrl, attrib, isImagery;
+    const aliasKey = String(source || '').trim().toLowerCase();
+    if (!source || BASEMAP_ALIASES[aliasKey]) {
+      const alias = BASEMAP_ALIASES[aliasKey] || BASEMAP_ALIASES.osm;
+      tileUrl = alias.url;
+      attrib = alias.attrib;
+      // osm and topo are light maps (purple reads fine); everything else is
+      // treated as aerial-style imagery (switch shapes to yellow).
+      isImagery = !(aliasKey === 'osm' || aliasKey === 'topo' || !source);
+    } else {
+      const resolved = _resolveBasemapUrl(source);
+      if (resolved.error) return { ok: false, error: resolved.error };
+      if (resolved.mapServer) {
+        const promise = _applyMapServer(resolved.mapServer, attribution, options, seq)
+          .catch(e => ({ ok: false, error: 'That map service couldn’t be set up (' + (e && e.message || e) + ').' }));
+        return { ok: true, pending: true, promise };
+      }
+      tileUrl = resolved.url;
+      attrib = attribution || 'Imagery © its provider';
+      isImagery = true;   // any pasted custom basemap is assumed to be imagery
+    }
+
+    const newLayer = L.tileLayer(tileUrl, {
+      attribution: attrib,
+      maxNativeZoom: 19,
+      maxZoom: _basemapMaxZoom
+    });
+    _installBasemap(newLayer, isImagery, tileUrl === _OSM_URL, options, _tileWatch(newLayer));
     return { ok: true, url: tileUrl };
   }
 
@@ -1125,6 +1398,12 @@
     setBasemap: setBasemap,
 
     /**
+     * Internal, exposed for tests: decide tiles / export / error from a
+     * MapServer's ?f=json description.
+     */
+    _classifyMapServer: _classifyMapServer,
+
+    /**
      * Current shape contrast colour (adapts to basemap).
      */
     getShapeColor: getShapeColor,
@@ -1221,6 +1500,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.0 loaded');
+  console.log('[geosonify] map-manager v1.1 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
