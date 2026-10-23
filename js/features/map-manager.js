@@ -1,5 +1,9 @@
 /**
- * geosonify-map-manager.js v1.6
+ * geosonify-map-manager.js v1.7
+ *
+ * v1.7 (2026-10-24): a fused cache in another projection whose service has
+ * dynamic layers enabled is declined: its exports draw from the source layers
+ * (often only survey outlines), not from the cached photographs.
  *
  * v1.6 (2026-10-24): services drawn by their server (MapServer /export,
  * ImageServer /exportImage) are requested tile by tile (512 px), not as one
@@ -432,7 +436,18 @@
       }
     }
 
-    // 2. Anything else is drawn through /export, which needs the Map capability.
+    // 2. A fused cache in another projection whose service has DYNAMIC LAYERS
+    //    enabled: ArcGIS then draws /export from the service's source layers
+    //    instead of from the cache, and when the photographs exist only in the
+    //    cache (the layers being survey outlines, as in ECan's earthquake
+    //    services) an export shows only those outlines. Declined until
+    //    Geosonify can reproject cache tiles itself.
+    if (meta.singleFusedMapCache && ti && !isWM && meta.supportsDynamicLayers === true) {
+      return { error: 'That ArcGIS service keeps its photographs only as ready-made tiles in its own projection' +
+        (wkid ? ' (EPSG:' + wkid + ')' : '') + '; drawn on request, it shows just the survey outlines, so it can\u2019t be lined up with this map yet.' };
+    }
+
+    // 3. Anything else is drawn through /export, which needs the Map capability.
     const caps = String(meta.capabilities || '');
     if (caps && !/(^|,)\s*Map\s*(,|$)/i.test(caps)) {
       return { error: 'That ArcGIS service only offers ready-made tiles in its own projection' +
@@ -1710,6 +1725,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.6 loaded');
+  console.log('[geosonify] map-manager v1.7 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
