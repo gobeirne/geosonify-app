@@ -13,8 +13,8 @@
 # Blank lines and lines starting with # are ignored.
 
 # ── New Zealand ──────────────────────────────────────────────────────────────
-Canterbury | 1925–1929 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1925_1929/MapServer
-Canterbury | 1935–1939 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1935_1939/MapServer
+Canterbury | 1925–1929 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1925_1929/MapServer | -45.0,169.8,-41.9,174.3
+Canterbury | 1935–1939 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1935_1939/MapServer | -45.0,169.8,-41.9,174.3
 Canterbury | 1940–1944 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1940_1944/MapServer
 Canterbury | 1945–1949 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1945_1949/MapServer
 Canterbury | 1950–1954 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_1950_1954/MapServer
@@ -348,16 +348,16 @@ Cabarrus County, North Carolina | 1964 | https://location.cabarruscounty.us/arcg
 Cabarrus County, North Carolina | 1975 | https://location.cabarruscounty.us/arcgisservices/rest/services/HistoricalImagery/MapServer/15
 Cabarrus County, North Carolina | 1983 | https://location.cabarruscounty.us/arcgisservices/rest/services/HistoricalImagery/MapServer/14
 Cabarrus County, North Carolina | 1995 | https://location.cabarruscounty.us/arcgisservices/rest/services/HistoricalImagery/MapServer/12
-Lee County, North Carolina | 1938 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/0
-Lee County, North Carolina | 1950 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/1
-Lee County, North Carolina | 1955 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/2
-Lee County, North Carolina | 1966 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/3
-Lee County, North Carolina | 1972 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/4
-Lee County, North Carolina | 1983 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/5
-Lee County, North Carolina | 1993 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/6
-Lee County, North Carolina | 2010 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/7
-Lee County, North Carolina | 2014 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/8
-Lee County, North Carolina | 2023 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/9
+Lee County, North Carolina | 1938 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/0 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1950 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/1 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1955 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/2 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1966 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/3 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1972 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/4 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1983 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/5 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 1993 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/6 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 2010 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/7 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 2014 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/8 | 35.25,-79.42,35.64,-78.97
+Lee County, North Carolina | 2023 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/9 | 35.25,-79.42,35.64,-78.97
 Chatham County, North Carolina | 1938 | https://gisservices.chathamcountync.gov/chathamgis/rest/services/RasterBasemaps/Chatham_1938AerialImagery/MapServer
 Carver County, Minnesota | 1937 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/3 | 44.63,-94.01,44.98,-93.52
 Carver County, Minnesota | 1969 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/7 | 44.63,-94.01,44.98,-93.52
@@ -399,34 +399,34 @@ Huntington Beach, California | 1994 hybrid orthophoto | https://gis.huntingtonbe
 Swanton Pacific Ranch, California | 1956 | https://tiles.arcgis.com/tiles/0j6vZbECadDEXdAS/arcgis/rest/services/SPR_1956_Historical_Aerial_Imagery/MapServer
 
 # ── South Africa ─────────────────────────────────────────────────────────────
-Cape Town | 1926 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201926/MapServer
-Cape Town | 1935 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201935/MapServer
-Cape Town | 1938 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201938/MapServer
-Cape Town | 1945 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201945/MapServer
-Cape Town | 1953 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201953/MapServer
-Cape Town | 1958 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201958/MapServer
-Cape Town | 1968 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201968/MapServer
-Cape Town | 1969 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201969/MapServer
-Cape Town | 1971 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201971/MapServer
-Cape Town | 1980 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201980/MapServer
-Cape Town | 1981 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201981/MapServer
-Cape Town | 1982 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201982/MapServer
-Cape Town | 1983 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201983/MapServer
-Cape Town | 1984 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201984/MapServer
-Cape Town | 1986 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201986/MapServer
-Cape Town | 1987 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201987/MapServer
-Cape Town | 1988 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201988/MapServer
-Cape Town | 1992 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201992/MapServer
-Cape Town | 1994 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201994/MapServer
-Cape Town | 1995 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201995/MapServer
-Cape Town | 1996 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201996/MapServer
-Cape Town | 1997 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201997/MapServer
-Cape Town | May 1998 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201998May/MapServer
-Cape Town | April 2000 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202000Apr/MapServer
-Cape Town | January 2002 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202002Jan/MapServer
-Cape Town | July 2003 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202003July/MapServer
-Cape Town | July 2004 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202004July/MapServer
-Cape Town | February 2005 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202005Feb/MapServer
+Cape Town | 1926 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201926/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1935 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201935/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1938 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201938/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1945 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201945/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1953 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201953/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1958 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201958/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1968 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201968/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1969 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201969/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1971 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201971/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1980 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201980/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1981 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201981/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1982 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201982/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1983 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201983/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1984 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201984/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1986 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201986/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1987 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201987/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1988 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201988/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1992 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201992/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1994 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201994/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1995 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201995/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1996 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201996/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | 1997 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201997/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | May 1998 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%201998May/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | April 2000 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202000Apr/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | January 2002 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202002Jan/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | July 2003 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202003July/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | July 2004 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202004July/MapServer | -34.36,18.30,-33.47,19.00
+Cape Town | February 2005 | https://cityimg.capetown.gov.za/erdas-iws/esri/GeoSpatial%20Datasets/rest/services/Aerial%20Imagery_Aerial%20Imagery%202005Feb/MapServer | -34.36,18.30,-33.47,19.00
 
 # ── Europe ───────────────────────────────────────────────────────────────────
 Belgium | 1947 | https://wms.ngi.be/orthophotos_1940s/service?layers=orthophoto_1947 | 49.49,2.54,51.51,6.41

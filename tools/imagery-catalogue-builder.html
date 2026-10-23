@@ -74,7 +74,7 @@
 <script src="../js/features/map-manager.js?v=20261024a"></script>
 <script>
 /*
-  imagery-catalogue-builder v1.3
+  imagery-catalogue-builder v1.4
 
   For each source line it decides the KIND, then gathers what the app needs:
 
@@ -127,6 +127,9 @@
   (a national agency's can include every overseas territory: France's covered
   New York); a footprint box still larger than 1.5° is footprinted again on its
   own; a failed or timed-out sample image is tried once more.
+
+  v1.4: a sparse tile cache (one survey's strips) is followed down from the
+  footprint's fullest tile, child by child, to find picture at high zoom.
 */
 (function () {
   'use strict';
@@ -480,7 +483,7 @@
         const n = 2 ** z, wmx = t => t / n * 2 * WMH - WMH, wmy = t => WMH - t / n * 2 * WMH;
         const wm = [wmx(xa), wmy(yb + 1), wmx(xb + 1), wmy(ya)];
         boxesFromGrid(grid, cols, rows, wm).forEach(b => out.push(clipTo(b, box)));
-        hotCells(grid, cols, rows, wm, box).forEach(h => hot.push(h));
+        hotCells(grid, cols, rows, wm, box).forEach(h => { h.tileZ = z; hot.push(h); });
         note = 'tightened'; done = true;
       }
       if (!done) out.push(box);
@@ -540,6 +543,48 @@
       const ys = out.map(p => p.y), xs = out.map(p => p.x);
       const b = finiteBox([Math.min(...ys), Math.min(...xs), Math.max(...ys), Math.max(...xs)]);
       if (b) return b;
+    }
+    return null;
+  }
+
+  // ── descent: follow the picture down a sparse tile pyramid (v1.4) ────────
+  //
+  // A sparse historical cache (one survey's strips, e.g. New South Wales)
+  // has picture in a low-zoom tile but not under every point of it, so a
+  // sample at zoom 16 below a hot cell's centre often hits a missing tile.
+  // Instead, start from the footprint's hottest tile and at each level read
+  // its four children and step into the fullest one, down to zTarget (at most
+  // 4 requests per level). Returns the deepest tile with picture, or null.
+  function fillOf(px) {
+    const test = contentTest(px);
+    let hit = 0, n = 0;
+    for (let i = 0; i < px.data.length; i += 4 * 9) { n++; if (test(i)) hit++; }
+    return n ? hit / n : 0;
+  }
+  async function descendTiles(tpl, hot, zTarget) {
+    if (!hot || hot.tileZ == null) return null;
+    let [x, y] = tileXY(hot[0], hot[1], hot.tileZ), z = hot.tileZ, best = null;
+    while (z < zTarget) {
+      let pick = null, pf = 0.0005;                 // any picture at all: a strip can be a sliver of a tile
+      for (const dx of [0, 1]) for (const dy of [0, 1]) {
+        const cx = 2 * x + dx, cy = 2 * y + dy;
+        const px = await readPixels(tpl(z + 1, cx, cy));
+        if (!px || px.missing) continue;
+        const f = fillOf(px);
+        if (f > pf) { pf = f; pick = [cx, cy]; }
+      }
+      if (!pick) break;
+      z++; [x, y] = pick; best = { z, x, y };
+    }
+    return best;
+  }
+  async function judgeByDescent(e, tpl, zTarget) {
+    for (const h of (e.hot || []).slice(0, 2)) {
+      const t = await descendTiles(tpl, h, zTarget);
+      if (!t) continue;
+      const v = await judgeImage(tpl(t.z, t.x, t.y));
+      v.url = tpl(t.z, t.x, t.y); v.z = t.z;
+      if (v.verdict === 'confirmed' || v.verdict === 'loaded') return v;
     }
     return null;
   }
@@ -640,6 +685,10 @@
         const w = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, zz); return tile(zz, x, y); }, e.hot);
         if (!v || w.verdict === 'confirmed' || (w.verdict === 'loaded' && v.verdict !== 'confirmed')) v = w;
         if (w.verdict === 'confirmed') break;
+      }
+      if (v.verdict !== 'confirmed' && v.verdict !== 'loaded') {
+        const d = await judgeByDescent(e, tile, Math.min(plan.maxNativeZoom, 17));
+        if (d) return verdict(e, d, 'tiles z' + plan.minNativeZoom + '–' + plan.maxNativeZoom + ', sparse: picture found down to z' + d.z);
       }
       return verdict(e, v, 'tiles z' + plan.minNativeZoom + '–' + plan.maxNativeZoom);
     }
@@ -867,6 +916,10 @@
       const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); }, e.hot);
       if (!best || v.verdict === 'confirmed' || (v.verdict === 'loaded' && best.verdict !== 'confirmed')) best = Object.assign(v, { z });
       if (v.verdict === 'confirmed') break;
+    }
+    if (best.verdict !== 'confirmed' && best.verdict !== 'loaded') {
+      const d = await judgeByDescent(e, (z, x, y) => e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y), 17);
+      if (d) return verdict(e, d, 'tiles, sparse: picture found down to z' + d.z);
     }
     return verdict(e, best, 'tiles, sampled at z' + best.z);
   }
