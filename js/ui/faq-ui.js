@@ -28,6 +28,13 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.6: imagery travels with every link (?basemap=, built in index.html from
+  GeosonifyBasemap.shareInfo()); applyFromURL honours it on any link, not
+  only display links. A pasted source is remembered on the device and offered
+  as a Custom chip before Sky. While Aerial is showing, a row offers Esri
+  World Imagery Wayback releases by date ('aerial@YYYY-MM-DD'). Holding the
+  Standard chip shows the streets over the imagery (GeosonifySkyFlip.peekEarth).
+
   v1.5: a pasted ArcGIS …/MapServer URL is inspected by MapManager before it
   is drawn (any projection; see map-manager v1.1), so applying it can be
   pending: the card says it is checking, then reports the result. The active
@@ -40,7 +47,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.5';
+  const __FAQ_UI_VER__ = 'v1.6';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -287,6 +294,19 @@
     background: var(--kereru-teal, #325756);
     color: #fff;
   }
+  .basemap-chip { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+  .basemap-chip.peeking { outline: 2px dashed var(--kereru-teal, #325756); outline-offset: 2px; }
+  .basemap-wayback-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; font-size: 13px; color: var(--ios-secondary, #3C3C43); }
+  .basemap-wayback-row select {
+    flex: 1 1 auto; min-width: 0; padding: 6px 8px; font-size: 14px;
+    border: 1.5px solid var(--ios-separator, #C6C6C8); border-radius: 8px;
+    background: var(--ios-card, #fff); color: var(--ios-text, #000);
+  }
+  .basemap-forget {
+    padding: 9px 12px; border-radius: 10px; font-size: 14px; cursor: pointer;
+    border: 1.5px solid var(--ios-separator, #C6C6C8);
+    background: var(--ios-card, #fff); color: var(--ios-text, #000);
+  }
   .basemap-paste-row { display: flex; gap: 8px; margin: 0 0 8px; }
   .basemap-paste-row input {
     flex: 1 1 auto;
@@ -398,15 +418,21 @@
 
   const IMAGERY_MOUNT_ID = 'mapImageryMount';
 
-  // The main-screen card: the four chips, and a warning line that is empty
-  // (and takes no space) unless something fails.
+  // The main-screen card: the chips (Custom joins them, before Sky, once
+  // there is a custom source), the Aerial date row (shown only while Aerial
+  // is the imagery), and a warning line that is empty (and takes no space)
+  // unless something needs saying.
   function imageryChipsHTML() {
     return `
     <div class="basemap-presets" id="basemapPresets" style="margin:0;">
-      <button class="basemap-chip active" data-basemap="osm">Standard</button>
+      <button class="basemap-chip active" data-basemap="osm" title="Tap for the street map. Hold to see the streets over other imagery.">Standard</button>
       <button class="basemap-chip" data-basemap="aerial">Aerial</button>
       <button class="basemap-chip" data-basemap="topo">Topographic</button>
       <button class="basemap-chip" data-basemap="sky">Sky</button>
+    </div>
+    <div class="basemap-wayback-row" id="basemapWaybackRow" style="display:none;">
+      <label for="basemapWaybackSelect">Aerial as published</label>
+      <select id="basemapWaybackSelect"><option value="">Latest</option></select>
     </div>
     <p class="basemap-warn" id="basemapWarn"></p>`;
   }
@@ -417,8 +443,9 @@
     <div class="basemap-paste-row">
       <input type="text" id="basemapPasteInput" placeholder="Paste imagery URL (…/{z}/{x}/{y} or …/MapServer)" autocomplete="off" spellcheck="false">
       <button class="basemap-apply" id="basemapApplyBtn">Apply</button>
+      <button class="basemap-forget" id="basemapForgetBtn" style="display:none;">Forget</button>
     </div>
-    <p class="basemap-note">Any XYZ tile URL, or an ArcGIS map service URL ending in /MapServer, in any projection. Imagery is your own viewing preference: it isn't part of a normal share link, but it does travel with a display link built on the Output tab.</p>
+    <p class="basemap-note">Any XYZ tile URL, or an ArcGIS map service URL ending in /MapServer, in any projection. Once applied it stays on this device as <strong>Custom</strong> on the Map imagery card. Links you share carry the imagery you are showing.</p>
     <p class="basemap-warn" id="basemapPasteWarn"></p>`;
   }
 
@@ -633,7 +660,57 @@
   // Heuristic: does this imagery URL carry a credential that would be exposed
   // to anyone the share link reaches?
   function _basemapHasSecret(url) {
-    return /[?&](token|apikey|api_key|key|access_token)=/i.test(String(url || ''));
+    return /[?&](token|apikey|api_key|key|access_token|signature)=/i.test(String(url || ''));
+  }
+
+  // What kind of imagery a source string is.
+  //   'osm' | 'aerial' | 'topo'  presets
+  //   'wayback'                  'aerial@YYYY-MM-DD' (Esri World Imagery Wayback)
+  //   'custom'                   a pasted URL
+  function _kindOf(source) {
+    const s = String(source || '').trim().toLowerCase();
+    if (!s || s === 'osm') return 'osm';
+    if (s === 'aerial' || s === 'topo') return s;
+    if (/^aerial@\d{4}-\d{2}-\d{2}$/.test(s)) return 'wayback';
+    return 'custom';
+  }
+
+  function _hostOf(url) {
+    try { return new URL(url).hostname; } catch (e) { return ''; }
+  }
+
+  // ── The remembered custom source (sticky across visits, this device only) ──
+  //
+  // Only a URL the person PASTED is remembered. Imagery arriving in a link is
+  // shown (and lights the Custom chip) but never overwrites it; it stays the
+  // Custom choice for the rest of the visit, so it can be toggled back to.
+  const CUSTOM_KEY = 'geosonify_custom_basemap';
+  function _loadCustom() {
+    try {
+      const v = JSON.parse(global.localStorage.getItem(CUSTOM_KEY) || 'null');
+      return (v && typeof v.url === 'string' && v.url) ? v : null;
+    } catch (e) { return null; }
+  }
+  function _saveCustom(url, label) {
+    try { global.localStorage.setItem(CUSTOM_KEY, JSON.stringify({ url: url, label: label || '' })); } catch (e) {}
+  }
+  function _forgetCustom() {
+    try { global.localStorage.removeItem(CUSTOM_KEY); } catch (e) {}
+  }
+  // A custom source shown from a link this visit, with its label once known.
+  let _linkCustom = null;     // { url, label }
+
+  // The custom source the Custom chip stands for right now: the one showing
+  // (if custom), else this visit's linked one, else the remembered one.
+  function _currentCustom() {
+    const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    if (_kindOf(active) === 'custom') {
+      const mine = _loadCustom();
+      if (mine && mine.url === active) return mine;
+      if (_linkCustom && _linkCustom.url === active) return _linkCustom;
+      return { url: active, label: '' };
+    }
+    return _linkCustom || _loadCustom();
   }
 
   function _applyBasemap(source, attribution, ui) {
@@ -644,31 +721,51 @@
         if (ui && ui.warn) { ui.warn.textContent = msg; ui.warn.classList.add('show'); }
         // The map went back to Standard: don't keep claiming the failed source.
         _writeBasemapParam(null);
-        _resyncChips();
       }
     });
     return res;
   }
 
   // Which chip should look active: Sky in Sky mode (either face), otherwise
-  // the Earth imagery in use (a pasted URL lights no chip).
-  function syncChips(presets, input) {
+  // the Earth imagery in use. A dated Aerial lights Aerial; any pasted or
+  // linked URL lights Custom.
+  function syncChips(presets) {
     if (!presets) return;
+    _renderCustomChip(presets);
     const chips = presets.querySelectorAll('.basemap-chip');
     chips.forEach(c => c.classList.remove('active'));
     let want = 'osm';
     if (skyIsOpen() || skyModeOn()) {
       want = 'sky';
-    } else if (global.__GEOSONIFY_BASEMAP_ACTIVE) {
-      want = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    } else {
+      const k = _kindOf(global.__GEOSONIFY_BASEMAP_ACTIVE);
+      want = (k === 'wayback') ? 'aerial' : k;
     }
-    let matched = false;
-    chips.forEach(c => { if (c.dataset.basemap === want) { c.classList.add('active'); matched = true; } });
-    if (!matched && input && want !== 'sky') input.value = want;
+    chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
+    _syncWaybackRow();
   }
 
   function _resyncChips() {
-    syncChips(document.getElementById('basemapPresets'), document.getElementById('basemapPasteInput'));
+    syncChips(document.getElementById('basemapPresets'));
+    _syncPasteCard();
+  }
+
+  // The Custom chip sits before Sky, and exists only while there is a custom
+  // source to show (remembered, or arrived in a link).
+  function _renderCustomChip(presets) {
+    const cur = _currentCustom();
+    let chip = presets.querySelector('.basemap-chip[data-basemap="custom"]');
+    if (!cur) { if (chip) chip.remove(); return; }
+    if (!chip) {
+      chip = document.createElement('button');
+      chip.className = 'basemap-chip';
+      chip.dataset.basemap = 'custom';
+      chip.textContent = 'Custom';
+      const sky = presets.querySelector('.basemap-chip[data-basemap="sky"]');
+      presets.insertBefore(chip, sky || null);
+      _wireChip(chip, presets);
+    }
+    chip.title = cur.label || _hostOf(cur.url) || 'Your own imagery';
   }
 
   function _warner(el) {
@@ -680,42 +777,166 @@
     };
   }
 
-  // The four chips (main screen, or the FAQ fallback).
-  function wireChips(scope) {
-    const presets = scope.querySelector('#basemapPresets');
-    if (!presets) return;
+  // Apply a source chosen in the UI (a chip, the date list, the paste box) and
+  // report through `setWarn`. Records it as active only once it is showing.
+  // `then(r)` runs after success (r is MapManager's result).
+  function _choose(source, setWarn, ui, then) {
+    const res = leaveSkyThen(() => _applyBasemap(source, '', ui));
+    if (!res.ok) { setWarn(res.error); _resyncChips(); return; }
+    const done = (r) => {
+      _writeBasemapParam(_kindOf(source) === 'osm' ? null : source);
+      if (then) then(r || res);
+      _resyncChips();
+    };
+    if (!res.pending) { done(res); return; }
+    res.promise.then(r => {
+      if (!r || r.stale) return;
+      if (!r.ok) { setWarn(r.error); _resyncChips(); return; }
+      done(r);
+    });
+  }
+
+  // ── Hold Standard: the streets over the imagery ────────────────────────────
+  //
+  // Holding the Standard chip while other imagery is showing draws the street
+  // map over it (geosonify-sky-flip.js peekEarth) until released. A tap still
+  // switches to Standard, as always.
+  const HOLD_MS = 350;
+  function _wireHoldPeek(chip) {
+    let timer = null, peeking = false, suppressClick = false;
+    const F = () => global.GeosonifySkyFlip;
+    const canPeek = () => {
+      if (skyIsOpen()) return false;
+      const k = _kindOf(global.__GEOSONIFY_BASEMAP_ACTIVE);
+      return k !== 'osm' && !!(F() && F().peekEarth);
+    };
+    const start = (e) => {
+      if (e.button != null && e.button !== 0) return;
+      if (!canPeek()) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        try { peeking = !!F().peekEarth(true); } catch (err) { peeking = false; }
+        if (peeking) { suppressClick = true; chip.classList.add('peeking'); }
+      }, HOLD_MS);
+    };
+    const end = () => {
+      clearTimeout(timer); timer = null;
+      if (!peeking) return;
+      peeking = false;
+      chip.classList.remove('peeking');
+      try { F().peekEarth(false); } catch (err) {}
+    };
+    chip.addEventListener('pointerdown', start);
+    ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach(ev => chip.addEventListener(ev, end));
+    chip.addEventListener('contextmenu', e => { if (peeking || timer) e.preventDefault(); });
+    // A hold that peeked is not also a tap.
+    chip.addEventListener('click', e => {
+      if (suppressClick) { suppressClick = false; e.stopImmediatePropagation(); e.preventDefault(); }
+    }, true);
+  }
+
+  // One chip's tap.
+  function _wireChip(chip, presets) {
+    const scope = presets.parentNode || document;
     const warn = scope.querySelector('#basemapWarn');
     const setWarn = _warner(warn);
     const ui = { warn };
-
-    presets.querySelectorAll('.basemap-chip').forEach(chip => {
-      chip.addEventListener('click', () => {
-        const source = chip.dataset.basemap;
-        if (source === 'sky') {
-          const res = openSky();
-          setWarn(res.ok ? '' : res.error);
-          _resyncChips();
-          return;
+    chip.addEventListener('click', () => {
+      const which = chip.dataset.basemap;
+      if (which === 'sky') {
+        const res = openSky();
+        setWarn(res.ok ? '' : res.error);
+        _resyncChips();
+        return;
+      }
+      let source = which;
+      if (which === 'custom') {
+        const cur = _currentCustom();
+        if (!cur) { _resyncChips(); return; }
+        source = cur.url;
+      }
+      // Earth imagery: back down from the sky first (animated), then show it.
+      setWarn(which === 'custom' ? 'Loading your imagery…' : '');
+      _choose(source, setWarn, ui, (r) => {
+        setWarn(which === 'custom' && _basemapHasSecret(source)
+          ? 'Heads up: this imagery URL contains a key or token, and links you share include it.' : '');
+        if (which === 'custom' && r && r.label) {
+          const mine = _loadCustom();
+          if (mine && mine.url === source && !mine.label) _saveCustom(source, r.label);
         }
-        // Earth imagery: back down from the sky first (animated), then show it.
-        const res = leaveSkyThen(() => _applyBasemap(source, chip.dataset.attrib || '', ui));
-        if (!res.ok) { setWarn(res.error); _resyncChips(); return; }
-        setWarn('');
-        const input = document.getElementById('basemapPasteInput');
-        if (input) input.value = '';
-        _writeBasemapParam(source === 'osm' ? null : source);
-        // Light the chosen chip now; the sky one goes off when the turn ends.
-        presets.querySelectorAll('.basemap-chip').forEach(c => c.classList.toggle('active', c === chip));
-        if (!skyIsOpen()) _resyncChips();
       });
+      // Light the chosen chip now; the sky one goes off when the turn ends.
+      presets.querySelectorAll('.basemap-chip').forEach(c => c.classList.toggle('active', c === chip));
     });
+    if (chip.dataset.basemap === 'osm') _wireHoldPeek(chip);
+  }
+
+  // The chips (main screen, or the FAQ fallback).
+  function wireChips(scope) {
+    const presets = scope.querySelector('#basemapPresets');
+    if (!presets) return;
+    presets.querySelectorAll('.basemap-chip').forEach(chip => _wireChip(chip, presets));
+    _wireWayback(scope);
     _resyncChips();
   }
 
-  // The paste-your-own card in the FAQ pane.
+  // ── Aerial by date (Esri World Imagery Wayback) ────────────────────────────
+  //
+  // A row under the chips, shown while Aerial is the imagery: "Latest" or a
+  // published release date. The list loads the first time it is needed.
+  function _wireWayback(scope) {
+    const row = scope.querySelector('#basemapWaybackRow');
+    const sel = scope.querySelector('#basemapWaybackSelect');
+    if (!row || !sel) return;
+    const setWarn = _warner(scope.querySelector('#basemapWarn'));
+    sel.addEventListener('change', () => {
+      const v = sel.value;
+      const source = v ? 'aerial@' + v : 'aerial';
+      setWarn(v ? 'Loading Aerial imagery from ' + v + '…' : '');
+      _choose(source, setWarn, {}, () => setWarn(''));
+    });
+  }
+
+  let _waybackFilled = false;
+  function _fillWayback(sel) {
+    const W = global.GeosonifyWayback;
+    if (!W || !sel) return;
+    const render = () => {
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">Latest</option>' +
+        W.list().map(r => '<option value="' + r.date + '">' + r.date + '</option>').join('');
+      sel.value = keep;
+    };
+    if (!_waybackFilled) { _waybackFilled = true; render(); W.load().then(() => { render(); _syncWaybackRow(); }); }
+  }
+
+  function _syncWaybackRow() {
+    const row = document.getElementById('basemapWaybackRow');
+    const sel = document.getElementById('basemapWaybackSelect');
+    if (!row || !sel) return;
+    const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    const k = _kindOf(active);
+    const show = (k === 'aerial' || k === 'wayback') && !skyIsOpen() && !skyModeOn() && !!global.GeosonifyWayback;
+    row.style.display = show ? 'flex' : 'none';
+    if (!show) return;
+    _fillWayback(sel);
+    let want = '';
+    if (k === 'wayback') {
+      const d = String(active).slice(7);
+      const r = global.GeosonifyWayback.resolve(d);
+      want = r ? r.date : '';
+      // A linked date between releases: show the release actually displayed.
+      if (want && !sel.querySelector('option[value="' + want + '"]')) want = '';
+    }
+    sel.value = want;
+  }
+
+  // ── The paste-your-own card in the FAQ pane ────────────────────────────────
   function wirePaste(scope) {
     const input = scope.querySelector('#basemapPasteInput');
     const applyBtn = scope.querySelector('#basemapApplyBtn');
+    const forgetBtn = scope.querySelector('#basemapForgetBtn');
     if (!input || !applyBtn) return;
     const warn = scope.querySelector('#basemapPasteWarn');
     const setWarn = _warner(warn);
@@ -724,26 +945,44 @@
     const applyPasted = () => {
       const source = input.value.trim();
       if (!source) { setWarn('Paste an imagery URL first.'); return; }
-      const res = leaveSkyThen(() => _applyBasemap(source, '', ui));
-      if (!res.ok) { setWarn(res.error); return; }
-      const shown = (note) => {
+      if (_kindOf(source) !== 'custom') { setWarn('That is one of the built-in choices: use its button on the main screen.'); return; }
+      setWarn('Checking this imagery…');
+      _choose(source, setWarn, ui, (r) => {
+        _saveCustom(source, r && r.label);
+        _linkCustom = null;          // your own paste is the Custom choice now
+        const host = _hostOf(source);
         setWarn(_basemapHasSecret(source)
-          ? 'Heads up: this URL contains a key or token. It will be visible to anyone you share the link with.'
-          : (note || 'Applied. The map now shows this imagery.'));
-        _writeBasemapParam(source);
-        _resyncChips();
-      };
-      if (!res.pending) { shown(); return; }
-      // An ArcGIS map service is read first; the current imagery stays meanwhile.
-      setWarn('Checking this map service…');
-      res.promise.then(r => {
-        if (!r || r.stale) return;                 // another imagery was chosen since
-        if (!r.ok) { setWarn(r.error); return; }
-        shown(r.note);
+          ? 'Heads up: this URL contains a key or token. Links you share include it, so anyone you send one to can see it.'
+          : ((r && r.note) || 'Applied. The map now shows this imagery.') +
+            ' It stays available as Custom on the Map imagery card' +
+            (host ? ', and links you share now show it too (from ' + host + ').' : '.'));
       });
     };
     applyBtn.addEventListener('click', applyPasted);
     input.addEventListener('keydown', e => { if (e.key === 'Enter') applyPasted(); });
+    if (forgetBtn) {
+      forgetBtn.addEventListener('click', () => {
+        const mine = _loadCustom();
+        _forgetCustom();
+        if (mine && _linkCustom && _linkCustom.url === mine.url) _linkCustom = null;
+        if (mine && global.__GEOSONIFY_BASEMAP_ACTIVE === mine.url) {
+          _choose('osm', setWarn, ui);
+        }
+        input.value = '';
+        setWarn('Forgotten. Custom is gone from the Map imagery card.');
+        _resyncChips();
+      });
+    }
+    _syncPasteCard();
+  }
+
+  // The paste box shows the remembered source, and Forget only while there is one.
+  function _syncPasteCard() {
+    const input = document.getElementById('basemapPasteInput');
+    const forgetBtn = document.getElementById('basemapForgetBtn');
+    const mine = _loadCustom();
+    if (forgetBtn) forgetBtn.style.display = mine ? '' : 'none';
+    if (input && mine && !input.value && document.activeElement !== input) input.value = mine.url;
   }
 
   /*
@@ -766,49 +1005,75 @@
     } catch (e) {}
   }
 
-  // Record the active basemap in memory only. It is intentionally NOT written
-  // to the live URL: in normal full-app use the basemap is a personal viewing
-  // preference, not part of the shareable state. It becomes URL-relevant only
-  // when the user builds a display link, where the display-link builder reads
-  // __GEOSONIFY_BASEMAP_ACTIVE and emits ?basemap=. null = back to default.
-  // (Sky is never recorded here: it is a frame, carried as ?frame=.)
+  // Record the active basemap in memory (null = back to default) and tell the
+  // page: every share link and the address bar carry it as ?basemap= (built in
+  // index.html from __GEOSONIFY_BASEMAP_ACTIVE), so they are rebuilt on each
+  // change. (Sky is never recorded here: it is a frame, carried as ?frame=.)
   function _writeBasemapParam(source) {
-    global.__GEOSONIFY_BASEMAP_ACTIVE = source || null;
+    const v = source || null;
+    const changed = global.__GEOSONIFY_BASEMAP_ACTIVE !== v;
+    global.__GEOSONIFY_BASEMAP_ACTIVE = v;
+    if (changed) {
+      try { global.dispatchEvent(new CustomEvent('geosonify:basemap', { detail: { source: v } })); } catch (e) {}
+    }
+    _resyncChips();
   }
 
   /**
-   * Apply a basemap from a URL param at load time. Call after MapManager.init.
-   * The ?basemap= param is a sender's "show the viewer this" instruction, so it
-   * is honored ONLY on display links (those carrying ?display). A plain shape
-   * link opens in the recipient's own current/default basemap and ignores it.
-   * Returns the active source (or null for default/OSM, or non-display links).
+   * Apply a basemap from the URL. ?basemap= is honoured on EVERY link (it
+   * used to be display links only): the sender's imagery is part of what they
+   * are showing. Call after MapManager.init, and again after an ?enc= link is
+   * decrypted (its imagery is inside the blob).
+   * Returns the source applied, or null.
    */
   function applyFromURL() {
     let params;
     try {
       params = new URLSearchParams(window.location.search);
     } catch (e) { return null; }
-    // Only display links carry an intended basemap for the recipient.
-    if (!params.has('display')) return null;
     const source = params.get('basemap');
     if (!source) return null;
-    global.__GEOSONIFY_BASEMAP_ACTIVE = source;
-    if (typeof MapManager !== 'undefined' && MapManager.setBasemap) {
-      const res = MapManager.setBasemap(source, {
-        onError: () => { global.__GEOSONIFY_BASEMAP_ACTIVE = null; }
-      });
-      if (!res || res.ok === false) {
-        global.__GEOSONIFY_BASEMAP_ACTIVE = null;
-      } else if (res.pending) {
-        res.promise.then(r => {
-          if (r && !r.ok && !r.stale) {
-            global.__GEOSONIFY_BASEMAP_ACTIVE = null;
-            try { console.warn('[geosonify] basemap from link not shown: ' + r.error); } catch (e) {}
-          }
-        });
+    if (typeof MapManager === 'undefined' || !MapManager.setBasemap) return null;
+    const kind = _kindOf(source);
+    const res = MapManager.setBasemap(source, {
+      onError: () => { _writeBasemapParam(null); }
+    });
+    const shown = (r) => {
+      if (kind === 'custom') {
+        _linkCustom = { url: source, label: (r && r.label) || '' };
+        const host = _hostOf(source);
+        if (host && typeof global.showToast === 'function') {
+          try { global.showToast('Showing map imagery from ' + host); } catch (e) {}
+        }
       }
+      _writeBasemapParam(kind === 'osm' ? null : source);
+    };
+    if (!res || res.ok === false) {
+      try { console.warn('[geosonify] basemap from link not shown: ' + (res && res.error)); } catch (e) {}
+      return null;
     }
+    if (!res.pending) { shown(res); return source; }
+    res.promise.then(r => {
+      if (!r || r.stale) return;
+      if (!r.ok) {
+        try { console.warn('[geosonify] basemap from link not shown: ' + r.error); } catch (e) {}
+        return;
+      }
+      shown(r);
+    });
     return source;
+  }
+
+  /** For index.html: what a share link should say about the imagery, and why it might leak. */
+  function shareInfo() {
+    const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    const kind = _kindOf(active);
+    return {
+      source: kind === 'osm' ? null : active,
+      kind: kind,
+      host: kind === 'custom' ? _hostOf(active) : '',
+      secret: kind === 'custom' && _basemapHasSecret(active)
+    };
   }
 
   // ── Public API ─────────────────────────────────────────────────────────────
@@ -842,6 +1107,6 @@
       if (rootEl) showSubtab(rootEl, which);
     }
   };
-  global.GeosonifyBasemap = { applyFromURL: applyFromURL };
+  global.GeosonifyBasemap = { applyFromURL: applyFromURL, shareInfo: shareInfo, kindOf: _kindOf };
 
 })(typeof window !== 'undefined' ? window : this);

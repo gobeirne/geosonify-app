@@ -619,6 +619,7 @@
           </div>
           
           <div class="result-box" id="compactOutput" style="margin-top:12px;"></div>
+          <p id="shareImageryNote" style="display:none; margin:6px 2px 0; font-size:12.5px; line-height:1.45; color:var(--ios-secondary-label, #8a8a8e);"></p>
 
           <div class="list-row" style="padding:0; margin-top:10px;">
             <label>🖥️ Share as display link</label>
@@ -771,7 +772,8 @@
 -->
 
 <!-- Features -->
-<script src="js/features/map-manager.js?v=20261023a"></script>
+<script src="js/lib/geosonify-wayback.js?v=20261023a"></script>
+<script src="js/features/map-manager.js?v=20261023b"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -811,21 +813,21 @@
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261014c"></script>
-<script src="js/lib/geosonify-sky-flip.js?v=20261012a"></script>
+<script src="js/lib/geosonify-sky-flip.js?v=20261023a"></script>
 <script src="js/lib/geosonify-annotations.js?v=20261014c"></script>
 <script src="js/lib/geosonify-sky-export.js?v=20261014c"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261014f"></script>
+<script src="js/ui/card-renderer.js?v=20261023a"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261023a"></script>
-<script src="js/ui/faq-ui.js?v=20261023a"></script>
+<script src="js/lib/faq-data.js?v=20261023b"></script>
+<script src="js/ui/faq-ui.js?v=20261023b"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -2191,6 +2193,9 @@
           var c = document.querySelector('#mapImageryMount .basemap-chip.active');
           var s = c ? c.textContent.trim()
                     : (document.querySelector('#mapImageryMount .basemap-chip') ? 'Your own' : '');
+          // A dated Aerial (World Imagery Wayback) says which date.
+          var bmA = String(window.__GEOSONIFY_BASEMAP_ACTIVE || '');
+          if (/^aerial@\d{4}-\d{2}-\d{2}$/i.test(bmA) && s === 'Aerial') s += ' ' + bmA.slice(7);
           // The HEALPix grid's strength, while it is on (its row folds away too).
           var row = document.getElementById('latticeFadeRow');
           var val = document.getElementById('latticeFadeValue');
@@ -2462,9 +2467,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Everything drawn follows the world copy you are looking at.
       map.on('moveend', followCentreCopy);
 
-      // Apply a basemap chosen via ?basemap= — honored only on display links
-      // (applyFromURL ignores it on plain shape links, which open in the
-      // recipient's own basemap).
+      // Apply a basemap chosen via ?basemap= — on any link: the sender's
+      // imagery is part of what they are showing (faq-ui.js applyFromURL).
       if (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.applyFromURL) {
         GeosonifyBasemap.applyFromURL();
       }
@@ -2819,7 +2823,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // only when a preset is chosen; custom imagery is surfaced via warning.
         function seedBasemapRadio() {
           const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
-          const want = isSkyFrameNow() ? 'sky' : ((active === 'aerial' || active === 'topo') ? active : 'osm');
+          const kind = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.kindOf) ? GeosonifyBasemap.kindOf(active) : '';
+          const want = isSkyFrameNow() ? 'sky'
+            : ((kind === 'aerial' || kind === 'wayback') ? 'aerial' : (kind === 'topo' ? 'topo' : 'osm'));
           const radio = document.querySelector(`input[name="displayBasemap"][value="${want}"]`);
           if (radio) radio.checked = true;
         }
@@ -2863,6 +2869,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           refreshWarn();
         });
         window.__geosonifySeedDisplayBasemap = seedBasemapRadio;
+        window.__geosonifyRefreshDisplayWarn = refreshWarn;
         panel.querySelectorAll('input[name="displayBasemap"]').forEach(r =>
           r.addEventListener('change', refreshWarn));
         // HEALPix grid: what the viewer will see, previewed here as it moves.
@@ -3129,6 +3136,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         
         // A display link's options travel inside the blob: apply them now.
         const becameDisplay = readDisplayOptions(decrypted, true);
+        // So does the imagery (?basemap=): apply it now too.
+        try { if (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.applyFromURL) GeosonifyBasemap.applyFromURL(); } catch (e) {}
 
         // Re-parse with the decrypted parameters
         parseURLParameters();
@@ -4166,13 +4175,13 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (encoded && !encoded.startsWith('ERR')) {
         const hpw = hpwordsPointShare();
         if (hpw) {
-          window.history.replaceState({}, '', `${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}` + frameQuerySuffix() + annotationQuerySuffix());
+          window.history.replaceState({}, '', `${window.location.pathname}?${hpw.param}=${encodeURIComponent(hpw.value)}` + frameQuerySuffix() + annotationQuerySuffix() + basemapQuerySuffix());
           return;
         }
         const param = getURLParamForActiveCard(_currentOutputIsDelta);
         // Rebuilt from the code alone, so the frame and the labels/styles are
         // added back explicitly (they live outside the code).
-        const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}` + frameQuerySuffix() + annotationQuerySuffix();
+        const newURL = `${window.location.pathname}?${param}=${encodeShareValue(param, encoded)}` + frameQuerySuffix() + annotationQuerySuffix() + basemapQuerySuffix();
         window.history.replaceState({}, '', newURL);
       }
     }
@@ -4328,19 +4337,22 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.querySelectorAll('input[name="displayExport"]:checked').forEach(c => {
         if (c.value) params.push('export=' + c.value);
       });
-      // Basemap: a chosen preset radio wins. If the radio is left at the
-      // Standard default but the user is actually viewing a custom pasted
-      // imagery URL, carry that custom URL through instead (so "share what I
-      // see" still holds for custom basemaps). 'osm' is the viewer default and
-      // is never emitted.
+      // Basemap: the panel's radio is seeded from what is showing, and the
+      // sender may pick another for the viewer. Aerial carries the showing
+      // date (aerial@YYYY-MM-DD) if a dated Aerial is showing. A pasted
+      // (custom) source has no radio of its own: with the radio left at
+      // Standard it is carried through, so "share what I see" holds. 'osm' is
+      // the viewer default and is never emitted.
       const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
-      const isPreset = active === 'osm' || active === 'aerial' || active === 'topo';
+      const kind = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.kindOf) ? GeosonifyBasemap.kindOf(active) : '';
       if (isSkyFrameNow()) {
         // A sky shape has no Earth basemap: frame=icrs&epoch=J2000 (added by
         // buildShareURL) is what opens the viewer on the sky.
-      } else if (basemap === 'aerial' || basemap === 'topo') {
-        params.push('basemap=' + encodeURIComponent(basemap));
-      } else if (basemap === 'osm' && active && !isPreset) {
+      } else if (basemap === 'aerial') {
+        params.push('basemap=' + encodeURIComponent(kind === 'wayback' ? active : 'aerial'));
+      } else if (basemap === 'topo') {
+        params.push('basemap=topo');
+      } else if (basemap === 'osm' && kind === 'custom') {
         params.push('basemap=' + encodeURIComponent(active));
       }
       return params;
@@ -4358,11 +4370,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       sender's own page is not a display link.
     */
     let _encPlainQuery = null;
+    let _encPlainQueryNoBasemap = null;   // the same without ?basemap= (a display link sets its own)
     let _encDisp = { key: null, blob: null, promise: null };
     function encryptedDisplayKey() {
-      if (!(encryptURL && encryptPassphrase) || !_encPlainQuery) return null;
+      if (!(encryptURL && encryptPassphrase) || !_encPlainQueryNoBasemap) return null;
       const d = getDisplayShareParams();
-      return d.length ? _encPlainQuery + '&' + d.join('&') : null;
+      return d.length ? _encPlainQueryNoBasemap + '&' + d.join('&') : null;
     }
     function refreshEncryptedDisplayShare() {
       const key = encryptedDisplayKey();
@@ -4398,7 +4411,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // it is a sky link, and what its points are called.
       const fParams = encrypted ? [] : getFrameShareParams();
       const aParams = encrypted ? [] : annotationShareParams();
-      const all = dParams.concat(fParams, aParams);
+      // The imagery: a display link's params already say (getDisplayShareParams);
+      // an encrypted link has it inside the blob.
+      const bParams = (encrypted || dParams.length) ? [] : basemapShareParams();
+      const all = dParams.concat(fParams, aParams, bParams);
       if (!all.length) return base;
       return base + (base.includes('?') ? '&' : '?') + all.join('&');
     }
@@ -4454,6 +4470,59 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const f = getFrameShareParams();
       return f.length ? '&' + f.join('&') : '';
     }
+
+    /*
+      Imagery parameter for a share link: ?basemap=<what is showing>.
+
+      Every link carries the sender's imagery (Aerial, Topographic, a dated
+      Aerial, or a pasted source), as display links always have: it is part of
+      what they are showing. Standard is the default and is never emitted, so
+      links made on Standard are byte-identical to before. A sky link carries
+      none: its frame= says where it opens. An encrypted link carries it inside
+      the blob, because a regional imagery address says roughly where the code
+      is.
+    */
+    function basemapShareParams() {
+      try {
+        if (isSkyFrameNow()) return [];
+        const info = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.shareInfo) ? GeosonifyBasemap.shareInfo() : null;
+        if (!info || !info.source) return [];
+        return ['basemap=' + encodeURIComponent(info.source)];
+      } catch (e) { return []; }
+    }
+    function basemapQuerySuffix() {
+      const b = basemapShareParams();
+      return b.length ? '&' + b.join('&') : '';
+    }
+
+    // The line under the output that says the link carries pasted imagery,
+    // and what that imagery's address gives away.
+    function refreshShareImageryNote() {
+      const el = document.getElementById('shareImageryNote');
+      if (!el) return;
+      let info = null;
+      try { info = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.shareInfo) ? GeosonifyBasemap.shareInfo() : null; } catch (e) {}
+      if (!info || info.kind !== 'custom' || isSkyFrameNow() || !lastSolution) { el.style.display = 'none'; el.textContent = ''; return; }
+      const encrypted = !!(encryptURL && encryptPassphrase);
+      let msg = 'This link includes your map imagery' + (info.host ? ' from ' + info.host : '') + '. ';
+      msg += encrypted
+        ? 'It is inside the encrypted link, so only someone with the passphrase sees where it comes from.'
+        : 'An imagery source that covers one region hints at where the code is; encrypt the link to keep that private.';
+      if (info.secret) msg += ' Its address contains a key or token, which anyone with the link can see' + (encrypted ? ' once decrypted.' : '.');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    // New imagery: every link and the address bar say so, so rebuild them.
+    window.addEventListener('geosonify:basemap', () => {
+      try {
+        if (lastSolution) updateCompactOutputs();   // the address bar is only rewritten when it may be
+        else if (typeof refreshEncryptedDisplayShare === 'function') refreshEncryptedDisplayShare();
+      } catch (e) { console.warn('[geosonify] could not refresh links for new imagery:', e); }
+      try { refreshShareImageryNote(); } catch (e) {}
+      try { if (window.__geosonifySeedDisplayBasemap) window.__geosonifySeedDisplayBasemap(); } catch (e) {}
+      try { if (window.__geosonifyRefreshDisplayWarn) window.__geosonifyRefreshDisplayWarn(); } catch (e) {}
+    });
 
     function getFrameShareParams() {
       try {
@@ -6618,6 +6687,7 @@ function encodeRaw(sol) {
       _currentOutputIsDelta = isPathOrPoly && !singleVertex && useDelta && !rawModeActive;
       
       out.textContent = s;
+      try { refreshShareImageryNote(); } catch (e) {}
       
       // If hard encryption is on, encrypt the output and URL
       if (encryptURL && encryptPassphrase && s && !s.startsWith('ERR')) {
@@ -6629,8 +6699,12 @@ function encodeRaw(sol) {
         // format change; older blobs decrypt exactly as before.
         // Labels and styles go inside too: outside the blob they would be the
         // one part of an encrypted link anyone could read.
-        const plainQuery = `${param}=${s}` + frameQuerySuffix() + annotationQuerySuffix();
+        // The imagery goes inside too: a regional imagery address outside the
+        // blob would say roughly where the code is.
+        const plainQueryNoBasemap = `${param}=${s}` + frameQuerySuffix() + annotationQuerySuffix();
+        const plainQuery = plainQueryNoBasemap + basemapQuerySuffix();
         _encPlainQuery = plainQuery;
+        _encPlainQueryNoBasemap = plainQueryNoBasemap;
         refreshEncryptedDisplayShare();
         encryptQueryString(plainQuery, encryptPassphrase).then(blob => {
           out.textContent = blob;
@@ -10550,7 +10624,8 @@ function encodeRaw(sol) {
           } else {
             const param = getURLParamForActiveCard(_currentOutputIsDelta);
             shareURL = `${window.location.origin}${window.location.pathname}?${param}=${encoded}` +
-              frameQuerySuffix() + annotationQuerySuffix();
+              frameQuerySuffix() + annotationQuerySuffix() +
+              (window.DISPLAY_MODE && p.result !== 'r' && p.result !== 'c' ? '' : basemapQuerySuffix());
           }
           
           if (p.result === 'r') {

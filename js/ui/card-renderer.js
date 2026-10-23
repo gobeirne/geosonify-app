@@ -5759,6 +5759,24 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     } catch (e) { return ''; }
   }
 
+  /*
+    Imagery for a link built here: ?basemap=<what is showing>, as every
+    Output-tab link carries it (index.html basemapShareParams). Standard adds
+    nothing; a sky link carries none (its frame says where it opens).
+  */
+  function basemapShareSuffix() {
+    try {
+      if (typeof AppState !== 'undefined' && AppState.get) {
+        const f = AppState.get('frame');
+        if (f && f.sphere === 'sky') return '';
+      }
+      const B = window.GeosonifyBasemap;
+      const info = B && B.shareInfo ? B.shareInfo() : null;
+      return (info && info.source) ? '&basemap=' + encodeURIComponent(info.source) : '';
+    } catch (e) { return ''; }
+  }
+  function linkSuffix() { return frameShareSuffix() + basemapShareSuffix(); }
+
   // HEALPix-words link suffix per list (?hpw<suffix>[j]=). Same table as
   // index.html's HPW_LANG_BY_SUFFIX, read the other way.
   const HPW_SUFFIX = { english: 'en', spanish: 'es', french: 'fr', italian: 'it', portuguese: 'pt',
@@ -5784,7 +5802,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       const sfx = wd && wd.hpwords ? HPW_SUFFIX[wd.hpwords] : null;
       if (sfx) {
         const base = window.location.origin + window.location.pathname;
-        shareURLOut(`${base}?hpw${sfx}${obfuscated ? 'j' : ''}=${encodeURIComponent(code)}${frameShareSuffix()}`);
+        shareURLOut(`${base}?hpw${sfx}${obfuscated ? 'j' : ''}=${encodeURIComponent(code)}${linkSuffix()}`);
         return;
       }
     }
@@ -5806,13 +5824,13 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
             const param = (hp ? 'hpfen' : 'fen') + (obfuscated ? (hp ? 'j' : 'o') : '');
             // A FEN is query-safe as it stands ('/' and digits and letters), and
             // keeping the slashes is what makes the link read as a chess position.
-            shareURLOut(`${base}?${param}=${fen}${frameShareSuffix()}`);
+            shareURLOut(`${base}?${param}=${fen}${linkSuffix()}`);
             return;
           }
         } catch (e) { /* not a board this family can hold: fall through to the sibling's link */ }
       }
       if (pd && pd.display === 'chroma' && pd.chromaOf) {
-        shareURLOut(`${base}?${obfuscated ? 'hpcj' : 'hpc'}=${encodeURIComponent(code)}${frameShareSuffix()}`);
+        shareURLOut(`${base}?${obfuscated ? 'hpcj' : 'hpc'}=${encodeURIComponent(code)}${linkSuffix()}`);
         return;
       }
     }
@@ -5902,7 +5920,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       // v2 code sent as ?hphexo= decoded, without error, to a different place.
       let hpPrefix = hp + (obfuscated ? 'j' : '');
       const hpBase = window.location.origin + window.location.pathname;
-      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}${frameShareSuffix()}`;
+      const hpURL = `${hpBase}?${hpPrefix}=${encodeURIComponent(value)}${linkSuffix()}`;
       if (navigator.share) {
         navigator.share({ title: 'Geosonify Location', url: hpURL })
           .catch(() => navigator.clipboard.writeText(hpURL).then(() => showToast('URL copied!')).catch(() => showToast('Copy failed')));
@@ -5929,7 +5947,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     }
     
     const baseURL = window.location.origin + window.location.pathname;
-    const shareURL = `${baseURL}?${prefix}=${encodeURIComponent(code)}${frameShareSuffix()}`;
+    const shareURL = `${baseURL}?${prefix}=${encodeURIComponent(code)}${linkSuffix()}`;
     
     if (navigator.share) {
       navigator.share({

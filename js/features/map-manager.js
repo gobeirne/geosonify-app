@@ -1,5 +1,9 @@
 /**
- * geosonify-map-manager.js v1.1
+ * geosonify-map-manager.js v1.2
+ *
+ * v1.2 (2026-10-23): 'aerial@YYYY-MM-DD' shows that day's edition of Esri
+ * World Imagery (Wayback, via js/lib/geosonify-wayback.js); MapServer results
+ * carry the service's own title as `label`.
  *
  * v1.1 (2026-10-23): a pasted ArcGIS …/MapServer URL is inspected (?f=json)
  * before drawing. Standard Web Mercator caches load as tiles; caches in any
@@ -332,6 +336,7 @@
     }
 
     const attrib = String(meta.copyrightText || '').trim().slice(0, 200);
+    const label = String((meta.documentInfo && meta.documentInfo.Title) || meta.mapName || '').trim().slice(0, 80);
     const ti = meta.tileInfo;
     const wkid = _srWkid(ti && ti.spatialReference) || _srWkid(meta.spatialReference);
     const isWM = WEB_MERCATOR_WKIDS.indexOf(wkid) !== -1;
@@ -372,7 +377,7 @@
         }
         if (consistent) {
           return {
-            mode: 'tiles', wkid, attrib, bounds,
+            mode: 'tiles', wkid, attrib, label, bounds,
             tileSize: T, zoomOffset: offset,
             minNativeZoom: Math.max(0, zMin), maxNativeZoom: zMax
           };
@@ -391,7 +396,7 @@
     // Photographic caches as JPEG (far smaller); everything else keeps transparency.
     const format = ((cacheFmt === 'JPEG' || cacheFmt === 'JPG' || cacheFmt === 'MIXED') && formats.indexOf('JPG') !== -1)
       ? 'jpg' : 'png32';
-    return { mode: 'export', wkid, attrib, bounds, format };
+    return { mode: 'export', wkid, attrib, label, bounds, format };
   }
 
   async function _fetchMapServerMeta(root, token) {
@@ -487,7 +492,7 @@
     if (fetched.unreadable) {
       // The description can't be read from the browser. /export as an image
       // needs no CORS, and is right in any projection, so try that.
-      plan = { mode: 'export', wkid: null, attrib: '', bounds: null, format: 'png32', blind: true };
+      plan = { mode: 'export', wkid: null, attrib: '', label: '', bounds: null, format: 'png32', blind: true };
     } else {
       plan = _classifyMapServer(fetched.meta);
       if (plan.error) return { ok: false, error: plan.error };
@@ -510,7 +515,7 @@
       if (plan.bounds) opts.bounds = L.latLngBounds(plan.bounds).pad(0.02);
       const layer = L.tileLayer(tileUrl, opts);
       _installBasemap(layer, true, false, options, _tileWatch(layer));
-      return { ok: true, mode: 'tiles', url: tileUrl };
+      return { ok: true, mode: 'tiles', url: tileUrl, label: plan.label };
     }
 
     // Export mode.
@@ -537,7 +542,7 @@
       layer.on('error', onFail);
     });
     return {
-      ok: true, mode: 'export', url: ms.root,
+      ok: true, mode: 'export', url: ms.root, label: plan.label,
       note: plan.blind
         ? 'Applied. The server doesn’t let a browser read its description, so it is drawn as images on request; if nothing appears, it doesn’t allow that either.'
         : (plan.wkid && WEB_MERCATOR_WKIDS.indexOf(plan.wkid) === -1
@@ -546,13 +551,36 @@
     };
   }
 
+  // ---- Esri World Imagery Wayback ('aerial@YYYY-MM-DD') --------------------
+  // Resolved through GeosonifyWayback (js/lib/geosonify-wayback.js) to the
+  // release published on that date or the latest before it. The catalogue is
+  // fetched once; the current imagery stays while it loads.
+  const WAYBACK_ATTRIB = 'Imagery © Esri, Maxar, Earthstar Geographics · World Imagery Wayback';
+
+  async function _applyWayback(date, options, seq) {
+    const W = global.GeosonifyWayback;
+    await W.load();
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    const r = W.resolve(date);
+    if (!r) return { ok: false, error: 'No dated World Imagery release is available.' };
+    const tileUrl = W.tileUrl(r.release);
+    const layer = L.tileLayer(tileUrl, {
+      attribution: WAYBACK_ATTRIB + ' ' + r.date,
+      maxNativeZoom: 19,
+      maxZoom: _basemapMaxZoom
+    });
+    _installBasemap(layer, true, false, options, _tileWatch(layer));
+    return { ok: true, mode: 'wayback', url: tileUrl, date: r.date, release: r.release };
+  }
+
   /**
    * Swap the basemap. `source` is a raw URL (XYZ template or ArcGIS MapServer
-   * root) or a preset name ('osm', 'aerial', 'topo'). If the source never
+   * root), a preset name ('osm', 'aerial', 'topo'), or a dated Aerial
+   * ('aerial@YYYY-MM-DD', Esri World Imagery Wayback). If the source never
    * loads, the map falls back to OSM and calls options.onError so the UI can
    * tell the user.
    * Returns { ok, url } or { ok:false, error } at once, except for a MapServer
-   * URL, which returns { ok:true, pending:true, promise } — the service is
+   * URL or a dated Aerial, which return { ok:true, pending:true, promise } — the service is
    * inspected first and the current imagery stays until it is ready. The
    * promise resolves to { ok:true, mode, url, note? } or { ok:false, error }
    * (or { ok:false, stale:true } if another basemap was chosen meanwhile).
@@ -563,7 +591,16 @@
     const attribution = options.attribution || '';
 
     let tileUrl, attrib, isImagery;
-    const aliasKey = String(source || '').trim().toLowerCase();
+    let aliasKey = String(source || '').trim().toLowerCase();
+    const W = global.GeosonifyWayback;
+    const wbDate = W ? W.dateOf(aliasKey) : null;
+    if (wbDate) {
+      const promise = _applyWayback(wbDate, options, seq)
+        .catch(e => ({ ok: false, error: 'The dated imagery couldn’t be set up (' + (e && e.message || e) + ').' }));
+      return { ok: true, pending: true, promise };
+    }
+    // A dated Aerial with no Wayback module (or a malformed date): plain Aerial.
+    if (/^aerial@/.test(aliasKey)) aliasKey = 'aerial';
     if (!source || BASEMAP_ALIASES[aliasKey]) {
       const alias = BASEMAP_ALIASES[aliasKey] || BASEMAP_ALIASES.osm;
       tileUrl = alias.url;
@@ -1500,6 +1537,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.1 loaded');
+  console.log('[geosonify] map-manager v1.2 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

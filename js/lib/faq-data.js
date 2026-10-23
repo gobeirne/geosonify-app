@@ -145,27 +145,31 @@
             id: 'map-imagery',
             q: 'Can I change what the map shows underneath my codes?',
             a: `<p>Yes. The <strong>Map imagery</strong> panel on the main screen, beside Encoding Mode and Precision, has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>). While Sky is chosen, a <strong>Sky</strong> button in the corner of the map turns between the two.</p>
-<p>Standard, Aerial and Topographic are a personal viewing preference, so an ordinary share link opens in whatever map the recipient is already using. A <strong>display link</strong> built on the Output tab is the exception: it carries your imagery, so the viewer sees what you chose. Sky is different again, because it changes what a code means, so every link made in Sky says so. A display link made in Sky opens on the sky, read-only.</p>
+<p>While <strong>Aerial</strong> is showing, a date list appears under the buttons: <strong>Latest</strong>, or any earlier edition of the same worldwide imagery as Esri published it, back to February 2014 (Esri's <em>World Imagery Wayback</em> archive). The date is when that edition was published, not when each photograph was taken; within one edition, different places were photographed at different times.</p>
+<p>Imagery you paste yourself (see below) is kept on this device and appears as a <strong>Custom</strong> button before Sky, so you can switch between it and the others. <strong>Hold Standard</strong> while any other imagery is showing to see the streets drawn over it, and let go to hide them again; a tap still switches to the street map. Over old photography, that answers "where is that street now?"</p>
+<p>Every link carries the imagery you are showing, so the recipient sees it too: Aerial (with its date, if you chose one), Topographic, or your own. Standard is the default and adds nothing to a link. Sky changes what a code means, so every link made in Sky says so instead, and a display link made in Sky opens on the sky, read-only.</p>
 <p>Shapes change colour to stay visible: purple on the street and topographic maps, and a high-contrast yellow on aerial photography, where purple tends to vanish. That happens automatically.</p>
 
 <details class="faq-details" style="margin-top:16px;border:1px solid var(--ios-separator,#c6c6c8);border-radius:8px;overflow:hidden;">
 <summary class="faq-details-summary" style="cursor:pointer;padding:11px 14px;font-weight:600;font-size:14px;background:var(--ios-light-gray,#f2f2f7);list-style:none;display:flex;align-items:center;gap:8px;user-select:none;">&#9656;&nbsp;Choosing imagery in a link, and pasting your own</summary>
 <div class="faq-details-body" style="padding:2px 14px 6px;font-size:13.5px;line-height:1.55;">
-<p>A display link carries its imagery in the <code>?basemap=</code> parameter. The three presets have short names, so a shared aerial link stays tidy:</p>
-<pre>?basemap=aerial     (satellite / aerial imagery)
-?basemap=topo       (topographic)
-?basemap=osm        (standard street map - the default)</pre>
-<p><code>?basemap=</code> is read only on display links (those carrying <code>?display</code>); any other link ignores it and opens in the recipient's own map. For example, a parcel shown on satellite imagery:</p>
+<p>A link carries its imagery in the <code>?basemap=</code> parameter. The presets have short names, so a shared aerial link stays tidy:</p>
+<pre>?basemap=aerial              (satellite / aerial imagery, latest)
+?basemap=aerial@2016-04-20   (the edition published on or before that date)
+?basemap=topo                (topographic)
+?basemap=osm                 (standard street map - the default)</pre>
+<p>Any link reads it, whether it carries a plain code, an obfuscated one, or a display view. For example, a parcel shown on satellite imagery:</p>
 <pre>?address_a=thp9el4j1&amp;auto=1&amp;display&amp;basemap=aerial</pre>
-<p>A sky display link carries no <code>basemap=</code>: its <code>frame=icrs&amp;epoch=J2000</code> is what opens it on the sky.</p>
+<p>A dated Aerial resolves to the edition published on that date, or the latest one before it, so a link can name any date. A sky link carries no <code>basemap=</code>: its <code>frame=icrs&amp;epoch=J2000</code> is what opens it on the sky.</p>
+<p>The imagery address is readable in an ordinary link, and a source that covers only one region (a city council's historical photography, say) gives away roughly where the code is, even when the code itself is obfuscated. An <strong>encrypted</strong> link keeps <code>basemap=</code> inside the encryption, along with everything else, so it reveals nothing. When a link includes your own imagery, the Output tab says so under the code.</p>
 
 <h4>Pasting your own imagery</h4>
-<p>The <strong>Your own map imagery</strong> card at the bottom of the FAQ tab has a paste field for any tile source of your own. Two URL shapes work:</p>
+<p>The <strong>Your own map imagery</strong> card at the bottom of the FAQ tab has a paste field for any tile source of your own. Once applied, it is kept on this device (and only here) as the <strong>Custom</strong> button; <strong>Forget</strong> on the same card removes it. Two URL shapes work:</p>
 <ul>
   <li>An <strong>XYZ tile template</strong> - a URL containing the <code>{z}/{x}/{y}</code> placeholders, the standard web-map tile format.</li>
   <li>An <strong>ArcGIS map service URL</strong> - one ending in <code>/MapServer</code>, in any projection.</li>
 </ul>
-<p>For an ArcGIS map service, Geosonify first reads the service's own description. If it is cached as standard web-map tiles, those tiles are loaded directly. If it uses another projection - many national and regional imagery services do, such as New Zealand Transverse Mercator (NZTM2000) - or has no tile cache at all, Geosonify asks the ArcGIS server for one image of the view at a time, already reprojected to fit the map, so it lines up with the streets, grids and shapes with no setup. A service that offers only tiles in another projection, and won't draw images on request, is declined with a note explaining why. Image services (<code>/ImageServer</code>), single layers (<code>/MapServer/0</code>) and bare REST directories are declined too, with a note on what to paste instead. If a source you paste contains an access key or token, Geosonify warns you, because a display link carrying it would show the key to anyone you share it with. If imagery never loads, the map falls back to the standard street map rather than going blank.</p>
+<p>For an ArcGIS map service, Geosonify first reads the service's own description. If it is cached as standard web-map tiles, those tiles are loaded directly. If it uses another projection - many national and regional imagery services do, such as New Zealand Transverse Mercator (NZTM2000) - or has no tile cache at all, Geosonify asks the ArcGIS server for one image of the view at a time, already reprojected to fit the map, so it lines up with the streets, grids and shapes with no setup. A service that offers only tiles in another projection, and won't draw images on request, is declined with a note explaining why. Image services (<code>/ImageServer</code>), single layers (<code>/MapServer/0</code>) and bare REST directories are declined too, with a note on what to paste instead. If a source you paste contains an access key or token, Geosonify warns you, because a link carrying it shows the key to anyone you share it with. A source with a key is also stored on this device as part of Custom. If imagery never loads, the map falls back to the standard street map rather than going blank.</p>
 
 <table>
   <tr><th>Value</th><th>Shows</th></tr>
@@ -174,7 +178,8 @@
   <tr><td><code>osm</code> or omitted</td><td>Standard street map (default)</td></tr>
   <tr><td>a pasted URL</td><td>Your own XYZ tile source or ArcGIS map service</td></tr>
 </table>
-<p>A note on imagery rights: the built-in aerial and topographic layers come from Esri's public basemap services, free for this kind of use with attribution shown on the map. Anything you paste carries its own provider's terms - worth a glance if you're publishing widely.</p>
+<p>When a link brings imagery from somewhere other than the built-in choices, Geosonify names the source as it opens. Loading imagery means your browser asks that server for it, as it would for any picture on a web page.</p>
+<p>A note on imagery rights: the built-in aerial (including its dated editions) and topographic layers come from Esri's public basemap services, free for this kind of use with attribution shown on the map. Anything you paste carries its own provider's terms - worth a glance if you're publishing widely.</p>
 </div>
 </details>`
           },

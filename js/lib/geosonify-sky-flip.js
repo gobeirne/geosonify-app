@@ -73,13 +73,19 @@
   convention. A renderer without rotation (the built-in one) cannot be rotated,
   so there is nothing to undo.
 
+  PEEK ON EARTH (v0.4). peekEarth(true/false): the same streets, drawn flat in
+  the map's own Web Mercator over whatever imagery is showing, while something
+  is held (the Standard chip in the Map imagery card), and gone on release.
+  Useful over old photography: where is that street now? Same canvas, tiles,
+  palette and credit as the turn; nothing turns, nothing else changes.
+
   NOTHING HERE TOUCHES A CODE, A URL OR A FROZEN FORMAT. Opening and closing go
   through GeosonifySkyView, which owns the frame (and so ?frame=icrs).
 */
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.3';
+  var VERSION = 'v0.4';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var BG = '#0b0f19';                       // the sky view's own background
@@ -185,6 +191,8 @@
 
   var cv = null, ctx = null, store = null, unsubTiles = null;
   var mode = null;           // 'merc' | 'morph' | 'ortho' | 'sky'
+  var earthPeek = false;     // peekEarth: streets flat over the Earth imagery
+  var earthPeekOff = null;
   var morphK = 0;            // 0 = Mercator, 1 = ground seen orthographically
   var frozenA = null;        // the sky's projection, kept once the renderer is gone
   var tileList = [];
@@ -206,6 +214,12 @@
     var r = w.getBoundingClientRect();
     var left = r.left - mr.left, top = r.top - mr.top;
     return { left: left, top: top, w: r.width, h: r.height, cx: left + r.width / 2, cy: top + r.height / 2 };
+  }
+
+  // The whole map, for streets drawn on the Earth face (no sky box involved).
+  function mapGeom() {
+    var r = mapEl().getBoundingClientRect();
+    return { left: 0, top: 0, w: r.width, h: r.height, cx: r.width / 2, cy: r.height / 2 };
   }
 
   function renderer() {
@@ -381,7 +395,7 @@
     if (!P) return;
     // Streets only ever appear inside the sky picture's box, so nothing pops
     // in or out at the header and the readouts when the sky arrives.
-    var g = frozenA ? frozenA.g : wrapGeom();
+    var g = frozenA ? frozenA.g : (earthPeek ? mapGeom() : wrapGeom());
     ctx.save();
     ctx.beginPath(); ctx.rect(g.left, g.top, g.w, g.h); ctx.clip();
     drawTiles(P, refLon());
@@ -737,6 +751,7 @@
 
   function toSky(o) {
     o = o || {};
+    if (earthPeek) peekEarth(false);
     var sv = SV(), m = lmap(), F = SF();
     if (!isAvailable()) {
       if (global.showToast) global.showToast('Sky view could not load', 'error');
@@ -1162,7 +1177,7 @@
   function peek(on) {
     var sv = SV(), F = SF();
     if (on) {
-      if (busy || peeking || !sv || !sv.isOpen() || !F || !VT()) return false;
+      if (busy || peeking || earthPeek || !sv || !sv.isOpen() || !F || !VT()) return false;
       cancelTail();
       var A = liveAffine();
       if (!A) return false;
@@ -1188,6 +1203,52 @@
     return true;
   }
 
+  // ── peek on Earth: the streets over the imagery ──────────────────────────
+  //
+  // While held, the streets are drawn flat in the map's own projection over
+  // the imagery underneath (nothing fades, nothing turns), following the map
+  // if it moves, and fade out on release.
+  function peekEarth(on) {
+    var m = lmap(), F = SF(), sv = SV();
+    if (on) {
+      if (busy || peeking || earthPeek || !m || !F || !VT()) return false;
+      if (sv && sv.isOpen && sv.isOpen()) return false;
+      cancelTail();
+      earthPeek = true;
+      ensureCanvas();
+      var load = function () {
+        var c = m.getCenter(), z = m.getZoom();
+        prepareTiles(c.lat, c.lng, F.aspForZoom(z, c.lat), mapGeom(), z);   // draws as tiles arrive
+      };
+      load();
+      mode = 'merc'; morphK = 0; frozenA = null; lineScale = 1;
+      draw();
+      fade(cv, 1, reducedMotion() ? 0 : 200);
+      var onEnd = function () { if (earthPeek) { ensureSize(); load(); schedule(); } };
+      m.on('move', schedule);
+      m.on('moveend', onEnd);
+      earthPeekOff = function () { m.off('move', schedule); m.off('moveend', onEnd); };
+      return true;
+    }
+    if (!earthPeek) return false;
+    earthPeek = false;
+    if (earthPeekOff) { earthPeekOff(); earthPeekOff = null; }
+    fade(cv, 0, reducedMotion() ? 0 : 260);
+    setTimeout(function () { if (!earthPeek && !peeking && !busy && !tailActive) dropCanvas(); }, 280);
+    return true;
+  }
+  // Keep the canvas matched to the map after a resize mid-peek, without
+  // resetting its opacity (ensureCanvas would).
+  function ensureSize() {
+    var m = mapEl();
+    if (!cv || !m) return;
+    var w = m.offsetWidth || 1, h = m.offsetHeight || 1, dpr = global.devicePixelRatio || 1;
+    cv.style.width = w + 'px'; cv.style.height = h + 'px';
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+  }
+
   function boot() {
     var sv = SV();
     if (sv && sv.on) {
@@ -1209,6 +1270,8 @@
     isSkyMode: function () { return skyMode; },
     peek: peek,
     isPeeking: function () { return peeking; },
+    peekEarth: peekEarth,
+    isPeekingEarth: function () { return earthPeek; },
     STARPIN_URL: STARPIN_URL,
     _test: {
       anchor: function () { return anchor; },
