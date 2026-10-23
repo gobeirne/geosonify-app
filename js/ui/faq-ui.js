@@ -28,6 +28,12 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.8: the Aerial date list also offers the curated local historical layers
+  covering the map's centre (js/lib/geosonify-imagery-catalogue.js),
+  interleaved with Esri's editions by photograph date; choosing one keeps the
+  Aerial chip and the list. The edition that is the current picture is no
+  longer listed twice, and editions with the same capture date are merged.
+
   v1.7: the Aerial date list offers only the releases in which the imagery at
   the map's centre changed, labelled with when those photographs were taken
   (GeosonifyWayback.localChanges / captureInfo), rebuilt when the map settles
@@ -52,7 +58,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.7';
+  const __FAQ_UI_VER__ = 'v1.8';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -680,6 +686,17 @@
     return 'custom';
   }
 
+  // A layer of the curated historical imagery catalogue counts as Aerial: the
+  // Aerial chip stays lit and the date list stays open while one is showing.
+  function _catEntry(url) {
+    const C = global.GeosonifyImageryCatalogue;
+    return (C && C.isLoaded() && url) ? C.byUrl(url) : null;
+  }
+  function _isAerialFamily(source) {
+    const k = _kindOf(source);
+    return k === 'aerial' || k === 'wayback' || (k === 'custom' && !!_catEntry(source));
+  }
+
   function _hostOf(url) {
     try { return new URL(url).hostname; } catch (e) { return ''; }
   }
@@ -709,13 +726,13 @@
   // (if custom), else this visit's linked one, else the remembered one.
   function _currentCustom() {
     const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
-    if (_kindOf(active) === 'custom') {
+    if (_kindOf(active) === 'custom' && !_catEntry(active)) {
       const mine = _loadCustom();
       if (mine && mine.url === active) return mine;
       if (_linkCustom && _linkCustom.url === active) return _linkCustom;
       return { url: active, label: '' };
     }
-    return _linkCustom || _loadCustom();
+    return (_linkCustom && !_catEntry(_linkCustom.url) ? _linkCustom : null) || _loadCustom();
   }
 
   function _applyBasemap(source, attribution, ui) {
@@ -743,8 +760,9 @@
     if (skyIsOpen() || skyModeOn()) {
       want = 'sky';
     } else {
-      const k = _kindOf(global.__GEOSONIFY_BASEMAP_ACTIVE);
-      want = (k === 'wayback') ? 'aerial' : k;
+      const a = global.__GEOSONIFY_BASEMAP_ACTIVE;
+      const k = _kindOf(a);
+      want = _isAerialFamily(a) ? 'aerial' : k;
     }
     chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
     _syncWaybackRow();
@@ -898,6 +916,13 @@
     sel.addEventListener('change', () => {
       const v = sel.value;
       if (v === '__all') { _wbShowAll = true; _wbKey = null; _syncWaybackRow(); return; }
+      if (/^c:\d+$/.test(v)) {
+        const e = _wbCatItems[v];
+        if (!e) return;
+        setWarn('Loading ' + e.l + ' · ' + e.r + '…');
+        _choose(e.u, setWarn, {}, () => setWarn(''));
+        return;
+      }
       const source = v ? 'aerial@' + v : 'aerial';
       setWarn(v ? 'Loading Aerial imagery from ' + v + '…' : '');
       _choose(source, setWarn, {}, () => setWarn(''));
@@ -913,7 +938,21 @@
     release…" switches to the full list. If the change service can't be
     reached, the full list is shown, as before.
   */
+  /*
+    v1.8: the list also holds the CURATED LOCAL LAYERS covering the map's centre
+    (GeosonifyImageryCatalogue.near: a test against boxes baked into the
+    catalogue, no network), interleaved with Esri's editions by when the
+    photographs were taken: an Esri edition by its capture date where known
+    (else its published date), a local layer by its year. Two tidy-ups: the
+    edition whose picture is the current one is not listed again under Latest,
+    and consecutive editions with the same capture date are one (the earliest
+    kept: when that photography first appeared). Layers whose coverage could
+    not be checked pixel by pixel ("loaded") are offered only if their boxes are
+    small, so a national box does not put a rail-corridor layer everywhere.
+  */
   let _wbShowAll = false, _wbKey = null, _wbSeq = 0, _wbTimer = null, _wbMapHooked = false;
+  let _wbCatItems = {};
+  const WB_LOADED_MAX_AREA = 0.5;           // deg² of boxes, for layers whose footprint is unverified
 
   function _wbCentre() {
     try {
@@ -923,22 +962,50 @@
       return { lat: c.lat, lon: ((c.lng + 180) % 360 + 360) % 360 - 180, zoom: m.getZoom(), map: m };
     } catch (e) { return null; }
   }
-
-  function _wbOptions(sel, items, wantDate, note) {
-    // items: [{date, label}] newest first. Keep the chosen date selectable even
-    // if this spot did not change in that release.
-    const have = new Set(items.map(i => i.date));
-    const rows = ['<option value="">' + _esc(note.latest || 'Latest') + '</option>']
-      .concat(items.map(i => '<option value="' + i.date + '">' + _esc(i.label) + '</option>'));
-    if (wantDate && !have.has(wantDate)) rows.splice(1, 0, '<option value="' + wantDate + '">' + _esc(wantDate + ' (no change here)') + '</option>');
-    if (!_wbShowAll) rows.push('<option value="__all">Every release…</option>');
-    sel.innerHTML = rows.join('');
-    sel.value = wantDate || '';
-  }
   function _esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
-  function _fillWayback(sel, wantDate) {
-    const W = global.GeosonifyWayback;
+  // Local layers to offer at (lat, lon), plus the one showing (even if the
+  // map has moved off it).
+  function _wbLocal(c, activeEntry) {
+    const C = global.GeosonifyImageryCatalogue;
+    if (!C || !C.isLoaded()) return activeEntry ? [activeEntry] : [];
+    const area = e => (e.b || []).reduce((t, b) => t + Math.abs((b[2] - b[0]) * (b[3] - b[1])), 0);
+    const list = C.near(c.lat, c.lon).filter(e => e.s !== 'loaded' || area(e) <= WB_LOADED_MAX_AREA);
+    if (activeEntry && !list.includes(activeEntry)) list.push(activeEntry);
+    return list;
+  }
+
+  // Build the <select>. esri: [{date, label, photo}] newest first; local:
+  // catalogue entries. wantValue: the value to keep selected.
+  function _wbRender(sel, esri, local, note, wantValue, c) {
+    // Esri tidy-ups.
+    let ed = esri.slice();
+    if (ed.length && (!note.latestPhoto || !ed[0].photo || ed[0].photo === note.latestPhoto)) ed = ed.slice(1);   // = Latest
+    ed = ed.filter((e, i) => !(e.photo && ed[i + 1] && ed[i + 1].photo === e.photo));                         // keep the earliest of a run
+    const rows = ed.map(e => ({ key: (e.photo || e.date).slice(0, 7), value: e.date, label: e.label }));
+    _wbCatItems = {};
+    local.forEach(e => {
+      const v = 'c:' + e.i;
+      _wbCatItems[v] = e;
+      const out = c && !global.GeosonifyImageryCatalogue.covers(e, c.lat, c.lon);
+      const zoomIn = c && e.zr && e.zr[0] != null && c.zoom < e.zr[0];
+      rows.push({ key: e.year ? String(e.year) + '-07' : '9999', value: v,
+        label: e.l + ' · ' + e.r + (out ? ' (not here)' : zoomIn ? ' (zoom in)' : '') });
+    });
+    rows.sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
+    const html = ['<option value="">' + _esc(note.latest || 'Latest') + '</option>']
+      .concat(rows.map(r => '<option value="' + r.value + '">' + _esc(r.label) + '</option>'));
+    if (wantValue && !rows.some(r => r.value === wantValue) && !/^c:/.test(wantValue)) {
+      const current = esri.length && esri[0].date === wantValue;
+      html.splice(1, 0, '<option value="' + wantValue + '">' + _esc(wantValue + (current ? ' (the current picture)' : ' (no change here)')) + '</option>');
+    }
+    if (!_wbShowAll) html.push('<option value="__all">Every release…</option>');
+    sel.innerHTML = html.join('');
+    sel.value = wantValue || '';
+  }
+
+  function _fillWayback(sel, wantValue, activeEntry) {
+    const W = global.GeosonifyWayback, C = global.GeosonifyImageryCatalogue;
     const lab = document.getElementById('basemapWaybackLabel');
     if (!W || !sel) return;
     const c = _wbCentre();
@@ -951,25 +1018,30 @@
         _wbTimer = setTimeout(_syncWaybackRow, 600);
       });
     }
+    // The catalogue loads the first time the list is shown; draw again then.
+    if (C && !C.isLoaded()) C.load().then(() => { _wbKey = null; _syncWaybackRow(); }, () => {});
     const all = () => {
       if (lab) lab.textContent = 'Aerial as published';
-      _wbOptions(sel, W.list().map(r => ({ date: r.date, label: r.date })), wantDate, {});
+      const local = c ? _wbLocal(c, activeEntry) : (activeEntry ? [activeEntry] : []);
+      const esri = W.list().map(r => ({ date: r.date, label: r.date }));
+      _wbRender(sel, [{ date: '' }].concat(esri), local, {}, wantValue, c);   // full list: nothing is "Latest" twice
     };
     if (_wbShowAll || !c) { all(); return; }
     const tz = Math.max(10, Math.min(19, Math.round(c.zoom))), t = W._tileOf(c.lat, c.lon, tz);
-    const key = t.z + '/' + t.y + '/' + t.x + '/' + (wantDate || '');            // same tile, same answer
-    if (key === _wbKey) { sel.value = wantDate || ''; return; }
+    const key = t.z + '/' + t.y + '/' + t.x + '/' + (wantValue || '') + '/' + (C && C.isLoaded() ? 1 : 0);
+    if (key === _wbKey) { sel.value = wantValue || ''; return; }
     _wbKey = key;
     const seq = ++_wbSeq;
+    const local = _wbLocal(c, activeEntry);
     if (lab) lab.textContent = 'Aerial: finding changes here…';
     W.localChanges(c.lat, c.lon, c.zoom).then(list => {
       if (seq !== _wbSeq) return;
       if (lab) lab.textContent = 'Aerial, changes here';
-      const items = list.map(r => ({ date: r.date, label: r.date, release: r.release }));
+      const items = list.map(r => ({ date: r.date, label: r.date, release: r.release, photo: '' }));
       const note = {};
-      _wbOptions(sel, items, wantDate, note);
+      const draw = () => _wbRender(sel, items, local, note, sel.value && sel.value !== '__all' ? sel.value : wantValue, c);
+      draw();
       if (!W.hasCaptureDates()) return;
-      // Capture dates, newest first, two at a time; the newest also labels "Latest".
       const latest = W.list()[0];
       const jobs = (latest ? [{ release: latest.release, latest: true }] : []).concat(items);
       let i = 0;
@@ -980,9 +1052,9 @@
           if (seq !== _wbSeq) return;
           if (info && info.date) {
             const photos = 'photos ' + info.date.slice(0, 7);
-            if (j.latest) note.latest = 'Latest · ' + photos;
-            else j.label = j.date + ' · ' + photos;
-            _wbOptions(sel, items, sel.value && sel.value !== '__all' ? sel.value : wantDate, note);
+            if (j.latest) { note.latest = 'Latest · ' + photos; note.latestPhoto = info.date.slice(0, 7); }
+            else { j.label = j.date + ' · ' + photos; j.photo = info.date.slice(0, 7); }
+            draw();
           }
           next();
         });
@@ -1000,15 +1072,18 @@
     if (!row || !sel) return;
     const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
     const k = _kindOf(active);
-    const show = (k === 'aerial' || k === 'wayback') && !skyIsOpen() && !skyModeOn() && !!global.GeosonifyWayback;
+    const show = _isAerialFamily(active) && !skyIsOpen() && !skyModeOn() && !!global.GeosonifyWayback;
     row.style.display = show ? 'flex' : 'none';
     if (!show) { _wbKey = null; return; }
-    let want = '';
+    let want = '', entry = null;
     if (k === 'wayback') {
       const r = global.GeosonifyWayback.resolve(String(active).slice(7));
       want = r ? r.date : '';
+    } else if (k === 'custom') {
+      entry = _catEntry(active);
+      if (entry) want = 'c:' + entry.i;
     }
-    _fillWayback(sel, want);
+    _fillWayback(sel, want, entry);
   }
 
   // ── The paste-your-own card in the FAQ pane ────────────────────────────────
@@ -1120,6 +1195,9 @@
     const shown = (r) => {
       if (kind === 'custom') {
         _linkCustom = { url: source, label: (r && r.label) || '' };
+        // Is it one of the curated layers? Then it is Aerial (chip, date list).
+        const C = global.GeosonifyImageryCatalogue;
+        if (C && !C.isLoaded()) C.load().then(_resyncChips, () => {});
         const host = _hostOf(source);
         if (host && typeof global.showToast === 'function') {
           try { global.showToast('Showing map imagery from ' + host); } catch (e) {}

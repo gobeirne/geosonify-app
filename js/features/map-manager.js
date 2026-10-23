@@ -1,5 +1,10 @@
 /**
- * geosonify-map-manager.js v1.3
+ * geosonify-map-manager.js v1.4
+ *
+ * v1.4 (2026-10-24): ArcGIS image services (…/ImageServer, through
+ * /exportImage) and WMS layers (any address with ?layers=<name>, optionally
+ * TIME=) can be shown, so every kind of layer in the curated imagery
+ * catalogue (js/lib/geosonify-imagery-catalogue.js) can be linked and pasted.
  *
  * v1.3 (2026-10-24): one layer of an ArcGIS map service (…/MapServer/<n>) can
  * be pasted or linked: it is drawn through /export with layers=show:<n>. A
@@ -436,10 +441,112 @@
     }
     const ms = _parseMapServerUrl(url);
     if (ms) return { mapServer: ms };
-    if (/\/ImageServer\/?(\?|$)/i.test(url) || /\/arcgis\/rest\/?(services\/?)?$/i.test(url)) {
-      return { error: 'That looks like an ArcGIS image service or directory. Paste a map service URL ending in /MapServer, or an XYZ template containing {z}/{x}/{y}.' };
+    const is = _parseImageServerUrl(url);
+    if (is) return { imageServer: is };
+    const wms = _parseWmsUrl(url);
+    if (wms) return { wms };
+    if (/\/arcgis\/rest\/?(services\/?)?$/i.test(url)) {
+      return { error: 'That looks like an ArcGIS directory. Paste one service from it: a URL ending in /MapServer (or /MapServer/<layer>) or /ImageServer.' };
     }
-    return { error: 'Unrecognised imagery URL. Use an XYZ template (with {z}/{x}/{y}) or an ArcGIS map service URL ending in /MapServer.' };
+    return { error: 'Unrecognised imagery URL. Use an XYZ template (with {z}/{x}/{y}), an ArcGIS service ending in /MapServer or /ImageServer, or a WMS address with ?layers=<name>.' };
+  }
+
+  // ---- ArcGIS image services and WMS (v1.4) ----------------------------------
+  //
+  // …/ImageServer: Esri Leaflet's imageMapLayer asks /exportImage for one image
+  // of the view in Web Mercator (the server reprojects), f=image, like the
+  // MapServer export path. WMS: any address carrying ?layers=<name> (plus
+  // TIME= if the layer is dated), drawn as Leaflet WMS tiles in Web Mercator.
+  // Version, format and the exact Web Mercator code (EPSG:3857, or the older
+  // EPSG:900913) come from the curated catalogue when the address is one of
+  // its layers; otherwise WMS 1.3.0, EPSG:3857, PNG.
+
+  function _parseImageServerUrl(raw) {
+    let u;
+    try { u = new URL(String(raw || '').trim()); } catch (e) { return null; }
+    if (!/^https?:$/.test(u.protocol)) return null;
+    const m = u.pathname.match(/^(.*\/ImageServer)\/?$/i);
+    return m ? { root: u.origin + m[1], token: u.searchParams.get('token') || '' } : null;
+  }
+
+  const WMS_RESERVED = ['service', 'request', 'version', 'layers', 'styles', 'crs', 'srs', 'bbox', 'width', 'height', 'format', 'transparent', 'time'];
+  function _parseWmsUrl(raw) {
+    let u;
+    try { u = new URL(String(raw || '').trim()); } catch (e) { return null; }
+    if (!/^https?:$/.test(u.protocol)) return null;
+    let layers = '', time = '';
+    const keep = new URLSearchParams();
+    for (const [k, v] of u.searchParams) {
+      const kl = k.toLowerCase();
+      if (kl === 'layers') layers = v;
+      else if (kl === 'time') time = v;
+      else if (!WMS_RESERVED.includes(kl)) keep.append(k, v);
+    }
+    if (!layers || /\/MapServer\/?$/i.test(u.pathname)) return null;
+    const q = keep.toString();
+    return { base: u.origin + u.pathname + (q ? '?' + q : ''), layers, time, raw: String(raw).trim() };
+  }
+
+  // The catalogue entry for a URL, loading the catalogue if need be (quickly:
+  // never more than 3 s; without it, defaults are used).
+  async function _catalogueEntry(url) {
+    const C = global.GeosonifyImageryCatalogue;
+    if (!C) return null;
+    if (!C.isLoaded()) {
+      try { await Promise.race([C.load(), new Promise((_, no) => setTimeout(() => no(new Error('slow')), 3000))]); }
+      catch (e) { return null; }
+    }
+    return C.byUrl(url);
+  }
+  const _catAttrib = (e, fallback) => (e && e.a) ? _escapeHTML(String(e.a).slice(0, 200)) : fallback;
+
+  async function _applyWms(w, attribution, options, seq) {
+    const entry = await _catalogueEntry(w.raw);
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    const cw = (entry && entry.wms) || {};
+    const code = cw.crs || 'EPSG:3857';
+    const crs = code === 'EPSG:3857' ? L.CRS.EPSG3857 : L.Util.extend({}, L.CRS.EPSG3857, { code: code });
+    const format = cw.format || 'image/png';
+    const opts = {
+      layers: w.layers,
+      styles: '',
+      format: format,
+      transparent: format === 'image/png',
+      version: cw.version || '1.3.0',
+      crs: crs,
+      maxZoom: _basemapMaxZoom,
+      attribution: attribution || _catAttrib(entry, 'Imagery © its provider')
+    };
+    if (w.time || cw.time) opts.TIME = w.time || cw.time;          // unknown options become WMS parameters
+    const layer = L.tileLayer.wms(cw.base || w.base, opts);
+    _installBasemap(layer, true, false, options, _tileWatch(layer));
+    return { ok: true, mode: 'wms', url: w.raw, label: entry ? entry.r + ' ' + entry.l : '' };
+  }
+
+  async function _applyImageServer(is, attribution, options, seq) {
+    const entry = await _catalogueEntry(is.root);
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    try { await _loadEsriLeaflet(); }
+    catch (e) {
+      if (seq !== _basemapSeq) return { ok: false, stale: true };
+      return { ok: false, error: 'This service needs a helper library (Esri Leaflet) that didn’t load. Check your connection and try again.' };
+    }
+    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    const layer = L.esri.imageMapLayer({
+      url: is.root,
+      token: is.token || undefined,
+      f: 'image',
+      format: 'jpgpng',
+      useCors: false,
+      pane: 'tilePane',
+      position: 'back',
+      attribution: attribution || _catAttrib(entry, 'Imagery © its provider')
+    });
+    _installBasemap(layer, true, false, options, (onLoad, onFail) => {
+      layer.on('load', onLoad);
+      layer.on('error', onFail);
+    });
+    return { ok: true, mode: 'image', url: is.root, label: entry ? entry.r + ' ' + entry.l : '' };
   }
 
   // Install a new basemap layer: swap layers, fallback-on-failure, recolour.
@@ -639,6 +746,16 @@
       if (resolved.mapServer) {
         const promise = _applyMapServer(resolved.mapServer, attribution, options, seq)
           .catch(e => ({ ok: false, error: 'That map service couldn’t be set up (' + (e && e.message || e) + ').' }));
+        return { ok: true, pending: true, promise };
+      }
+      if (resolved.imageServer) {
+        const promise = _applyImageServer(resolved.imageServer, attribution, options, seq)
+          .catch(e => ({ ok: false, error: 'That image service couldn’t be set up (' + (e && e.message || e) + ').' }));
+        return { ok: true, pending: true, promise };
+      }
+      if (resolved.wms) {
+        const promise = _applyWms(resolved.wms, attribution, options, seq)
+          .catch(e => ({ ok: false, error: 'That WMS layer couldn’t be set up (' + (e && e.message || e) + ').' }));
         return { ok: true, pending: true, promise };
       }
       tileUrl = resolved.url;
@@ -1562,6 +1679,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.3 loaded');
+  console.log('[geosonify] map-manager v1.4 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
