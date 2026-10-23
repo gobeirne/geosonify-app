@@ -28,6 +28,9 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.9: a curated local layer gives way to plain Aerial when the map settles
+  somewhere its coverage doesn't reach (no part of the view touches it).
+
   v1.8: the Aerial date list also offers the curated local historical layers
   covering the map's centre (js/lib/geosonify-imagery-catalogue.js),
   interleaved with Esri's editions by photograph date; choosing one keeps the
@@ -58,7 +61,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.8';
+  const __FAQ_UI_VER__ = 'v1.9';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -1170,7 +1173,50 @@
     if (changed) {
       try { global.dispatchEvent(new CustomEvent('geosonify:basemap', { detail: { source: v } })); } catch (e) {}
     }
+    if (_catEntry(v)) _hookLeaveCheck();
     _resyncChips();
+  }
+
+  /*
+    Leaving a local layer's coverage (v1.9). When the map settles somewhere
+    that a curated local layer doesn't cover at all (no part of the view
+    touches its coverage — e.g. Track jumps from Cockburn to Christchurch),
+    the imagery goes back to plain Aerial (Latest) rather than leaving a blank
+    map, and says so. Only curated layers, whose coverage is known; a pasted
+    source or a dated Aerial is never switched.
+  */
+  let _leaveHooked = false, _leaveTimer = null, _leaveNotBefore = 0;
+  // A link applies its imagery while the map is still travelling to the shape
+  // (and the display viewer re-fits), so give it a moment before judging.
+  const LEAVE_SETTLE_MS = 3000;
+  function _viewTouches(entry, m) {
+    const b = m.getBounds(), c = m.getCenter();
+    const shift = 360 * Math.round(c.lng / 360);                 // the world copy the view is on
+    const s = b.getSouth(), n = b.getNorth(), w = b.getWest() - shift, e = b.getEast() - shift;
+    return (entry.b || []).some(x => x[0] <= n && x[2] >= s && x[1] <= e && x[3] >= w);
+  }
+  function _leaveCheck() {
+    const wait = _leaveNotBefore - Date.now();
+    if (wait > 0) { clearTimeout(_leaveTimer); _leaveTimer = setTimeout(_leaveCheck, wait + 50); return; }
+    const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    const entry = _catEntry(active);
+    if (!entry || skyIsOpen()) return;
+    const m = (typeof MapManager !== 'undefined' && MapManager.getMap) ? MapManager.getMap() : null;
+    if (!m || _viewTouches(entry, m)) return;
+    const warnEl = document.getElementById('basemapWarn');
+    const setWarn = _warner(warnEl);
+    _choose('aerial', setWarn, { warn: warnEl }, () => {
+      const msg = 'Outside the ' + entry.l + ' ' + entry.r + ' imagery — back to Aerial.';
+      if (typeof global.showToast === 'function') { try { global.showToast(msg); } catch (e) { setWarn(msg); } }
+      else setWarn(msg);
+    });
+  }
+  function _hookLeaveCheck() {
+    if (_leaveHooked) return;
+    const m = (typeof MapManager !== 'undefined' && MapManager.getMap) ? MapManager.getMap() : null;
+    if (!m) return;
+    _leaveHooked = true;
+    m.on('moveend', () => { clearTimeout(_leaveTimer); _leaveTimer = setTimeout(_leaveCheck, 400); });
   }
 
   /**
@@ -1181,6 +1227,7 @@
    * Returns the source applied, or null.
    */
   function applyFromURL() {
+    _leaveNotBefore = Date.now() + LEAVE_SETTLE_MS;
     let params;
     try {
       params = new URLSearchParams(window.location.search);
@@ -1197,7 +1244,7 @@
         _linkCustom = { url: source, label: (r && r.label) || '' };
         // Is it one of the curated layers? Then it is Aerial (chip, date list).
         const C = global.GeosonifyImageryCatalogue;
-        if (C && !C.isLoaded()) C.load().then(_resyncChips, () => {});
+        if (C && !C.isLoaded()) C.load().then(() => { if (_catEntry(source)) _hookLeaveCheck(); _resyncChips(); }, () => {});
         const host = _hostOf(source);
         if (host && typeof global.showToast === 'function') {
           try { global.showToast('Showing map imagery from ' + host); } catch (e) {}

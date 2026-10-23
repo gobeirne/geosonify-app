@@ -1,5 +1,17 @@
 /**
- * geosonify-map-manager.js v1.4
+ * geosonify-map-manager.js v1.6
+ *
+ * v1.6 (2026-10-24): services drawn by their server (MapServer /export,
+ * ImageServer /exportImage) are requested tile by tile (512 px), not as one
+ * image per view: panning fetches only what's newly in view, tiles appear as
+ * they arrive, nothing is requested outside the coverage, and Esri Leaflet is
+ * no longer needed.
+ *
+ * v1.5 (2026-10-24): imagery goes back to Standard only after three failed
+ * requests with nothing drawn (not the first), and failures outside a curated
+ * layer's coverage don't count. A link to slow-server imagery sometimes came
+ * up on Standard because one early request failed while the map was still
+ * moving to the shape.
  *
  * v1.4 (2026-10-24): ArcGIS image services (…/ImageServer, through
  * /exportImage) and WMS layers (any address with ?layers=<name>, optionally
@@ -262,10 +274,10 @@
   //              (with tile size, zoom offset and native zoom range taken from
   //              the cache's levels of detail).
   //   'export' — anything else (a cache in another projection, e.g. NZTM2000
-  //              EPSG:2193, or a dynamic service): Esri Leaflet's
-  //              dynamicMapLayer asks the server's /export operation for one
-  //              image of the current view with bboxSR = imageSR = 3857, so the
-  //              server reprojects and the Leaflet map stays Web Mercator.
+  //              EPSG:2193, or a dynamic service): the server's /export
+  //              operation is asked for each map tile with bboxSR = imageSR =
+  //              3857 (ExportTiles, below), so the server reprojects and the
+  //              Leaflet map stays Web Mercator.
   // ArcGIS draws an export of a cached service from its cache tiles unless the
   // service has dynamic layers enabled, so cached imagery comes back as imagery.
   //
@@ -274,33 +286,58 @@
   // server's script in this page. The export layer uses f=image, so its images
   // are plain <img> loads with no script and no CORS requirement.
 
-  const ESRI_LEAFLET_URL = 'https://unpkg.com/esri-leaflet@3.0.19/dist/esri-leaflet.js';
-  const ESRI_LEAFLET_SRI = 'sha384-2EpnechKmjshAhcJgZr0/dexkJdbcRJm+qsQtCjFsfBP/u5HZmrSa9lpmD7u2t5T';
   const META_TIMEOUT_MS = 10000;
   const WEB_MERCATOR_WKIDS = [3857, 102100, 102113, 900913, 3785];
   const WM_HALF = 20037508.342787;            // Web Mercator origin offset (m)
   const WM_RES0 = 156543.03392800014;         // m/px at zoom 0 for 256-px tiles
 
-  let _esriLoad = null;
-  function _loadEsriLeaflet() {
-    if (global.L && L.esri && L.esri.dynamicMapLayer) return Promise.resolve();
-    if (_esriLoad) return _esriLoad;
-    _esriLoad = new Promise((resolve, reject) => {
-      const s = document.createElement('script');
-      s.src = ESRI_LEAFLET_URL;
-      s.integrity = ESRI_LEAFLET_SRI;
-      s.crossOrigin = 'anonymous';
-      s.async = true;
-      const t = setTimeout(() => { _esriLoad = null; reject(new Error('timeout')); }, 20000);
-      s.onload = () => {
-        clearTimeout(t);
-        if (global.L && L.esri && L.esri.dynamicMapLayer) resolve();
-        else { _esriLoad = null; reject(new Error('esri-leaflet did not register')); }
-      };
-      s.onerror = () => { clearTimeout(t); _esriLoad = null; reject(new Error('load failed')); };
-      document.head.appendChild(s);
-    });
-    return _esriLoad;
+  /*
+    TILED EXPORT (v1.6). An /export (MapServer) or /exportImage (ImageServer)
+    request is made per 512 px map tile rather than one image per view, so:
+      - panning only asks for the tiles newly in view (one big image per view
+        meant nothing appeared in newly exposed areas until a slow server had
+        redrawn the whole screen);
+      - tiles appear as each arrives, several at once, and the browser can
+        reuse them;
+      - nothing is asked for outside the layer's coverage (bounds);
+      - it is an ordinary Leaflet tile layer, so no helper library (Esri
+        Leaflet) has to be fetched.
+    urlFor(bbox [xmin, ymin, xmax, ymax] in EPSG:3857, w, h) → URL.
+  */
+  const EXPORT_TILE = 512;
+  let ExportTiles = null;           // defined on first use, so this file never needs Leaflet at load
+  const _defineExportTiles = () => ExportTiles || (ExportTiles = L.TileLayer.extend({
+    initialize: function (urlFor, options) {
+      this._urlFor = urlFor;
+      L.TileLayer.prototype.initialize.call(this, '', options);
+    },
+    getTileUrl: function (coords) {
+      const ts = this.getTileSize();
+      const nwPx = coords.scaleBy(ts), sePx = nwPx.add(ts);
+      const crs = this._map.options.crs;
+      const nw = crs.project(this._map.unproject(nwPx, coords.z));
+      const se = crs.project(this._map.unproject(sePx, coords.z));
+      return this._urlFor([Math.min(nw.x, se.x), Math.min(nw.y, se.y), Math.max(nw.x, se.x), Math.max(nw.y, se.y)], ts.x, ts.y);
+    }
+  }));
+  const _bbox = b => b.map(v => v.toFixed(2)).join(',');
+  function _exportTileLayer(urlFor, attribution, bounds) {
+    const opts = { tileSize: EXPORT_TILE, maxZoom: _basemapMaxZoom, attribution: attribution };
+    if (bounds) opts.bounds = bounds;
+    return new (_defineExportTiles())(urlFor, opts);
+  }
+  // Coverage to restrict requests to: the service's own (Web Mercator/WGS84)
+  // extent, else the curated catalogue's boxes.
+  function _coverBounds(planBounds, entry) {
+    try {
+      if (planBounds) return L.latLngBounds(planBounds).pad(0.02);
+      if (entry && entry.b && entry.b.length) {
+        const bb = L.latLngBounds([]);
+        entry.b.forEach(b => bb.extend([[b[0], b[1]], [b[2], b[3]]]));
+        return bb.isValid() ? bb.pad(0.02) : null;
+      }
+    } catch (e) {}
+    return null;
   }
 
   function _escapeHTML(s) {
@@ -453,9 +490,8 @@
 
   // ---- ArcGIS image services and WMS (v1.4) ----------------------------------
   //
-  // …/ImageServer: Esri Leaflet's imageMapLayer asks /exportImage for one image
-  // of the view in Web Mercator (the server reprojects), f=image, like the
-  // MapServer export path. WMS: any address carrying ?layers=<name> (plus
+  // …/ImageServer: /exportImage per map tile in Web Mercator (the server
+  // reprojects), f=image, like the MapServer export path. WMS: any address carrying ?layers=<name> (plus
   // TIME= if the layer is dated), drawn as Leaflet WMS tiles in Web Mercator.
   // Version, format and the exact Web Mercator code (EPSG:3857, or the older
   // EPSG:900913) come from the curated catalogue when the address is one of
@@ -526,28 +562,15 @@
   async function _applyImageServer(is, attribution, options, seq) {
     const entry = await _catalogueEntry(is.root);
     if (seq !== _basemapSeq) return { ok: false, stale: true };
-    try { await _loadEsriLeaflet(); }
-    catch (e) {
-      if (seq !== _basemapSeq) return { ok: false, stale: true };
-      return { ok: false, error: 'This service needs a helper library (Esri Leaflet) that didn’t load. Check your connection and try again.' };
-    }
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
-    const layer = L.esri.imageMapLayer({
-      url: is.root,
-      token: is.token || undefined,
-      f: 'image',
-      format: 'jpgpng',
-      useCors: false,
-      pane: 'tilePane',
-      position: 'back',
-      attribution: attribution || _catAttrib(entry, 'Imagery © its provider')
-    });
-    _installBasemap(layer, true, false, options, (onLoad, onFail) => {
-      layer.on('load', onLoad);
-      layer.on('error', onFail);
-    });
+    const tok = is.token ? '&token=' + encodeURIComponent(is.token) : '';
+    const layer = _exportTileLayer((b, w, h) => is.root + '/exportImage?bbox=' + _bbox(b) +
+      '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&format=jpgpng&f=image' + tok,
+      attribution || _catAttrib(entry, 'Imagery © its provider'), _coverBounds(null, entry));
+    _installBasemap(layer, true, false, options, _tileWatch(layer));
     return { ok: true, mode: 'image', url: is.root, label: entry ? entry.r + ' ' + entry.l : '' };
   }
+
+  const FAIL_LIMIT = 3;     // failed requests, with nothing drawn, before going back to Standard
 
   // Install a new basemap layer: swap layers, fallback-on-failure, recolour.
   // `watch` wires the layer's success/failure events: it receives
@@ -556,14 +579,35 @@
     // Fallback: if the source never manages to load anything, revert to OSM
     // once. A source that has drawn at least once stays (gaps at the edge of
     // a regional cache are not a reason to throw the whole layer away).
+    //
+    // v1.5: one failed request is not "never loads". A link applies its imagery
+    // while the map is still at its starting view, then moves to the shape (and
+    // the display viewer re-fits twice more), so a slow council server can fail
+    // or time out on one of those early requests and still draw fine a moment
+    // later. It now takes FAIL_LIMIT failures with nothing drawn in between, and
+    // a failure while the map's centre is outside a curated layer's coverage
+    // doesn't count at all (no picture is expected there).
     if (!isOSM) {
-      let loadedAny = false, failed = false;
+      let loadedAny = false, failed = false, fails = 0;
+      const C = global.GeosonifyImageryCatalogue;
+      const srcUrl = options._sourceUrl || '';
+      const expectedHere = () => {
+        try {
+          const e = (C && C.isLoaded() && srcUrl) ? C.byUrl(srcUrl) : null;
+          if (!e) return true;
+          const c = map.getCenter();
+          return C.covers(e, c.lat, ((c.lng + 180) % 360 + 360) % 360 - 180);
+        } catch (err) { return true; }
+      };
       watch(
-        () => { loadedAny = true; },
+        () => { loadedAny = true; fails = 0; },
         () => {
           if (loadedAny || failed) return;
           if (_basemapLayer !== newLayer) return;      // already replaced
+          if (!expectedHere()) return;
+          if (++fails < FAIL_LIMIT) return;
           failed = true;
+          try { console.warn('[geosonify] imagery failed ' + fails + ' times with nothing drawn: ' + (srcUrl || '(preset)')); } catch (e) {}
           if (typeof options.onError === 'function') {
             options.onError('That imagery source didn’t load — back on the standard map.');
           }
@@ -649,37 +693,23 @@
       return { ok: true, mode: 'tiles', url: tileUrl, label: plan.label };
     }
 
-    // Export mode.
-    try { await _loadEsriLeaflet(); }
-    catch (e) {
-      if (seq !== _basemapSeq) return { ok: false, stale: true };
-      return { ok: false, error: 'This service needs a helper library (Esri Leaflet) that didn’t load. Check your connection and try again.' };
-    }
+    // Export mode: tiled /export requests (see ExportTiles), f=image so each
+    // tile is a plain <img> (no JSON, no output directory, no CORS needed).
+    const entry = await _catalogueEntry(ms.layer != null ? ms.root + '/' + ms.layer : ms.root);
     if (seq !== _basemapSeq) return { ok: false, stale: true };
-
-    const layer = L.esri.dynamicMapLayer({
-      url: ms.root,
-      layers: ms.layer != null ? [ms.layer] : undefined,
-      token: ms.token || undefined,
-      f: 'image',              // plain <img> per view; no JSON request, no output directory
-      format: plan.format,
-      transparent: true,
-      useCors: false,          // the image is only displayed, never read back
-      pane: 'tilePane',        // below the HEALPix lattice (350) and every shape (overlayPane 400)
-      position: 'back',
-      attribution: attrib
-    });
-    _installBasemap(layer, true, false, options, (onLoad, onFail) => {
-      layer.on('load', onLoad);
-      layer.on('error', onFail);
-    });
+    const lyr = ms.layer != null ? '&layers=show:' + ms.layer : '';
+    const layer = _exportTileLayer((b, w, h) => ms.root + '/export?bbox=' + _bbox(b) +
+      '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&dpi=96&format=' + plan.format +
+      '&transparent=true&f=image' + lyr + tokenQS.replace('?', '&'),
+      attrib, _coverBounds(plan.bounds, entry));
+    _installBasemap(layer, true, false, options, _tileWatch(layer));
     return {
       ok: true, mode: 'export', url: ms.root, label: plan.layerName ? (plan.label ? plan.label + ' · ' : '') + plan.layerName : plan.label,
       note: plan.blind
         ? 'Applied. The server doesn’t let a browser read its description, so it is drawn as images on request; if nothing appears, it doesn’t allow that either.'
         : (plan.wkid && WEB_MERCATOR_WKIDS.indexOf(plan.wkid) === -1
             ? 'Applied. This service is in EPSG:' + plan.wkid + ', so its server redraws each view to fit this map.'
-            : 'Applied. This service is drawn as an image of each view.')
+            : 'Applied. This service is drawn by its server, tile by tile.')
     };
   }
 
@@ -719,6 +749,7 @@
    */
   function setBasemap(source, options = {}) {
     if (!map) return { ok: false, error: 'Map not ready.' };
+    options = Object.assign({}, options, { _sourceUrl: String(source || '').trim() });
     const seq = ++_basemapSeq;
     const attribution = options.attribution || '';
 
@@ -1679,6 +1710,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.4 loaded');
+  console.log('[geosonify] map-manager v1.6 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

@@ -74,7 +74,7 @@
 <script src="../js/features/map-manager.js?v=20261024a"></script>
 <script>
 /*
-  imagery-catalogue-builder v1.2
+  imagery-catalogue-builder v1.3
 
   For each source line it decides the KIND, then gathers what the app needs:
 
@@ -122,6 +122,11 @@
   box, as the app will draw it; a capabilities document as the source (.xml)
   is read as WMS; a layer that refuses JPEG is tried as PNG; outline (feature)
   layers are reported as such.
+
+  v1.3: a coverage box on the source line clips a WMS layer's capabilities box
+  (a national agency's can include every overseas territory: France's covered
+  New York); a footprint box still larger than 1.5° is footprinted again on its
+  own; a failed or timed-out sample image is tried once more.
 */
 (function () {
   'use strict';
@@ -242,7 +247,14 @@
   }
 
   // Fetch an image and judge it: confirmed / blank / loaded (pixels unreadable) / failed.
+  // v1.3: a network failure or timeout gets one more try (a slow server can
+  // fail one request and answer the next).
   async function judgeImage(url) {
+    const v = await judgeImageOnce(url);
+    if (v.verdict === 'failed' && /timeout|request failed/.test(v.why)) return judgeImageOnce(url);
+    return v;
+  }
+  async function judgeImageOnce(url) {
     const viaFetch = await withHost(url, async () => {
       const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
       try {
@@ -408,7 +420,23 @@
   const clipTo = (b, to) => [Math.max(b[0], to[0]), Math.max(b[1], to[1]), Math.min(b[2], to[2]), Math.min(b[3], to[3])];
 
   // Footprint from single images of each box: imgUrl([x0,y0,x1,y1], W, H).
+  // v1.3: a box that is still large after one pass (a world-wide capabilities
+  // box has 11° cells) is footprinted again on its own, at most FP_REFINE times.
+  const FP_REFINE = 8, FP_REFINE_DEG = 1.5;
   async function footprintImage(boxes, imgUrl) {
+    const first = await footprintImageOnce(boxes, imgUrl);
+    if (!/^footprint: \d+ box/.test(first.note)) return first;
+    const big = first.boxes.filter(b => (b[2] - b[0]) > FP_REFINE_DEG || (b[3] - b[1]) > FP_REFINE_DEG).slice(0, FP_REFINE);
+    if (!big.length) return first;
+    const keep = first.boxes.filter(b => !big.includes(b)), hot = first.hot.slice();
+    for (const b of big) {
+      const r = await footprintImageOnce([b], imgUrl);
+      r.boxes.forEach(x => keep.push(x));
+      (r.hot || []).forEach(h => hot.unshift(h));
+    }
+    return finishFootprint(boxes, keep, 'tightened', hot);
+  }
+  async function footprintImageOnce(boxes, imgUrl) {
     const out = [], hot = []; let note = 'kept';
     for (const box of boxes) {
       const [x0, y0] = toWM(box[0], box[1]), [x1, y1] = toWM(box[2], box[3]);
@@ -793,7 +821,15 @@
       if (!layer) return fail(e, 'no layer named and capabilities unreadable');
     }
     const name = L ? L.name : layer;
-    const boxes = (L && L.box && L.box.every(isFinite)) ? [L.box] : e.boxes;
+    // A box on the source line is the curated coverage: it clips the
+    // capabilities' box (which for a national agency can include every
+    // overseas territory, i.e. most of the world).
+    const capsBox = (L && L.box && L.box.every(isFinite)) ? L.box : null;
+    let boxes = e.boxes;
+    if (capsBox && e.boxes.length) {
+      boxes = e.boxes.map(b => clipTo(b, capsBox)).filter(b => b[0] < b[2] && b[1] < b[3]);
+      if (!boxes.length) boxes = e.boxes;
+    } else if (capsBox) boxes = [capsBox];
     if (!boxes.length) return fail(e, 'coverage: no box in capabilities and none on the source line');
     e.bbox = boxes.map(boxR);
     e.wms = { base, layers: name, version, crs, format: fmt };
