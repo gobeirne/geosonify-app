@@ -50,15 +50,31 @@
   parts of the view may be older or newer. Both are cached, and fetched only
   when asked (the Aerial date row asks only while it is showing).
 
+  REMEMBERED ON THE DEVICE (v1.2). What the change chain and the capture-date
+  queries learn is kept in localStorage (key geosonify_wayback_cache_v1), so a
+  place you have looked at before lists its dates at once:
+    - the release list, for a day;
+    - each tile's chain of changes, tagged with the newest release at the time.
+      When Esri publishes a new release, the chain is not redone: one request
+      asks the newest release, and if it names the same picture as before the
+      remembered chain stands; if it is a new picture, only the new link is
+      added;
+    - capture dates, which never change for a given release and place.
+  Bounded (400 tiles, 2000 capture dates, oldest dropped first; about 300 KB
+  at most), and every read and write is guarded, so a browser that refuses
+  storage just asks the network as before.
+
   Nothing here touches a code or a frozen format.
 */
 (function (global) {
   'use strict';
 
-  var VERSION = 'v1.1';
+  var VERSION = 'v1.2';
   var CATALOGUE_URL = 'https://s3-us-west-2.amazonaws.com/config.maptiles.arcgis.com/waybackconfig.json';
   var TILE_URL = 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/GoogleMapsCompatible/MapServer/tile/{release}/{z}/{y}/{x}';
   var TIMEOUT_MS = 8000;
+  var STORE_KEY = 'geosonify_wayback_cache_v1';
+  var STORE_MAX_LOCAL = 400, STORE_MAX_CAPTURE = 2000, CATALOGUE_TTL_MS = 24 * 3600 * 1000;
   var TILEMAP_BASE = 'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tilemap/';
   var MAX_CHAIN = 40;                 // tilemap requests per point, at most
   var META_MAX_ZOOM = 23, META_MIN_ZOOM = 10;
@@ -98,6 +114,35 @@
     });
   }
 
+  // ── device store ──────────────────────────────────────────────────────────
+  var store = null, saveTimer = null;
+  function storeGet() {
+    if (store) return store;
+    try { store = JSON.parse(global.localStorage.getItem(STORE_KEY) || 'null'); } catch (e) { store = null; }
+    if (!store || typeof store !== 'object') store = {};
+    if (!store.local || typeof store.local !== 'object') store.local = {};
+    if (!store.capture || typeof store.capture !== 'object') store.capture = {};
+    return store;
+  }
+  function trim(obj, max) {
+    var keys = Object.keys(obj);
+    if (keys.length <= max) return;
+    keys.sort(function (a, b) { return (obj[a].t || 0) - (obj[b].t || 0); });
+    keys.slice(0, keys.length - max).forEach(function (k) { delete obj[k]; });
+  }
+  function storeSave() {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      var st = storeGet();
+      trim(st.local, STORE_MAX_LOCAL);
+      trim(st.capture, STORE_MAX_CAPTURE);
+      try { global.localStorage.setItem(STORE_KEY, JSON.stringify(st)); }
+      catch (e) {                                   // full: keep only the release list
+        try { global.localStorage.setItem(STORE_KEY, JSON.stringify({ cat: st.cat, local: {}, capture: {} })); } catch (e2) {}
+      }
+    }, 500);
+  }
+
   var releases = parseSnapshot();     // [{date, release}], newest first
   var source = 'snapshot';
   var loading = null;
@@ -118,6 +163,13 @@
   /** Fetch the live catalogue once; resolves to the release list either way. */
   function load() {
     if (loading) return loading;
+    // A release list remembered from the last day is used as it is.
+    var st = storeGet();
+    if (st.cat && Array.isArray(st.cat.list) && st.cat.list.length >= releases.length && Date.now() - (st.cat.t || 0) < CATALOGUE_TTL_MS) {
+      releases = st.cat.list; source = 'live';
+      loading = Promise.resolve(releases);
+      return loading;
+    }
     loading = new Promise(function (resolve) {
       if (typeof fetch !== 'function') return resolve(releases);
       var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
@@ -127,7 +179,10 @@
         .then(function (cfg) {
           var live = fromCatalogue(cfg);
           // Sanity: the live list must be at least as long as the snapshot.
-          if (live.length >= releases.length) { releases = live; source = 'live'; }
+          if (live.length >= releases.length) {
+            releases = live; source = 'live';
+            storeGet().cat = { t: Date.now(), list: live }; storeSave();
+          }
         })
         .catch(function () { /* keep the snapshot */ })
         .then(function () { clearTimeout(t); resolve(releases); });
@@ -183,29 +238,39 @@
     var t = tileOf(lat, lon, z), key = t.z + '/' + t.y + '/' + t.x;
     if (localCache[key]) return localCache[key];
     var p = load().then(function () {
+      var newest = releases.length ? releases[0].release : null;
+      var kept = storeGet().local[key];
+      if (kept && kept.n === newest && Array.isArray(kept.raw)) return kept.raw;        // remembered, current
+      var known = (kept && Array.isArray(kept.raw) && kept.raw.length) ? kept.raw : null;
       var found = [];
       function step(rel, n) {
         if (rel == null || n >= MAX_CHAIN) return Promise.resolve(found);
         return getJSON(TILEMAP_BASE + rel + '/' + key).then(function (j) {
           if (!j || !j.data || !j.data[0]) return found;                  // no older change here
           var sel = (j.select && j.select[0]) ? +j.select[0] : rel;
+          // Reached what is already remembered: the rest of the chain stands.
+          if (known && sel === known[0].release) return found.concat(known);
           found.push({ release: sel, size: (j.size && j.size[0]) || 0 });
           var i = indexOfRelease(sel);
           var prev = (i >= 0 && releases[i + 1]) ? releases[i + 1].release : null;
           return step(prev, n + 1);
         });
       }
-      return step(releases.length ? releases[0].release : null, 0).then(function (raw) {
-        // Runs of the same size are one picture republished: keep the earliest.
-        var out = [];
-        raw.forEach(function (r, i) {
-          var next = raw[i + 1];
-          if (next && next.size && next.size === r.size) return;
-          var k = indexOfRelease(r.release);
-          if (k >= 0) out.push({ date: releases[k].date, release: r.release });
-        });
-        return out;
+      return step(newest, 0).then(function (raw) {
+        storeGet().local[key] = { n: newest, t: Date.now(), raw: raw };
+        storeSave();
+        return raw;
       });
+    }).then(function (raw) {
+      // Runs of the same size are one picture republished: keep the earliest.
+      var out = [];
+      raw.forEach(function (r, i) {
+        var next = raw[i + 1];
+        if (next && next.size && next.size === r.size) return;
+        var k = indexOfRelease(r.release);
+        if (k >= 0) out.push({ date: releases[k].date, release: r.release });
+      });
+      return out;
     });
     localCache[key] = p;
     p.catch(function () { delete localCache[key]; });
@@ -234,15 +299,19 @@
     var tt = tileOf(lat, lon, z);
     var key = release + '|' + layer + '|' + tt.z + '/' + tt.y + '/' + tt.x;     // one answer per tile
     if (captureCache[key]) return captureCache[key];
+    var kept = storeGet().capture[key];
+    if (kept) { kept.t = Date.now(); return (captureCache[key] = Promise.resolve(kept.v || null)); }
     var q = 'f=json&where=1%3D1&outFields=SRC_DATE2,NICE_DESC,SAMP_RES&returnGeometry=false' +
       '&geometryType=esriGeometryPoint&spatialRel=esriSpatialRelIntersects&geometry=' +
       encodeURIComponent(JSON.stringify({ spatialReference: { wkid: 4326 }, x: lon, y: lat }));
     var p = getJSON(meta.replace(/\/$/, '') + '/' + layer + '/query?' + q).then(function (j) {
       var f = j && j.features && j.features[0];
-      if (!f || !f.attributes) return null;
-      var a = f.attributes;
-      return { date: fmtDate(a.SRC_DATE2), resolution: a.SAMP_RES, provider: a.NICE_DESC || '' };
-    }).catch(function () { return null; });
+      var a = f && f.attributes;
+      var v = a ? { date: fmtDate(a.SRC_DATE2), resolution: a.SAMP_RES, provider: a.NICE_DESC || '' } : null;
+      storeGet().capture[key] = { t: Date.now(), v: v };       // an answer (even "none") never changes
+      storeSave();
+      return v;
+    }).catch(function () { return null; });                    // a failure is not remembered
     captureCache[key] = p;
     return p;
   }
