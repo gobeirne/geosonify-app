@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Geosonify — imagery catalogue builder</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#fff; --fg:#111; --mut:#666; --line:#ddd; --ok:#1b7f3b; --warn:#a46200; --bad:#b3261e; --info:#325756; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181c; --fg:#eee; --mut:#999; --line:#333; --ok:#5fd38a; --warn:#f0b35a; --bad:#ff8a80; --info:#8cc7c5; } }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:14px 18px; border-bottom:1px solid var(--line); }
+  h1 { font-size:18px; margin:0 0 4px; }
+  header p { margin:0; color:var(--mut); max-width:70em; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 18px; border-bottom:1px solid var(--line); position:sticky; top:0; background:var(--bg); z-index:500; }
+  button { font:inherit; padding:6px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
+  button.primary { background:var(--info); color:#fff; border-color:var(--info); }
+  button:disabled { opacity:.5; cursor:default; }
+  #summary { color:var(--mut); }
+  main { display:grid; grid-template-columns: minmax(0,1fr) 420px; gap:0; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; } #side { position:static !important; height:360px !important; } }
+  #tablewrap { overflow:auto; }
+  table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th, td { border-bottom:1px solid var(--line); padding:4px 6px; text-align:left; vertical-align:top; }
+  th { position:sticky; top:0; background:var(--bg); }
+  td.st { font-weight:600; white-space:nowrap; }
+  .confirmed { color:var(--ok); } .loaded { color:var(--ok); opacity:.8; }
+  .blank, .pick, .parked { color:var(--warn); } .failed, .unknown { color:var(--bad); } .pending, .running { color:var(--mut); }
+  td.detail { color:var(--mut); max-width:42em; word-break:break-word; }
+  #side { position:sticky; top:52px; height:calc(100vh - 52px); border-left:1px solid var(--line); display:flex; flex-direction:column; }
+  #map { flex:1 1 auto; min-height:240px; }
+  #sideinfo { padding:8px 10px; font-size:12.5px; color:var(--mut); border-top:1px solid var(--line); max-height:40%; overflow:auto; }
+  textarea { width:100%; box-sizing:border-box; height:140px; font:12px ui-monospace,monospace; background:var(--bg); color:var(--fg); border:1px solid var(--line); }
+  details { padding:6px 18px; border-bottom:1px solid var(--line); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Imagery catalogue builder</h1>
+  <p>A developer tool, not part of the app. It reads every layer in <code>imagery-sources.txt</code>, asks each server for its description and coverage, test-loads sample images in Web Mercator, and writes the catalogue the app's Aerial date list uses. Run it from geosonify.org (so the browser's cross-origin rules are the app's own), then download the catalogue and the report.</p>
+</header>
+
+<details>
+  <summary>Source list (edit here to try changes without uploading)</summary>
+  <textarea id="src" spellcheck="false" placeholder="Loading imagery-sources.txt…"></textarea>
+</details>
+
+<div class="bar">
+  <button class="primary" id="run">Run all</button>
+  <button id="rerunBad" disabled>Re-run failed and blank</button>
+  <button id="dlCat" disabled>Download catalogue</button>
+  <button id="dlRep" disabled>Download report</button>
+  <button id="dlDisc" disabled>Download discovered layers</button>
+  <span id="summary"></span>
+</div>
+
+<main>
+  <div id="tablewrap">
+    <table>
+      <thead><tr><th>#</th><th>Region</th><th>Label</th><th>Kind</th><th>Status</th><th>Detail</th><th></th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div id="side">
+    <div id="map"></div>
+    <div id="sideinfo">Preview: choose a row. Cyan boxes are the coverage the app will use.</div>
+  </div>
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.19/dist/esri-leaflet.js"
+        integrity="sha384-2EpnechKmjshAhcJgZr0/dexkJdbcRJm+qsQtCjFsfBP/u5HZmrSa9lpmD7u2t5T" crossorigin="anonymous"></script>
+<script src="../js/features/map-manager.js?v=20261023b"></script>
+<script>
+/*
+  imagery-catalogue-builder v1.0
+
+  For each source line it decides the KIND, then gathers what the app needs:
+
+    arcgis-tiles    …/MapServer with a standard Web Mercator tile cache
+    arcgis-export   …/MapServer drawn through /export (other projection, or dynamic)
+    arcgis-layer    one layer inside a service (…/MapServer/<id>), drawn through
+                    /export with layers=show:<id>; a group layer is replaced by
+                    its image layer if the group itself draws nothing
+    arcgis-image    …/ImageServer, drawn through /exportImage
+    wms             a WMS endpoint (?layers=<name>, or the only layer it has)
+    xyz             a tile template
+    caps            a GetCapabilities URL: its layers are LISTED for you to pick
+                    from (Download discovered layers), not added
+    parked          a tile cache in another projection with no image-on-request
+
+  The MapServer decision is MapManager._classifyMapServer itself, so the tool
+  and the app cannot disagree about it.
+
+  COVERAGE in latitude/longitude: Web Mercator and WGS84 extents are converted
+  here; any other projection is converted by the SERVER (an export request with
+  imageSR=4326&f=json reports the extent in that system). WMS: the capabilities'
+  geographic box. XYZ, or WMS whose capabilities can't be read: the box(es) given
+  on the source line.
+
+  IMAGE TEST: up to three sample points in the coverage (centre, then two
+  quarter points), each a 256 px Web Mercator image, fetched with CORS so the
+  pixels can be checked: "confirmed" = real picture content, "blank" = fully
+  transparent or a single flat colour everywhere tried, "loaded" = an image
+  arrived but the server doesn't allow its pixels to be read (content unchecked).
+  The app offers confirmed and loaded entries; everything else is report-only.
+*/
+(function () {
+  'use strict';
+
+  const R = 6378137, WMH = 20037508.342789244;
+  const WM_WKIDS = [3857, 102100, 102113, 900913, 3785];
+  const TIMEOUT = 20000, MAX_ALL = 6, MAX_HOST = 2;
+  const $ = s => document.querySelector(s);
+  const rowsEl = $('#rows');
+  let entries = [], discovered = [];
+
+  // ── source list ──────────────────────────────────────────────────────────
+  function parseSources(text) {
+    const out = [], seen = new Set();
+    text.split(/\r?\n/).forEach((raw, i) => {
+      const line = raw.trim();
+      if (!line || line[0] === '#') return;
+      const p = line.split('|').map(s => s.trim());
+      if (p.length < 3 || !/^https?:\/\//i.test(p[2])) return;
+      const key = p[2] + '|' + p[1];
+      if (seen.has(key)) return;
+      seen.add(key);
+      const boxes = (p[3] || '').split(';').map(b => b.split(',').map(Number)).filter(b => b.length === 4 && b.every(isFinite));
+      out.push({ n: out.length + 1, line: i + 1, region: p[0], label: p[1], url: p[2], boxes, status: 'pending', detail: '' });
+    });
+    return out;
+  }
+
+  function kindOf(url) {
+    if (/\{z\}/.test(url) && /\{x\}/.test(url) && /\{y\}/.test(url)) return 'xyz';
+    if (/request=getcapabilities/i.test(url)) return 'caps';
+    if (/\/ImageServer\/?(\?|$)/i.test(url)) return 'arcgis-image';
+    if (/\/WMSServer\/?(\?|$)/i.test(url)) return 'wms';
+    if (/\/MapServer\/\d+\/?(\?|$)/i.test(url)) return 'arcgis-layer';
+    if (/\/MapServer\/?(\?|$)/i.test(url)) return 'arcgis-map';
+    if (/\.xml(\?|$)/i.test(url)) return 'unknown';
+    if (/wms|\/service(\?|$)|mapproxy|[?&]layers=/i.test(url)) return 'wms';
+    return 'unknown';
+  }
+
+  // ── geometry ─────────────────────────────────────────────────────────────
+  const toWM = (lat, lon) => [R * lon * Math.PI / 180, R * Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360))];
+  const wmToLL = (x, y) => [(2 * Math.atan(Math.exp(y / R)) - Math.PI / 2) * 180 / Math.PI, x / WMH * 180];
+  function tileXY(lat, lon, z) {
+    const n = 2 ** z, la = lat * Math.PI / 180;
+    return [Math.floor((lon + 180) / 360 * n), Math.floor((1 - Math.log(Math.tan(la) + 1 / Math.cos(la)) / Math.PI) / 2 * n)];
+  }
+  const r4 = v => Math.round(v * 1e4) / 1e4;
+  const boxR = b => b.map(r4);
+  function samplePoints(box) {
+    const [s, w, n, e] = box, cy = (s + n) / 2, cx = (w + e) / 2;
+    return [[cy, cx], [(s + cy) / 2, (w + cx) / 2], [(n + cy) / 2, (e + cx) / 2]];
+  }
+  // A ~1.2 km (or smaller, for small coverage) Web Mercator box around a point.
+  function wmBoxAround(lat, lon, box) {
+    const [x, y] = toWM(lat, lon);
+    const [x0, y0] = toWM(box[0], box[1]), [x1, y1] = toWM(box[2], box[3]);
+    const half = Math.max(60, Math.min(600, Math.abs(x1 - x0) / 4, Math.abs(y1 - y0) / 4));
+    return [x - half, y - half, x + half, y + half];
+  }
+  function extentToLL(ext) {
+    if (!ext) return null;
+    const sr = ext.spatialReference || {}, wk = sr.latestWkid || sr.wkid;
+    if (WM_WKIDS.includes(wk)) { const a = wmToLL(ext.xmin, ext.ymin), b = wmToLL(ext.xmax, ext.ymax); return [a[0], a[1], b[0], b[1]]; }
+    if (wk === 4326 || wk === 4269 || wk === 4283 || wk === 4167 || wk === 4258) return [ext.ymin, ext.xmin, ext.ymax, ext.xmax];
+    return null;
+  }
+
+  // ── network ──────────────────────────────────────────────────────────────
+  const hostBusy = new Map();
+  async function withHost(url, fn) {
+    const h = new URL(url).host;
+    while ((hostBusy.get(h) || 0) >= MAX_HOST) await new Promise(r => setTimeout(r, 120));
+    hostBusy.set(h, (hostBusy.get(h) || 0) + 1);
+    try { return await fn(); } finally { hostBusy.set(h, hostBusy.get(h) - 1); }
+  }
+  async function getText(url) {
+    return withHost(url, async () => {
+      const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
+      try {
+        const r = await fetch(url, { credentials: 'omit', signal: c.signal });
+        const text = await r.text();
+        return { ok: r.ok, status: r.status, text };
+      } catch (e) { return { ok: false, error: e.name === 'AbortError' ? 'timeout' : 'blocked or offline (network/CORS)' }; }
+      finally { clearTimeout(t); }
+    });
+  }
+  async function getJSON(url) {
+    const r = await getText(url);
+    if (r.error) return { error: r.error };
+    try { const j = JSON.parse(r.text); return j.error ? { error: 'server: ' + (j.error.message || j.error.code) + (j.error.details && j.error.details.length ? ' (' + j.error.details.join('; ') + ')' : ''), json: j } : { json: j }; }
+    catch (e) { return { error: 'not JSON (HTTP ' + r.status + '): ' + r.text.slice(0, 120).replace(/\s+/g, ' ') }; }
+  }
+  const cache = new Map();
+  const once = (key, fn) => { if (!cache.has(key)) cache.set(key, fn()); return cache.get(key); };
+
+  // Fetch an image and judge it: confirmed / blank / loaded (pixels unreadable) / failed.
+  async function judgeImage(url) {
+    const viaFetch = await withHost(url, async () => {
+      const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
+      try {
+        const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal: c.signal });
+        const blob = await r.blob();
+        if (!r.ok) return { verdict: 'failed', why: 'HTTP ' + r.status };
+        if (!/^image\//.test(blob.type)) return { verdict: 'failed', why: 'not an image: ' + (await blob.text()).slice(0, 160).replace(/\s+/g, ' ') };
+        const bmp = await createImageBitmap(blob);
+        const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+        const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+        const d = g.getImageData(0, 0, cv.width, cv.height).data;
+        let opaque = 0, n = 0, sum = 0, sum2 = 0;
+        for (let i = 0; i < d.length; i += 16) {
+          n++;
+          if (d[i + 3] > 20) { opaque++; const L = 0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]; sum += L; sum2 += L * L; }
+        }
+        const frac = opaque / n, mean = opaque ? sum / opaque : 0, sd = opaque ? Math.sqrt(Math.max(0, sum2 / opaque - mean * mean)) : 0;
+        if (frac < 0.01) return { verdict: 'blank', why: 'transparent' };
+        if (sd < 1.5) return { verdict: 'blank', why: 'flat colour ' + Math.round(mean) };
+        return { verdict: 'confirmed', why: Math.round(frac * 100) + '% filled, contrast ' + sd.toFixed(1) };
+      } catch (e) { return null; }      // CORS refused (or network): try a plain image load
+      finally { clearTimeout(t); }
+    });
+    if (viaFetch) return viaFetch;
+    return withHost(url, () => new Promise(res => {
+      const img = new Image(); let done = false;
+      const fin = v => { if (!done) { done = true; clearTimeout(t); res(v); } };
+      const t = setTimeout(() => fin({ verdict: 'failed', why: 'timeout' }), TIMEOUT);
+      img.onload = () => fin(img.naturalWidth > 1 ? { verdict: 'loaded', why: 'image arrived; pixels not readable (no CORS)' } : { verdict: 'blank', why: '1 px image' });
+      img.onerror = () => fin({ verdict: 'failed', why: 'image request failed' });
+      img.src = url;
+    }));
+  }
+  // Try the sample points until one shows content.
+  async function judgeAt(box, urlFor) {
+    let best = null;
+    const rank = { confirmed: 3, loaded: 2, blank: 1, failed: 0 };
+    for (const [lat, lon] of samplePoints(box)) {
+      const u = urlFor(lat, lon);
+      const v = await judgeImage(u);
+      v.url = u;
+      if (!best || rank[v.verdict] > rank[best.verdict]) best = v;
+      if (v.verdict === 'confirmed' || v.verdict === 'loaded') break;
+    }
+    return best;
+  }
+
+  // ── licence sniffing ─────────────────────────────────────────────────────
+  function licenceOf(...texts) {
+    const t = texts.filter(Boolean).join(' ').replace(/<[^>]+>/g, ' ');
+    const m = t.match(/(Creative Commons[^.;\n]{0,60}|CC[ -]?BY(?:[- ](?:NC|SA|ND))*(?:[ -]?\d\.\d)?(?: [A-Z]{2,3}\b)?|Open Government Licen[cs]e[^.;\n]{0,30}|ODbL|Licence Ouverte[^.;\n]{0,20}|public domain)/i);
+    return m ? m[1].trim() : '';
+  }
+
+  // ── per-kind processing ──────────────────────────────────────────────────
+  const rootOf = url => url.replace(/\/MapServer\/\d+\/?(\?.*)?$/i, '/MapServer').replace(/\/(\?.*)?$/, '').replace(/\?.*$/, '');
+
+  async function arcgisCoverage(root, ext, extra) {
+    const direct = extentToLL(ext);
+    if (direct) return direct;
+    if (!ext || !ext.spatialReference) return null;
+    const sr = ext.spatialReference, wk = sr.latestWkid || sr.wkid;
+    const dx = Math.abs(ext.xmax - ext.xmin), dy = Math.abs(ext.ymax - ext.ymin);
+    const w = 400, h = Math.max(50, Math.min(2000, Math.round(400 * (dy / (dx || 1)))));
+    const op = /ImageServer$/i.test(root) ? 'exportImage' : 'export';
+    const u = root + '/' + op + '?bbox=' + [ext.xmin, ext.ymin, ext.xmax, ext.ymax].join(',') +
+      '&bboxSR=' + (wk || encodeURIComponent(JSON.stringify(sr))) + '&imageSR=4326&size=' + w + ',' + h + '&f=json' + (extra || '');
+    const r = await getJSON(u);
+    if (r.error || !r.json || !r.json.extent) return null;
+    return extentToLL(r.json.extent.spatialReference ? r.json.extent : Object.assign({ spatialReference: { wkid: 4326 } }, r.json.extent));
+  }
+
+  function exportUrl(root, layerId, fmt) {
+    return (lat, lon, box) => {
+      const b = wmBoxAround(lat, lon, box);
+      return root + '/export?bbox=' + b.map(v => v.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&dpi=96' +
+        '&format=' + (fmt || 'png32') + '&transparent=true&f=image' + (layerId != null ? '&layers=show:' + layerId : '');
+    };
+  }
+
+  async function doArcgisMap(e) {
+    const root = rootOf(e.url);
+    const r = await once('ms:' + root, () => getJSON(root + '?f=json'));
+    if (r.error) return fail(e, 'metadata: ' + r.error);
+    const meta = r.json;
+    const plan = MapManager._classifyMapServer(meta);
+    e.attr = (meta.copyrightText || '').trim();
+    e.licence = licenceOf(meta.copyrightText, meta.description, meta.serviceDescription);
+    e.wkid = (meta.spatialReference || {}).latestWkid || (meta.spatialReference || {}).wkid;
+    if (plan.error) {
+      if (/ready-made tiles/.test(plan.error)) return set(e, 'parked', 'tiles only, EPSG:' + plan.wkid + ' — needs client-side reprojection');
+      return fail(e, plan.error);
+    }
+    const box = plan.bounds ? [plan.bounds[0][0], plan.bounds[0][1], plan.bounds[1][0], plan.bounds[1][1]] : await arcgisCoverage(root, meta.fullExtent);
+    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
+    e.bbox = [boxR(box)];
+    if (plan.mode === 'tiles') {
+      e.kind = 'arcgis-tiles';
+      const z = Math.max(plan.minNativeZoom, Math.min(plan.maxNativeZoom, 16));
+      e.zoom = [plan.minNativeZoom, plan.maxNativeZoom];
+      const v = await judgeAt(box, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return root + '/tile/' + (z + plan.zoomOffset) + '/' + y + '/' + x; });
+      return verdict(e, v, 'tiles z' + plan.minNativeZoom + '–' + plan.maxNativeZoom);
+    }
+    e.kind = 'arcgis-export';
+    e.format = plan.format;
+    const urlFor = exportUrl(root, null, plan.format);
+    const v = await judgeAt(box, (lat, lon) => urlFor(lat, lon, box));
+    return verdict(e, v, 'export, EPSG:' + (plan.wkid || '?'));
+  }
+
+  async function doArcgisLayer(e) {
+    const root = rootOf(e.url);
+    const id = +e.url.match(/\/MapServer\/(\d+)/i)[1];
+    const rm = await once('ms:' + root, () => getJSON(root + '?f=json'));
+    if (rm.error) return fail(e, 'service metadata: ' + rm.error);
+    const meta = rm.json;
+    const lr = await once('ly:' + root + '/' + id, () => getJSON(root + '/' + id + '?f=json'));
+    if (lr.error) return fail(e, 'layer metadata: ' + lr.error);
+    const L0 = lr.json;
+    e.kind = 'arcgis-layer';
+    e.attr = (L0.copyrightText || meta.copyrightText || '').trim();
+    e.licence = licenceOf(L0.copyrightText, meta.copyrightText, L0.description, meta.description, meta.serviceDescription);
+    e.wkid = (meta.spatialReference || {}).latestWkid || (meta.spatialReference || {}).wkid;
+    const caps = String(meta.capabilities || '');
+    if (caps && !/(^|,)\s*Map\s*(,|$)/i.test(caps)) return set(e, 'parked', 'service draws no images on request (capabilities: ' + caps + ')');
+    const box = await arcgisCoverage(root, L0.extent || meta.fullExtent, '&layers=show:' + id);
+    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
+    e.bbox = [boxR(box)];
+    const fmt = /JPG/i.test(meta.supportedImageFormatTypes || '') ? 'png32' : 'png';
+    let v = await judgeAt(box, (lat, lon) => exportUrl(root, id, fmt)(lat, lon, box));
+    let used = id, note = (L0.type || 'layer') + ' “' + (L0.name || id) + '”';
+    // A group that draws nothing by itself: try its image child.
+    if (v.verdict !== 'confirmed' && /group/i.test(L0.type || '') && Array.isArray(L0.subLayers)) {
+      for (const sl of L0.subLayers) {
+        const cr = await once('ly:' + root + '/' + sl.id, () => getJSON(root + '/' + sl.id + '?f=json'));
+        if (cr.error || !/raster|mosaic|image/i.test(cr.json.type || '')) continue;
+        const v2 = await judgeAt(box, (lat, lon) => exportUrl(root, sl.id, fmt)(lat, lon, box));
+        if (v2.verdict === 'confirmed' || (v2.verdict === 'loaded' && v.verdict !== 'loaded')) { v = v2; used = sl.id; note += ' → child ' + sl.id + ' “' + (cr.json.name || '') + '”'; break; }
+      }
+    }
+    e.layer = used;
+    e.linkUrl = root + '/' + used;
+    return verdict(e, v, note);
+  }
+
+  async function doArcgisImage(e) {
+    const root = e.url.replace(/\/(\?.*)?$/, '').replace(/\?.*$/, '');
+    const r = await getJSON(root + '?f=json');
+    if (r.error) return fail(e, 'metadata: ' + r.error);
+    const meta = r.json;
+    e.kind = 'arcgis-image';
+    e.attr = (meta.copyrightText || '').trim();
+    e.licence = licenceOf(meta.copyrightText, meta.description, meta.serviceDescription);
+    e.wkid = (meta.spatialReference || meta.extent && meta.extent.spatialReference || {}).latestWkid || (meta.spatialReference || {}).wkid;
+    const box = await arcgisCoverage(root, meta.extent || meta.fullExtent);
+    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
+    e.bbox = [boxR(box)];
+    const v = await judgeAt(box, (lat, lon) => {
+      const b = wmBoxAround(lat, lon, box);
+      return root + '/exportImage?bbox=' + b.map(x => x.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image';
+    });
+    return verdict(e, v, 'image service, EPSG:' + (e.wkid || '?'));
+  }
+
+  // WMS capabilities, parsed once per endpoint.
+  function parseWmsCaps(xmlText) {
+    const doc = new DOMParser().parseFromString(xmlText, 'text/xml');
+    if (doc.querySelector('parsererror')) return null;
+    const root = doc.documentElement;
+    const version = root.getAttribute('version') || '1.3.0';
+    const byTag = (el, tag) => Array.from(el.children).filter(c => c.localName === tag);
+    const txt = (el, tag) => { const c = byTag(el, tag)[0]; return c ? c.textContent.trim() : ''; };
+    const svc = Array.from(root.children).find(c => c.localName === 'Service');
+    const access = svc ? (txt(svc, 'AccessConstraints') + ' ' + txt(svc, 'Fees')).trim() : '';
+    const fmts = Array.from(doc.getElementsByTagNameNS('*', 'GetMap')).flatMap(g => byTag(g, 'Format').map(f => f.textContent.trim()));
+    const layers = [];
+    (function walk(el, crsUp, boxUp) {
+      const crs = crsUp.concat(byTag(el, 'CRS').concat(byTag(el, 'SRS')).flatMap(c => c.textContent.trim().split(/\s+/)));
+      let box = boxUp;
+      const ex = byTag(el, 'EX_GeographicBoundingBox')[0];
+      if (ex) box = [+txt(ex, 'southBoundLatitude'), +txt(ex, 'westBoundLongitude'), +txt(ex, 'northBoundLatitude'), +txt(ex, 'eastBoundLongitude')];
+      const ll = byTag(el, 'LatLonBoundingBox')[0];
+      if (ll) box = [+ll.getAttribute('miny'), +ll.getAttribute('minx'), +ll.getAttribute('maxy'), +ll.getAttribute('maxx')];
+      const kids = byTag(el, 'Layer');
+      const name = txt(el, 'Name');
+      const dims = byTag(el, 'Dimension').concat(byTag(el, 'Extent')).filter(d => /time/i.test(d.getAttribute('name') || '')).map(d => d.textContent.trim());
+      if (name) layers.push({ name, title: txt(el, 'Title'), crs, box, leaf: !kids.length, time: dims[0] || '' });
+      kids.forEach(k => walk(k, crs, box));
+    })(Array.from(root.getElementsByTagNameNS('*', 'Capability'))[0] ? Array.from(root.getElementsByTagNameNS('*', 'Capability'))[0] : root, [], null);
+    return { version, fmts, layers, access };
+  }
+
+  function wmsParts(url) {
+    const u = new URL(url);
+    let layer = '', time = '';
+    const keep = new URLSearchParams();
+    for (const [k, v] of u.searchParams) {
+      const kl = k.toLowerCase();
+      if (kl === 'layers') layer = v;
+      else if (kl === 'time') time = v;
+      else if (!['service', 'request', 'version'].includes(kl)) keep.append(k, v);
+    }
+    const q = keep.toString();
+    return { base: u.origin + u.pathname + (q ? '?' + q : ''), layer, time };
+  }
+  const wmsJoin = base => base + (base.includes('?') ? '&' : '?');
+
+  async function doWms(e) {
+    const { base, layer, time } = wmsParts(e.url);
+    e.kind = 'wms';
+    const cr = await once('wms:' + base, () => getText(wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetCapabilities'));
+    let caps = null;
+    if (!cr.error && cr.ok) caps = parseWmsCaps(cr.text);
+    let L = null, version = '1.3.0', crs = 'EPSG:3857', fmt = 'image/jpeg', capsNote = '';
+    if (caps) {
+      version = /^1\.1/.test(caps.version) ? '1.1.1' : '1.3.0';
+      const named = caps.layers;
+      L = layer ? named.find(l => l.name === layer) : null;
+      if (!layer) {
+        const leaves = named.filter(l => l.leaf);
+        if (leaves.length === 1) L = leaves[0];
+        else {
+          leaves.forEach(l => discovered.push(e.region + ' | ' + (l.title || l.name) + ' | ' + wmsJoin(base) + 'layers=' + encodeURIComponent(l.name) + (e.boxes.length ? ' | ' + e.boxes.map(b => b.join(',')).join(' ; ') : '')));
+          return set(e, 'pick', leaves.length + ' layers — listed under “discovered layers” to choose from');
+        }
+      }
+      if (layer && !L) return fail(e, 'capabilities list no layer “' + layer + '”');
+      const has = c => L.crs.some(x => x.toUpperCase() === c);
+      crs = has('EPSG:3857') ? 'EPSG:3857' : has('EPSG:900913') ? 'EPSG:900913' : has('EPSG:102100') ? 'EPSG:102100' : '';
+      if (!crs) return set(e, 'parked', 'WMS offers no Web Mercator (has ' + L.crs.slice(0, 6).join(' ') + (L.crs.length > 6 ? ' …' : '') + ')');
+      fmt = caps.fmts.includes('image/jpeg') ? 'image/jpeg' : caps.fmts.includes('image/png') ? 'image/png' : (caps.fmts[0] || 'image/png');
+      e.licence = licenceOf(caps.access) || (caps.access && !/^none$/i.test(caps.access) ? caps.access.slice(0, 120) : '');
+      if (L.time) capsNote += ', time: ' + L.time.slice(0, 80);
+    } else {
+      capsNote = ', capabilities unreadable (' + (cr.error || 'HTTP ' + cr.status) + '): assumed WMS 1.3.0 / EPSG:3857';
+      if (!layer) return fail(e, 'no layer named and capabilities unreadable');
+    }
+    const name = L ? L.name : layer;
+    const boxes = (L && L.box && L.box.every(isFinite)) ? [L.box] : e.boxes;
+    if (!boxes.length) return fail(e, 'coverage: no box in capabilities and none on the source line');
+    e.bbox = boxes.map(boxR);
+    e.wms = { base, layers: name, version, crs, format: fmt };
+    if (time) e.wms.time = time;
+    e.linkUrl = wmsJoin(base) + 'layers=' + encodeURIComponent(name) + (time ? '&TIME=' + encodeURIComponent(time) : '');
+    const bb = e.bbox[0];
+    const v = await judgeAt(bb, (lat, lon) => {
+      const b = wmBoxAround(lat, lon, bb);
+      return wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetMap&VERSION=' + version + '&LAYERS=' + encodeURIComponent(name) + '&STYLES=' +
+        (version === '1.3.0' ? '&CRS=' : '&SRS=') + crs + '&BBOX=' + b.map(x => x.toFixed(2)).join(',') +
+        '&WIDTH=256&HEIGHT=256&FORMAT=' + encodeURIComponent(fmt) + '&TRANSPARENT=' + (fmt === 'image/png' ? 'TRUE' : 'FALSE') +
+        (time ? '&TIME=' + encodeURIComponent(time) : '');
+    });
+    return verdict(e, v, 'WMS ' + version + ' ' + crs + ' ' + fmt + capsNote);
+  }
+
+  async function doXyz(e) {
+    e.kind = 'xyz';
+    if (!e.boxes.length) return fail(e, 'coverage: an XYZ source needs a box on its source line');
+    e.bbox = e.boxes.map(boxR);
+    let best = null;
+    for (const z of [15, 13, 17, 11]) {
+      const v = await judgeAt(e.bbox[0], (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
+      if (!best || v.verdict === 'confirmed' || (v.verdict === 'loaded' && best.verdict !== 'confirmed')) best = Object.assign(v, { z });
+      if (v.verdict === 'confirmed') break;
+    }
+    return verdict(e, best, 'tiles, sampled at z' + best.z);
+  }
+
+  async function doCaps(e) {
+    e.kind = 'caps';
+    const r = await getText(e.url);
+    if (r.error || !r.ok) return fail(e, 'capabilities: ' + (r.error || 'HTTP ' + r.status));
+    const box = e.boxes.length ? ' | ' + e.boxes.map(b => b.join(',')).join(' ; ') : '';
+    if (/wmts/i.test(e.url) || /<Capabilities[^>]*wmts/i.test(r.text)) {
+      const doc = new DOMParser().parseFromString(r.text, 'text/xml');
+      const sets = Array.from(doc.getElementsByTagNameNS('*', 'TileMatrixSet')).filter(s => s.parentNode && s.parentNode.localName === 'Contents');
+      const wmSets = sets.filter(s => /3857|900913|GoogleMapsCompatible/i.test(s.textContent.slice(0, 400))).map(s => s.getElementsByTagNameNS('*', 'Identifier')[0].textContent.trim());
+      let n = 0;
+      Array.from(doc.getElementsByTagNameNS('*', 'Layer')).forEach(L => {
+        const id = (L.getElementsByTagNameNS('*', 'Identifier')[0] || {}).textContent;
+        const title = (L.getElementsByTagNameNS('*', 'Title')[0] || {}).textContent || id;
+        const res = Array.from(L.getElementsByTagNameNS('*', 'ResourceURL')).find(x => x.getAttribute('resourceType') === 'tile');
+        const links = Array.from(L.getElementsByTagNameNS('*', 'TileMatrixSet')).map(x => x.textContent.trim());
+        const tms = links.find(s => wmSets.includes(s));
+        const style = (L.querySelector('Style Identifier') || {}).textContent || 'default';
+        if (!res || !tms) { discovered.push('# ' + e.region + ' | ' + title + ' | (no Web Mercator tile template)'); return; }
+        const tpl = res.getAttribute('template').replace('{TileMatrixSet}', tms).replace('{TileMatrix}', '{z}').replace('{TileRow}', '{y}').replace('{TileCol}', '{x}').replace('{Style}', style);
+        discovered.push(e.region + ' | ' + title.trim() + ' | ' + tpl + box); n++;
+      });
+      return set(e, 'pick', n + ' WMTS layers with a Web Mercator template — see discovered layers (check that the set’s levels are zoom numbers)');
+    }
+    const caps = parseWmsCaps(r.text);
+    if (!caps) return fail(e, 'capabilities did not parse');
+    const base = wmsParts(e.url).base;
+    const leaves = caps.layers.filter(l => l.leaf);
+    leaves.forEach(l => discovered.push(e.region + ' | ' + (l.title || l.name) + (l.time ? ' [time: ' + l.time.slice(0, 40) + ']' : '') + ' | ' + wmsJoin(base) + 'layers=' + encodeURIComponent(l.name) + box));
+    return set(e, 'pick', leaves.length + ' WMS layers — see discovered layers');
+  }
+
+  async function doUnknown(e) {
+    e.kind = 'unknown';
+    const r = await getText(e.url);
+    return fail(e, 'unrecognised source type' + (r.text ? ': ' + r.text.slice(0, 200).replace(/\s+/g, ' ') : r.error ? ' (' + r.error + ')' : ''));
+  }
+
+  // ── status ───────────────────────────────────────────────────────────────
+  function set(e, status, detail) { e.status = status; e.detail = detail; draw(e); return e; }
+  function fail(e, why) { return set(e, 'failed', why); }
+  function verdict(e, v, note) {
+    e.sample = v.url;
+    return set(e, v.verdict, note + ' · ' + v.verdict + ': ' + v.why);
+  }
+
+  async function process(e) {
+    e.status = 'running'; e.detail = ''; draw(e);
+    const k = kindOf(e.url);
+    try {
+      if (k === 'arcgis-map') return await doArcgisMap(e);
+      if (k === 'arcgis-layer') return await doArcgisLayer(e);
+      if (k === 'arcgis-image') return await doArcgisImage(e);
+      if (k === 'wms') return await doWms(e);
+      if (k === 'xyz') return await doXyz(e);
+      if (k === 'caps') return await doCaps(e);
+      return await doUnknown(e);
+    } catch (err) { return fail(e, 'tool error: ' + (err && err.message || err)); }
+  }
+
+  async function runAll(list) {
+    $('#run').disabled = true; $('#rerunBad').disabled = true;
+    let i = 0;
+    const worker = async () => { while (i < list.length) await process(list[i++]); };
+    await Promise.all(Array.from({ length: MAX_ALL }, worker));
+    $('#run').disabled = false;
+    ['#rerunBad', '#dlCat', '#dlRep', '#dlDisc'].forEach(s => $(s).disabled = false);
+    summarise();
+  }
+
+  // ── table ────────────────────────────────────────────────────────────────
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+  function draw(e) {
+    let tr = document.getElementById('r' + e.n);
+    if (!tr) { tr = document.createElement('tr'); tr.id = 'r' + e.n; rowsEl.appendChild(tr); }
+    tr.innerHTML = '<td>' + e.n + '</td><td>' + esc(e.region) + '</td><td>' + esc(e.label) + '</td><td>' + esc(e.kind || kindOf(e.url)) +
+      '</td><td class="st ' + e.status + '">' + e.status + '</td><td class="detail">' + esc(e.detail) +
+      '</td><td>' + (e.bbox ? '<button data-n="' + e.n + '">Preview</button>' : '') + '</td>';
+    summarise();
+  }
+  function summarise() {
+    const c = {};
+    entries.forEach(e => c[e.status] = (c[e.status] || 0) + 1);
+    $('#summary').textContent = entries.length + ' layers · ' + Object.keys(c).map(k => k + ' ' + c[k]).join(' · ');
+  }
+
+  // ── preview ──────────────────────────────────────────────────────────────
+  const map = L.map('map', { worldCopyJump: true }).setView([-43.53, 172.63], 4);
+  const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 22, maxNativeZoom: 19, attribution: '© OpenStreetMap contributors' }).addTo(map);
+  let pvLayer = null, pvBoxes = null;
+  rowsEl.addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-n]');
+    if (!b) return;
+    const e = entries[+b.dataset.n - 1];
+    if (pvLayer) map.removeLayer(pvLayer);
+    if (pvBoxes) map.removeLayer(pvBoxes);
+    pvBoxes = L.featureGroup(e.bbox.map(x => L.rectangle([[x[0], x[1]], [x[2], x[3]]], { color: '#00bcd4', weight: 2, fill: false }))).addTo(map);
+    const root = rootOf(e.linkUrl || e.url);
+    if (e.kind === 'arcgis-tiles') {
+      pvLayer = L.tileLayer(root + '/tile/{z}/{y}/{x}', { maxNativeZoom: e.zoom ? e.zoom[1] : 19, maxZoom: 22 });
+    } else if (e.kind === 'arcgis-export') {
+      pvLayer = L.esri.dynamicMapLayer({ url: root, f: 'image', format: e.format || 'png32', useCors: false });
+    } else if (e.kind === 'arcgis-layer') {
+      pvLayer = L.esri.dynamicMapLayer({ url: root, layers: [e.layer], f: 'image', format: 'png32', useCors: false });
+    } else if (e.kind === 'arcgis-image') {
+      pvLayer = L.esri.imageMapLayer({ url: e.url.replace(/\/(\?.*)?$/, ''), f: 'image', useCors: false });
+    } else if (e.kind === 'wms') {
+      pvLayer = L.tileLayer.wms(e.wms.base, { layers: e.wms.layers, format: e.wms.format, transparent: e.wms.format === 'image/png', version: e.wms.version, maxZoom: 22 });
+      if (e.wms.time) pvLayer.setParams({ TIME: e.wms.time });
+    } else if (e.kind === 'xyz') {
+      pvLayer = L.tileLayer(e.url, { maxZoom: 22 });
+    }
+    if (pvLayer) pvLayer.addTo(map);
+    map.fitBounds(pvBoxes.getBounds(), { maxZoom: 15 });
+    $('#sideinfo').innerHTML = '<b>' + esc(e.region) + ' · ' + esc(e.label) + '</b><br>' + esc(e.kind) + ' — ' + esc(e.status) + '<br>' +
+      esc(e.detail) + (e.attr ? '<br>Attribution: ' + esc(e.attr) : '') + (e.licence ? '<br>Licence: ' + esc(e.licence) : '') +
+      (e.sample ? '<br><a href="' + esc(e.sample) + '" target="_blank" rel="noopener">sample image</a>' : '');
+  });
+
+  // ── outputs ──────────────────────────────────────────────────────────────
+  function download(name, text, type) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([text], { type: type || 'text/plain' }));
+    a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  const yearOf = s => { const m = String(s).match(/\b(1[89]\d\d|20\d\d)\b/); return m ? +m[1] : null; };
+  $('#dlCat').addEventListener('click', () => {
+    const usable = entries.filter(e => e.status === 'confirmed' || e.status === 'loaded');
+    const out = {
+      v: 1,
+      built: new Date().toISOString().slice(0, 10),
+      note: 'Built by tools/imagery-catalogue-builder.html from tools/imagery-sources.txt. Only layers whose images loaded are included.',
+      entries: usable.map(e => {
+        const o = { r: e.region, l: e.label, y: yearOf(e.label), u: e.linkUrl || e.url, k: e.kind, b: e.bbox, s: e.status };
+        if (e.attr) o.a = e.attr.slice(0, 200);
+        if (e.licence) o.lic = e.licence;
+        if (e.kind === 'arcgis-layer') o.layer = e.layer;
+        if (e.kind === 'arcgis-export' && e.format) o.f = e.format;
+        if (e.kind === 'arcgis-tiles' && e.zoom) o.z = e.zoom;
+        if (e.kind === 'wms') o.wms = e.wms;
+        return o;
+      })
+    };
+    download('geosonify-imagery-catalogue.json', JSON.stringify(out), 'application/json');
+  });
+  $('#dlRep').addEventListener('click', () => {
+    const cols = ['n', 'line', 'region', 'label', 'url', 'kind', 'status', 'detail', 'wkid', 'bbox', 'attr', 'licence', 'sample'];
+    const lines = [cols.join('\t')].concat(entries.map(e => cols.map(c => {
+      const v = c === 'bbox' ? (e.bbox || []).map(b => b.join(',')).join(' ; ') : e[c];
+      return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ');
+    }).join('\t')));
+    download('imagery-catalogue-report.tsv', lines.join('\n'), 'text/tab-separated-values');
+  });
+  $('#dlDisc').addEventListener('click', () => download('imagery-discovered-layers.txt',
+    '# Layers found in capabilities documents. Copy the ones you want into imagery-sources.txt.\n' + discovered.join('\n') + '\n'));
+
+  // ── start ────────────────────────────────────────────────────────────────
+  function load(text) {
+    entries = parseSources(text); discovered = []; cache.clear();
+    rowsEl.innerHTML = '';
+    entries.forEach(draw);
+  }
+  $('#run').addEventListener('click', () => { load($('#src').value); runAll(entries); });
+  $('#rerunBad').addEventListener('click', () => {
+    const bad = entries.filter(e => ['failed', 'blank', 'unknown'].includes(e.status));
+    bad.forEach(e => { cache.forEach((v, k) => { if (k.includes(rootOf(e.url))) cache.delete(k); }); });
+    runAll(bad);
+  });
+  let started = false;
+  $('#run').addEventListener('click', () => { started = true; }, true);
+  fetch('imagery-sources.txt', { cache: 'no-store' })
+    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(t => { if (started) return; $('#src').value = t; load(t); })
+    .catch(() => { $('#src').placeholder = 'Could not load imagery-sources.txt (opened from disk?). Paste the list here.'; });
+
+  // For tests.
+  window.__builder = { parseSources, kindOf, parseWmsCaps, wmsParts, extentToLL, tileXY, licenceOf, rootOf };
+})();
+</script>
+</body>
+</html>
