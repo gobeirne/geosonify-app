@@ -74,7 +74,7 @@
 <script src="../js/features/map-manager.js?v=20261023b"></script>
 <script>
 /*
-  imagery-catalogue-builder v1.0
+  imagery-catalogue-builder v1.1
 
   For each source line it decides the KIND, then gathers what the app needs:
 
@@ -105,6 +105,13 @@
   transparent or a single flat colour everywhere tried, "loaded" = an image
   arrived but the server doesn't allow its pixels to be read (content unchecked).
   The app offers confirmed and loaded entries; everything else is report-only.
+
+  FOOTPRINT (v1.1): before sampling, the coverage box is tightened to where the
+  imagery actually is — one low-resolution image of the whole box (tiles: the
+  few tiles over it at a low zoom), read pixel by pixel, merged into at most 16
+  rectangles and padded by one cell. A national WMS layer that only covers one
+  flight strip ends up as a box around that strip. Kept as it was if the pixels
+  can't be read or the overview comes back empty.
 */
 (function () {
   'use strict';
@@ -154,9 +161,15 @@
   }
   const r4 = v => Math.round(v * 1e4) / 1e4;
   const boxR = b => b.map(r4);
-  function samplePoints(box) {
-    const [s, w, n, e] = box, cy = (s + n) / 2, cx = (w + e) / 2;
-    return [[cy, cx], [(s + cy) / 2, (w + cx) / 2], [(n + cy) / 2, (e + cx) / 2]];
+  const areaOf = b => Math.abs((b[2] - b[0]) * (b[3] - b[1]));
+  // Up to three [lat, lon, box] sample points: the centres of the largest
+  // boxes, then quarter points of the largest one.
+  function samplePoints(boxes) {
+    const list = boxes.slice().sort((a, b) => areaOf(b) - areaOf(a));
+    const pts = list.slice(0, 3).map(b => [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2, b]);
+    const [s, w, n, e] = list[0], cy = (s + n) / 2, cx = (w + e) / 2;
+    pts.push([(s + cy) / 2, (w + cx) / 2, list[0]], [(n + cy) / 2, (e + cx) / 2, list[0]]);
+    return pts.slice(0, 3);
   }
   // A ~1.2 km (or smaller, for small coverage) Web Mercator box around a point.
   function wmBoxAround(lat, lon, box) {
@@ -237,17 +250,179 @@
     }));
   }
   // Try the sample points until one shows content.
-  async function judgeAt(box, urlFor) {
+  async function judgeAt(boxes, urlFor) {
+    if (!Array.isArray(boxes[0])) boxes = [boxes];
     let best = null;
     const rank = { confirmed: 3, loaded: 2, blank: 1, failed: 0 };
-    for (const [lat, lon] of samplePoints(box)) {
-      const u = urlFor(lat, lon);
+    for (const [lat, lon, box] of samplePoints(boxes)) {
+      const u = urlFor(lat, lon, box);
       const v = await judgeImage(u);
       v.url = u;
       if (!best || rank[v.verdict] > rank[best.verdict]) best = v;
       if (v.verdict === 'confirmed' || v.verdict === 'loaded') break;
     }
     return best;
+  }
+
+  // ── footprint: tighten the coverage to where the imagery actually is ─────
+  //
+  // One low-resolution image of the whole box (or, for tiles, the few tiles
+  // that cover it at a low zoom), read pixel by pixel, says where the picture
+  // is. Cells with picture are merged into a handful of rectangles, padded by
+  // one cell, and those become the coverage. Needs the server to allow its
+  // pixels to be read (CORS); otherwise, or if the overview comes back empty
+  // (some servers draw nothing when zoomed far out), the box stays as it was.
+  const FP_COLS = 32, FP_MAX_BOXES = 16, FP_MIN_FILL = 0.03;
+
+  async function readPixels(url) {
+    return withHost(url, async () => {
+      const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
+      try {
+        const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal: c.signal });
+        if (r.status === 404) return { missing: true };
+        const blob = await r.blob();
+        if (!r.ok || !/^image\//.test(blob.type)) return null;
+        const bmp = await createImageBitmap(blob);
+        const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
+        const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
+        return { w: cv.width, h: cv.height, data: g.getImageData(0, 0, cv.width, cv.height).data };
+      } catch (e) { return null; }
+      finally { clearTimeout(t); }
+    });
+  }
+
+  // A pixel test for one image: transparent images by alpha; opaque ones
+  // (JPEG) against the background colour found most often along the border.
+  function contentTest(px) {
+    const d = px.data;
+    let translucent = false;
+    for (let i = 3; i < d.length; i += 4 * 7) if (d[i] < 250) { translucent = true; break; }
+    if (translucent) return i => d[i + 3] > 20;
+    const counts = new Map(), q = i => (d[i] >> 4) + ',' + (d[i + 1] >> 4) + ',' + (d[i + 2] >> 4);
+    const border = [];
+    for (let x = 0; x < px.w; x++) border.push((x) * 4, ((px.h - 1) * px.w + x) * 4);
+    for (let y = 0; y < px.h; y++) border.push((y * px.w) * 4, (y * px.w + px.w - 1) * 4);
+    border.forEach(i => counts.set(q(i), (counts.get(q(i)) || 0) + 1));
+    let bg = null, best = 0;
+    counts.forEach((n, k) => { if (n > best) { best = n; bg = k; } });
+    if (best < border.length * 0.3) return () => true;           // no clear background: all picture
+    const [br, bgc, bb] = bg.split(',').map(v => v * 16 + 8);
+    return i => Math.abs(d[i] - br) + Math.abs(d[i + 1] - bgc) + Math.abs(d[i + 2] - bb) > 30;
+  }
+
+  // Occupancy grid (cols × rows) → merged WM rectangles → [s,w,n,e] boxes.
+  function gridToBoxes(grid, cols, rows, wm) {
+    const [x0, y0, x1, y1] = wm, cw = (x1 - x0) / cols, ch = (y1 - y0) / rows;   // row 0 = north
+    const dil = grid.map((row, r) => row.map((_, c) => {
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr >= 0 && rr < rows && cc >= 0 && cc < cols && grid[rr][cc]) return true;
+      }
+      return false;
+    }));
+    const rects = [], open = [];
+    for (let r = 0; r < rows; r++) {
+      const runs = [];
+      for (let c = 0; c < cols; c++) if (dil[r][c]) { const s0 = c; while (c + 1 < cols && dil[r][c + 1]) c++; runs.push([s0, c]); }
+      const still = [];
+      runs.forEach(([a, b]) => {
+        const k = open.findIndex(o => o.a === a && o.b === b);
+        if (k >= 0) { open[k].r1 = r; still.push(open.splice(k, 1)[0]); } else still.push({ a, b, r0: r, r1: r });
+      });
+      open.forEach(o => rects.push(o));
+      open.length = 0; still.forEach(o => open.push(o));
+    }
+    open.forEach(o => rects.push(o));
+    return rects.map(o => {
+      const nw = wmToLL(x0 + o.a * cw, y1 - o.r0 * ch), se = wmToLL(x0 + (o.b + 1) * cw, y1 - (o.r1 + 1) * ch);
+      return [se[0], nw[1], nw[0], se[1]];
+    });
+  }
+  function boxesFromGrid(grid, cols, rows, wm) {
+    let g = grid, c = cols, r = rows;
+    for (;;) {
+      const b = gridToBoxes(g, c, r, wm);
+      if (b.length <= FP_MAX_BOXES || c <= 4) return b;
+      const c2 = Math.ceil(c / 2), r2 = Math.ceil(r / 2);
+      g = Array.from({ length: r2 }, (_, i) => Array.from({ length: c2 }, (_, j) =>
+        !!(g[2 * i] && (g[2 * i][2 * j] || g[2 * i][2 * j + 1])) || !!(g[2 * i + 1] && (g[2 * i + 1][2 * j] || g[2 * i + 1][2 * j + 1]))));
+      c = c2; r = r2;
+    }
+  }
+  function fillGrid(grid, cols, rows, px, test, ox, oy, sw, sh) {
+    // Add one image (placed at grid cells ox.. , covering sw × sh cells) to the grid.
+    const cellW = px.w / sw, cellH = px.h / sh;
+    for (let gr = 0; gr < sh; gr++) for (let gc = 0; gc < sw; gc++) {
+      let hit = 0, n = 0;
+      for (let y = Math.floor(gr * cellH); y < Math.floor((gr + 1) * cellH); y += 2)
+        for (let x = Math.floor(gc * cellW); x < Math.floor((gc + 1) * cellW); x += 2) { n++; if (test((y * px.w + x) * 4)) hit++; }
+      if (n && hit / n >= FP_MIN_FILL && oy + gr < rows && ox + gc < cols) grid[oy + gr][ox + gc] = true;
+    }
+  }
+
+  // Footprint from single images of each box: imgUrl([x0,y0,x1,y1], W, H).
+  async function footprintImage(boxes, imgUrl) {
+    const out = []; let note = 'kept';
+    for (const box of boxes) {
+      const [x0, y0] = toWM(box[0], box[1]), [x1, y1] = toWM(box[2], box[3]);
+      const cols = FP_COLS, rows = Math.max(2, Math.min(64, Math.round(cols * (y1 - y0) / (x1 - x0))));
+      const W = 256, H = Math.max(16, Math.min(512, Math.round(256 * rows / cols)));
+      const px = await readPixels(imgUrl([x0, y0, x1, y1], W, H));
+      if (!px || px.missing) { out.push(box); note = 'pixels unreadable — box kept'; continue; }
+      const grid = Array.from({ length: rows }, () => Array(cols).fill(false));
+      fillGrid(grid, cols, rows, px, contentTest(px), 0, 0, cols, rows);
+      if (!grid.some(r => r.some(Boolean))) { out.push(box); note = 'overview empty — box kept'; continue; }
+      boxesFromGrid(grid, cols, rows, [x0, y0, x1, y1]).forEach(b => out.push(b));
+      note = 'tightened';
+    }
+    return finishFootprint(boxes, out, note);
+  }
+
+  // Footprint from tiles: the lowest zoom whose tiles over the box number at
+  // most 36 and include at least one picture. tpl(z, x, y) → URL.
+  async function footprintTiles(boxes, tpl, zMin, zMax) {
+    const out = []; let note = 'kept';
+    for (const box of boxes) {
+      let done = false;
+      for (let z = Math.max(0, zMin || 0); z <= Math.min(zMax == null ? 18 : zMax, 18) && !done; z++) {
+        const [xa, ya] = tileXY(box[2], box[1], z), [xb, yb] = tileXY(box[0], box[3], z);   // NW, SE
+        const nx = xb - xa + 1, ny = yb - ya + 1;
+        if (nx * ny > 36) { note = 'box too large for a tile overview — box kept'; break; }
+        if (nx * ny < 4 && z < (zMax == null ? 18 : zMax)) continue;       // too coarse to say much
+        const sub = 4, cols = nx * sub, rows = ny * sub;
+        const grid = Array.from({ length: rows }, () => Array(cols).fill(false));
+        let readable = 0;
+        for (let ty = 0; ty < ny; ty++) for (let tx = 0; tx < nx; tx++) {
+          const px = await readPixels(tpl(z, xa + tx, ya + ty));
+          if (!px) continue;
+          readable++;
+          if (px.missing) continue;
+          fillGrid(grid, cols, rows, px, contentTest(px), tx * sub, ty * sub, sub, sub);
+        }
+        if (!readable) { note = 'pixels unreadable — box kept'; break; }
+        if (!grid.some(r => r.some(Boolean))) continue;                 // nothing at this zoom: one finer
+        const n = 2 ** z, wmx = t => t / n * 2 * WMH - WMH, wmy = t => WMH - t / n * 2 * WMH;
+        boxesFromGrid(grid, cols, rows, [wmx(xa), wmy(yb + 1), wmx(xb + 1), wmy(ya)]).forEach(b => out.push(b));
+        note = 'tightened'; done = true;
+      }
+      if (!done) out.push(box);
+    }
+    return finishFootprint(boxes, out, note);
+  }
+
+  function finishFootprint(before, after, note) {
+    // Never wider than the box we started with.
+    const outer = before.reduce((u, b) => [Math.min(u[0], b[0]), Math.min(u[1], b[1]), Math.max(u[2], b[2]), Math.max(u[3], b[3])], [90, 180, -90, -180]);
+    const clipped = after.map(b => [Math.max(b[0], outer[0]), Math.max(b[1], outer[1]), Math.min(b[2], outer[2]), Math.min(b[3], outer[3])])
+      .filter(b => b[0] < b[2] && b[1] < b[3]).map(boxR);
+    const a0 = before.reduce((s, b) => s + areaOf(b), 0), a1 = clipped.reduce((s, b) => s + areaOf(b), 0);
+    return { boxes: clipped.length ? clipped : before.map(boxR),
+             note: note === 'tightened' ? 'footprint: ' + clipped.length + ' box' + (clipped.length === 1 ? '' : 'es') + ', ' + Math.round(100 * a1 / (a0 || 1)) + '% of the original area' : 'footprint: ' + note };
+  }
+  async function tighten(e, run) {
+    const r = await run(e.bbox);
+    e.bbox = r.boxes; e.footprint = r.note;
+    return r;
   }
 
   // ── licence sniffing ─────────────────────────────────────────────────────
@@ -303,13 +478,17 @@
       e.kind = 'arcgis-tiles';
       const z = Math.max(plan.minNativeZoom, Math.min(plan.maxNativeZoom, 16));
       e.zoom = [plan.minNativeZoom, plan.maxNativeZoom];
-      const v = await judgeAt(box, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return root + '/tile/' + (z + plan.zoomOffset) + '/' + y + '/' + x; });
+      const tile = (zz, x, y) => root + '/tile/' + (zz + plan.zoomOffset) + '/' + y + '/' + x;
+      await tighten(e, b => footprintTiles(b, tile, plan.minNativeZoom, plan.maxNativeZoom));
+      const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return tile(z, x, y); });
       return verdict(e, v, 'tiles z' + plan.minNativeZoom + '–' + plan.maxNativeZoom);
     }
     e.kind = 'arcgis-export';
     e.format = plan.format;
+    await tighten(e, b => footprintImage(b, (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
+      '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png32&transparent=true&f=image'));
     const urlFor = exportUrl(root, null, plan.format);
-    const v = await judgeAt(box, (lat, lon) => urlFor(lat, lon, box));
+    const v = await judgeAt(e.bbox, urlFor);
     return verdict(e, v, 'export, EPSG:' + (plan.wkid || '?'));
   }
 
@@ -331,16 +510,24 @@
     const box = await arcgisCoverage(root, L0.extent || meta.fullExtent, '&layers=show:' + id);
     if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
     e.bbox = [boxR(box)];
+    const base = e.bbox.slice();
     const fmt = /JPG/i.test(meta.supportedImageFormatTypes || '') ? 'png32' : 'png';
-    let v = await judgeAt(box, (lat, lon) => exportUrl(root, id, fmt)(lat, lon, box));
+    const fpFor = lid => b => footprintImage(b, (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
+      '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png32&transparent=true&f=image&layers=show:' + lid);
+    await tighten(e, fpFor(id));
+    let v = await judgeAt(e.bbox, exportUrl(root, id, fmt));
     let used = id, note = (L0.type || 'layer') + ' “' + (L0.name || id) + '”';
     // A group that draws nothing by itself: try its image child.
     if (v.verdict !== 'confirmed' && /group/i.test(L0.type || '') && Array.isArray(L0.subLayers)) {
       for (const sl of L0.subLayers) {
         const cr = await once('ly:' + root + '/' + sl.id, () => getJSON(root + '/' + sl.id + '?f=json'));
         if (cr.error || !/raster|mosaic|image/i.test(cr.json.type || '')) continue;
-        const v2 = await judgeAt(box, (lat, lon) => exportUrl(root, sl.id, fmt)(lat, lon, box));
+        const keep = { bbox: e.bbox, footprint: e.footprint };
+        e.bbox = base.slice();
+        await tighten(e, fpFor(sl.id));
+        const v2 = await judgeAt(e.bbox, exportUrl(root, sl.id, fmt));
         if (v2.verdict === 'confirmed' || (v2.verdict === 'loaded' && v.verdict !== 'loaded')) { v = v2; used = sl.id; note += ' → child ' + sl.id + ' “' + (cr.json.name || '') + '”'; break; }
+        Object.assign(e, keep);
       }
     }
     e.layer = used;
@@ -360,7 +547,9 @@
     const box = await arcgisCoverage(root, meta.extent || meta.fullExtent);
     if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
     e.bbox = [boxR(box)];
-    const v = await judgeAt(box, (lat, lon) => {
+    await tighten(e, b => footprintImage(b, (wm, W, H) => root + '/exportImage?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
+      '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png&f=image'));
+    const v = await judgeAt(e.bbox, (lat, lon, box) => {
       const b = wmBoxAround(lat, lon, box);
       return root + '/exportImage?bbox=' + b.map(x => x.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image';
     });
@@ -447,8 +636,12 @@
     e.wms = { base, layers: name, version, crs, format: fmt };
     if (time) e.wms.time = time;
     e.linkUrl = wmsJoin(base) + 'layers=' + encodeURIComponent(name) + (time ? '&TIME=' + encodeURIComponent(time) : '');
-    const bb = e.bbox[0];
-    const v = await judgeAt(bb, (lat, lon) => {
+    const png = !caps || caps.fmts.includes('image/png');
+    await tighten(e, b => footprintImage(b, (wm, W, H) => wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetMap&VERSION=' + version +
+      '&LAYERS=' + encodeURIComponent(name) + '&STYLES=' + (version === '1.3.0' ? '&CRS=' : '&SRS=') + crs +
+      '&BBOX=' + wm.map(x => x.toFixed(1)).join(',') + '&WIDTH=' + W + '&HEIGHT=' + H +
+      '&FORMAT=' + encodeURIComponent(png ? 'image/png' : fmt) + '&TRANSPARENT=TRUE' + (time ? '&TIME=' + encodeURIComponent(time) : '')));
+    const v = await judgeAt(e.bbox, (lat, lon, bb) => {
       const b = wmBoxAround(lat, lon, bb);
       return wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetMap&VERSION=' + version + '&LAYERS=' + encodeURIComponent(name) + '&STYLES=' +
         (version === '1.3.0' ? '&CRS=' : '&SRS=') + crs + '&BBOX=' + b.map(x => x.toFixed(2)).join(',') +
@@ -462,9 +655,10 @@
     e.kind = 'xyz';
     if (!e.boxes.length) return fail(e, 'coverage: an XYZ source needs a box on its source line');
     e.bbox = e.boxes.map(boxR);
+    await tighten(e, b => footprintTiles(b, (z, x, y) => e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y), 2, 16));
     let best = null;
     for (const z of [15, 13, 17, 11]) {
-      const v = await judgeAt(e.bbox[0], (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
+      const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
       if (!best || v.verdict === 'confirmed' || (v.verdict === 'loaded' && best.verdict !== 'confirmed')) best = Object.assign(v, { z });
       if (v.verdict === 'confirmed') break;
     }
@@ -513,7 +707,7 @@
   function fail(e, why) { return set(e, 'failed', why); }
   function verdict(e, v, note) {
     e.sample = v.url;
-    return set(e, v.verdict, note + ' · ' + v.verdict + ': ' + v.why);
+    return set(e, v.verdict, note + ' · ' + v.verdict + ': ' + v.why + (e.footprint ? ' · ' + e.footprint : ''));
   }
 
   async function process(e) {
@@ -617,7 +811,7 @@
     download('geosonify-imagery-catalogue.json', JSON.stringify(out), 'application/json');
   });
   $('#dlRep').addEventListener('click', () => {
-    const cols = ['n', 'line', 'region', 'label', 'url', 'kind', 'status', 'detail', 'wkid', 'bbox', 'attr', 'licence', 'sample'];
+    const cols = ['n', 'line', 'region', 'label', 'url', 'kind', 'status', 'detail', 'footprint', 'wkid', 'bbox', 'attr', 'licence', 'sample'];
     const lines = [cols.join('\t')].concat(entries.map(e => cols.map(c => {
       const v = c === 'bbox' ? (e.bbox || []).map(b => b.join(',')).join(' ; ') : e[c];
       return String(v == null ? '' : v).replace(/[\t\r\n]+/g, ' ');
