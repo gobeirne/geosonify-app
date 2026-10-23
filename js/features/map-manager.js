@@ -1,5 +1,10 @@
 /**
- * geosonify-map-manager.js v1.2
+ * geosonify-map-manager.js v1.3
+ *
+ * v1.3 (2026-10-24): one layer of an ArcGIS map service (…/MapServer/<n>) can
+ * be pasted or linked: it is drawn through /export with layers=show:<n>. A
+ * service whose layers are all off by default (one layer per year) is
+ * declined with a list of its layers rather than drawn blank.
  *
  * v1.2 (2026-10-23): 'aerial@YYYY-MM-DD' shows that day's edition of Esri
  * World Imagery (Wayback, via js/lib/geosonify-wayback.js); MapServer results
@@ -298,16 +303,16 @@
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
 
-  // Split a pasted MapServer URL into its service root and token (if any).
-  // Accepts …/MapServer, …/MapServer/, …/MapServer?token=… . Returns null if
-  // the URL is not a MapServer service root.
+  // Split a pasted MapServer URL into its service root, layer (if one layer
+  // of it: …/MapServer/<n>) and token (if any). Accepts …/MapServer,
+  // …/MapServer/, …/MapServer/7, …?token=… . Returns null otherwise.
   function _parseMapServerUrl(raw) {
     let u;
     try { u = new URL(String(raw || '').trim()); } catch (e) { return null; }
     if (!/^https?:$/.test(u.protocol)) return null;
-    const m = u.pathname.match(/^(.*\/MapServer)\/?$/i);
+    const m = u.pathname.match(/^(.*\/MapServer)(?:\/(\d+))?\/?$/i);
     if (!m) return null;
-    return { root: u.origin + m[1], token: u.searchParams.get('token') || '' };
+    return { root: u.origin + m[1], layer: m[2] != null ? +m[2] : null, token: u.searchParams.get('token') || '' };
   }
 
   function _srWkid(sr) {
@@ -418,7 +423,7 @@
   /**
    * Normalise a user-supplied imagery URL.
    * - Already-templated XYZ ({z}/{x}/{y} in any order)  → { url }
-   * - ArcGIS MapServer root (…/MapServer[?token=…])     → { mapServer:{root,token} }
+   * - ArcGIS MapServer (…/MapServer[/<layer>][?token=…]) → { mapServer:{root,layer,token} }
    *   (inspected asynchronously by setBasemap)
    * - ArcGIS ImageServer or bare REST root              → { error }
    */
@@ -431,9 +436,6 @@
     }
     const ms = _parseMapServerUrl(url);
     if (ms) return { mapServer: ms };
-    if (/\/MapServer\/\d+\/?(\?|$)/i.test(url)) {
-      return { error: 'That is one layer of an ArcGIS map service. Paste the service itself: the URL up to and including /MapServer.' };
-    }
     if (/\/ImageServer\/?(\?|$)/i.test(url) || /\/arcgis\/rest\/?(services\/?)?$/i.test(url)) {
       return { error: 'That looks like an ArcGIS image service or directory. Paste a map service URL ending in /MapServer, or an XYZ template containing {z}/{x}/{y}.' };
     }
@@ -496,6 +498,28 @@
     } else {
       plan = _classifyMapServer(fetched.meta);
       if (plan.error) return { ok: false, error: plan.error };
+      const meta = fetched.meta, layers = Array.isArray(meta.layers) ? meta.layers : [];
+      if (ms.layer != null) {
+        // One layer of the service: always drawn through /export with
+        // layers=show:<n> (a fused tile cache can't show one layer alone).
+        const L = layers.find(l => l.id === ms.layer);
+        if (layers.length && !L) return { ok: false, error: 'That map service has no layer ' + ms.layer + '.' };
+        if (plan.mode === 'tiles') {
+          const caps = String(meta.capabilities || '');
+          if (caps && !/(^|,)\s*Map\s*(,|$)/i.test(caps)) return { ok: false, error: 'That service only offers its tiles, all layers together, so a single layer can\u2019t be shown.' };
+          plan = Object.assign({}, plan, { mode: 'export', format: 'png32' });
+        }
+        plan.layerName = L && L.name;
+      } else if (plan.mode === 'export' && !meta.singleFusedMapCache && layers.length && !layers.some(l => l.defaultVisibility)) {
+        // A dynamic service whose layers are all switched off by default
+        // (common for one layer per year) draws nothing as a whole. A cached
+        // service is drawn from its cache whatever its layers say, so it is
+        // not declined.
+        const list = layers.filter(l => !l.subLayerIds || !l.subLayerIds.length).slice(0, 6)
+          .map(l => l.id + ' (' + String(l.name || '').slice(0, 40) + ')').join(', ');
+        return { ok: false, error: 'That service shows nothing until one of its layers is chosen. Paste a layer instead: the URL followed by /<number>, e.g. …/MapServer/' +
+          (layers[0] && layers[0].id) + '. Layers: ' + list + (layers.length > 6 ? ', …' : '') + '.' };
+      }
     }
 
     const attrib = attribution
@@ -528,6 +552,7 @@
 
     const layer = L.esri.dynamicMapLayer({
       url: ms.root,
+      layers: ms.layer != null ? [ms.layer] : undefined,
       token: ms.token || undefined,
       f: 'image',              // plain <img> per view; no JSON request, no output directory
       format: plan.format,
@@ -542,7 +567,7 @@
       layer.on('error', onFail);
     });
     return {
-      ok: true, mode: 'export', url: ms.root, label: plan.label,
+      ok: true, mode: 'export', url: ms.root, label: plan.layerName ? (plan.label ? plan.label + ' · ' : '') + plan.layerName : plan.label,
       note: plan.blind
         ? 'Applied. The server doesn’t let a browser read its description, so it is drawn as images on request; if nothing appears, it doesn’t allow that either.'
         : (plan.wkid && WEB_MERCATOR_WKIDS.indexOf(plan.wkid) === -1
@@ -1537,6 +1562,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.2 loaded');
+  console.log('[geosonify] map-manager v1.3 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

@@ -6,8 +6,10 @@
 #             WMS/WMTS GetCapabilities URL (the builder lists its layers for you
 #             to pick from; it does not add them itself).
 #   coverage  optional, for sources that don't describe themselves (XYZ, and WMS
-#             whose capabilities can't be read): one or more boxes "s,w,n,e"
-#             separated by ";". ArcGIS services never need one.
+#             whose capabilities can't be read), and for ArcGIS services whose
+#             description a browser can't read (no CORS, or too slow): one or
+#             more boxes "s,w,n,e" separated by ";". The builder tightens them
+#             to the imagery's real footprint where the pixels can be read.
 # Blank lines and lines starting with # are ignored.
 
 # ── New Zealand ──────────────────────────────────────────────────────────────
@@ -127,8 +129,8 @@ Wainuiomata | 1941 | https://mapping.gw.govt.nz/arcgis/rest/services/Floods/GWRC
 Mangaroa | 1943 | https://mapping.gw.govt.nz/arcgis/rest/services/Floods/GWRC_Flood_Protection_2016/MapServer/41
 Waitohu | 1966 | https://mapping.gw.govt.nz/arcgis/rest/services/Floods/GWRC_Flood_Protection_2016/MapServer/43
 Ōtaki | 1998 | https://mapping.gw.govt.nz/arcgis/rest/services/Floods/GWRC_Flood_Protection_2016/MapServer/44
-Lower Hutt / Hutt Valley | 1941–1942 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttValley_1941_42/ImageServer
-Lower Hutt / Hutt Valley | 1958 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttValley_1958/ImageServer
+# needs sign-in (server: "User couldn\'t access this resource"): Lower Hutt / Hutt Valley | 1941–1942 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttValley_1941_42/ImageServer
+# needs sign-in (server: "User couldn\'t access this resource"): Lower Hutt / Hutt Valley | 1958 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttValley_1958/ImageServer
 Wainuiomata / Eastbourne | 1969 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/Wainui_Eastbourne_1969/ImageServer
 Lower Hutt / Hutt Valley | 1977 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttValley_1977/ImageServer
 Wainuiomata | 1980 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/Wainui_1980/ImageServer
@@ -138,10 +140,10 @@ Lower Hutt | 2003 | https://maps.huttcity.govt.nz/server02/rest/services/Histori
 Lower Hutt | 2008 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttTLA_2008/ImageServer
 Lower Hutt | 2010 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttUpdate_2010/ImageServer
 Lower Hutt | 2013 | https://maps.huttcity.govt.nz/server02/rest/services/HistoricAerials/HuttTLA_2013/ImageServer
-Upper Hutt | 2000 rural | https://maps.upperhutt.govt.nz/arcgis/rest/services/Rural_2000/ImageServer
-Upper Hutt | 2004 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2004/ImageServer
-Upper Hutt | 2008 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2008/ImageServer
-Upper Hutt | 2013 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2013/ImageServer
+Upper Hutt | 2000 rural | https://maps.upperhutt.govt.nz/arcgis/rest/services/Rural_2000/ImageServer | -41.22,174.98,-40.95,175.35
+Upper Hutt | 2004 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2004/ImageServer | -41.22,174.98,-40.95,175.35
+Upper Hutt | 2008 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2008/ImageServer | -41.22,174.98,-40.95,175.35
+Upper Hutt | 2013 urban | https://maps.upperhutt.govt.nz/arcgis/rest/services/Urban_2013/ImageServer | -41.22,174.98,-40.95,175.35
 
 Dunedin | 1947–1952 | https://apps.dunedin.govt.nz/arcgis/rest/services/Public/AerialCache_1947_1952/MapServer
 Dunedin | 1990 | https://apps.dunedin.govt.nz/arcgis/rest/services/Public/AerialCache_1990/MapServer
@@ -150,18 +152,19 @@ Dunedin | 2013 | https://apps.dunedin.govt.nz/arcgis/rest/services/Public/PhotoC
 Dunedin | 2018–2019 | https://apps.dunedin.govt.nz/arcgis/rest/services/Public/AerialCache_2018_2019/MapServer
 Dunedin | 2024 | https://apps.dunedin.govt.nz/arcgis/rest/services/Public/AerialCache_2024/MapServer
 
-Nelson / Tasman | 1940–1949 | https://www.topofthesouthmaps.co.nz/arcgis/services/Imagery/Aerial_1940_1949/MapServer/WMSServer | -42.3,172.0,-40.4,174.0
-Nelson / Tasman | 1980–1989 | https://www.topofthesouthmaps.co.nz/arcgis/services/Imagery/Aerial_1980_1989/MapServer/WMSServer | -42.3,172.0,-40.4,174.0
+# The WMS form of these offers no Web Mercator; the same ArcGIS services' REST form reprojects.
+Nelson / Tasman | 1940–1949 | https://www.topofthesouthmaps.co.nz/arcgis/rest/services/Imagery/Aerial_1940_1949/MapServer | -42.3,172.0,-40.4,174.0
+Nelson / Tasman | 1980–1989 | https://www.topofthesouthmaps.co.nz/arcgis/rest/services/Imagery/Aerial_1980_1989/MapServer | -42.3,172.0,-40.4,174.0
 
 Taupō township | 2004 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Taupō_Town_2004/ImageServer
 Taupō township | 2008 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Taupō_Town_2008/ImageServer
 Taupō / Kinloch | 2012 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Taupō_Bay_Kinloch_2012/ImageServer
-Tūrangi | 2014 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/5
-Taupō district urban | 2015 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/0
-Taupō township | 2016 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/3
-Lake Taupō western settlements | 2019 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/2
-Taupō / Kinloch | 2020 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/1
-Taupō district urban | 2021 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/7
+# these layer numbers are outline (feature) layers, not photographs: Tūrangi | 2014 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/5
+# these layer numbers are outline (feature) layers, not photographs: Taupō district urban | 2015 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/0
+# these layer numbers are outline (feature) layers, not photographs: Taupō township | 2016 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/3
+# these layer numbers are outline (feature) layers, not photographs: Lake Taupō western settlements | 2019 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/2
+# these layer numbers are outline (feature) layers, not photographs: Taupō / Kinloch | 2020 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/1
+# these layer numbers are outline (feature) layers, not photographs: Taupō district urban | 2021 | https://maps.taupodc.govt.nz/server/rest/services/imagery/Imagery_Tiles/MapServer/7
 
 New Zealand (KiwiRail) | 2008 | https://gis.kiwirail.co.nz/arcgis/rest/services/Imagery/aerials2008/MapServer
 New Zealand (KiwiRail) | 2009 | https://gis.kiwirail.co.nz/arcgis/rest/services/Imagery/aerials2009/MapServer
@@ -200,7 +203,7 @@ Perth (Cockburn) | February 2014 | https://gisservices.cockburn.wa.gov.au/arcgis
 Perth (Cockburn) | May 2015 | https://gisservices.cockburn.wa.gov.au/arcgis/rest/services/PublicImagery/Aerial_2011_2015/MapServer/1
 Perth (Cockburn) | September 2015 | https://gisservices.cockburn.wa.gov.au/arcgis/rest/services/PublicImagery/Aerial_2011_2015/MapServer/0
 Brisbane | 1946 | https://tiles.arcgis.com/tiles/dEKgZETqwmDAh1rP/arcgis/rest/services/1946_Imagery/MapServer
-Sydney | 1943 | https://mapsq.six.nsw.gov.au/arcgis/rest/services/sixmaps/sydney1943/MapServer
+Sydney | 1943 | https://mapsq.six.nsw.gov.au/arcgis/rest/services/sixmaps/sydney1943/MapServer | -34.12,150.85,-33.57,151.35
 New South Wales | 1947 | https://portal.spatial.nsw.gov.au/tileservices/Hosted/HistoricalImagery1947/MapServer
 New South Wales | 1955 | https://portal.spatial.nsw.gov.au/tileservices/Hosted/HistoricalImagery1955/MapServer
 New South Wales | 1965 | https://portal.spatial.nsw.gov.au/tileservices/Hosted/HistoricalImagery1965/MapServer
@@ -262,8 +265,8 @@ Calgary | 1969 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/ser
 Calgary | 1972 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1972/MapServer
 Calgary | 1975 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1975/MapServer
 Calgary | 1979 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1979/MapServer
-Calgary | 1982 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_1982_WMASP/MapServer
-Calgary | 1984 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_1984_WMASP/MapServer
+# service gone ("Requested Service not available"): Calgary | 1982 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_1982_WMASP/MapServer
+# service gone ("Requested Service not available"): Calgary | 1984 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_1984_WMASP/MapServer
 Calgary | 1988 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1988/MapServer
 Calgary | 1995 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1995/MapServer
 Calgary | 1997 | https://tiles.arcgis.com/tiles/AVP60cs0Q9PEA8rH/arcgis/rest/services/Calgary_Orthophoto_Web_1997/MapServer
@@ -314,10 +317,10 @@ Huntsville, Alabama | 1993 | https://maps.huntsvilleal.gov/server/rest/services/
 Huntsville, Alabama | 1997 | https://maps.huntsvilleal.gov/server/rest/services/Imagery/AerialImagery1997/MapServer
 Huntsville, Alabama | 1998 | https://maps.huntsvilleal.gov/server/rest/services/Imagery/AerialImagery1998/MapServer
 Huntsville, Alabama | 2004 | https://maps.huntsvilleal.gov/server/rest/services/Imagery/AerialImagery2004/MapServer
-Livingston County, New York | 1938 colourised | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1938Aerial/MapServer/0
-Livingston County, New York | 1938 greyscale | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1938Aerial/MapServer/1
-Livingston County, New York | 1968 | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1968Aerial/MapServer
-Livingston County, New York | 1971 | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1971Aerial/MapServer
+Livingston County, New York | 1938 colourised | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1938Aerial/MapServer/0 | 42.49,-78.06,42.99,-77.37
+Livingston County, New York | 1938 greyscale | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1938Aerial/MapServer/1 | 42.49,-78.06,42.99,-77.37
+Livingston County, New York | 1968 | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1968Aerial/MapServer | 42.49,-78.06,42.99,-77.37
+Livingston County, New York | 1971 | https://gis.livingstoncountyny.gov/arcgis/rest/services/Basemap/County1971Aerial/MapServer | 42.49,-78.06,42.99,-77.37
 Rhode Island | 1951–1952 | https://tiles.arcgis.com/tiles/S8zZg9pg23JUEexQ/arcgis/rest/services/atlas_img_1951_1952/MapServer
 Connecticut | 1934 historical mosaic | https://cteco.uconn.edu/ctraster/rest/services/images/Mosaic_1934_MAGIC/ImageServer
 Connecticut | 1965, Norwalk / Greater Bridgeport | https://tiles.arcgis.com/tiles/IzCLn1q8U511eQsa/arcgis/rest/services/1965_Aerial_Photography_Mosaic/MapServer
@@ -356,15 +359,15 @@ Lee County, North Carolina | 2010 | https://lee-arcgis.leecountync.gov/arcgis/re
 Lee County, North Carolina | 2014 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/8
 Lee County, North Carolina | 2023 | https://lee-arcgis.leecountync.gov/arcgis/rest/services/AerialHistoric/AerialHistoric/MapServer/9
 Chatham County, North Carolina | 1938 | https://gisservices.chathamcountync.gov/chathamgis/rest/services/RasterBasemaps/Chatham_1938AerialImagery/MapServer
-Carver County, Minnesota | 1937 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/3
-Carver County, Minnesota | 1969 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/7
-Carver County, Minnesota | 1979 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/11
-Carver County, Minnesota | 1991 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/15
-Carver County, Minnesota | 1997 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/19
-Carver County, Minnesota | 2000 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/23
-Carver County, Minnesota | 2002 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/27
-Fond du Lac County, Wisconsin | 1937 | https://gisweb.fdlco.wi.gov/server/rest/services/1937_Aerial/MapServer
-Fond du Lac County, Wisconsin | 1949 | https://gisweb.fdlco.wi.gov/server/rest/services/1949_Aerial/MapServer
+Carver County, Minnesota | 1937 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/3 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 1969 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/7 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 1979 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/11 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 1991 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/15 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 1997 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/19 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 2000 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/23 | 44.63,-94.01,44.98,-93.52
+Carver County, Minnesota | 2002 | https://gis.co.carver.mn.us/arcgis_ea/rest/services/OpenAccess/CC_Aerial_Photography/MapServer/27 | 44.63,-94.01,44.98,-93.52
+Fond du Lac County, Wisconsin | 1937 | https://gisweb.fdlco.wi.gov/server/rest/services/1937_Aerial/MapServer | 43.54,-88.89,43.94,-88.16
+Fond du Lac County, Wisconsin | 1949 | https://gisweb.fdlco.wi.gov/server/rest/services/1949_Aerial/MapServer | 43.54,-88.89,43.94,-88.16
 Iowa | 1936–1941 | https://ortho.gis.iastate.edu/arcgis/rest/services/ortho/ortho_1930/ImageServer
 Iowa | 1960s | https://ortho.gis.iastate.edu/arcgis/rest/services/ortho/ortho_1960/ImageServer
 Iowa | 1981–1986 B&W | https://ortho.gis.iastate.edu/arcgis/rest/services/ortho/ortho_1980/ImageServer
@@ -376,23 +379,23 @@ King County, Washington | 2000 | https://gismaps.kingcounty.gov/arcgis/rest/serv
 Philadelphia | 1996, 6-inch orthophoto | https://tiles.arcgis.com/tiles/fLeGjb7u4uXqeF9q/arcgis/rest/services/CityImagery_1996_6in/MapServer
 Philadelphia | 2000, 18-inch orthophoto | https://tiles.arcgis.com/tiles/fLeGjb7u4uXqeF9q/arcgis/rest/services/CityImagery_2000_18in/MapServer
 Philadelphia | 2004, 6-inch orthophoto | https://tiles.arcgis.com/tiles/fLeGjb7u4uXqeF9q/arcgis/rest/services/CityImagery_2004_6in/MapServer
-Huntington Beach, California | 1963, Central Park and Beach | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/0
-Huntington Beach, California | 1964, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/1
-Huntington Beach, California | 1969, Central Park colour | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/2
-Huntington Beach, California | 1969, Central Park B&W | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/3
-Huntington Beach, California | 1973, Central Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/0
-Huntington Beach, California | 1973, Gothard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/1
-Huntington Beach, California | 1974, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/2
-Huntington Beach, California | 1979, Central Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/3
-Huntington Beach, California | 1981, Ellis and Gothard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/0
-Huntington Beach, California | 1981, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/1
-Huntington Beach, California | 1984, Manning Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/2
-Huntington Beach, California | 1991, Beach | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/0
-Huntington Beach, California | 1991, Graham and Heil | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/1
-Huntington Beach, California | 1991, Harbor colour | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/2
-Huntington Beach, California | 1991, Main and Adams | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/3
-Huntington Beach, California | 1993, Banning and Bushard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/4
-Huntington Beach, California | 1994 hybrid orthophoto | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1994OrthosHybrid/MapServer
+Huntington Beach, California | 1963, Central Park and Beach | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/0 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1964, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/1 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1969, Central Park colour | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/2 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1969, Central Park B&W | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1960sAerials/MapServer/3 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1973, Central Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/0 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1973, Gothard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/1 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1974, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/2 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1979, Central Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1970sAerials/MapServer/3 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1981, Ellis and Gothard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/0 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1981, Pacific Coast Highway | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/1 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1984, Manning Park | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1980sAerials/MapServer/2 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1991, Beach | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/0 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1991, Graham and Heil | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/1 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1991, Harbor colour | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/2 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1991, Main and Adams | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/3 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1993, Banning and Bushard | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1990sAerials/MapServer/4 | 33.62,-118.09,33.78,-117.94
+Huntington Beach, California | 1994 hybrid orthophoto | https://gis.huntingtonbeachca.gov/arcgis/rest/services/1994OrthosHybrid/MapServer | 33.62,-118.09,33.78,-117.94
 Swanton Pacific Ranch, California | 1956 | https://tiles.arcgis.com/tiles/0j6vZbECadDEXdAS/arcgis/rest/services/SPR_1956_Historical_Aerial_Imagery/MapServer
 
 # ── South Africa ─────────────────────────────────────────────────────────────
@@ -507,20 +510,20 @@ France | 2000–2005 | https://data.geopf.fr/wms-r/wms?layers=ORTHOIMAGERY.ORTHO
 France | 2006–2010 | https://data.geopf.fr/wms-r/wms?layers=ORTHOIMAGERY.ORTHOPHOTOS2006-2010 | 41.3,-5.2,51.1,9.6
 France | 2011–2015 | https://data.geopf.fr/wms-r/wms?layers=ORTHOIMAGERY.ORTHOPHOTOS2011-2015 | 41.3,-5.2,51.1,9.6
 France | Latest aerial photography | https://data.geopf.fr/wmts?service=WMTS&request=GetTile&version=1.0.0&tilematrixset=PM&tilematrix={z}&tilecol={x}&tilerow={y}&layer=ORTHOIMAGERY.ORTHOPHOTOS&format=image/jpeg&style=normal | 41.3,-5.2,51.1,9.6
-Ain, France | 1952 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1952/MapServer
-Ain, France | 1960 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1960/MapServer
-Ain, France | 1970 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1970/MapServer
-Ain, France | 1980 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1980/MapServer
-Ain, France | 1990 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1990/MapServer
-Ain, France | 2000 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2000/MapServer
-Ain, France | 2005 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2005/MapServer
-Ain, France | 2006 | https://geodata.ain.fr/server/rest/services/externe/ortho_2006/MapServer
-Ain, France | 2009 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2009/MapServer
-Ain, France | 2012 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2012/MapServer
-Ain, France | 2015 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2015/MapServer
-Ain, France | 2018 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2018/MapServer
-Ain, France | 2021 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2021/MapServer
-Ain, France | 2024 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2024/MapServer
+Ain, France | 1952 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1952/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 1960 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1960/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 1970 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1970/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 1980 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1980/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 1990 | https://geodata.ain.fr/server/rest/services/externe/Ortho_1990/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2000 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2000/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2005 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2005/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2006 | https://geodata.ain.fr/server/rest/services/externe/ortho_2006/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2009 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2009/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2012 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2012/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2015 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2015/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2018 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2018/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2021 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2021/MapServer | 45.61,4.72,46.52,6.17
+Ain, France | 2024 | https://geodata.ain.fr/server/rest/services/externe/Ortho_2024/MapServer | 45.61,4.72,46.52,6.17
 Switzerland | 1946 national aerial mosaic | https://wms.geo.admin.ch/?layers=ch.swisstopo.swissimage-product_1946 | 45.81,5.95,47.81,10.49
 Spain | American flight 1956–1957 | https://www.ign.es/wms/pnoa-historico?layers=AMS_1956-1957 | 35.9,-9.4,43.8,4.4
 Spain | Interministerial flight 1973–1986 | https://www.ign.es/wms/pnoa-historico?layers=Interministerial_1973-1986 | 35.9,-9.4,43.8,4.4
@@ -545,11 +548,11 @@ Vienna | 1986 | https://mapsneu.wien.gv.at/wmts/lb1986/grau/google3857/{z}/{y}/{
 Vienna | 1992 | https://mapsneu.wien.gv.at/wmts/lb1992/grau/google3857/{z}/{y}/{x}.jpeg | 48.11,16.18,48.33,16.58
 Vienna | 2014 | https://mapsneu.wien.gv.at/wmts/lb2014/farbe/google3857/{z}/{y}/{x}.jpeg | 48.11,16.18,48.33,16.58
 Vienna | 2023 | https://mapsneu.wien.gv.at/wmts/lb2023/farbe/google3857/{z}/{y}/{x}.jpeg | 48.11,16.18,48.33,16.58
-Berlin | 1928, 1:4,000 | https://gdi.berlin.de/services/wms/luftbild_1928_04 | 52.33,13.08,52.68,13.77
-Berlin | 1953, 1:22,000 | https://gdi.berlin.de/services/wms/luftbild_1953_22 | 52.33,13.08,52.68,13.77
-Berlin (Spandau North) | 1956, 1:8,000 | https://gdi.berlin.de/services/wms/luftbild_1956_08 | 52.53,13.13,52.62,13.27
-Berlin | 1959, 1:4,000 | https://gdi.berlin.de/services/wms/luftbild_1959_04 | 52.33,13.08,52.68,13.77
-Brandenburg | 1953, 1 m orthophoto | https://isk.geobasis-bb.de/mapproxy/dop100g_1953/service/wms | 51.36,11.26,53.56,14.77
+Berlin | 1928, 1:4,000 | https://gdi.berlin.de/services/wms/luftbild_1928_04?layers=c_luftbilder_1928_04_raster | 52.33,13.08,52.68,13.77
+Berlin | 1953, 1:22,000 | https://gdi.berlin.de/services/wms/luftbild_1953_22?layers=c_luftbilder_1953_22_raster | 52.33,13.08,52.68,13.77
+# Berlin 1956 (Spandau North) and 1959 offer only photo centres and flight coverage, no mosaic:
+#   https://gdi.berlin.de/services/wms/luftbild_1956_08   https://gdi.berlin.de/services/wms/luftbild_1959_04
+Brandenburg | 1953, 1 m orthophoto | https://isk.geobasis-bb.de/mapproxy/dop100g_1953/service/wms?layers=bb_dop100g_1953 | 51.36,11.26,53.56,14.77
 Helsinki | 1932 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1932 | 60.10,24.78,60.30,25.26
 Helsinki | 1943 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1943 | 60.10,24.78,60.30,25.26
 Helsinki | 1950 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1950 | 60.10,24.78,60.30,25.26
@@ -591,7 +594,35 @@ Espoo / Kauniainen | 2023 | https://kartat.espoo.fi/teklaogcweb/wms.ashx?layers=
 Sweden | 1960 reference-year mosaic | https://maps.lantmateriet.se/historiska-ortofoton/wms/v1?layers=OI.Histortho_60 | 55.3,11.0,69.1,24.2
 Sweden | 1975 reference-year mosaic | https://maps.lantmateriet.se/historiska-ortofoton/wms/v1?layers=OI.Histortho_75 | 55.3,11.0,69.1,24.2
 
-# ── Capabilities only: the builder lists their layers to pick from ──────────
-Czech Republic | c. 1952–1954 national orthophoto | https://gis.cenia.cz/mapcache/ortofotomapa_historicka/wmts?SERVICE=WMTS&REQUEST=GetCapabilities | 48.55,12.09,51.06,18.86
-Estonia | historical orthophoto collection | https://kaart.maaamet.ee/wms/ajalooline?SERVICE=WMS&REQUEST=GetCapabilities | 57.5,21.7,59.7,28.2
-São Paulo | historical aerial basemaps | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?SERVICE=WMS&REQUEST=GetCapabilities | -24.01,-46.83,-23.36,-46.36
+# ── Chosen from capabilities documents ──────────────────────────────────────
+# Estonia (kaart.maaamet.ee/wms/ajalooline): orthophoto layers only; the rest are historical maps.
+Estonia | Tallinn orthophoto 2000 | https://kaart.maaamet.ee/wms/ajalooline?layers=tln2000v | 57.5,21.7,59.7,28.2
+Estonia | Tallinn orthophoto 2003 | https://kaart.maaamet.ee/wms/ajalooline?layers=tln2000ht | 57.5,21.7,59.7,28.2
+Estonia | Tallinn orthophoto 2005 | https://kaart.maaamet.ee/wms/ajalooline?layers=tln2000_2005 | 57.5,21.7,59.7,28.2
+Estonia | 2007 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2007aero | 57.5,21.7,59.7,28.2
+Estonia | 2008 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2008aero | 57.5,21.7,59.7,28.2
+Estonia | 2009 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2009aero | 57.5,21.7,59.7,28.2
+Estonia | 2010 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2010aero | 57.5,21.7,59.7,28.2
+Estonia | 2011 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2011aero | 57.5,21.7,59.7,28.2
+Estonia | 2012 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2012aero | 57.5,21.7,59.7,28.2
+Estonia | 2013 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2013aero | 57.5,21.7,59.7,28.2
+Estonia | 2014 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2014aero | 57.5,21.7,59.7,28.2
+Estonia | 2015 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2015aero | 57.5,21.7,59.7,28.2
+Estonia | 2016 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2016aero | 57.5,21.7,59.7,28.2
+Estonia | 2017 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2017aero | 57.5,21.7,59.7,28.2
+Estonia | 2018 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2018aero | 57.5,21.7,59.7,28.2
+Estonia | 2019 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2019aero | 57.5,21.7,59.7,28.2
+Estonia | 2020 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2020aero | 57.5,21.7,59.7,28.2
+Estonia | 2021 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2021aero | 57.5,21.7,59.7,28.2
+Estonia | 2022 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2022aero | 57.5,21.7,59.7,28.2
+Estonia | 2023 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2023aero | 57.5,21.7,59.7,28.2
+Estonia | 2024 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2024aero | 57.5,21.7,59.7,28.2
+Estonia | 2025 aerial survey | https://kaart.maaamet.ee/wms/ajalooline?layers=of2025aero | 57.5,21.7,59.7,28.2
+# São Paulo (GeoSampa): aerial and photogrammetric layers only.
+São Paulo | 1930 SARA Brasil survey map | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?layers=SaraBrasil_1930 | -24.01,-46.83,-23.36,-46.36
+São Paulo | 1954 VASP Cruzeiro aerial survey | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?layers=Vasp_Cruzeiro | -24.01,-46.83,-23.36,-46.36
+São Paulo | 2004 orthophoto | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?layers=Orto_MDC | -24.01,-46.83,-23.36,-46.36
+São Paulo | 2017 orthophoto | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?layers=Orto_PMD_RGB_2017 | -24.01,-46.83,-23.36,-46.36
+São Paulo | 2020 orthophoto | https://raster.geosampa.prefeitura.sp.gov.br/geoserver/geoportal/wms?layers=ORTO_RGB_2020 | -24.01,-46.83,-23.36,-46.36
+# Czech Republic: its WMTS has no Web Mercator tile set, so it can't be shown yet:
+#   https://gis.cenia.cz/mapcache/ortofotomapa_historicka/wmts?SERVICE=WMTS&REQUEST=GetCapabilities

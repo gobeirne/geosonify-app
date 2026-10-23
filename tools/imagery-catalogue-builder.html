@@ -71,10 +71,10 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/esri-leaflet@3.0.19/dist/esri-leaflet.js"
         integrity="sha384-2EpnechKmjshAhcJgZr0/dexkJdbcRJm+qsQtCjFsfBP/u5HZmrSa9lpmD7u2t5T" crossorigin="anonymous"></script>
-<script src="../js/features/map-manager.js?v=20261023b"></script>
+<script src="../js/features/map-manager.js?v=20261024a"></script>
 <script>
 /*
-  imagery-catalogue-builder v1.1
+  imagery-catalogue-builder v1.2
 
   For each source line it decides the KIND, then gathers what the app needs:
 
@@ -112,13 +112,23 @@
   rectangles and padded by one cell. A national WMS layer that only covers one
   flight strip ends up as a box around that strip. Kept as it was if the pixels
   can't be read or the overview comes back empty.
+
+  v1.2: sample images are taken first where the footprint saw the most
+  picture; images are recognised by their bytes, whatever the server calls
+  them; slow servers get a second try; a layer drawn only between two scales is
+  sampled inside them (and the zoom range goes into the catalogue); an extent
+  the server can't convert goes to a public geometry service; a service whose
+  description a browser can't read is tested "blind" with the source line's
+  box, as the app will draw it; a capabilities document as the source (.xml)
+  is read as WMS; a layer that refuses JPEG is tried as PNG; outline (feature)
+  layers are reported as such.
 */
 (function () {
   'use strict';
 
   const R = 6378137, WMH = 20037508.342789244;
   const WM_WKIDS = [3857, 102100, 102113, 900913, 3785];
-  const TIMEOUT = 20000, MAX_ALL = 6, MAX_HOST = 2;
+  const TIMEOUT = 30000, MAX_ALL = 6, MAX_HOST = 2;
   const $ = s => document.querySelector(s);
   const rowsEl = $('#rows');
   let entries = [], discovered = [];
@@ -178,11 +188,12 @@
     const half = Math.max(60, Math.min(600, Math.abs(x1 - x0) / 4, Math.abs(y1 - y0) / 4));
     return [x - half, y - half, x + half, y + half];
   }
+  const finiteBox = b => b && b.length === 4 && b.every(v => typeof v === 'number' && isFinite(v)) && b[0] < b[2] && b[1] < b[3] && b[0] >= -90 && b[2] <= 90 ? b : null;
   function extentToLL(ext) {
-    if (!ext) return null;
+    if (!ext || ![ext.xmin, ext.ymin, ext.xmax, ext.ymax].every(v => typeof v === 'number' && isFinite(v))) return null;
     const sr = ext.spatialReference || {}, wk = sr.latestWkid || sr.wkid;
-    if (WM_WKIDS.includes(wk)) { const a = wmToLL(ext.xmin, ext.ymin), b = wmToLL(ext.xmax, ext.ymax); return [a[0], a[1], b[0], b[1]]; }
-    if (wk === 4326 || wk === 4269 || wk === 4283 || wk === 4167 || wk === 4258) return [ext.ymin, ext.xmin, ext.ymax, ext.xmax];
+    if (WM_WKIDS.includes(wk)) { const a = wmToLL(ext.xmin, ext.ymin), b = wmToLL(ext.xmax, ext.ymax); return finiteBox([a[0], a[1], b[0], b[1]]); }
+    if (wk === 4326 || wk === 4269 || wk === 4283 || wk === 4167 || wk === 4258) return finiteBox([ext.ymin, ext.xmin, ext.ymax, ext.xmax]);
     return null;
   }
 
@@ -195,6 +206,10 @@
     try { return await fn(); } finally { hostBusy.set(h, hostBusy.get(h) - 1); }
   }
   async function getText(url) {
+    const r = await getTextOnce(url);
+    return r.error === 'timeout' ? getTextOnce(url) : r;          // one retry for a slow server
+  }
+  async function getTextOnce(url) {
     return withHost(url, async () => {
       const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
       try {
@@ -214,15 +229,28 @@
   const cache = new Map();
   const once = (key, fn) => { if (!cache.has(key)) cache.set(key, fn()); return cache.get(key); };
 
+  // An image by its first bytes, whatever its Content-Type says (some servers
+  // send JPEG tiles as application/octet-stream). Returns a correctly typed blob or null.
+  async function asImage(blob) {
+    if (/^image\//.test(blob.type)) return blob;
+    try {
+      const b = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+      const t = (b[0] === 0xFF && b[1] === 0xD8) ? 'image/jpeg' : (b[0] === 0x89 && b[1] === 0x50) ? 'image/png'
+        : (b[0] === 0x47 && b[1] === 0x49) ? 'image/gif' : (b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) ? 'image/webp' : null;
+      return t ? new Blob([blob], { type: t }) : null;
+    } catch (e) { return null; }
+  }
+
   // Fetch an image and judge it: confirmed / blank / loaded (pixels unreadable) / failed.
   async function judgeImage(url) {
     const viaFetch = await withHost(url, async () => {
       const c = new AbortController(), t = setTimeout(() => c.abort(), TIMEOUT);
       try {
         const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal: c.signal });
-        const blob = await r.blob();
+        const raw = await r.blob();
         if (!r.ok) return { verdict: 'failed', why: 'HTTP ' + r.status };
-        if (!/^image\//.test(blob.type)) return { verdict: 'failed', why: 'not an image: ' + (await blob.text()).slice(0, 160).replace(/\s+/g, ' ') };
+        const blob = await asImage(raw);
+        if (!blob) return { verdict: 'failed', why: 'not an image: ' + (await raw.text()).slice(0, 160).replace(/\s+/g, ' ') };
         const bmp = await createImageBitmap(blob);
         const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
         const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
@@ -250,11 +278,14 @@
     }));
   }
   // Try the sample points until one shows content.
-  async function judgeAt(boxes, urlFor) {
+  // hot: [lat, lon, box] points where the footprint saw the most picture;
+  // tried first, before the boxes' own centres.
+  async function judgeAt(boxes, urlFor, hot) {
     if (!Array.isArray(boxes[0])) boxes = [boxes];
     let best = null;
     const rank = { confirmed: 3, loaded: 2, blank: 1, failed: 0 };
-    for (const [lat, lon, box] of samplePoints(boxes)) {
+    const pts = (hot || []).slice(0, 3).concat(samplePoints(boxes)).slice(0, 5);
+    for (const [lat, lon, box] of pts) {
       const u = urlFor(lat, lon, box);
       const v = await judgeImage(u);
       v.url = u;
@@ -280,8 +311,9 @@
       try {
         const r = await fetch(url, { mode: 'cors', credentials: 'omit', signal: c.signal });
         if (r.status === 404) return { missing: true };
-        const blob = await r.blob();
-        if (!r.ok || !/^image\//.test(blob.type)) return null;
+        const raw = await r.blob();
+        const blob = r.ok ? await asImage(raw) : null;
+        if (!blob) return null;
         const bmp = await createImageBitmap(blob);
         const cv = document.createElement('canvas'); cv.width = bmp.width; cv.height = bmp.height;
         const g = cv.getContext('2d'); g.drawImage(bmp, 0, 0);
@@ -356,13 +388,28 @@
       let hit = 0, n = 0;
       for (let y = Math.floor(gr * cellH); y < Math.floor((gr + 1) * cellH); y += 2)
         for (let x = Math.floor(gc * cellW); x < Math.floor((gc + 1) * cellW); x += 2) { n++; if (test((y * px.w + x) * 4)) hit++; }
-      if (n && hit / n >= FP_MIN_FILL && oy + gr < rows && ox + gc < cols) grid[oy + gr][ox + gc] = true;
+      if (n && hit / n >= FP_MIN_FILL && oy + gr < rows && ox + gc < cols) grid[oy + gr][ox + gc] = hit / n;
     }
   }
 
+  // The densest cells, as sample points: [lat, lon, box], at least two cells apart.
+  function hotCells(grid, cols, rows, wm, box) {
+    const [x0, y0, x1, y1] = wm, cw = (x1 - x0) / cols, ch = (y1 - y0) / rows, cells = [];
+    grid.forEach((row, r) => row.forEach((f, c) => { if (f) cells.push([f, r, c]); }));
+    cells.sort((a, b) => b[0] - a[0]);
+    const picked = [];
+    for (const [f, r, c] of cells) {
+      if (picked.some(([, pr, pc]) => Math.abs(pr - r) < 2 && Math.abs(pc - c) < 2)) continue;
+      picked.push([f, r, c]);
+      if (picked.length === 3) break;
+    }
+    return picked.map(([, r, c]) => { const ll = wmToLL(x0 + (c + 0.5) * cw, y1 - (r + 0.5) * ch); return [ll[0], ll[1], box]; });
+  }
+  const clipTo = (b, to) => [Math.max(b[0], to[0]), Math.max(b[1], to[1]), Math.min(b[2], to[2]), Math.min(b[3], to[3])];
+
   // Footprint from single images of each box: imgUrl([x0,y0,x1,y1], W, H).
   async function footprintImage(boxes, imgUrl) {
-    const out = []; let note = 'kept';
+    const out = [], hot = []; let note = 'kept';
     for (const box of boxes) {
       const [x0, y0] = toWM(box[0], box[1]), [x1, y1] = toWM(box[2], box[3]);
       const cols = FP_COLS, rows = Math.max(2, Math.min(64, Math.round(cols * (y1 - y0) / (x1 - x0))));
@@ -372,16 +419,17 @@
       const grid = Array.from({ length: rows }, () => Array(cols).fill(false));
       fillGrid(grid, cols, rows, px, contentTest(px), 0, 0, cols, rows);
       if (!grid.some(r => r.some(Boolean))) { out.push(box); note = 'overview empty — box kept'; continue; }
-      boxesFromGrid(grid, cols, rows, [x0, y0, x1, y1]).forEach(b => out.push(b));
+      boxesFromGrid(grid, cols, rows, [x0, y0, x1, y1]).forEach(b => out.push(clipTo(b, box)));
+      hotCells(grid, cols, rows, [x0, y0, x1, y1], box).forEach(h => hot.push(h));
       note = 'tightened';
     }
-    return finishFootprint(boxes, out, note);
+    return finishFootprint(boxes, out, note, hot);
   }
 
   // Footprint from tiles: the lowest zoom whose tiles over the box number at
   // most 36 and include at least one picture. tpl(z, x, y) → URL.
   async function footprintTiles(boxes, tpl, zMin, zMax) {
-    const out = []; let note = 'kept';
+    const out = [], hot = []; let note = 'kept';
     for (const box of boxes) {
       let done = false;
       for (let z = Math.max(0, zMin || 0); z <= Math.min(zMax == null ? 18 : zMax, 18) && !done; z++) {
@@ -402,27 +450,70 @@
         if (!readable) { note = 'pixels unreadable — box kept'; break; }
         if (!grid.some(r => r.some(Boolean))) continue;                 // nothing at this zoom: one finer
         const n = 2 ** z, wmx = t => t / n * 2 * WMH - WMH, wmy = t => WMH - t / n * 2 * WMH;
-        boxesFromGrid(grid, cols, rows, [wmx(xa), wmy(yb + 1), wmx(xb + 1), wmy(ya)]).forEach(b => out.push(b));
+        const wm = [wmx(xa), wmy(yb + 1), wmx(xb + 1), wmy(ya)];
+        boxesFromGrid(grid, cols, rows, wm).forEach(b => out.push(clipTo(b, box)));
+        hotCells(grid, cols, rows, wm, box).forEach(h => hot.push(h));
         note = 'tightened'; done = true;
       }
       if (!done) out.push(box);
     }
-    return finishFootprint(boxes, out, note);
+    return finishFootprint(boxes, out, note, hot);
   }
 
-  function finishFootprint(before, after, note) {
-    // Never wider than the box we started with.
-    const outer = before.reduce((u, b) => [Math.min(u[0], b[0]), Math.min(u[1], b[1]), Math.max(u[2], b[2]), Math.max(u[3], b[3])], [90, 180, -90, -180]);
-    const clipped = after.map(b => [Math.max(b[0], outer[0]), Math.max(b[1], outer[1]), Math.min(b[2], outer[2]), Math.min(b[3], outer[3])])
-      .filter(b => b[0] < b[2] && b[1] < b[3]).map(boxR);
+  function finishFootprint(before, after, note, hot) {
+    // Each result was clipped to the box it came from, so never wider than the start.
+    const clipped = after.filter(b => b[0] < b[2] && b[1] < b[3]).map(boxR);
     const a0 = before.reduce((s, b) => s + areaOf(b), 0), a1 = clipped.reduce((s, b) => s + areaOf(b), 0);
-    return { boxes: clipped.length ? clipped : before.map(boxR),
+    return { hot: hot || [], boxes: clipped.length ? clipped : before.map(boxR),
              note: note === 'tightened' ? 'footprint: ' + clipped.length + ' box' + (clipped.length === 1 ? '' : 'es') + ', ' + Math.round(100 * a1 / (a0 || 1)) + '% of the original area' : 'footprint: ' + note };
   }
   async function tighten(e, run) {
     const r = await run(e.bbox);
-    e.bbox = r.boxes; e.footprint = r.note;
+    e.bbox = r.boxes; e.footprint = r.note; e.hot = r.hot;
     return r;
+  }
+
+  // ── scale ranges (ArcGIS layers drawn only between two scales) ───────────
+  const SCALE_Z0 = 591657527.591555;                      // scale denominator at zoom 0, 96 dpi
+  const scaleToHalf = sc => 128 * sc * 0.0254 / 96;      // half-width (WM m) of a 256 px image at that scale
+  function zoomRange(minScale, maxScale) {
+    const zr = [null, null];
+    if (minScale > 0) zr[0] = Math.max(0, Math.ceil(Math.log2(SCALE_Z0 / minScale)));
+    if (maxScale > 0) zr[1] = Math.min(22, Math.floor(Math.log2(SCALE_Z0 / maxScale)));
+    return (zr[0] == null && zr[1] == null) ? null : zr;
+  }
+  // The sample half-width for a layer visible between minScale and maxScale.
+  function sampleHalf(minScale, maxScale) {
+    let sc = 600 / scaleToHalf(1);                          // the default 1.2 km box, ≈ 1:17 700
+    if (minScale > 0 && sc > minScale * 0.8) sc = minScale * 0.5;
+    if (maxScale > 0 && sc < maxScale * 1.2) sc = maxScale * 2;
+    return scaleToHalf(sc);
+  }
+  // Too zoomed out for the layer to draw at all?
+  const hiddenAt = (wmWidth, px, minScale) => minScale > 0 && (wmWidth / px) * 96 / 0.0254 > minScale;
+
+  // ── coverage through a public geometry service, when the layer's own
+  //    server can't convert its extent (ERDAS servers, some tile-only caches) ──
+  const GEOMETRY_SERVICES = [
+    'https://sampleserver6.arcgisonline.com/arcgis/rest/services/Utilities/Geometry/GeometryServer',
+    'https://utility.arcgisonline.com/arcgis/rest/services/Geometry/GeometryServer'
+  ];
+  async function projectExtent(ext) {
+    if (!ext || !ext.spatialReference || ![ext.xmin, ext.ymin, ext.xmax, ext.ymax].every(v => typeof v === 'number' && isFinite(v))) return null;
+    const sr = ext.spatialReference, wk = sr.latestWkid || sr.wkid;
+    const pts = [];
+    for (const fx of [0, 0.5, 1]) for (const fy of [0, 0.5, 1]) pts.push({ x: ext.xmin + fx * (ext.xmax - ext.xmin), y: ext.ymin + fy * (ext.ymax - ext.ymin) });
+    const geoms = encodeURIComponent(JSON.stringify({ geometryType: 'esriGeometryPoint', geometries: pts }));
+    const inSR = wk ? String(wk) : encodeURIComponent(JSON.stringify(sr));
+    for (const g of GEOMETRY_SERVICES) {
+      const r = await getJSON(g + '/project?inSR=' + inSR + '&outSR=4326&geometries=' + geoms + '&f=json');
+      const out = r.json && r.json.geometries;
+      if (!out || out.length !== pts.length) continue;
+      const ys = out.map(p => p.y), xs = out.map(p => p.x);
+      const b = finiteBox([Math.min(...ys), Math.min(...xs), Math.max(...ys), Math.max(...xs)]);
+      if (b) return b;
+    }
+    return null;
   }
 
   // ── licence sniffing ─────────────────────────────────────────────────────
@@ -446,22 +537,56 @@
     const u = root + '/' + op + '?bbox=' + [ext.xmin, ext.ymin, ext.xmax, ext.ymax].join(',') +
       '&bboxSR=' + (wk || encodeURIComponent(JSON.stringify(sr))) + '&imageSR=4326&size=' + w + ',' + h + '&f=json' + (extra || '');
     const r = await getJSON(u);
-    if (r.error || !r.json || !r.json.extent) return null;
-    return extentToLL(r.json.extent.spatialReference ? r.json.extent : Object.assign({ spatialReference: { wkid: 4326 } }, r.json.extent));
+    const viaServer = (!r.error && r.json && r.json.extent)
+      ? extentToLL(r.json.extent.spatialReference ? r.json.extent : Object.assign({ spatialReference: { wkid: 4326 } }, r.json.extent)) : null;
+    return viaServer || projectExtent(ext);
   }
 
-  function exportUrl(root, layerId, fmt) {
+  function exportUrl(root, layerId, fmt, half) {
     return (lat, lon, box) => {
-      const b = wmBoxAround(lat, lon, box);
+      const b = half ? (([x, y]) => [x - half, y - half, x + half, y + half])(toWM(lat, lon)) : wmBoxAround(lat, lon, box);
       return root + '/export?bbox=' + b.map(v => v.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&dpi=96' +
         '&format=' + (fmt || 'png32') + '&transparent=true&f=image' + (layerId != null ? '&layers=show:' + layerId : '');
     };
   }
 
+  function imageExportUrl(root) {
+    return (lat, lon, box) => {
+      const b = wmBoxAround(lat, lon, box);
+      return root + '/exportImage?bbox=' + b.map(x => x.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image';
+    };
+  }
+
+  // The service's description can't be read from a browser (no CORS, or too
+  // slow): the app will draw it "blind" through /export, so test exactly that,
+  // with the coverage from the source line.
+  async function blind(e, kind, why) {
+    if (!e.boxes.length) return fail(e, why + ' — add a coverage box to the source line to test it blind');
+    e.kind = kind;
+    e.bbox = e.boxes.map(boxR);
+    e.blind = true;
+    const root = kind === 'arcgis-image' ? e.url.replace(/\/(\?.*)?$/, '').replace(/\?.*$/, '') : rootOf(e.url);
+    let urlFor, fpUrl;
+    if (kind === 'arcgis-image') {
+      urlFor = imageExportUrl(root);
+      fpUrl = (wm, W, H) => root + '/exportImage?bbox=' + wm.map(v => v.toFixed(1)).join(',') + '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png&f=image';
+    } else {
+      const id = kind === 'arcgis-layer' ? +e.url.match(/\/MapServer\/(\d+)/i)[1] : null;
+      if (id != null) { e.layer = id; e.linkUrl = root + '/' + id; }
+      urlFor = exportUrl(root, id, 'png32');
+      fpUrl = (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') + '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H +
+        '&format=png32&transparent=true&f=image' + (id != null ? '&layers=show:' + id : '');
+      e.format = 'png32';
+    }
+    await tighten(e, b => footprintImage(b, fpUrl));
+    const v = await judgeAt(e.bbox, urlFor, e.hot);
+    return verdict(e, v, why + '; tested blind with the source line’s box');
+  }
+
   async function doArcgisMap(e) {
     const root = rootOf(e.url);
     const r = await once('ms:' + root, () => getJSON(root + '?f=json'));
-    if (r.error) return fail(e, 'metadata: ' + r.error);
+    if (r.error) return blind(e, 'arcgis-export', 'metadata: ' + r.error);
     const meta = r.json;
     const plan = MapManager._classifyMapServer(meta);
     e.attr = (meta.copyrightText || '').trim();
@@ -472,15 +597,22 @@
       return fail(e, plan.error);
     }
     const box = plan.bounds ? [plan.bounds[0][0], plan.bounds[0][1], plan.bounds[1][0], plan.bounds[1][1]] : await arcgisCoverage(root, meta.fullExtent);
-    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
-    e.bbox = [boxR(box)];
+    if (!box && !e.boxes.length) return fail(e, 'coverage: could not express the extent in latitude/longitude (add a box to the source line)');
+    e.bbox = box ? [boxR(box)] : e.boxes.map(boxR);
+    if (!box) e.coverNote = 'coverage from the source line';
     if (plan.mode === 'tiles') {
       e.kind = 'arcgis-tiles';
       const z = Math.max(plan.minNativeZoom, Math.min(plan.maxNativeZoom, 16));
       e.zoom = [plan.minNativeZoom, plan.maxNativeZoom];
       const tile = (zz, x, y) => root + '/tile/' + (zz + plan.zoomOffset) + '/' + y + '/' + x;
       await tighten(e, b => footprintTiles(b, tile, plan.minNativeZoom, plan.maxNativeZoom));
-      const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return tile(z, x, y); });
+      // Sparse caches: try a few zooms, as for XYZ.
+      let v = null;
+      for (const zz of [z, z - 2, z + 2, z - 4].filter(q => q >= plan.minNativeZoom && q <= plan.maxNativeZoom)) {
+        const w = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, zz); return tile(zz, x, y); }, e.hot);
+        if (!v || w.verdict === 'confirmed' || (w.verdict === 'loaded' && v.verdict !== 'confirmed')) v = w;
+        if (w.verdict === 'confirmed') break;
+      }
       return verdict(e, v, 'tiles z' + plan.minNativeZoom + '–' + plan.maxNativeZoom);
     }
     e.kind = 'arcgis-export';
@@ -488,7 +620,7 @@
     await tighten(e, b => footprintImage(b, (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
       '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png32&transparent=true&f=image'));
     const urlFor = exportUrl(root, null, plan.format);
-    const v = await judgeAt(e.bbox, urlFor);
+    const v = await judgeAt(e.bbox, urlFor, e.hot);
     return verdict(e, v, 'export, EPSG:' + (plan.wkid || '?'));
   }
 
@@ -496,10 +628,10 @@
     const root = rootOf(e.url);
     const id = +e.url.match(/\/MapServer\/(\d+)/i)[1];
     const rm = await once('ms:' + root, () => getJSON(root + '?f=json'));
-    if (rm.error) return fail(e, 'service metadata: ' + rm.error);
+    if (rm.error) return blind(e, 'arcgis-layer', 'service metadata: ' + rm.error);
     const meta = rm.json;
     const lr = await once('ly:' + root + '/' + id, () => getJSON(root + '/' + id + '?f=json'));
-    if (lr.error) return fail(e, 'layer metadata: ' + lr.error);
+    if (lr.error) return blind(e, 'arcgis-layer', 'layer metadata: ' + lr.error);
     const L0 = lr.json;
     e.kind = 'arcgis-layer';
     e.attr = (L0.copyrightText || meta.copyrightText || '').trim();
@@ -507,52 +639,62 @@
     e.wkid = (meta.spatialReference || {}).latestWkid || (meta.spatialReference || {}).wkid;
     const caps = String(meta.capabilities || '');
     if (caps && !/(^|,)\s*Map\s*(,|$)/i.test(caps)) return set(e, 'parked', 'service draws no images on request (capabilities: ' + caps + ')');
+    if (/feature/i.test(L0.type || '') && !/raster|mosaic|image/i.test(L0.type || '')) {
+      return set(e, 'failed', 'layer ' + id + ' is a ' + L0.type + ' (“' + (L0.name || '') + '”: outlines, not photographs)');
+    }
     const box = await arcgisCoverage(root, L0.extent || meta.fullExtent, '&layers=show:' + id);
-    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
-    e.bbox = [boxR(box)];
+    if (!box && !e.boxes.length) return fail(e, 'coverage: could not express the extent in latitude/longitude (add a box to the source line)');
+    e.bbox = box ? [boxR(box)] : e.boxes.map(boxR);
     const base = e.bbox.slice();
     const fmt = /JPG/i.test(meta.supportedImageFormatTypes || '') ? 'png32' : 'png';
-    const fpFor = lid => b => footprintImage(b, (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
-      '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png32&transparent=true&f=image&layers=show:' + lid);
-    await tighten(e, fpFor(id));
-    let v = await judgeAt(e.bbox, exportUrl(root, id, fmt));
+    // Layers drawn only between two scales: footprint and samples inside that range.
+    const scales = L => ({ min: +L.minScale || 0, max: +L.maxScale || 0 });
+    const fpFor = (lid, sc) => b => {
+      const [x0] = toWM(b[0][0], b[0][1]), [x1] = toWM(b[0][2], b[0][3]);
+      if (hiddenAt(Math.abs(x1 - x0), 256, sc.min)) return Promise.resolve({ boxes: b, hot: [], note: 'footprint: layer hidden at overview scale (drawn below 1:' + Math.round(sc.min) + ') — box kept' });
+      return footprintImage(b, (wm, W, H) => root + '/export?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
+        '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png32&transparent=true&f=image&layers=show:' + lid);
+    };
+    let sc = scales(L0);
+    await tighten(e, fpFor(id, sc));
+    let v = await judgeAt(e.bbox, exportUrl(root, id, fmt, sampleHalf(sc.min, sc.max)), e.hot);
     let used = id, note = (L0.type || 'layer') + ' “' + (L0.name || id) + '”';
     // A group that draws nothing by itself: try its image child.
     if (v.verdict !== 'confirmed' && /group/i.test(L0.type || '') && Array.isArray(L0.subLayers)) {
       for (const sl of L0.subLayers) {
         const cr = await once('ly:' + root + '/' + sl.id, () => getJSON(root + '/' + sl.id + '?f=json'));
         if (cr.error || !/raster|mosaic|image/i.test(cr.json.type || '')) continue;
-        const keep = { bbox: e.bbox, footprint: e.footprint };
+        const keep = { bbox: e.bbox, footprint: e.footprint, hot: e.hot };
         e.bbox = base.slice();
-        await tighten(e, fpFor(sl.id));
-        const v2 = await judgeAt(e.bbox, exportUrl(root, sl.id, fmt));
-        if (v2.verdict === 'confirmed' || (v2.verdict === 'loaded' && v.verdict !== 'loaded')) { v = v2; used = sl.id; note += ' → child ' + sl.id + ' “' + (cr.json.name || '') + '”'; break; }
+        const csc = scales(cr.json);
+        await tighten(e, fpFor(sl.id, csc));
+        const v2 = await judgeAt(e.bbox, exportUrl(root, sl.id, fmt, sampleHalf(csc.min, csc.max)), e.hot);
+        if (v2.verdict === 'confirmed' || (v2.verdict === 'loaded' && v.verdict !== 'loaded')) { v = v2; used = sl.id; sc = csc; note += ' → child ' + sl.id + ' “' + (cr.json.name || '') + '”'; break; }
         Object.assign(e, keep);
       }
     }
     e.layer = used;
     e.linkUrl = root + '/' + used;
+    e.zr = zoomRange(sc.min, sc.max);
+    if (e.zr) note += ', drawn at zoom ' + (e.zr[0] == null ? '' : e.zr[0]) + '–' + (e.zr[1] == null ? '' : e.zr[1]);
     return verdict(e, v, note);
   }
 
   async function doArcgisImage(e) {
     const root = e.url.replace(/\/(\?.*)?$/, '').replace(/\?.*$/, '');
     const r = await getJSON(root + '?f=json');
-    if (r.error) return fail(e, 'metadata: ' + r.error);
+    if (r.error) return /couldn't access|not authori|token/i.test(r.error) ? fail(e, 'metadata: ' + r.error) : blind(e, 'arcgis-image', 'metadata: ' + r.error);
     const meta = r.json;
     e.kind = 'arcgis-image';
     e.attr = (meta.copyrightText || '').trim();
     e.licence = licenceOf(meta.copyrightText, meta.description, meta.serviceDescription);
     e.wkid = (meta.spatialReference || meta.extent && meta.extent.spatialReference || {}).latestWkid || (meta.spatialReference || {}).wkid;
     const box = await arcgisCoverage(root, meta.extent || meta.fullExtent);
-    if (!box) return fail(e, 'coverage: could not express the extent in latitude/longitude');
-    e.bbox = [boxR(box)];
+    if (!box && !e.boxes.length) return fail(e, 'coverage: could not express the extent in latitude/longitude (add a box to the source line)');
+    e.bbox = box ? [boxR(box)] : e.boxes.map(boxR);
     await tighten(e, b => footprintImage(b, (wm, W, H) => root + '/exportImage?bbox=' + wm.map(v => v.toFixed(1)).join(',') +
       '&bboxSR=3857&imageSR=3857&size=' + W + ',' + H + '&format=png&f=image'));
-    const v = await judgeAt(e.bbox, (lat, lon, box) => {
-      const b = wmBoxAround(lat, lon, box);
-      return root + '/exportImage?bbox=' + b.map(x => x.toFixed(2)).join(',') + '&bboxSR=3857&imageSR=3857&size=256,256&format=jpgpng&f=image';
-    });
+    const v = await judgeAt(e.bbox, imageExportUrl(root), e.hot);
     return verdict(e, v, 'image service, EPSG:' + (e.wkid || '?'));
   }
 
@@ -581,7 +723,14 @@
       if (name) layers.push({ name, title: txt(el, 'Title'), crs, box, leaf: !kids.length, time: dims[0] || '' });
       kids.forEach(k => walk(k, crs, box));
     })(Array.from(root.getElementsByTagNameNS('*', 'Capability'))[0] ? Array.from(root.getElementsByTagNameNS('*', 'Capability'))[0] : root, [], null);
-    return { version, fmts, layers, access };
+    // Where GetMap requests go, per the capabilities themselves.
+    let getMapUrl = '';
+    const gm = Array.from(doc.getElementsByTagNameNS('*', 'GetMap'))[0];
+    if (gm) {
+      const or = Array.from(gm.getElementsByTagNameNS('*', 'OnlineResource'))[0];
+      if (or) getMapUrl = or.getAttributeNS('http://www.w3.org/1999/xlink', 'href') || or.getAttribute('xlink:href') || '';
+    }
+    return { version, fmts, layers, access, getMapUrl };
   }
 
   function wmsParts(url) {
@@ -599,12 +748,26 @@
   }
   const wmsJoin = base => base + (base.includes('?') ? '&' : '?');
 
-  async function doWms(e) {
-    const { base, layer, time } = wmsParts(e.url);
+  // pre: { capsText } when the source line itself was a capabilities document
+  // (Victoria's datacube .xml): requests then go where the capabilities say.
+  async function doWms(e, pre) {
+    let { base, layer, time } = wmsParts(e.url);
     e.kind = 'wms';
-    const cr = await once('wms:' + base, () => getText(wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetCapabilities'));
+    const cr = pre ? { ok: true, text: pre.capsText }
+      : await once('wms:' + base, () => getText(wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetCapabilities'));
     let caps = null;
     if (!cr.error && cr.ok) caps = parseWmsCaps(cr.text);
+    if (caps && caps.getMapUrl) {
+      // Use the advertised GetMap address when it is on the same host (some
+      // servers advertise an internal name), or always for a capabilities document.
+      try {
+        const g = new URL(caps.getMapUrl, e.url);
+        if (pre || g.host === new URL(e.url).host) {
+          const gp = wmsParts(g.href);
+          if (pre) base = gp.base;
+        }
+      } catch (err) {}
+    }
     let L = null, version = '1.3.0', crs = 'EPSG:3857', fmt = 'image/jpeg', capsNote = '';
     if (caps) {
       version = /^1\.1/.test(caps.version) ? '1.1.1' : '1.3.0';
@@ -641,13 +804,20 @@
       '&LAYERS=' + encodeURIComponent(name) + '&STYLES=' + (version === '1.3.0' ? '&CRS=' : '&SRS=') + crs +
       '&BBOX=' + wm.map(x => x.toFixed(1)).join(',') + '&WIDTH=' + W + '&HEIGHT=' + H +
       '&FORMAT=' + encodeURIComponent(png ? 'image/png' : fmt) + '&TRANSPARENT=TRUE' + (time ? '&TIME=' + encodeURIComponent(time) : '')));
-    const v = await judgeAt(e.bbox, (lat, lon, bb) => {
+    const sampleFor = f => (lat, lon, bb) => {
       const b = wmBoxAround(lat, lon, bb);
       return wmsJoin(base) + 'SERVICE=WMS&REQUEST=GetMap&VERSION=' + version + '&LAYERS=' + encodeURIComponent(name) + '&STYLES=' +
         (version === '1.3.0' ? '&CRS=' : '&SRS=') + crs + '&BBOX=' + b.map(x => x.toFixed(2)).join(',') +
-        '&WIDTH=256&HEIGHT=256&FORMAT=' + encodeURIComponent(fmt) + '&TRANSPARENT=' + (fmt === 'image/png' ? 'TRUE' : 'FALSE') +
+        '&WIDTH=256&HEIGHT=256&FORMAT=' + encodeURIComponent(f) + '&TRANSPARENT=' + (f === 'image/png' ? 'TRUE' : 'FALSE') +
         (time ? '&TIME=' + encodeURIComponent(time) : '');
-    });
+    };
+    let v = await judgeAt(e.bbox, sampleFor(fmt), e.hot);
+    // A layer that refuses JPEG (HTTP 400) while the service lists it: try PNG.
+    if (v.verdict === 'failed' && fmt !== 'image/png' && /HTTP 4|not an image/.test(v.why)) {
+      const v2 = await judgeAt(e.bbox, sampleFor('image/png'), e.hot);
+      if (v2.verdict !== 'failed') { v = v2; fmt = 'image/png'; e.wms.format = fmt; }
+    }
+    if (pre) e.wms.base = base;
     return verdict(e, v, 'WMS ' + version + ' ' + crs + ' ' + fmt + capsNote);
   }
 
@@ -658,7 +828,7 @@
     await tighten(e, b => footprintTiles(b, (z, x, y) => e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y), 2, 16));
     let best = null;
     for (const z of [15, 13, 17, 11]) {
-      const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); });
+      const v = await judgeAt(e.bbox, (lat, lon) => { const [x, y] = tileXY(lat, lon, z); return e.url.replace('{z}', z).replace('{x}', x).replace('{y}', y); }, e.hot);
       if (!best || v.verdict === 'confirmed' || (v.verdict === 'loaded' && best.verdict !== 'confirmed')) best = Object.assign(v, { z });
       if (v.verdict === 'confirmed') break;
     }
@@ -699,6 +869,7 @@
   async function doUnknown(e) {
     e.kind = 'unknown';
     const r = await getText(e.url);
+    if (r.ok && /<(\w+:)?WMS_Capabilities|<WMT_MS_Capabilities/.test(r.text || '')) return doWms(e, { capsText: r.text });
     return fail(e, 'unrecognised source type' + (r.text ? ': ' + r.text.slice(0, 200).replace(/\s+/g, ' ') : r.error ? ' (' + r.error + ')' : ''));
   }
 
@@ -707,11 +878,13 @@
   function fail(e, why) { return set(e, 'failed', why); }
   function verdict(e, v, note) {
     e.sample = v.url;
-    return set(e, v.verdict, note + ' · ' + v.verdict + ': ' + v.why + (e.footprint ? ' · ' + e.footprint : ''));
+    return set(e, v.verdict, note + (e.coverNote ? ', ' + e.coverNote : '') + ' · ' + v.verdict + ': ' + v.why + (e.footprint ? ' · ' + e.footprint : ''));
   }
 
   async function process(e) {
-    e.status = 'running'; e.detail = ''; draw(e);
+    e.status = 'running'; e.detail = '';
+    ['kind', 'bbox', 'hot', 'footprint', 'coverNote', 'blind', 'layer', 'linkUrl', 'zr', 'wms', 'format', 'zoom', 'sample'].forEach(k => delete e[k]);
+    draw(e);
     const k = kindOf(e.url);
     try {
       if (k === 'arcgis-map') return await doArcgisMap(e);
@@ -801,7 +974,9 @@
         const o = { r: e.region, l: e.label, y: yearOf(e.label), u: e.linkUrl || e.url, k: e.kind, b: e.bbox, s: e.status };
         if (e.attr) o.a = e.attr.slice(0, 200);
         if (e.licence) o.lic = e.licence;
-        if (e.kind === 'arcgis-layer') o.layer = e.layer;
+        if (e.layer != null) o.layer = e.layer;
+        if (e.zr) o.zr = e.zr;
+        if (e.blind) o.blind = 1;
         if (e.kind === 'arcgis-export' && e.format) o.f = e.format;
         if (e.kind === 'arcgis-tiles' && e.zoom) o.z = e.zoom;
         if (e.kind === 'wms') o.wms = e.wms;
