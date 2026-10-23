@@ -28,6 +28,11 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.7: the Aerial date list offers only the releases in which the imagery at
+  the map's centre changed, labelled with when those photographs were taken
+  (GeosonifyWayback.localChanges / captureInfo), rebuilt when the map settles
+  while the list is showing; "Every release…" gives the full list.
+
   v1.6: imagery travels with every link (?basemap=, built in index.html from
   GeosonifyBasemap.shareInfo()); applyFromURL honours it on any link, not
   only display links. A pasted source is remembered on the device and offered
@@ -47,7 +52,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.6';
+  const __FAQ_UI_VER__ = 'v1.7';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -431,7 +436,7 @@
       <button class="basemap-chip" data-basemap="sky">Sky</button>
     </div>
     <div class="basemap-wayback-row" id="basemapWaybackRow" style="display:none;">
-      <label for="basemapWaybackSelect">Aerial as published</label>
+      <label for="basemapWaybackSelect" id="basemapWaybackLabel">Aerial as published</label>
       <select id="basemapWaybackSelect"><option value="">Latest</option></select>
     </div>
     <p class="basemap-warn" id="basemapWarn"></p>`;
@@ -892,23 +897,101 @@
     const setWarn = _warner(scope.querySelector('#basemapWarn'));
     sel.addEventListener('change', () => {
       const v = sel.value;
+      if (v === '__all') { _wbShowAll = true; _wbKey = null; _syncWaybackRow(); return; }
       const source = v ? 'aerial@' + v : 'aerial';
       setWarn(v ? 'Loading Aerial imagery from ' + v + '…' : '');
       _choose(source, setWarn, {}, () => setWarn(''));
     });
   }
 
-  let _waybackFilled = false;
-  function _fillWayback(sel) {
+  /*
+    The date list offers the releases in which the imagery at the MAP'S CENTRE
+    actually changed (GeosonifyWayback.localChanges: one small request per real
+    change), each labelled with when its photographs were taken there, where
+    Esri says ("2019-06-26 · photos 2015-03"). It is rebuilt when the map
+    settles, only while the row is showing, and cached per tile. "Every
+    release…" switches to the full list. If the change service can't be
+    reached, the full list is shown, as before.
+  */
+  let _wbShowAll = false, _wbKey = null, _wbSeq = 0, _wbTimer = null, _wbMapHooked = false;
+
+  function _wbCentre() {
+    try {
+      const m = (typeof MapManager !== 'undefined' && MapManager.getMap) ? MapManager.getMap() : null;
+      if (!m) return null;
+      const c = m.getCenter();
+      return { lat: c.lat, lon: ((c.lng + 180) % 360 + 360) % 360 - 180, zoom: m.getZoom(), map: m };
+    } catch (e) { return null; }
+  }
+
+  function _wbOptions(sel, items, wantDate, note) {
+    // items: [{date, label}] newest first. Keep the chosen date selectable even
+    // if this spot did not change in that release.
+    const have = new Set(items.map(i => i.date));
+    const rows = ['<option value="">' + _esc(note.latest || 'Latest') + '</option>']
+      .concat(items.map(i => '<option value="' + i.date + '">' + _esc(i.label) + '</option>'));
+    if (wantDate && !have.has(wantDate)) rows.splice(1, 0, '<option value="' + wantDate + '">' + _esc(wantDate + ' (no change here)') + '</option>');
+    if (!_wbShowAll) rows.push('<option value="__all">Every release…</option>');
+    sel.innerHTML = rows.join('');
+    sel.value = wantDate || '';
+  }
+  function _esc(t) { return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+  function _fillWayback(sel, wantDate) {
     const W = global.GeosonifyWayback;
+    const lab = document.getElementById('basemapWaybackLabel');
     if (!W || !sel) return;
-    const render = () => {
-      const keep = sel.value;
-      sel.innerHTML = '<option value="">Latest</option>' +
-        W.list().map(r => '<option value="' + r.date + '">' + r.date + '</option>').join('');
-      sel.value = keep;
+    const c = _wbCentre();
+    if (c && !_wbMapHooked) {
+      _wbMapHooked = true;
+      c.map.on('moveend', () => {
+        const row = document.getElementById('basemapWaybackRow');
+        if (!row || row.style.display === 'none' || _wbShowAll) return;
+        clearTimeout(_wbTimer);
+        _wbTimer = setTimeout(_syncWaybackRow, 600);
+      });
+    }
+    const all = () => {
+      if (lab) lab.textContent = 'Aerial as published';
+      _wbOptions(sel, W.list().map(r => ({ date: r.date, label: r.date })), wantDate, {});
     };
-    if (!_waybackFilled) { _waybackFilled = true; render(); W.load().then(() => { render(); _syncWaybackRow(); }); }
+    if (_wbShowAll || !c) { all(); return; }
+    const tz = Math.max(10, Math.min(19, Math.round(c.zoom))), t = W._tileOf(c.lat, c.lon, tz);
+    const key = t.z + '/' + t.y + '/' + t.x + '/' + (wantDate || '');            // same tile, same answer
+    if (key === _wbKey) { sel.value = wantDate || ''; return; }
+    _wbKey = key;
+    const seq = ++_wbSeq;
+    if (lab) lab.textContent = 'Aerial: finding changes here…';
+    W.localChanges(c.lat, c.lon, c.zoom).then(list => {
+      if (seq !== _wbSeq) return;
+      if (lab) lab.textContent = 'Aerial, changes here';
+      const items = list.map(r => ({ date: r.date, label: r.date, release: r.release }));
+      const note = {};
+      _wbOptions(sel, items, wantDate, note);
+      if (!W.hasCaptureDates()) return;
+      // Capture dates, newest first, two at a time; the newest also labels "Latest".
+      const latest = W.list()[0];
+      const jobs = (latest ? [{ release: latest.release, latest: true }] : []).concat(items);
+      let i = 0;
+      const next = () => {
+        if (seq !== _wbSeq || i >= jobs.length) return;
+        const j = jobs[i++];
+        W.captureInfo(j.release, c.lat, c.lon, c.zoom).then(info => {
+          if (seq !== _wbSeq) return;
+          if (info && info.date) {
+            const photos = 'photos ' + info.date.slice(0, 7);
+            if (j.latest) note.latest = 'Latest · ' + photos;
+            else j.label = j.date + ' · ' + photos;
+            _wbOptions(sel, items, sel.value && sel.value !== '__all' ? sel.value : wantDate, note);
+          }
+          next();
+        });
+      };
+      next(); next();
+    }).catch(() => {
+      if (seq !== _wbSeq) return;
+      all();                                             // change service unreachable: every release
+    });
   }
 
   function _syncWaybackRow() {
@@ -919,17 +1002,13 @@
     const k = _kindOf(active);
     const show = (k === 'aerial' || k === 'wayback') && !skyIsOpen() && !skyModeOn() && !!global.GeosonifyWayback;
     row.style.display = show ? 'flex' : 'none';
-    if (!show) return;
-    _fillWayback(sel);
+    if (!show) { _wbKey = null; return; }
     let want = '';
     if (k === 'wayback') {
-      const d = String(active).slice(7);
-      const r = global.GeosonifyWayback.resolve(d);
+      const r = global.GeosonifyWayback.resolve(String(active).slice(7));
       want = r ? r.date : '';
-      // A linked date between releases: show the release actually displayed.
-      if (want && !sel.querySelector('option[value="' + want + '"]')) want = '';
     }
-    sel.value = want;
+    _fillWayback(sel, want);
   }
 
   // ── The paste-your-own card in the FAQ pane ────────────────────────────────
