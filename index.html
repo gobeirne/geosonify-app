@@ -816,6 +816,8 @@
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261014c"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261023a"></script>
 <script src="js/lib/geosonify-annotations.js?v=20261014c"></script>
+<!-- ?wander=: the Sun, Moon and planets as paths. Astronomy Engine loads only when one is asked for. -->
+<script src="js/lib/geosonify-wanderers.js?v=20261024a"></script>
 <script src="js/lib/geosonify-sky-export.js?v=20261014c"></script>
 <script src="js/lib/decimal.min.js?v=20260622"></script>
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
@@ -2970,7 +2972,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // pipeline calls setupDisplayViewer itself when it finishes, so skip here.
       if (window.DISPLAY_MODE) {
         const _up = new URLSearchParams(window.location.search);
-        const _pipelineActive = ['address','place','wikidata','osmrelation','geojson','kml','gpx']
+        const _pipelineActive = ['address','place','wikidata','osmrelation','geojson','kml','gpx','wander']
           .some(k => _up.has(k));
         if (!_pipelineActive) {
           setTimeout(setupDisplayViewer, 300);
@@ -3145,7 +3147,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (becameDisplay) {
           try { syncLatticeFadeRow(); } catch (e) {}
           const _dp = new URLSearchParams(decrypted);
-          const _pipe = ['address','place','wikidata','osmrelation','geojson','kml','gpx'].some(k => _dp.has(k));
+          const _pipe = ['address','place','wikidata','osmrelation','geojson','kml','gpx','wander'].some(k => _dp.has(k));
           if (!_pipe) setTimeout(setupDisplayViewer, 300);
         }
       }
@@ -3544,7 +3546,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         geojson:     urlParams.get('geojson'),
         kml:         urlParams.get('kml'),
         gpx:         urlParams.get('gpx'),
-        address:     urlParams.get('address')
+        address:     urlParams.get('address'),
+        // ?wander=jupiter,from:2026-10-24 — computed here, not fetched
+        // (geosonify-wanderers.js). Last, so every older import keeps priority.
+        wander:      urlParams.get('wander')
       };
       
       // ── Part 2: explicit address seed format ─────────────────
@@ -3581,6 +3586,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           result:   urlParams.get('result') || 'r',          // r=redirect, s=stay, c=copy
           seedFormat: _seedFormat                            // Part 2: explicit address seed format (or null)
         };
+        // A wander request is a link to a computed path, not a file to
+        // inspect: unless it says otherwise it converts straight away.
+        if (importType === 'wander' && !urlParams.has('auto')) pipeline.auto = 1;
+        // The frame the request link named, read here: by the time the import
+        // runs, the frame in AppState may already have been reset.
+        if (importType === 'wander') pipeline.wanderFrame = urlParams.get('frame') || null;
         
         // Immediately strip sensitive params from browser history
         // The pipeline URL is ephemeral — passwords should never persist.
@@ -10455,6 +10466,39 @@ function encodeRaw(sol) {
             const pcResult = await PropertyImport.lookupAddressAuto(value, { onStatus });
             _showParcelAttribution(pcResult.attribution);
             processLoadedShape(pcResult.coords, pcResult.name, pcResult.groups || undefined);
+            break;
+          }
+
+          case 'wander': {
+            // The Sun, Moon or a planet over a date range. The path goes through
+            // the same pipeline as any import, so the link it turns into is an
+            // ordinary path link: lbl= ticks, and frame=icrs for a moving starpin.
+            document.getElementById('shapeImportLoadingText').textContent = 'Working out where it goes...';
+            if (typeof GeosonifyWanderers === 'undefined') throw new Error('The wanderers module did not load.');
+            const w = await GeosonifyWanderers.build(value);
+            // An explicit frame= must agree with the mapping; it never picks one.
+            const asked = pipeline && pipeline.wanderFrame ? String(pipeline.wanderFrame).trim().toLowerCase() : null;
+            if (asked && w.frame === 'earth' && asked !== 'earth')
+              throw new Error('wander: a zenith path is a place on Earth, so it cannot take frame=' + asked + '.');
+            if (asked && w.frame === 'icrs' && asked !== 'icrs')
+              throw new Error('wander: a moving starpin is an ICRS position, so it cannot take frame=' + asked + '.');
+            if (typeof AppState !== 'undefined' && AppState.set) {
+              AppState.set('frame', w.frame === 'icrs'
+                ? { key: 'icrs', sphere: 'sky', epoch: 'J2000', explicit: true }
+                : { key: 'earth', sphere: 'earth', epoch: null, explicit: false });
+            }
+            // The ticks become lbl= entries. A label or style the request link
+            // carried itself wins over the computed one on the same point.
+            if (typeof GeosonifyAnnotations !== 'undefined') {
+              const own = GeosonifyAnnotations.get();
+              const ann = own ? GeosonifyAnnotations.clone(own) : GeosonifyAnnotations.empty();
+              Object.keys(w.labels).forEach(i => {
+                if (ann.labels[i] === undefined) GeosonifyAnnotations.addLabel(ann, i + ':' + w.labels[i]);
+              });
+              GeosonifyAnnotations.set(ann);
+            }
+            processLoadedShape(w.coords.map(c => ({ lat: c[0], lon: c[1] })), w.name);   // the import shape is {lat, lon}
+            setTimeout(() => showToast(w.note), 1200);
             break;
           }
 
