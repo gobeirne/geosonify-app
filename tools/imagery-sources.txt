@@ -594,6 +594,47 @@ Espoo / Kauniainen | 2023 | https://kartat.espoo.fi/teklaogcweb/wms.ashx?layers=
 Sweden | 1960 reference-year mosaic | https://maps.lantmateriet.se/historiska-ortofoton/wms/v1?layers=OI.Histortho_60 | 55.3,11.0,69.1,24.2
 Sweden | 1975 reference-year mosaic | https://maps.lantmateriet.se/historiska-ortofoton/wms/v1?layers=OI.Histortho_75 | 55.3,11.0,69.1,24.2
 
+# ── United Kingdom ───────────────────────────────────────────────────────────
+# Rights: RAF photography from the 1940s–50s is Crown copyright that has run
+# out. Most modern council imagery is licensed from commercial suppliers
+# (Bluesky, Getmapping, The GeoInformation Group) for the council's own use;
+# layers whose metadata names such a supplier are commented out below until
+# their reuse terms are confirmed.
+Belfast | 17 March 1952 RAF | https://tiles.arcgis.com/tiles/HRuPlEcokYlz4mdz/arcgis/rest/services/Belfast_RAF_1952/MapServer
+Wolverhampton | 1945 RAF | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/10
+Wolverhampton | 2004 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/9
+Wolverhampton | 2006 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/8
+Wolverhampton | 2006 low resolution | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/7
+Wolverhampton | 2009 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/6
+Wolverhampton | 2012 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/5
+Wolverhampton | 2013 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/4
+Wolverhampton | 2016 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/3
+Wolverhampton | 2019–2020 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/1
+Wolverhampton | 2022 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/0
+# Commercial supplier (Bluesky): Wolverhampton | 2016 Bluesky | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/2
+York | 1936 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/11
+York | 1951 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/10
+York | 1962 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/9
+York | 1971 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/8
+York | 2002 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/7
+York | 2007 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/6
+York | 2017 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/5
+York | 2023 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/4
+York | 2025 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/18
+# Commercial suppliers (The GeoInformation Group; Bluesky):
+#   Birmingham | 1940s | https://maps.birmingham.gov.uk/server/rest/services/Internet_HLC_Maps/MapServer/28
+#   Birmingham | 2016 | https://maps.birmingham.gov.uk/server/rest/services/Internet_HLC_Maps/MapServer/18
+# Norfolk: cached in British National Grid; their layers are described as vector
+# maps, so the builder decides whether these hold photographs at all.
+Norfolk | 1945–1946 | https://maps.norfolk.gov.uk/arcgis/rest/services/backdrops/ncc_1946/MapServer
+Norfolk | 1988 | https://maps.norfolk.gov.uk/arcgis/rest/services/basemaps/ncc_1988/MapServer
+Norfolk | 1988 (alternative) | https://maps.norfolk.gov.uk/arcgis/rest/services/backdrops/ncc_1988/MapServer
+# Unverified template from a third-party list; the builder will say whether it works:
+Scotland (NLS air photo mosaics) | 1944–1950 | https://geo.nls.uk/maps/air-photos/{z}/{x}/{y}.png | 54.6,-8.7,60.9,-0.7
+# Not usable (archives, sign-in or licensed): NLS search, NCAP, Layers of London /
+# OldMapsOnline (RAF 1944–49), Welsh Government aerial register, RCAHMW, Tailte
+# Éireann MapGenie (1995–2018), APGB/Getmapping, Norfolk historic-maps viewer.
+
 # ── Chosen from capabilities documents ──────────────────────────────────────
 # Estonia (kaart.maaamet.ee/wms/ajalooline): orthophoto layers only; the rest are historical maps.
 Estonia | Tallinn orthophoto 2000 | https://kaart.maaamet.ee/wms/ajalooline?layers=tln2000v | 57.5,21.7,59.7,28.2
