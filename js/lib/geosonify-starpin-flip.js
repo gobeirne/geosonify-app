@@ -309,6 +309,8 @@ var GeosonifyStarpinFlip = (function () {
     '.spf-sheet[hidden]{display:none}',
     '.spf-sheet h3{margin:0 0 .15rem;font-size:1rem;font-weight:650;color:#fff}',
     '.spf-sheet .sub{color:rgba(233,228,214,.7);font-size:.8rem;margin-bottom:.55rem}',
+    '.spf-sheet .words{margin:.05rem 0 .2rem;font-size:.95rem;font-weight:650;color:var(--spf-sun);overflow-wrap:anywhere}',
+    '.spf-sheet .words small{font-size:.72rem;font-weight:500;color:rgba(233,228,214,.6);margin-right:.4rem}',
     '.spf-sheet p{margin:.35rem 0}',
     '.spf-sheet .row{display:flex;gap:.5rem;margin-top:.8rem;flex-wrap:wrap}',
     '.spf-sheet button{font:inherit;font-size:.85rem;font-weight:600;padding:.55rem .95rem;',
@@ -1325,7 +1327,9 @@ var GeosonifyStarpinFlip = (function () {
         dist = '<p>' + (dm < 1000 ? Math.round(dm) + ' m' : (dm / 1000).toFixed(dm < 10000 ? 1 : 0) + ' km') +
                ' from where you are.</p>';
       }
+      var fw = starWords(s);
       sheet.innerHTML = '<h3>' + esc(s.name || 'Starpin') + '</h3>' +
+        (fw ? '<div class="words"><small>HEALPix words</small>' + esc(fw.text) + '</div>' : '') +
         '<div class="sub">' + esc(mag) + ' \u00B7 on the ground at ' + s.lat.toFixed(5) + ', ' + s.lon.toFixed(5) + '</div>' +
         '<div class="reach">' + reachIcon(s.reach) + '<p>' + reachText(s.reach) + '</p></div>' + dist +
         '<div class="row"><button type="button" data-a="down">' + (face === 'sky' ? 'Look down here' : 'Look up here') + '</button>' +
@@ -1339,6 +1343,17 @@ var GeosonifyStarpinFlip = (function () {
       var pk = sheet.querySelector('[data-a=pick]');
       if (pk) pk.onclick = function () { opts.onSelect({ kind: 'star', data: s }); closeSheet(); };
       sheet.querySelector('[data-a=close]').onclick = closeSheet;
+    }
+    // The four words this starpin gives Word Lab when bagged: find-words-v1 in
+    // geosonify-starpin.js, fed the same 1e-7-degree address the record will
+    // store (from ra/dec when the star carries them, as the bag button does).
+    function starWords(s) {
+      if (!S || !S.findWords) return null;
+      try {
+        var t = (s.ra != null && s.dec != null) ? S.starpinAddress(String(s.ra), String(s.dec))
+              : { lat_1e7: Math.round(s.lat * 1e7), lon_1e7: Math.round(s.lon * 1e7) };
+        return S.findWords(t);
+      } catch (e) { return null; }
     }
     function showAbout() {
       var sv3 = survey();

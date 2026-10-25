@@ -55,7 +55,13 @@ Challenge files live in `challenges/*.json` and are built into the game. To set 
 node tools/reconstruct_finds.js starpin-records-YYYY-MM-DD.json path/to/starpin/sources finds.json
 ```
 
-This gives the dated BIP39 words of every find. Group them by window to form hands (see `challenges/retrospective_2026-08_to_10.json` for the format).
+This gives the dated BIP39 words of every find under find-words-v1 (`GeosonifyStarpin.findWords`, the same rule the Starpin app shows when you tap a starpin or cornerstone). Then set the hands, stretch targets and bot pars for the windows defined in a challenge file:
+
+```
+node tools/build_challenges.js finds.json challenges/retrospective_2026-08_to_10.json [challenge-id ...]
+```
+
+A hand is every word first found inside the window. The bot par is a floor from a greedy portfolio search (bot-par-v2, recorded in the file as `botParMethod`; about 15 s per challenge); passing ids recomputes only those. In the game, a challenge's hand is used as given.
 
 ## Scoring (Phase 2)
 

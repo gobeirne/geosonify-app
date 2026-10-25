@@ -205,6 +205,8 @@ dl{margin:.7rem 0 0}
   font-weight:700;word-break:break-all}
 #info a{color:var(--moss-deep);font-weight:700}
 @media (prefers-color-scheme:dark){#info a{color:var(--moss)}}
+#info .findwords{margin:-.15rem 0 .55rem;font-size:1rem;font-weight:800;color:var(--ink);overflow-wrap:anywhere}
+#info .findwords small{font-size:.72rem;font-weight:600;color:var(--ink-2);margin-right:.45rem}
 .close,.danger{font-size:.78rem;padding:.45rem .85rem;width:auto;border-radius:12px;
   box-shadow:0 3px 0 color-mix(in srgb,var(--moss) 50%,transparent)}
 .danger{border-color:var(--rust);color:var(--rust-deep);
@@ -740,7 +742,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
-<script src="js/lib/geosonify-starpin.js?v=20261017"></script>
+<script src="js/lib/geosonify-starpin.js?v=20261025"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
@@ -752,7 +754,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261001"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261025"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
 
@@ -2326,6 +2328,18 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     return th;
   }
 
+  // The four HEALPix words a find gives Word Lab (find-words-v1 in
+  // geosonify-starpin.js), from the same target the bag button records.
+  function findWordsEl(target) {
+    var fw = null;
+    try { fw = S.findWords ? S.findWords(target) : null; } catch (e) {}
+    if (!fw) return null;
+    var d = el('div', 'findwords');
+    d.appendChild(el('small', null, 'HEALPix words'));
+    d.appendChild(document.createTextNode(fw.text));
+    return d;
+  }
+
   function showInfo(sel) {
     var box = $('info'); box.textContent = '';
     if (!sel) { box.hidden = true; return; }
@@ -2346,6 +2360,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         var t0 = F.tierOf(v0.tierOrder, v0.degree);
         pm.appendChild(document.createTextNode('nearest cornerstone ' + v0.name));
         pm.appendChild(el('br'));
+        var pw = findWordsEl({ cornerstone: v0.name });
+        if (pw) { pw.style.margin = '.1rem 0 .2rem'; pm.appendChild(pw); }
         pm.appendChild(document.createTextNode(
           Math.round(v0.distanceM) + ' m away \u00B7 lines of order ' + v0.crossOrder +
           ' and ' + v0.intrinsicOrder + ' cross here \u00B7 tier ' +
@@ -2394,6 +2410,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     } else if (sel.kind === 'cornerstone') {
       var d = sel.data;
       box.appendChild(el('h3', null, d.name));
+      var cw = findWordsEl({ cornerstone: d.name });
+      if (cw) box.appendChild(cw);
       var visits = log.current().filter(function (r) {
         return r.target && csName(r.target.cornerstone) === csName(d.name); });
       var m = el('div', 'meta');
@@ -2420,6 +2438,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     } else if (sel.kind === 'star') {
       var st = sel.data;
       box.appendChild(el('h3', null, st.name || 'unnamed source'));
+      var sw = null;
+      try {
+        sw = findWordsEl(st.ra != null ? S.starpinAddress(String(st.ra), String(st.dec))
+                                       : { lat_1e7: Math.round(st.lat * 1e7), lon_1e7: Math.round(st.lon * 1e7) });
+      } catch (e) {}
+      if (sw) box.appendChild(sw);
       if (SN && SN.thumbnailUrl) {
         box.appendChild(skyThumb(st, 48));
       }

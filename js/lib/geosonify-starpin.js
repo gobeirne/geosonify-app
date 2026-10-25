@@ -846,6 +846,69 @@ var GeosonifyStarpin = (function () {
              corners: list.length };
   }
 
+  // ── find-words-v1: the words a find gives Word Lab ───────────────────────
+  //
+  // Every find (starpin or cornerstone) yields the 4-word HEALPix address of
+  // its place: healpix-bip39-v1 (geosonify-hpwords.js), English BIP39 list,
+  // raw indices, no checksum, no passphrase. Those four words go into the
+  // finder's Word Lab vocabulary, so the rule must give the SAME words on
+  // every device, now and when an old record is replayed. It works from the
+  // record's target, never from a screen position:
+  //
+  //   starpin      the 1e-7-degree address the record stores (lat_1e7,
+  //                lon_1e7), which starpinAddress() derives from Gaia ra/dec.
+  //                An 11-digit cell is ~6 m; landing within float error of
+  //                one of its edges is negligible.
+  //
+  //   cornerstone  NOT the vertex's coordinates. A cornerstone is, by
+  //                definition, a corner shared by four 4-word cells, so
+  //                encoding the point leaves the choice to floating-point
+  //                rounding. Measured: all 300 Christchurch cornerstones
+  //                tried changed words under a 1e-12-degree nudge, and
+  //                rounding put the point in the named cell only 12 times in
+  //                2000. Math.sin/atan are not bit-identical across browser
+  //                engines, so the float choice could differ between phones.
+  //                Instead, purely in integers: the name V:<cell>c<k> says
+  //                "corner k of <cell>"; descend from <cell> toward that
+  //                corner (child digit k at every level, since corner index
+  //                and nested child digit are both 2v + u) down to the 4-word
+  //                order. The result is the 4-word cell inside the named cell
+  //                that has the cornerstone as its corner k.
+  //
+  // Needs geosonify-hpwords.js (HealpixWords); returns null without it.
+
+  var FIND_WORDS_RULE = 'find-words-v1', FIND_WORDS_N = 4, FIND_WORDS_LANG = 'english';
+
+  function hpw() {
+    if (typeof HealpixWords !== 'undefined') return HealpixWords;
+    if (typeof globalThis !== 'undefined' && globalThis.HealpixWords) return globalThis.HealpixWords;
+    return null;
+  }
+
+  // target: a record target, { cornerstone: name } or { lat_1e7, lon_1e7 }.
+  // -> { rule, indices: [4 ints], words: [4 strings], text: 'a-b-c-d' } or null
+  function findWords(target) {
+    var HW = hpw();
+    if (!HW || !target) return null;
+    var idx = null;
+    if (target.cornerstone) {
+      var name = String(target.cornerstone).trim();
+      if (!/c[0-3]$/.test(name)) name = canonicaliseCornerstone(name);   // legacy; throws if ambiguous
+      var m = /^V:f(\d{1,2})\.([0-3]+)c([0-3])$/.exec(name);
+      if (!m) throw new Error('findWords: not a cornerstone name: ' + name);
+      var k = HW.orderForWords(FIND_WORDS_N), digits = m[2].split('').map(Number);
+      if (digits.length > k) throw new Error('findWords: cornerstone finer than the 4-word order');
+      while (digits.length < k) digits.push(+m[3]);
+      idx = HW.pathToIndices(+m[1], digits, FIND_WORDS_N);
+    } else if (target.lat_1e7 != null && target.lon_1e7 != null) {
+      idx = HW.encodeIndices(target.lat_1e7 / UNIT, target.lon_1e7 / UNIT, FIND_WORDS_N);
+    }
+    if (!idx) return null;
+    var words = idx.map(function (i) { return HW.displayWord(FIND_WORDS_LANG, i); });
+    if (words.indexOf('?') >= 0) return null;                    // word list not loaded
+    return { rule: FIND_WORDS_RULE, indices: idx, words: words, text: words.join('-') };
+  }
+
   // ── exports ───────────────────────────────────────────────────────────────
 
   return {
@@ -865,7 +928,8 @@ var GeosonifyStarpin = (function () {
     assessRecord: assessRecord, rankByTarget: rankByTarget,
     COLLECT_RULE: COLLECT_RULE, collects: collects,
     CELL_ORDERS: CELL_ORDERS, CELL_RULE: CELL_RULE,
-    cellsAtVertex: cellsAtVertex, cellProgress: cellProgress
+    cellsAtVertex: cellsAtVertex, cellProgress: cellProgress,
+    FIND_WORDS_RULE: FIND_WORDS_RULE, findWords: findWords
   };
 })();
 

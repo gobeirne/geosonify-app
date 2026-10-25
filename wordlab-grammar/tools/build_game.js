@@ -415,9 +415,10 @@ function switchSlot(id){
   state.slots=state.slots||{};state.slots[cur]=slotSnapshot();
   if(id==='free'){if(state.slots.free)slotRestore(state.slots.free);}
   else{const c=CHALLENGES.find(x=>x.id===id);if(!c)return;
-    // You get what you get: the hand is only words you actually found.
-    const found=new Set(state.slots.free?state.slots.free.inventory:[...state.inventory]);
-    const x=state.slots[id]||{committed:[],sandbox:null,draft:[],draftPins:null,editingId:null};x.inventory=c.hand.filter(w=>found.has(w));slotRestore(x);}
+    // You get what you get: the hand is only words you actually found. The hand
+    // is built from the Starpin record export (find-words-v1), so it is the
+    // authority; free-play inventory is not consulted (it may predate the rule).
+    const x=state.slots[id]||{committed:[],sandbox:null,draft:[],draftPins:null,editingId:null};x.inventory=c.hand.slice();slotRestore(x);}
   state.activeSlot=id;refreshHistory();
   setNotice(id==='free'?'Back to free play: all your words and sentences.':'Challenge: '+CHALLENGES.find(x=>x.id===id).title+'. Only this hand’s words are available.','good');
   renderAll();scheduleAutosave();

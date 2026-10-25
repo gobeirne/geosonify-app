@@ -713,5 +713,51 @@ if (haveHp) {
   })());
 }
 
+// ── find-words-v1 ────────────────────────────────────────────────────────────
+head('find-words-v1: the words a find gives Word Lab');
+(function () {
+  try {
+    globalThis.HealpixGrids = globalThis.HealpixGrids || require('./geosonify-healpix.js');
+    globalThis.BIP39_OFFICIAL_WORDLISTS = globalThis.BIP39_OFFICIAL_WORDLISTS || require('./bip39-official-wordlists.js');
+    globalThis.HealpixWords = globalThis.HealpixWords || require('./geosonify-hpwords.js');
+  } catch (e) { ok('find-words: geosonify-hpwords.js and its word lists load', false, e.message); return; }
+  var HW = globalThis.HealpixWords, H = globalThis.HealpixGrids;
+  ok('a starpin address gives four English words',
+     S.findWords({ lat_1e7: -435500100, lon_1e7: 1726444200 }).text === 'nice-barely-clutch-spend');
+  ok('it is the plain 4-word HEALPix address (no checksum, no passphrase)', (function () {
+    var t = { lat_1e7: -435500100, lon_1e7: 1726444200 };
+    return HW.encode(t.lat_1e7 / 1e7, t.lon_1e7 / 1e7, 4, 'english').split('.')[0] === S.findWords(t).text;
+  })());
+  // A cornerstone sits on the corner of four 4-word cells, so encoding its
+  // point would leave the words to float rounding. The rule descends the
+  // named cell toward the named corner, in integers. Check it geometrically:
+  // the 4-word cell must lie inside the named cell and have the cornerstone
+  // as its corner k.
+  var R2D = 180 / Math.PI, worst = 0, outside = 0, n = 0;
+  var probes = [[-43.553, 172.652], [-43.5, 172.6], [41.8103, 0.01], [-41.8103, 45], [0, 0],
+                [0.3, 89.7], [89.99, 45], [-89.99, 135], [60, -120], [-10, -60]];
+  for (var i = 0; i < 40; i++) probes.push([-80 + 4 * i, -175 + 8.7 * i]);
+  probes.forEach(function (q) {
+    var v = S.nearestCornerstone(q[0], q[1], 14); if (!v) return;
+    var r = S.findWords({ cornerstone: v.name }), p = S.cornerstonePoint(v.name);
+    var path = HW.indicesToPath(r.indices), ip = BigInt(path.f);
+    path.digits.forEach(function (d) { ip = ip * 4n + BigInt(d); });
+    var k = +v.name.slice(-1), vec = H._core.pixcoord2vec_nest(Math.pow(2, 20), ip, k & 1, k >> 1);
+    var x = vec.x != null ? vec.x : vec[0], y = vec.y != null ? vec.y : vec[1], z = vec.z != null ? vec.z : vec[2];
+    var lat = Math.asin(z / Math.hypot(x, y, z)) * R2D, lon = Math.atan2(y, x) * R2D;
+    worst = Math.max(worst, S.haversineM(p.lat, p.lon, lat, lon));
+    var m = /^V:f(\d+)\.([0-3]+)c/.exec(v.name);
+    if (path.f !== +m[1] || path.digits.slice(0, m[2].length).join('') !== m[2]) outside++;
+    n++;
+  });
+  ok('cornerstone words: the 4-word cell has the cornerstone as its named corner (' + n + ' tried)',
+     worst < 1e-3, 'worst ' + worst + ' m');
+  ok('cornerstone words: the 4-word cell lies inside the named cell', outside === 0, outside + ' outside');
+  ok('a legacy cornerstone name gives its canonical corner\u2019s words',
+     S.findWords({ cornerstone: 'V:f9.11120211002122' }).text ===
+     S.findWords({ cornerstone: 'V:f9.11120211002122c3' }).text);
+  ok('the rule is labelled', S.FIND_WORDS_RULE === 'find-words-v1');
+})();
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
