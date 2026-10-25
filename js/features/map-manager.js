@@ -2,8 +2,10 @@
  * geosonify-map-manager.js v1.7
  *
  * v1.7 (2026-10-24): a fused cache in another projection whose service has
- * dynamic layers enabled is declined: its exports draw from the source layers
- * (often only survey outlines), not from the cached photographs.
+ * dynamic layers enabled and lists no picture layer (only survey outlines)
+ * is declined: its exports draw those outlines, not the cached photographs.
+ * (v1.7a, 2026-10-25: the "no picture layer" condition added; services
+ * listing their raster draw fine and are no longer declined.)
  *
  * v1.6 (2026-10-24): services drawn by their server (MapServer /export,
  * ImageServer /exportImage) are requested tile by tile (512 px), not as one
@@ -442,7 +444,15 @@
     //    cache (the layers being survey outlines, as in ECan's earthquake
     //    services) an export shows only those outlines. Declined until
     //    Geosonify can reproject cache tiles itself.
-    if (meta.singleFusedMapCache && ti && !isWM && meta.supportsDynamicLayers === true) {
+    //    Only when none of its layers is a picture: services that list their
+    //    raster (Kāpiti, Dunedin, Indianapolis…) draw it fine dynamically.
+    const svcLayers = Array.isArray(meta.layers) ? meta.layers : [];
+    const typed = svcLayers.some(l => l && l.type);
+    const OUTLINE = /footprint|extent|boundar|outline|index|coverage|seamline|flight|tile ?index/i;
+    const noPicture = svcLayers.length > 0 && (typed
+      ? !svcLayers.some(l => /raster|mosaic|image/i.test(String(l.type || '')))
+      : svcLayers.every(l => (l.subLayerIds && l.subLayerIds.length) || OUTLINE.test(String(l.name || ''))));
+    if (meta.singleFusedMapCache && ti && !isWM && meta.supportsDynamicLayers === true && noPicture) {
       return { error: 'That ArcGIS service keeps its photographs only as ready-made tiles in its own projection' +
         (wkid ? ' (EPSG:' + wkid + ')' : '') + '; drawn on request, it shows just the survey outlines, so it can\u2019t be lined up with this map yet.' };
     }

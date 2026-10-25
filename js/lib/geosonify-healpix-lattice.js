@@ -9,6 +9,9 @@
   asks for it), in any map mode. The switches are kept apart as reasons, so
   neither can turn off what the other asked for (see the switch section).
 
+  v0.4: a third reason, 'user' (the grid switched on by itself, over any
+  map), and the imagery palette for every photographic source, not only Aerial.
+
   v0.3: BENEATH what you drew. On the map the lattice has a pane of its own
   (gsLattice, z-index 350) between the tiles (200) and the overlay pane (400)
   where shapes are drawn, so a path and its labels are never crossed by a grid
@@ -47,7 +50,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.3';
+  var VERSION = 'v0.4';
   var D2R = Math.PI / 180;
   var RAD_ARCSEC = 206264.80624709636;
   var M_PER_ARCSEC = 111319.9 / 3600;
@@ -207,8 +210,10 @@
   var earthLayer = null, earthMap = null;
 
   function earthPalette() {
-    var M = SM(), k = global.__GEOSONIFY_BASEMAP_ACTIVE;
-    return M.PALETTE[k === 'aerial' ? 'imagery' : 'light'];
+    var M = SM(), k = String(global.__GEOSONIFY_BASEMAP_ACTIVE || '').toLowerCase();
+    // Any photograph (Aerial, a dated Aerial, local historical imagery, a pasted
+    // source) takes the imagery palette; the street and topographic maps the light one.
+    return M.PALETTE[(k && k !== 'osm' && k !== 'topo') ? 'imagery' : 'light'];
   }
 
   function drawEarth(cv, map) {
@@ -348,6 +353,8 @@
   // (v0.2) The lattice is shown for REASONS, and stays while any holds:
   //   'sky'      Sky mode (geosonify-sky-flip.js), through setEnabled()
   //   'starred'  a HEALPix card is the starred card (card-renderer.js)
+  //   'user'     (v0.4) the HEALPix grid box on the Map imagery card, so the
+  //              grid can be laid over any Earth map or imagery (index.html)
   // Each switch only answers for itself, so un-starring a HEALPix card cannot
   // take the lattice away from Sky mode, and leaving Sky mode cannot take it
   // away from a starred HEALPix card. setEnabled / isEnabled keep meaning

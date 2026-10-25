@@ -268,8 +268,9 @@
         <div class="card collapsible-card" data-collapse-key="imagery" style="flex:1 1 260px; min-width:240px; margin-bottom:0;">
           <div class="card-header">Map imagery<span class="collapse-summary"></span><span class="collapse-chevron" aria-hidden="true">⌄</span></div>
           <div class="card-body" id="mapImageryMount"></div>
-          <!-- HEALPix grid strength, for everyday viewing (shown while the grid is on).
-               Remembered on this device. A display link's lattice= overrides it there. -->
+          <!-- HEALPix grid: on/off and strength, for everyday viewing, over any map
+               or imagery. Remembered on this device. A display link's lattice=
+               overrides it there. -->
           <div class="card-body" id="latticeFadeRow" style="display:none; padding-top:0;">
             <div style="display:flex; align-items:center; gap:10px; font-size:14px;">
               <label style="display:flex; align-items:center; gap:5px; cursor:pointer; flex:none;"><input type="checkbox" id="latticeFadeShow" checked> HEALPix grid</label>
@@ -773,8 +774,8 @@
 
 <!-- Features -->
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
-<script src="js/lib/geosonify-imagery-catalogue.js?v=20261024k"></script>
-<script src="js/features/map-manager.js?v=20261024j"></script>
+<script src="js/lib/geosonify-imagery-catalogue.js?v=20261025a"></script>
+<script src="js/features/map-manager.js?v=20261025a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -813,7 +814,7 @@
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
-<script src="js/lib/geosonify-healpix-lattice.js?v=20261014c"></script>
+<script src="js/lib/geosonify-healpix-lattice.js?v=20261025a"></script>
 <script src="js/lib/geosonify-sky-flip.js?v=20261023a"></script>
 <script src="js/lib/geosonify-annotations.js?v=20261014c"></script>
 <!-- ?wander=: the Sun, Moon and planets as paths. Astronomy Engine loads only when one is asked for. -->
@@ -1658,6 +1659,10 @@
     // panel's preview, a display link). Remembered per device, except in a
     // display link, where the link decides and nothing is stored.
     const LATTICE_PREF_KEY = 'geosonify_lattice_opacity';
+    // The grid as a choice of its own ('user' reason in the lattice), so it can
+    // be laid over Standard, Aerial, Topographic or any imagery, not only in Sky
+    // mode or with a HEALPix card starred. Remembered on this device.
+    const LATTICE_USER_KEY = 'geosonify_lattice_user';
     let _latticeLastShown = 1;          // the strength to return to when re-ticked
     function syncLatticeFadeRow(st) {
       const row = document.getElementById('latticeFadeRow');
@@ -1665,17 +1670,19 @@
       const L_ = (typeof GeosonifyHealpixLattice !== 'undefined') ? GeosonifyHealpixLattice : null;
       const showing = st ? st.showing : !!(L_ && L_.isShowing());
       const op = st ? st.opacity : (L_ && L_.getOpacity ? L_.getOpacity() : 1);
-      // '' (not 'block') when shown, so a collapsed Map imagery card still hides
-      // it: the collapse rule is a stylesheet rule, which an inline display
-      // would override.
-      row.style.display = (showing && !window.DISPLAY_MODE) ? '' : 'none';
+      const on = showing && op > 0;
+      // Always offered on the main screen (it is how the grid is switched on
+      // over an Earth map). '' (not 'block'), so a collapsed Map imagery card
+      // still hides it: the collapse rule is a stylesheet rule, which an
+      // inline display would override.
+      row.style.display = (L_ && L_.isAvailable && L_.isAvailable() && !window.DISPLAY_MODE) ? '' : 'none';
       if (op > 0) _latticeLastShown = op;
       const show = document.getElementById('latticeFadeShow');
       const range = document.getElementById('latticeFadeRange');
       const val = document.getElementById('latticeFadeValue');
-      if (show) show.checked = op > 0;
-      if (range) { range.value = String(Math.round(_latticeLastShown * 100)); range.disabled = !(op > 0); }
-      if (val) val.textContent = op > 0 ? Math.round(op * 100) + '%' : 'off';
+      if (show) show.checked = on;
+      if (range) { range.value = String(Math.round(_latticeLastShown * 100)); range.disabled = !on; }
+      if (val) val.textContent = on ? Math.round(op * 100) + '%' : 'off';
     }
     function initLatticeFade() {
       const L_ = (typeof GeosonifyHealpixLattice !== 'undefined') ? GeosonifyHealpixLattice : null;
@@ -1688,10 +1695,21 @@
       }
       const show = document.getElementById('latticeFadeShow');
       const range = document.getElementById('latticeFadeRange');
+      // The grid by choice: ticked → shown over whatever map is up.
+      if (!window.DISPLAY_MODE && L_.setReason) {
+        try { if (localStorage.getItem(LATTICE_USER_KEY) === '1') L_.setReason('user', true); } catch (e) {}
+      }
       const apply = () => {
-        const v = (show && !show.checked) ? 0 : (range ? Number(range.value) / 100 : 1);
+        const want = !show || show.checked;
+        if (L_.setReason) L_.setReason('user', want);
+        const v = want ? (range ? Number(range.value) / 100 : 1) : 0;
         L_.setOpacity(v);
-        if (!window.DISPLAY_MODE) { try { localStorage.setItem(LATTICE_PREF_KEY, String(L_.getOpacity())); } catch (e) {} }
+        if (!window.DISPLAY_MODE) {
+          try {
+            localStorage.setItem(LATTICE_PREF_KEY, String(want ? L_.getOpacity() : _latticeLastShown));
+            localStorage.setItem(LATTICE_USER_KEY, want ? '1' : '0');
+          } catch (e) {}
+        }
       };
       if (show) show.addEventListener('change', apply);
       if (range) range.addEventListener('input', apply);
@@ -4532,6 +4550,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         else if (typeof refreshEncryptedDisplayShare === 'function') refreshEncryptedDisplayShare();
       } catch (e) { console.warn('[geosonify] could not refresh links for new imagery:', e); }
       try { refreshShareImageryNote(); } catch (e) {}
+      // The grid's colours follow the imagery (light map vs photograph).
+      try { if (typeof GeosonifyHealpixLattice !== 'undefined' && GeosonifyHealpixLattice.refresh) GeosonifyHealpixLattice.refresh(); } catch (e) {}
       try { if (window.__geosonifySeedDisplayBasemap) window.__geosonifySeedDisplayBasemap(); } catch (e) {}
       try { if (window.__geosonifyRefreshDisplayWarn) window.__geosonifyRefreshDisplayWarn(); } catch (e) {}
     });

@@ -612,25 +612,25 @@ Wolverhampton | 2016 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/Ae
 Wolverhampton | 2019–2020 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/1
 Wolverhampton | 2022 | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/0
 # Commercial supplier (Bluesky): Wolverhampton | 2016 Bluesky | https://maps.wolverhampton.gov.uk/arcgis/rest/services/AerialPhotography/MapServer/2
-York | 1936 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/11
-York | 1951 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/10
-York | 1962 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/9
-York | 1971 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/8
-York | 2002 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/7
-York | 2007 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/6
-York | 2017 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/5
-York | 2023 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/4
-York | 2025 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/18
+York | 1936 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/11 | 53.88,-1.25,54.06,-0.92
+York | 1951 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/10 | 53.88,-1.25,54.06,-0.92
+York | 1962 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/9 | 53.88,-1.25,54.06,-0.92
+York | 1971 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/8 | 53.88,-1.25,54.06,-0.92
+York | 2002 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/7 | 53.88,-1.25,54.06,-0.92
+York | 2007 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/6 | 53.88,-1.25,54.06,-0.92
+York | 2017 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/5 | 53.88,-1.25,54.06,-0.92
+York | 2023 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/4 | 53.88,-1.25,54.06,-0.92
+York | 2025 | https://maps.york.gov.uk/arcgis/rest/services/Basemaps/Corporate_Raster/MapServer/18 | 53.88,-1.25,54.06,-0.92
 # Commercial suppliers (The GeoInformation Group; Bluesky):
 #   Birmingham | 1940s | https://maps.birmingham.gov.uk/server/rest/services/Internet_HLC_Maps/MapServer/28
 #   Birmingham | 2016 | https://maps.birmingham.gov.uk/server/rest/services/Internet_HLC_Maps/MapServer/18
 # Norfolk: cached in British National Grid; their layers are described as vector
 # maps, so the builder decides whether these hold photographs at all.
 Norfolk | 1945–1946 | https://maps.norfolk.gov.uk/arcgis/rest/services/backdrops/ncc_1946/MapServer
-Norfolk | 1988 | https://maps.norfolk.gov.uk/arcgis/rest/services/basemaps/ncc_1988/MapServer
+# Flat colour, not photographs (2026-10-25 run): Norfolk | 1988 | https://maps.norfolk.gov.uk/arcgis/rest/services/basemaps/ncc_1988/MapServer
 Norfolk | 1988 (alternative) | https://maps.norfolk.gov.uk/arcgis/rest/services/backdrops/ncc_1988/MapServer
 # Unverified template from a third-party list; the builder will say whether it works:
-Scotland (NLS air photo mosaics) | 1944–1950 | https://geo.nls.uk/maps/air-photos/{z}/{x}/{y}.png | 54.6,-8.7,60.9,-0.7
+# Tried 2026-10-25: HTTP 404 (not a real endpoint). Scotland (NLS air photo mosaics) | 1944–1950 | https://geo.nls.uk/maps/air-photos/{z}/{x}/{y}.png | 54.6,-8.7,60.9,-0.7
 # Not usable (archives, sign-in or licensed): NLS search, NCAP, Layers of London /
 # OldMapsOnline (RAF 1944–49), Welsh Government aerial register, RCAHMW, Tailte
 # Éireann MapGenie (1995–2018), APGB/Getmapping, Norfolk historic-maps viewer.
