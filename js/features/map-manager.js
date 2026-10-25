@@ -1,5 +1,11 @@
 /**
- * geosonify-map-manager.js v1.7
+ * geosonify-map-manager.js v1.8
+ *
+ * v1.8 (2026-10-25): a tile layer falls back only once every tile asked for
+ * has failed with nothing drawn (not after any three), and falls back to
+ * options.fallback (Aerial, for a dated Aerial or a local layer), not always
+ * Standard. Picking a Christchurch layer could drop to Standard when a few of
+ * the first server-drawn tiles failed while the rest were still coming.
  *
  * v1.7 (2026-10-24): a fused cache in another projection whose service has
  * dynamic layers enabled and lists no picture layer (only survey outlines)
@@ -612,8 +618,15 @@
     // later. It now takes FAIL_LIMIT failures with nothing drawn in between, and
     // a failure while the map's centre is outside a curated layer's coverage
     // doesn't count at all (no picture is expected there).
+    //
+    // v1.8: for tile layers it is not enough that FAIL_LIMIT tiles failed: a
+    // screenful of server-drawn tiles is asked for at once, and a slow server
+    // can fail a few of the first while the rest are still coming. Now it also
+    // takes every tile asked for so far to have failed. And the fallback is
+    // options.fallback ('aerial' for a dated Aerial or a local layer chosen from
+    // the Aerial list), not always Standard; the console names a failed request.
     if (!isOSM) {
-      let loadedAny = false, failed = false, fails = 0;
+      let loadedAny = false, failed = false, fails = 0, started = 0, lastBad = '';
       const C = global.GeosonifyImageryCatalogue;
       const srcUrl = options._sourceUrl || '';
       const expectedHere = () => {
@@ -624,20 +637,26 @@
           return C.covers(e, c.lat, ((c.lng + 180) % 360 + 360) % 360 - 180);
         } catch (err) { return true; }
       };
+      const fallback = options.fallback || 'osm';
       watch(
         () => { loadedAny = true; fails = 0; },
-        () => {
+        (ev) => {
           if (loadedAny || failed) return;
           if (_basemapLayer !== newLayer) return;      // already replaced
           if (!expectedHere()) return;
+          try { if (ev && ev.tile && ev.tile.src) lastBad = ev.tile.src; } catch (e) {}
           if (++fails < FAIL_LIMIT) return;
+          if (started && fails < started) return;      // tiles still on their way
           failed = true;
-          try { console.warn('[geosonify] imagery failed ' + fails + ' times with nothing drawn: ' + (srcUrl || '(preset)')); } catch (e) {}
+          try { console.warn('[geosonify] imagery failed ' + fails + ' times with nothing drawn: ' + (srcUrl || '(preset)') + (lastBad ? ' — e.g. ' + lastBad : '')); } catch (e) {}
           if (typeof options.onError === 'function') {
-            options.onError('That imagery source didn’t load — back on the standard map.');
+            options.onError(fallback === 'aerial'
+              ? 'That imagery didn’t load — back to Aerial.'
+              : 'That imagery source didn’t load — back on the standard map.', fallback);
           }
-          setBasemap('osm');
-        }
+          setBasemap(fallback);
+        },
+        () => { started++; }
       );
     }
 
@@ -656,9 +675,10 @@
   }
 
   function _tileWatch(layer) {
-    return (onLoad, onFail) => {
+    return (onLoad, onFail, onStart) => {
       layer.on('tileload', onLoad);
       layer.on('tileerror', onFail);
+      if (onStart) layer.on('tileloadstart', onStart);
     };
   }
 
@@ -1735,6 +1755,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.7 loaded');
+  console.log('[geosonify] map-manager v1.8 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

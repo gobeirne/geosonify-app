@@ -28,6 +28,10 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.10: the Aerial list no longer jumps back to the top while it fills in:
+  labels change in place, and any reordering waits until it is closed.
+  A failing dated Aerial or local layer falls back to Aerial, not Standard.
+
   v1.9: a curated local layer gives way to plain Aerial when the map settles
   somewhere its coverage doesn't reach (no part of the view touches it).
 
@@ -61,7 +65,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.9';
+  const __FAQ_UI_VER__ = 'v1.10';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -740,12 +744,16 @@
 
   function _applyBasemap(source, attribution, ui) {
     if (typeof MapManager === 'undefined' || !MapManager.setBasemap) return { ok: false, error: 'Map not ready.' };
+    // A dated Aerial or a local layer from the Aerial list that fails falls
+    // back to plain Aerial (you were in Aerial); anything else to Standard.
+    const fallback = (_kindOf(source) === 'wayback' || _catEntry(source)) ? 'aerial' : 'osm';
     const res = MapManager.setBasemap(source, {
       attribution: attribution,
-      onError: msg => {
+      fallback: fallback,
+      onError: (msg, fellBackTo) => {
         if (ui && ui.warn) { ui.warn.textContent = msg; ui.warn.classList.add('show'); }
-        // The map went back to Standard: don't keep claiming the failed source.
-        _writeBasemapParam(null);
+        // The map went back: don't keep claiming the failed source.
+        _writeBasemapParam(fellBackTo === 'aerial' ? 'aerial' : null);
       }
     });
     return res;
@@ -980,12 +988,15 @@
 
   // Build the <select>. esri: [{date, label, photo}] newest first; local:
   // catalogue entries. wantValue: the value to keep selected.
+  // note.final: every capture date has arrived. Until then the order and the
+  // merging stay as first drawn (by published date), and only the labels
+  // change, so the list does not reshuffle under someone scrolling it.
   function _wbRender(sel, esri, local, note, wantValue, c) {
     // Esri tidy-ups.
     let ed = esri.slice();
     if (ed.length && (!note.latestPhoto || !ed[0].photo || ed[0].photo === note.latestPhoto)) ed = ed.slice(1);   // = Latest
-    ed = ed.filter((e, i) => !(e.photo && ed[i + 1] && ed[i + 1].photo === e.photo));                         // keep the earliest of a run
-    const rows = ed.map(e => ({ key: (e.photo || e.date).slice(0, 7), value: e.date, label: e.label }));
+    if (note.final) ed = ed.filter((e, i) => !(e.photo && ed[i + 1] && ed[i + 1].photo === e.photo));         // keep the earliest of a run
+    const rows = ed.map(e => ({ key: ((note.final && e.photo) || e.date).slice(0, 7), value: e.date, label: e.label }));
     _wbCatItems = {};
     local.forEach(e => {
       const v = 'c:' + e.i;
@@ -996,15 +1007,43 @@
         label: e.l + ' · ' + e.r + (out ? ' (not here)' : zoomIn ? ' (zoom in)' : '') });
     });
     rows.sort((a, b) => (a.key < b.key ? 1 : a.key > b.key ? -1 : 0));
-    const html = ['<option value="">' + _esc(note.latest || 'Latest') + '</option>']
-      .concat(rows.map(r => '<option value="' + r.value + '">' + _esc(r.label) + '</option>'));
+    const opts = [{ value: '', label: note.latest || 'Latest' }].concat(rows.map(r => ({ value: r.value, label: r.label })));
     if (wantValue && !rows.some(r => r.value === wantValue) && !/^c:/.test(wantValue)) {
       const current = esri.length && esri[0].date === wantValue;
-      html.splice(1, 0, '<option value="' + wantValue + '">' + _esc(wantValue + (current ? ' (the current picture)' : ' (no change here)')) + '</option>');
+      opts.splice(1, 0, { value: wantValue, label: wantValue + (current ? ' (the current picture)' : ' (no change here)') });
     }
-    if (!_wbShowAll) html.push('<option value="__all">Every release…</option>');
-    sel.innerHTML = html.join('');
-    sel.value = wantValue || '';
+    if (!_wbShowAll) opts.push({ value: '__all', label: 'Every release…' });
+    _wbApply(sel, opts, wantValue);
+  }
+
+  /*
+    Put the options into the list without moving it under the reader (v1.10).
+    Same options in the same order: only labels change, in place. Different
+    options while the list is open (being scrolled): held back and put in when
+    it closes. Otherwise rebuilt.
+  */
+  let _wbPending = null, _wbBlurHooked = false;
+  function _wbApply(sel, opts, want) {
+    const open = document.activeElement === sel;
+    const same = sel.options.length === opts.length && opts.every((o, i) => sel.options[i].value === o.value);
+    if (same) {
+      opts.forEach((o, i) => { if (sel.options[i].textContent !== o.label) sel.options[i].textContent = o.label; });
+      if (!open) sel.value = want || '';
+      _wbPending = null;
+      return;
+    }
+    if (open) {
+      _wbPending = { opts, want };
+      if (!_wbBlurHooked) {
+        _wbBlurHooked = true;
+        const flush = () => { const p = _wbPending; _wbPending = null; if (p) _wbApply(sel, p.opts, sel.value && sel.value !== '__all' ? sel.value : p.want); };
+        sel.addEventListener('blur', () => setTimeout(flush, 0));
+      }
+      return;
+    }
+    sel.innerHTML = opts.map(o => '<option value="' + _esc(o.value) + '">' + _esc(o.label) + '</option>').join('');
+    sel.value = want || '';
+    _wbPending = null;
   }
 
   function _fillWayback(sel, wantValue, activeEntry) {
@@ -1047,7 +1086,7 @@
       if (!W.hasCaptureDates()) return;
       const latest = W.list()[0];
       const jobs = (latest ? [{ release: latest.release, latest: true }] : []).concat(items);
-      let i = 0;
+      let i = 0, done = 0;
       const next = () => {
         if (seq !== _wbSeq || i >= jobs.length) return;
         const j = jobs[i++];
@@ -1057,11 +1096,13 @@
             const photos = 'photos ' + info.date.slice(0, 7);
             if (j.latest) { note.latest = 'Latest · ' + photos; note.latestPhoto = info.date.slice(0, 7); }
             else { j.label = j.date + ' · ' + photos; j.photo = info.date.slice(0, 7); }
-            draw();
           }
+          if (++done === jobs.length) note.final = true;           // all in: order by photo date, merge
+          draw();
           next();
         });
       };
+      if (!jobs.length) { note.final = true; draw(); }
       next(); next();
     }).catch(() => {
       if (seq !== _wbSeq) return;
