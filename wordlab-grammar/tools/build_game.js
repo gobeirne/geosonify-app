@@ -149,7 +149,7 @@ ui = once(ui, "${r.valid?(hasGhost?'Provisional · reallocate or collect before 
 // ---------------------------------------------------------------- tree + reading choice
 ui = replaceFunction(ui, 'renderTree', `
 function renderTree(info){
-  const POS={N:'noun',NIdiom:'noun (idiom)',V:'verb',VPrep:'verb',Adj:'adjective',AdjFused:'adjective',AdvDeg:'degree word',AdvPre:'adverb',AdvPost:'adverb',AdvFocus:'focus word',P:'preposition',ForCoord:'“for” meaning because',Modal:'modal',Cop:'auxiliary',Be:'auxiliary',Do:'auxiliary',HaveAux:'auxiliary',Det:'determiner',Pron:'pronoun',Conj:'conjunction',Sub:'subordinator',Comp:'complementiser',Rel:'relative word',Not:'not',To:'to'};
+  const POS={N:'noun',NIdiom:'noun (idiom)',V:'verb',VPrep:'verb',Adj:'adjective',AdjFused:'adjective',AdvDeg:'degree word',AdvPre:'adverb',AdvPost:'adverb',AdvFront:'adverb',AdvLink:'linking adverb',AdvFocus:'focus word',P:'preposition',ForCoord:'“for” meaning because',Modal:'modal',Cop:'auxiliary',Be:'auxiliary',Do:'auxiliary',HaveAux:'auxiliary',Det:'determiner',Pron:'pronoun',Conj:'conjunction',Sub:'subordinator',Comp:'complementiser',Rel:'relative word',Not:'not',To:'to'};
   if(!info.valid){
     const res=info.wl2;
     if(!res||!res.partial){$('parseTree').innerHTML='<p class="muted">'+htmlEscape(reasonText(info))+'</p>';return;}

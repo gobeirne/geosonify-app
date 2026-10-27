@@ -17,19 +17,19 @@
  },
  "failures": [],
  "P1": {
-  "n": 600,
+  "n": 800,
   "violations": 0
  },
  "P6": {
-  "sentencesWithAlternatives": 387,
-  "medianRelativeSpread": 0.048,
-  "p90RelativeSpread": 0.275
+  "sentencesWithAlternatives": 522,
+  "medianRelativeSpread": 0.052,
+  "p90RelativeSpread": 0.233
  },
- "P2readingChanges": 13,
+ "P2readingChanges": 8,
  "P2": {
-  "insertions": 627,
+  "insertions": 698,
   "violations": 0,
-  "insertionsThatChangeStructure": 13
+  "insertionsThatChangeStructure": 8
  },
  "P3": {
   "goldOnlySentences": 150,
@@ -346,7 +346,7 @@
   "compound": "linear (10 per modifier)"
  },
  "J": {
-  "joins": 8,
+  "joins": 10,
   "violations": 0
  },
  "S": [
@@ -458,187 +458,186 @@
   "candidates": 6000,
   "perTileBySize": {
    "1-2": {
-    "n": 771,
-    "median": 10,
+    "n": 568,
+    "median": 7.6,
     "p90": 12.2
    },
    "3-4": {
-    "n": 1797,
+    "n": 1601,
     "median": 13,
-    "p90": 16.2
+    "p90": 17.5
    },
    "5-6": {
-    "n": 1470,
-    "median": 15.6,
-    "p90": 20.5
+    "n": 1646,
+    "median": 16.8,
+    "p90": 22.2
    },
    "7-9": {
-    "n": 1361,
-    "median": 19.2,
-    "p90": 25.3
+    "n": 1539,
+    "median": 21.5,
+    "p90": 27
    },
    "10+": {
-    "n": 601,
-    "median": 21.5,
-    "p90": 26.3
+    "n": 646,
+    "median": 23.4,
+    "p90": 27.6
    }
   },
   "greedyByPointsPerTile": {
-   "sentences": 58,
-   "blueTilesUsed": 136,
-   "total": 2245,
-   "perTile": 16.5,
-   "meanBluePerSentence": 2.3,
+   "sentences": 64,
+   "blueTilesUsed": 125,
+   "total": 1912,
+   "perTile": 15.29,
+   "meanBluePerSentence": 2,
    "utteranceTypes": {
-    "imperative": 23,
-    "question": 15,
+    "imperative": 21,
+    "question": 10,
     "ellipsis": 4,
-    "declarative": 1,
-    "fragment": 15
+    "fragment": 29
    },
    "structuralShare": 0.33,
    "listItems": 3,
    "topFamilies": [
     [
      "noun_head",
-     41
+     47
     ],
     [
      "np_premodifier",
-     41
+     47
     ],
     [
      "determiner",
-     33
-    ],
-    [
-     "imperative",
-     23
-    ],
-    [
-     "intransitive",
-     21
-    ],
-    [
-     "question",
-     15
+     39
     ],
     [
      "nominal_utterance",
-     15
+     29
     ],
     [
-     "adjective",
-     13
+     "imperative",
+     21
+    ],
+    [
+     "intransitive",
+     20
     ],
     [
      "bare_np",
      11
     ],
     [
-     "verb_coordination",
-     10
-    ]
-   ],
-   "best": [
-    {
-     "score": 282,
-     "text": "win jeans october on display for text and all on the umbrella nation can"
-    },
-    {
-     "score": 249,
-     "text": "just taste barely civil for a wheel is the unknown august swamp"
-    },
-    {
-     "score": 197,
-     "text": "can a favorite joke know and bind in speed and abandon and boil and level"
-    },
-    {
-     "score": 191,
-     "text": "can inner output shiver because chat is staff parade"
-    },
-    {
-     "score": 85,
-     "text": "angry melody has and is stairs and security"
-    }
-   ]
-  },
-  "greedyByScore": {
-   "sentences": 50,
-   "blueTilesUsed": 135,
-   "total": 2188,
-   "perTile": 16.21,
-   "meanBluePerSentence": 2.7,
-   "utteranceTypes": {
-    "imperative": 20,
-    "question": 13,
-    "ellipsis": 2,
-    "fragment": 15
-   },
-   "structuralShare": 0.3,
-   "listItems": 5,
-   "topFamilies": [
-    [
-     "noun_head",
-     35
-    ],
-    [
-     "np_premodifier",
-     35
-    ],
-    [
-     "determiner",
-     30
-    ],
-    [
-     "intransitive",
-     21
-    ],
-    [
-     "imperative",
-     20
-    ],
-    [
-     "nominal_utterance",
-     15
-    ],
-    [
-     "verb_coordination",
-     13
-    ],
-    [
      "question",
-     13
+     10
     ],
     [
      "adjective",
      10
     ],
     [
-     "bare_np",
-     9
+     "verb_coordination",
+     8
     ]
    ],
    "best": [
     {
-     "score": 411,
-     "text": "taste fossil and bind all and choice and october observe and must and reopen and output can and has because jeans crumble"
+     "score": 342,
+     "text": "later forget because in speed staff has for tonight in jeans and all a level can and has"
     },
     {
-     "score": 317,
-     "text": "can august unknown warfare barely bottom and wheel for display and win and speed and consider the banana the staff"
+     "score": 255,
+     "text": "taste unknown and retire and castle and mistake and output can run and blossom and must parrot"
     },
     {
-     "score": 187,
-     "text": "is the original news half fun shallow salad in the text and a melt"
+     "score": 216,
+     "text": "is october barely silly on display in the need and just the core"
     },
     {
-     "score": 150,
-     "text": "fix the coast toward man and chat stairs and need"
+     "score": 173,
+     "text": "is a melt umbrella vocal toward the nation and stairs today"
     },
     {
-     "score": 84,
-     "text": "parade and clump today and boil and retire"
+     "score": 82,
+     "text": "is a security august hybrid gadget on stage"
+    }
+   ]
+  },
+  "greedyByScore": {
+   "sentences": 57,
+   "blueTilesUsed": 123,
+   "total": 1721,
+   "perTile": 13.99,
+   "meanBluePerSentence": 2.2,
+   "utteranceTypes": {
+    "question": 9,
+    "imperative": 20,
+    "fragment": 25,
+    "ellipsis": 3
+   },
+   "structuralShare": 0.26,
+   "listItems": 4,
+   "topFamilies": [
+    [
+     "noun_head",
+     39
+    ],
+    [
+     "np_premodifier",
+     39
+    ],
+    [
+     "determiner",
+     37
+    ],
+    [
+     "nominal_utterance",
+     25
+    ],
+    [
+     "intransitive",
+     20
+    ],
+    [
+     "imperative",
+     20
+    ],
+    [
+     "question",
+     9
+    ],
+    [
+     "noun_compound",
+     8
+    ],
+    [
+     "adjective",
+     7
+    ],
+    [
+     "verb_coordination",
+     6
+    ]
+   ],
+   "best": [
+    {
+     "score": 499,
+     "text": "must all clean angry cargo fun mistake today just canvas is cheap tonight and later say for jeans and stairs for display"
+    },
+    {
+     "score": 299,
+     "text": "is a half favorite autumn need output unknown barely hybrid in october on the august original inch umbrella core"
+    },
+    {
+     "score": 86,
+     "text": "consider a stem banana the staff nation"
+    },
+    {
+     "score": 61,
+     "text": "is the primary timber the nice palm"
+    },
+    {
+     "score": 47,
+     "text": "can a badge taste close"
     }
    ]
   }

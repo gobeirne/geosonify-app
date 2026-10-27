@@ -17,7 +17,7 @@ const G = require('./grammar');
 const {compileLexicon, readingsFor} = require('./lexicon');
 const {compileGrammar, earley, buildForest, countTrees, kBest, diverseRoots} = require('./parser');
 
-const VERSION = 'phase0-0.1.0';
+const VERSION = 'phase0-0.2.0';
 // Monotonic milliseconds in both Node and browsers.
 const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Number(process.hrtime.bigint()) / 1e6;
 
@@ -127,7 +127,7 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
   // terminals {kind:'terminal', label, word, index}; helper categories spliced.
   const KIND = {S: 'clause', NP: 'noun_phrase', VP: 'verb_phrase', FP: 'finite_predicate', PP: 'prepositional_phrase', AdjP: 'adjective',
     Imp: 'imperative', Q: 'question', Frag: 'fragment', Utt: 'utterance', SubCl: 'subordinate_clause', Ellipsis: 'ellipsis'};
-  const TAG = {N: 'N', NIdiom: 'N', PropN: 'Name', Adj: 'Adj', AdjFused: 'Adj', AdvDeg: 'Deg', AdvPre: 'Adv', AdvPost: 'Adv', AdvFocus: 'Adv', V: 'V', VPrep: 'V', Det: 'Det',
+  const TAG = {N: 'N', NIdiom: 'N', PropN: 'Name', Adj: 'Adj', AdjFused: 'Adj', AdvDeg: 'Deg', AdvPre: 'Adv', AdvPost: 'Adv', AdvFocus: 'Adv', AdvFront: 'Adv', AdvLink: 'Adv', V: 'V', VPrep: 'V', Det: 'Det',
     Pron: 'Pron', P: 'P', Modal: 'Mod', Cop: 'Aux', Be: 'Aux', Do: 'Aux', HaveAux: 'Aux', Not: 'Neg', To: 'To', Conj: 'Conj', ForCoord: 'Conj', Sub: 'Sub', Comp: 'Comp', Rel: 'Rel'};
   function dispTree(n, words) {
     const flat = x => {

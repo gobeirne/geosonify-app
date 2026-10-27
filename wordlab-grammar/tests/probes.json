@@ -876,6 +876,214 @@
      "subordinate_clause"
     ]
    }
+  },
+  {
+   "id": "T1",
+   "src": "Greg 2026-10-28: fronted 'today', 'all' + mass 'cargo', pre-verbal 'later'",
+   "text": "Today all rude runway leaf cargo can predict core salad news and later inch toward a castle festival holiday badge.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "today": "AdvFront:advmod",
+     "all": "Det:det",
+     "cargo": "N:nsubj",
+     "later": "AdvPre:advmod",
+     "inch": "V:conj"
+    }
+   }
+  },
+  {
+   "id": "T2",
+   "src": "0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them",
+   "text": "Later today the cargo can predict news.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "later": "AdvFront:advmod",
+     "today": "AdvFront:advmod",
+     "cargo": "N:nsubj"
+    }
+   }
+  },
+  {
+   "id": "T3",
+   "src": "0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them",
+   "text": "In the garden the cargo can predict news.",
+   "expect": {
+    "state": "recognised",
+    "type": "declarative",
+    "where": "canonical",
+    "roles": {
+     "in": "P:obl",
+     "garden": "N:pobj",
+     "cargo": "N:nsubj"
+    }
+   }
+  },
+  {
+   "id": "T4",
+   "src": "0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them",
+   "text": "First the cargo can predict news then the castle can sleep.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "clause_coordination"
+    ],
+    "roles": {
+     "first": "AdvFront:advmod",
+     "then": "AdvLink:cc",
+     "sleep": "V:conj"
+    }
+   }
+  },
+  {
+   "id": "T5",
+   "src": "0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them",
+   "text": "The cargo can predict news and then the castle can sleep.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "families": [
+     "clause_coordination"
+    ]
+   }
+  },
+  {
+   "id": "T6",
+   "src": "0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them",
+   "text": "Today inch toward the castle.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "today": "AdvFront:advmod",
+     "inch": "V:root"
+    }
+   }
+  },
+  {
+   "id": "T7",
+   "src": "0.2.0: adjuncts after a predicative complement",
+   "text": "The cargo was safe today.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "safe": "Adj:root",
+     "today": "AdvPost:advmod"
+    }
+   }
+  },
+  {
+   "id": "T8",
+   "src": "0.2.0: PP adjunct after a predicative adjective",
+   "text": "The cargo is safe in the garden.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "in": "P:obl"
+    }
+   }
+  },
+  {
+   "id": "T9",
+   "src": "0.2.0: 'cargo' is count and mass (Cambridge [C or U])",
+   "text": "All rude cargo can predict news.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "all": "Det:det",
+     "cargo": "N:nsubj"
+    }
+   }
+  },
+  {
+   "id": "T10",
+   "src": "0.2.0: time adverbs before the verb",
+   "text": "The cargo can later inch toward the castle.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "later": "AdvPre:advmod"
+    }
+   }
+  },
+  {
+   "id": "T11",
+   "src": "0.2.0: future-time modal with fronted 'tomorrow'",
+   "text": "Tomorrow the cargo will leave.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "tomorrow": "AdvFront:advmod",
+     "leave": "V:root"
+    }
+   }
+  },
+  {
+   "id": "T12",
+   "src": "0.2.0: past tense with 'soon' is fine",
+   "text": "The cargo left soon.",
+   "expect": {
+    "state": "recognised",
+    "where": "canonical",
+    "roles": {
+     "left": "V:root",
+     "soon": "AdvPost:advmod"
+    }
+   }
+  },
+  {
+   "id": "T13",
+   "src": "0.2.0: no stacking of time adverbs before the subject",
+   "text": "Today later soon the cargo can predict news.",
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "T14",
+   "src": "0.2.0: no stacking of time adverbs after the verb",
+   "text": "The cargo can predict news today later soon.",
+   "expect": {
+    "state": "not_recognised"
+   }
+  },
+  {
+   "id": "T15",
+   "src": "0.2.0: past tense with 'tomorrow' (main clause)",
+   "text": "Tomorrow the cargo left.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "time_reference"
+   }
+  },
+  {
+   "id": "T16",
+   "src": "0.2.0: past tense with 'tomorrow' after a predicative complement",
+   "text": "The cargo was safe tomorrow.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "time_reference"
+   }
+  },
+  {
+   "id": "T17",
+   "src": "0.2.0: 'home' does not front a clause",
+   "text": "Home the cargo can predict news.",
+   "expect": {
+    "state": "not_recognised"
+   }
   }
  ]
 }

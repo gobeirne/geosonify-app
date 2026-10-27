@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.1.0` · strict grammar 7925 atomic rules, relaxed 19556, 597 symbols · strict-grammar compile 447 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 717 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.2.0` · strict grammar 9269 atomic rules, relaxed 22831, 709 symbols · strict-grammar compile 347 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 523 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -8,16 +8,16 @@ Status labels: **measured** = produced by the scripts in this folder; **proposal
 
 | Criterion | Result |
 |---|---|
-| Every handover §5 probe yields its intended roles | 63/63 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
-| Generated derivations recognised and exactly recovered | 1595/1595 |
+| Every handover §5 probe yields its intended roles | 80/80 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
+| Generated derivations recognised and exactly recovered | 1644/1644 |
 | Typed corruptions caught, with the right constraint named | see corruption table |
-| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 16.1 ms; generated 21–24 tokens p95 12.4 ms |
+| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 17.8 ms; generated 21–24 tokens p95 17.02 ms |
 | ERG batch emitted | 49 probe, 400 generated positive, 600 corruption accepted, 300 corruption rejected |
 | Phone timing | **not yet measured**: open `bench/wordlab_grammar_bench.html` on an iPhone |
 
 ## What Phase 0 is
 
-A declarative feature grammar (`src/grammar.js`: 82 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
+A declarative feature grammar (`src/grammar.js`: 92 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
 
 Each parse returns one of three states:
 
@@ -96,60 +96,78 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 | S1 | stress: 20-noun compound | recognised | reject | 369 | `[S [NP the prison patient parrot menu banana garden fence table stairs ketchup output script soldier steel salad canvas autumn october symbol journey] [FP is bitter]]` |
 | S2 | stress: 12 coordinated clauses | recognised | accept (clause) | 427 | `[S [S [NP the dog] [FP can [VP run]]] and [S [NP the cat] [FP can [VP jump]]] and [S [NP the fish] [FP can [VP swim]]] and [S [NP the bird] [FP can [VP sing]]] and [S [NP the lion] [FP can [VP dance]]] and [S [NP the horse] [FP can [VP fly]]] and [S [NP the donkey] [FP can [VP float]]] and [S [NP the eagle] [FP can [VP shiver]]] and [S [NP the rabbit] [FP can [VP blossom]]] and [S [NP the monkey] [FP can [VP crumble]]] and [S [NP the tiger] [FP can [VP arrive]]] and [S [NP the elephant] [FP can [VP climb]]]]` |
 | S3 | stress: nested subordination | recognised | accept (clause) | 213 | `[S [S [NP the dog] [FP can [VP run]]] [SubCl because [S [S [NP the cat] [FP can [VP jump]]] [SubCl because [S [S [NP the fish] [FP can [VP swim]]] [SubCl because [S [NP the bird] [FP can [VP sing]]]]]]]]]` |
+| T1 | Greg 2026-10-28: fronted 'today', 'all' + mass 'cargo', pre-verbal 'later' | recognised | reject | 380 | `[S today [S [NP all rude runway leaf cargo] [FP can [VP [VP [VP predict [NP core salad news]] and [VP later [VP inch]]] [PP toward [NP a castle festival holiday badge]]]]]]` |
+| T2 | 0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them | recognised | reject | 97 | `[S later today [S [NP the cargo] [FP can [VP predict [NP news]]]]]` |
+| T3 | 0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them | recognised | reject | 84 | `[S [PP in [NP the garden]] [S [NP the cargo] [FP can [VP predict [NP news]]]]]` |
+| T4 | 0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them | recognised | reject | 170 | `[S [S first [S [NP the cargo] [FP can [VP predict [NP news]]]]] then [S [NP the castle] [FP can [VP sleep]]]]` |
+| T5 | 0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them | recognised | reject | 144 | `[S [S [NP the cargo] [FP can [VP predict [NP news]]]] and [S then [S [NP the castle] [FP can [VP sleep]]]]]` |
+| T6 | 0.2.0: no comma or dash tiles, so fronted adjuncts and linked clauses are written without them | recognised | reject | 64 | `[Imp today [Imp [VP [VP inch] [PP toward [NP the castle]]]]]` |
+| T7 | 0.2.0: adjuncts after a predicative complement | recognised | reject | 47 | `[S [NP the cargo] [FP was safe today]]` |
+| T8 | 0.2.0: PP adjunct after a predicative adjective | recognised | reject | 51 | `[S [NP the cargo] [FP is safe [PP in [NP the garden]]]]` |
+| T9 | 0.2.0: 'cargo' is count and mass (Cambridge [C or U]) | recognised | reject | 79 | `[S [NP all rude cargo] [FP can [VP predict [NP news]]]]` |
+| T10 | 0.2.0: time adverbs before the verb | recognised | accept (fragment) | 105 | `[S [NP the cargo] [FP can [VP [VP later [VP inch]] [PP toward [NP the castle]]]]]` |
+| T11 | 0.2.0: future-time modal with fronted 'tomorrow' | recognised | reject | 52 | `[S tomorrow [S [NP the cargo] [FP will [VP leave]]]]` |
+| T12 | 0.2.0: past tense with 'soon' is fine | recognised | reject | 40 | `[S [NP the cargo] [FP [VP [VP left] soon]]]` |
+| T13 | 0.2.0: no stacking of time adverbs before the subject | unrecognised | reject | — |  |
+| T14 | 0.2.0: no stacking of time adverbs after the verb | unrecognised | reject | — |  |
+| T15 | 0.2.0: past tense with 'tomorrow' (main clause) | conflict (time_reference) | reject | — |  |
+| T16 | 0.2.0: past tense with 'tomorrow' after a predicative complement | conflict (time_reference) | reject | — |  |
+| T17 | 0.2.0: 'home' does not front a clause | unrecognised | reject | — |  |
 
 ## Construction-level coverage (measured)
 
-1500 random derivations plus 95 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
+1500 random derivations plus 144 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
 
 | Construction family | Generated sentences | Recovered | v1.1 rejected |
 |---|---:|---:|---:|
-| adjective | 436 | 436 | 83% |
-| adjective_modifier | 316 | 316 | 83% |
-| bare_idiomatic_pp | 142 | 142 | 100% |
-| bare_np | 703 | 703 | 95% |
-| causal_for_coordination | 41 | 41 | 100% |
-| clause | 636 | 636 | 99% |
-| clause_coordination | 377 | 377 | 100% |
-| complement_clause | 209 | 209 | 100% |
-| copula | 40 | 40 | 93% |
-| degree_modifier | 274 | 274 | 91% |
-| determiner | 517 | 517 | 82% |
-| ditransitive | 58 | 58 | 97% |
-| do_support | 40 | 40 | 98% |
-| focus_modifier | 250 | 250 | 100% |
-| fused_head | 40 | 40 | 88% |
-| imperative | 582 | 582 | 87% |
+| adjective | 365 | 365 | 84% |
+| adjective_modifier | 313 | 313 | 79% |
+| bare_idiomatic_pp | 265 | 265 | 100% |
+| bare_np | 689 | 689 | 95% |
+| causal_for_coordination | 40 | 40 | 100% |
+| clause | 597 | 597 | 100% |
+| clause_coordination | 84 | 84 | 100% |
+| complement_clause | 73 | 73 | 100% |
+| copula | 52 | 52 | 100% |
+| degree_modifier | 201 | 201 | 86% |
+| determiner | 588 | 588 | 82% |
+| ditransitive | 40 | 40 | 98% |
+| do_support | 41 | 41 | 100% |
+| focus_modifier | 286 | 286 | 100% |
+| fused_head | 40 | 40 | 90% |
+| imperative | 471 | 471 | 92% |
 | imperative_declarative_coordination | 40 | 40 | 100% |
-| infinitive | 148 | 148 | 99% |
-| intransitive | 785 | 785 | 96% |
-| lexical_copula | 200 | 200 | 84% |
-| modal | 41 | 41 | 100% |
-| negation | 103 | 103 | 97% |
-| nominal_utterance | 352 | 352 | 68% |
-| noun_compound | 333 | 333 | 77% |
-| noun_coordination | 625 | 625 | 97% |
-| noun_head | 1058 | 1058 | 88% |
-| np_premodifier | 1058 | 1058 | 88% |
-| past_tense | 260 | 260 | 100% |
-| perfect | 41 | 41 | 100% |
-| postverbal_adverb | 57 | 57 | 96% |
-| predicate_adjective | 152 | 152 | 99% |
-| predicate_coordination | 360 | 360 | 100% |
-| predicate_nominal | 47 | 47 | 98% |
-| predicate_prepositional | 66 | 66 | 97% |
-| prepositional_phrase | 427 | 427 | 98% |
-| prepositional_verb | 90 | 90 | 86% |
-| present_tense | 150 | 150 | 100% |
-| preverbal_adverb | 73 | 73 | 95% |
-| pronoun | 1149 | 1149 | 96% |
-| question | 369 | 369 | 96% |
-| relative_clause | 260 | 260 | 99% |
-| subordinate_clause | 291 | 291 | 100% |
-| verb_coordination | 545 | 545 | 99% |
-| verb_object | 120 | 120 | 89% |
-| vp_ellipsis | 726 | 726 | 99% |
+| infinitive | 56 | 56 | 100% |
+| intransitive | 738 | 738 | 98% |
+| lexical_copula | 109 | 109 | 88% |
+| modal | 40 | 40 | 100% |
+| negation | 99 | 99 | 100% |
+| nominal_utterance | 433 | 433 | 66% |
+| noun_compound | 331 | 331 | 77% |
+| noun_coordination | 732 | 732 | 96% |
+| noun_head | 1077 | 1077 | 87% |
+| np_premodifier | 1077 | 1077 | 87% |
+| past_tense | 238 | 238 | 100% |
+| perfect | 40 | 40 | 100% |
+| postverbal_adverb | 1041 | 1041 | 99% |
+| predicate_adjective | 101 | 101 | 100% |
+| predicate_coordination | 339 | 339 | 100% |
+| predicate_nominal | 80 | 80 | 100% |
+| predicate_prepositional | 103 | 103 | 100% |
+| prepositional_phrase | 868 | 868 | 99% |
+| prepositional_verb | 40 | 40 | 75% |
+| present_tense | 58 | 58 | 100% |
+| preverbal_adverb | 172 | 172 | 99% |
+| pronoun | 1176 | 1176 | 96% |
+| proper_noun | 249 | 249 | 95% |
+| question | 368 | 368 | 98% |
+| relative_clause | 260 | 260 | 100% |
+| subordinate_clause | 224 | 224 | 100% |
+| verb_coordination | 380 | 380 | 100% |
+| verb_object | 50 | 50 | 90% |
+| vp_ellipsis | 640 | 640 | 100% |
 
-Overall v1.1 accepts 209/1595 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
+Overall v1.1 accepts 195/1644 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
 
 ## Typed corruptions (measured)
 
@@ -157,13 +175,13 @@ Each generated sentence is corrupted using its own tree, so each corruption know
 
 | Corruption | n | Phase 0 accepted | Phase 0 conflict naming the attacked constraint | v1.1 accepted |
 |---|---:|---:|---:|---:|
-| agreement | 1208 | 75 | 1103 | 0/1208 |
-| case | 1434 | 104 | 1300 | 19/1434 |
-| adjacent swap | 1477 | 266 | — | 81/1477 |
-| token delete | 1477 | 522 | — | 90/1477 |
-| article | 35 | 0 | 35 | 0/35 |
-| det drop | 174 | 42 | 131 | 3/174 |
-| object drop | 60 | 9 (verb kept as verb: 0) | 50 | 0/60 |
+| case | 1103 | 127 | 940 | 26/1103 |
+| adjacent swap | 1548 | 347 | — | 55/1548 |
+| token delete | 1548 | 660 | — | 80/1548 |
+| det drop | 192 | 50 | 139 | 7/192 |
+| agreement | 908 | 63 | 817 | 0/908 |
+| article | 30 | 0 | 30 | 0/30 |
+| object drop | 18 | 4 (verb kept as verb: 0) | 9 | 0/18 |
 
 Defects found by this stream and fixed during Phase 0: case was checked on the first conjunct only (*me and he can run*); PP and relative postmodifiers dropped pronoun case (*they about industry* as an object); NP-level *but* (*the cat but the dog*); mixed *and/or* chains flattened with the wrong number; reflexive *myself* without an antecedent; over-broad collective-noun and bare-PP evidence rules (see lexical policy).
 
@@ -171,29 +189,29 @@ Defects found by this stream and fixed during Phase 0: case was checked on the f
 
 | Generated length | n | p50 ms | p95 ms | max ms |
 |---|---:|---:|---:|---:|
-| 1-8 tokens | 571 | 0.61 | 4.77 | 29.77 |
-| 9-14 tokens | 465 | 1.58 | 7.33 | 21.29 |
-| 15-20 tokens | 387 | 2.45 | 10.01 | 36.31 |
-| 21-24 tokens | 172 | 3.33 | 12.4 | 37.42 |
+| 1-8 tokens | 585 | 0.77 | 6.34 | 23.17 |
+| 9-14 tokens | 536 | 1.86 | 7.99 | 32.88 |
+| 15-20 tokens | 382 | 3.13 | 14.01 | 55.48 |
+| 21-24 tokens | 141 | 4.22 | 17.02 | 34.93 |
 
 Adversarial inputs (full API: 24-best readings, diverse root readings, choice points):
 
 | Case | Tokens | State | Complete trees | ms |
 |---|---:|---|---:|---:|
-| 10-noun compound subject | 13 | recognised | 2 | 7.3 |
-| 20-noun compound subject | 23 | recognised | 96 | 16.1 |
-| 40-noun compound subject | 43 | recognised | 768 | 18.5 |
-| 50-noun compound subject | 53 | recognised | 1536 | 26.7 |
-| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 13.4 |
-| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 14.7 |
-| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 9.1 |
-| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 38.6 |
-| 8 coordinated clauses | 39 | recognised | 1 | 3.5 |
-| 16 coordinated clauses | 79 | recognised | 1 | 8.6 |
-| 40-token realistic | 42 | recognised | 11616 | 16.1 |
-| mixed subordination + coordination | 29 | recognised | 258 | 11.4 |
+| 10-noun compound subject | 13 | recognised | 2 | 7.6 |
+| 20-noun compound subject | 23 | recognised | 96 | 18.8 |
+| 40-noun compound subject | 43 | recognised | 768 | 18 |
+| 50-noun compound subject | 53 | recognised | 1536 | 62.4 |
+| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 18.5 |
+| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 10 |
+| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 20.8 |
+| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 29 |
+| 8 coordinated clauses | 39 | recognised | 1 | 4.3 |
+| 16 coordinated clauses | 79 | recognised | 1 | 8.1 |
+| 40-token realistic | 42 | recognised | 11616 | 17.8 |
+| mixed subordination + coordination | 29 | recognised | 258 | 17 |
 
-The largest single-sentence time in the generated run was 37.42 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
+The largest single-sentence time in the generated run was 55.48 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
 
 Phone figures are unmeasured; expect several times slower. The runtime lexicon is currently compiled at start-up from raw evidence; Phase 3 should ship a precompiled grammar and lexicon.
 
@@ -201,7 +219,7 @@ Phone figures are unmeasured; expect several times slower. The runtime lexicon i
 
 | Tier | What | Readings |
 |---|---|---:|
-| attested | mass readings (Wiktionary uncountable mark recorded but unused in v1.1) | 250 |
+| attested | mass readings (Wiktionary uncountable mark recorded but unused in v1.1) | 251 |
 | attested | count readings for v1.1 mass nouns | 10 |
 | attested | intransitive frames from WordNet frames / Wiktionary tags (ERG-validated) | 388 |
 | attested | bare idiomatic PPs (189 preposition + noun pairs) | 189 |
@@ -393,6 +411,18 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 - Gold tiles supply closed-class roles only, plus lexical *has* and causal *for* (2026-10-19).
 - Unrecognised sentences may be saved with reserved blue tiles and zero competitive points, and are re-scored on grammar updates (2026-10-19).
 - Creative-mode rescoring is allowed with version history; competitions freeze grammar and scoring versions (2026-10-19).
+- **No punctuation tiles, so the grammar accepts what would be correct with commas and dashes restored** (2026-10-28). Players write *Today the cargo can …* and *… news then the castle can …* as they would on paper. Constructions that only punctuation keeps apart (unlinked run-on clauses, appositives, vocatives) are not accepted, because without it almost any sequence of noun phrases would parse.
+
+## Engine 0.2.0 grammar additions (measured)
+
+- **Fronted adjuncts** (CGEL ch. 8): a time or place adverb (*today, tonight, tomorrow, later, now, then, soon, once, first, next, outside, inside*) before the subject or an imperative, or a PP before the subject, with no comma. At most one fronted adverb (or *later today*) and one fronted PP per clause. A fronted adverb scores as the same adverb at the end of the clause.
+- **Linked clauses**: *then, later, next* join two clauses where writing would use a semicolon or dash. *and then* now works as well (*then* fronting the second clause).
+- **Time adverbs before the verb**: *later, soon, then, now, once, first, next* (*the cargo can later inch toward the castle*). Not *today/tomorrow/tonight*, which cannot precede the verb (not *I tomorrow leave*).
+- **One time adverb per position**: time adverbs no longer stack (not *today later soon the cargo …* or *… news today later soon*); *later today/tonight/tomorrow* is one phrase. A fronted time adverb and one inside the predicate can co-occur (*Today the cargo can predict news and later inch …*).
+- **Time reference**: in a main clause, past tense (past verb, *was/were*, *did*) with *tomorrow* is a named conflict, `time_reference`. English has two tenses; *will* and *can* are present-tense modals with future time reference (CGEL ch. 3), so *Soon the cargo can …* is fine. Subordinate and content clauses are exempt (hypothetical or backshifted past).
+- **Adjuncts after a predicative complement**: *was safe today*, *is safe in the garden* (PP only after an adjective; after a noun it is already an NP modifier).
+- **Lexicon**: *cargo* gains a mass reading (Cambridge Dictionary: [C or U]), so *all rude cargo* is recognised.
+- **Limitations**: a past-tense clause rejected for *tomorrow* can still be accepted as a nominal fragment when its words also form a noun phrase (*the cargo left tomorrow* as a compound); a fronted *tomorrow* over coordinated predicates is checked against the first predicate only.
 
 ## Phase 1 grammar additions (measured)
 
@@ -428,13 +458,13 @@ The weights were set so that construction points are roughly 25–50% of a sente
 
 | Check | Result |
 |---|---|
-| P1 recognised + blue tile ⇒ score > 0 | 0 violations in 600 generated sentences |
-| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 627 insertions (13 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
+| P1 recognised + blue tile ⇒ score > 0 | 0 violations in 800 generated sentences |
+| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 698 insertions (8 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
 | P3′ gold-only material earns nothing; unanchored links earn nothing | 0 non-zero of 150 gold-only sentences; anchor cases all as expected |
 | P4′ repeated constructions converge; another *and* adds 12.86 structural points, a new kind (relative clause) adds 69.86 | 0 failures |
 | P5 adjective stacks bounded (≤ 33); noun compounds linear and always ahead (8 modifiers: 80 vs 31.41) | 0 failures |
-| P6 score spread across alternative readings (tracked) | median 0.048, 90th percentile 0.275 of the canonical score |
-| Join test: clause-level join ≥ separate sum | 0 violations in 8 joins |
+| P6 score spread across alternative readings (tracked) | median 0.052, 90th percentile 0.233 of the canonical score |
+| Join test: clause-level join ≥ separate sum | 0 violations in 10 joins |
 
 Clause chains (same words; scores after 1–10 clauses):
 
@@ -473,15 +503,15 @@ Points per blue tile by strategy:
 | session sentence 1 | 16 | 370 | 23.1 |
 | embedding + relative | 9 | 175 | 19.49 |
 
-**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 58 sentences, 136 blue tiles, 2245 points (16.5 per tile); structural points 33% of the total; 3 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
+**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 64 sentences, 125 blue tiles, 1912 points (15.29 per tile); structural points 33% of the total; 3 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
 
 | Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |
 |---|---:|---:|---:|
-| 1-2 | 771 | 10 | 12.2 |
-| 3-4 | 1797 | 13 | 16.2 |
-| 5-6 | 1470 | 15.6 | 20.5 |
-| 7-9 | 1361 | 19.2 | 25.3 |
-| 10+ | 601 | 21.5 | 26.3 |
+| 1-2 | 568 | 7.6 | 12.2 |
+| 3-4 | 1601 | 13 | 17.5 |
+| 5-6 | 1646 | 16.8 | 22.2 |
+| 7-9 | 1539 | 21.5 | 27 |
+| 10+ | 646 | 23.4 | 27.6 |
 
 Earlier drafts failed this search and were corrected: v0.1 let tiny elliptical structures farm link bonuses (*project all can and canvas*: 3 blue tiles, 95 points); the first v0.4 draft let short, construction-dense questions and fragments win per tile. The substantive-link rule, the size multiplier and the construction-substance scaling were introduced in response.
 

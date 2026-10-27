@@ -104,6 +104,20 @@ const V11_DEGREE = ['barely', 'very', 'too', 'so', 'quite', 'rather', 'extremely
 const V11_PREVERB = ['barely', 'never', 'always', 'just', 'often', 'rarely', 'still', 'also', 'only', 'really', 'again', 'almost', 'already', 'easily', 'truly'];
 const V11_POST = ['today', 'tonight', 'tomorrow', 'yesterday', 'later', 'now', 'soon', 'always', 'never', 'again', 'already', 'then', 'once', 'twice', 'ahead', 'alone', 'apart', 'away', 'easily', 'there', 'together', 'truly',
   'about', 'around', 'best', 'better', 'early', 'east', 'first', 'forward', 'hard', 'home', 'inside', 'left', 'next', 'north', 'off', 'outside', 'right', 'round', 'slow', 'south', 'west', 'wrong', 'online'];
+// Time adverbs after the verb: 'day' today/tonight, 'fday' tomorrow, 'later',
+// 'gen' now/soon/then. Post-verbal 'once' means 'one time', not a time
+// location. Only one time adverb per position (grammar TM_ADD).
+const TIME_POST = Object.freeze({today: 'day', tonight: 'day', tomorrow: 'fday', later: 'later', now: 'gen', soon: 'gen', then: 'gen'});
+// Time and sequence adverbs that also stand before the verb ("she later left",
+// "they once lived", "first predict the news"). Not today/tomorrow/tonight.
+const PREVERB_TIME = Object.freeze({later: 'y', soon: 'y', then: 'y', now: 'y', once: 'y', first: 'no', next: 'no'});
+// Adverbs that may front a clause without a comma ("Today the cargo can ...").
+// 'home' is excluded: fronted "Home the ..." does not read as an adjunct.
+const FRONT_ADV = Object.freeze({today: 'day', tonight: 'day', tomorrow: 'fday', later: 'later', now: 'gen', then: 'gen', soon: 'gen', once: 'gen',
+  first: 'no', next: 'no', outside: 'no', inside: 'no'});
+const LINK_ADV = new Set(['then', 'later', 'next']);
+// Nouns whose v1.1 entry lacks a mass reading that standard dictionaries give.
+const MASS_ADDITIONS = Object.freeze({cargo: 'Cambridge Dictionary: cargo noun [C or U] (all cargo was unloaded)'});
 const DEGREE_ADDITIONS = {half: 'CGEL ch. 6: degree modifier (half empty, half human)', pretty: 'CGEL ch. 6: degree modifier (pretty bitter)'};
 
 // WordNet verb-frame IDs (Princeton/OEWN sentence frames) mapped to frames.
@@ -183,6 +197,8 @@ function compileLexicon(v11, oewn, options = {}) {
         add(w, 'N', {num: 'sg', cnt: 'count', on}, 'attested', 'Simple English Wiktionary (Kaikki) noun marked countable', 'count reading');
       // Zero-plural nouns (CGEL ch. 5): the singular form is also a true
       // plural ("ten staff", "staff sign"). Curated, short and cited.
+      if (MASS_ADDITIONS[w] && nums.includes('sg') && !(lex.get(w) || []).some(x => x.cat === 'N' && x.f.cnt === 'mass'))
+        add(w, 'N', {num: 'sg', cnt: 'mass', on}, 'attested', MASS_ADDITIONS[w], 'mass reading');
       if (ZERO_PLURAL.has(w)) add(w, 'N', {num: 'pl', cnt: 'count', on}, 'attested', 'CGEL ch. 5 zero-plural noun', 'plural form identical to singular');
       const lf = lexfiles[w] || [];
       const first = (oewn && oewn.noun_first_sense_lexfile || {})[w];
@@ -209,9 +225,14 @@ function compileLexicon(v11, oewn, options = {}) {
     for (const r of rs.filter(r => r.pos === 'adverb')) {
       const cls = (r.attributes || {}).class || 'unspecified';
       if (cls === 'degree' || V11_DEGREE.includes(w)) add(w, 'AdvDeg', {pa: 'both', on}, 'curated', 'v1.1 class ' + cls);
-      if (['frequency', 'focus', 'additive', 'manner'].includes(cls) || V11_PREVERB.includes(w)) add(w, 'AdvPre', {}, 'curated', 'v1.1 class ' + cls);
-      if (['time', 'place', 'postverbal_place_or_medium', 'manner'].includes(cls) || V11_POST.includes(w)) add(w, 'AdvPost', {}, 'curated', 'v1.1 class ' + cls);
+      if (['frequency', 'focus', 'additive', 'manner'].includes(cls) || V11_PREVERB.includes(w)) add(w, 'AdvPre', {tm: 'no'}, 'curated', 'v1.1 class ' + cls);
+      if (['time', 'place', 'postverbal_place_or_medium', 'manner'].includes(cls) || V11_POST.includes(w)) add(w, 'AdvPost', {tm: TIME_POST[w] || 'no'}, 'curated', 'v1.1 class ' + cls);
       if (cls === 'focus') add(w, 'AdvFocus', {}, 'curated', 'v1.1 class focus');
+    }
+    if ((lex.get(w) || []).some(x => x.cat === 'AdvPost')) {
+      if (PREVERB_TIME[w]) add(w, 'AdvPre', {tm: PREVERB_TIME[w]}, 'curated', 'CGEL ch. 8: time/sequence adverb before the verb (she later left)', 'adverb before the verb');
+      if (FRONT_ADV[w]) add(w, 'AdvFront', {tm: FRONT_ADV[w]}, 'curated', 'CGEL ch. 8: adjunct before the subject; Word Lab has no comma tile', 'adverb before the subject');
+      if (LINK_ADV.has(w)) add(w, 'AdvLink', {}, 'curated', 'CGEL ch. 15: sequencing adverb linking clauses where writing would use a semicolon or dash', 'linking adverb');
     }
     if (DEGREE_ADDITIONS[w]) add(w, 'AdvDeg', {pa: 'both', on}, 'attested', DEGREE_ADDITIONS[w], 'degree modifier');
     // ---- verbs

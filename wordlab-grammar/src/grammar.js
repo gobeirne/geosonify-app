@@ -14,11 +14,14 @@
  * English Language (CGEL), at chapter level.
  */
 
+// Time adverbs (CGEL ch. 8): 'day' today/tonight, 'fday' tomorrow (future
+// only), 'later', 'gen' now/soon/then/once; 'no' = not a time-locating adverb.
+const TM_LEX = ['no', 'day', 'fday', 'later', 'gen'];
 const CATS = {
   // preterminals
   N: {num: ['sg', 'pl'], cnt: ['count', 'mass', 'coll'], on: ['v', 'c', 'x']},
   NIdiom: {p: 'PREP'}, PropN: {}, Adj: {u: ['attr', 'pred'], on: ['v', 'c', 'x']}, AdjFused: {},
-  AdvDeg: {pa: ['both', 'pred'], on: ['v', 'c', 'x']}, AdvPre: {}, AdvPost: {}, AdvFocus: {},
+  AdvDeg: {pa: ['both', 'pred'], on: ['v', 'c', 'x']}, AdvPre: {tm: ['no', 'y']}, AdvPost: {tm: TM_LEX}, AdvFocus: {}, AdvFront: {tm: TM_LEX}, AdvLink: {},
   V: {fr: ['intr', 'tr', 'ditr', 'cop', 'toinf', 'clause'], vf: ['base', 'past', 'ppart', 'pres3']},
   VPrep: {p: 'PREP', vf: ['base', 'past', 'ppart', 'pres3']},
   Det: {d: ['the', 'any', 'a', 'an', 'sg_count', 'pl', 'pl_mass', 'mass', 'dem_sg']},
@@ -33,16 +36,28 @@ const CATS = {
   NP: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], case: ['nom', 'acc', 'any', 'refl'], co: ['n', 'and', 'or']},
   NPx: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], case: ['nom', 'acc', 'any', 'refl'], co: ['and', 'or']},
   NPTail: {num: ['sg', 'pl', 'mix'], cj: ['and', 'or'], case: ['nom', 'acc', 'any', 'refl']},
-  PP: {}, Pred: {},
-  VP: {vf: ['base', 'past', 'ppart', 'pres3'], co: ['n', 'y']}, VPx: {vf: ['base', 'past', 'ppart', 'pres3']},
+  PP: {}, Pred: {tm: ['n', 'y', 'f'], pk: ['a', 'n', 'p']},
+  VP: {vf: ['base', 'past', 'ppart', 'pres3'], co: ['n', 'y'], tm: ['n', 'y', 'f']}, VPx: {vf: ['base', 'past', 'ppart', 'pres3']},
   VPTail: {vf: ['base', 'past', 'ppart', 'pres3']},
-  FP: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], co: ['n', 'y']}, FPx: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3']},
+  FP: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], co: ['n', 'y'], pt: ['n', 'p', 'y']}, FPx: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3'], pt: ['n', 'p', 'y']},
   FPTail: {num: ['sg', 'pl', 'mix'], per: ['1', '2', '3']},
-  S: {co: ['n', 'y']}, Sx: {}, STail: {}, SubCl: {}, Imp: {}, Q: {}, Core: {}, Utt: {},
+  S: {co: ['n', 'y'], fa: ['n', 'y'], fp: ['n', 'y'], pt: ['n', 'p', 'y']}, Sx: {}, STail: {}, SubCl: {}, Imp: {fa: ['n', 'y']}, Q: {}, Core: {}, Utt: {},
 };
 // Unspecified LHS features take these defaults. 'co' marks a constituent that
 // is itself an unbracketed coordination, so coordinations stay flat.
-const DEFAULTS = {co: 'n'};
+// 'tm' (VP, Pred): has a time adverb already ('y'), one that is 'tomorrow'
+// ('f'), or none ('n'). 'fa'/'fp' (S, Imp): a fronted adverb / PP is already
+// present. 'pt' (FP, S): past tense ('p'), past tense with 'tomorrow' ('y').
+const DEFAULTS = {co: 'n', tm: 'n', fa: 'n', fp: 'n', pt: 'n'};
+// One time adverb per position: a second one may not stack on a VP or
+// predicate that already has one ("*today later soon"). 'later' + a day word
+// is one phrase ("later today"). Returns the resulting 'tm', or null.
+const TM_ADD = (t, a) => a === 'no' ? t : t !== 'n' ? null : a === 'fday' ? 'f' : 'y';
+// Past tense with 'tomorrow' (CGEL ch. 3: preterite in a main clause locates
+// the situation in past time). Hypothetical and backshifted past ("if it left
+// tomorrow", "she said it left tomorrow") occur only in subordinate and
+// content clauses, which are exempt: the check is applied to main clauses.
+const PT_OF = (past, tm) => !past ? 'n' : tm === 'f' ? 'y' : 'p';
 
 // 'coll' = notional plural of a collective noun (the army are): plural
 // agreement, but not countable-plural, so no numerals/'many'/'all' and no
@@ -191,20 +206,32 @@ rule('vp_zero_that', L('VP', {vf: '?f'}), [L('V', {fr: 'clause', vf: '?f'}), L('
 rule('vp_prep', L('VP', {vf: '?f'}), [L('VPrep', {p: '?p', vf: '?f'}), L('P', {p: '?p'}), L('NP', {case: '?k'})],
   {fam: 'prepositional_verb', head: 0, deps: [[1, 'case'], [2, 'obl']], disp: 'VP', when: (v, C) => C('case', OBJ(v.k))});
 // Adjuncts.
-rule('vp_pp', L('VP', {vf: '?f'}), [L('VP', {vf: '?f'}), L('PP')], {fam: 'prepositional_phrase', head: 0, deps: [[1, 'obl']], disp: 'VP'});
-rule('vp_post', L('VP', {vf: '?f'}), [L('VP', {vf: '?f'}), L('AdvPost')], {fam: 'postverbal_adverb', head: 0, deps: [[1, 'advmod']], disp: 'VP'});
-rule('vp_pre', L('VP', {vf: '?f'}), [L('AdvPre'), L('VP', {vf: '?f'})], {fam: 'preverbal_adverb', head: 1, deps: [[0, 'advmod']], disp: 'VP'});
+rule('vp_pp', L('VP', {vf: '?f', tm: '?t'}), [L('VP', {vf: '?f', tm: '?t'}), L('PP')], {fam: 'prepositional_phrase', head: 0, deps: [[1, 'obl']], disp: 'VP'});
+rule('vp_post', L('VP', {vf: '?f', tm: '?u'}), [L('VP', {vf: '?f', tm: '?t'}), L('AdvPost', {tm: '?a'})], {fam: 'postverbal_adverb', head: 0, deps: [[1, 'advmod']], disp: 'VP',
+  when: (v) => TM_ADD(v.t, v.a) === v.u});
+rule('vp_post_later', L('VP', {vf: '?f', tm: '?u'}), [L('VP', {vf: '?f', tm: 'n'}), L('AdvPost', {tm: 'later'}), L('AdvPost', {tm: '?a'})],
+  {fam: 'postverbal_adverb', head: 0, deps: [[1, 'advmod'], [2, 'advmod']], disp: 'VP', when: (v) => (v.a === 'day' || v.a === 'fday') && TM_ADD('n', v.a) === v.u});
+rule('vp_pre', L('VP', {vf: '?f', tm: '?u'}), [L('AdvPre', {tm: '?a'}), L('VP', {vf: '?f', tm: '?t'})], {fam: 'preverbal_adverb', head: 1, deps: [[0, 'advmod']], disp: 'VP',
+  when: (v) => (v.a === 'no' ? v.t : v.t === 'n' ? 'y' : null) === v.u});
 // VP coordination, flat n-ary.
 rule('vp_coord', L('VP', {vf: '?f', co: 'y'}), [L('VPx', {vf: '?f'}), L('VPTail', {vf: '?f'})],
   {fam: 'verb_coordination', head: 0, deps: [[1, 'conj']], disp: 'VP'});
-rule('vpx', L('VPx', {vf: '?f'}), [L('VP', {vf: '?f', co: 'n'})], {head: 0, disp: null});
+rule('vpx', L('VPx', {vf: '?f'}), [L('VP', {vf: '?f', co: 'n', tm: '?t'})], {head: 0, disp: null, when: (v, C) => C('time_reference', !(v.f === 'past' && v.t === 'f'))});
 rule('vptail1', L('VPTail', {vf: '?f'}), [L('Conj'), L('VPx', {vf: '?f'})], {head: 1, deps: [[0, 'cc']], disp: null});
 rule('vptail2', L('VPTail', {vf: '?f'}), [L('Conj'), L('VPx', {vf: '?f'}), L('VPTail', {vf: '?f'})], {head: 1, deps: [[0, 'cc'], [2, 'conj']], disp: null});
 
 // ---------------------------------------------------------------- predicates
-rule('pred_adj', L('Pred'), [L('AdjP', {u: 'pred'})], {fam: 'predicate_adjective', head: 0, disp: null});
-rule('pred_np', L('Pred'), [L('NP', {case: '?k'})], {fam: 'predicate_nominal', head: 0, disp: null, when: (v, C) => C('case', OBJ(v.k))});
-rule('pred_pp', L('Pred'), [L('PP')], {fam: 'predicate_prepositional', head: 0, disp: null});
+rule('pred_adj', L('Pred', {pk: 'a'}), [L('AdjP', {u: 'pred'})], {fam: 'predicate_adjective', head: 0, disp: null});
+rule('pred_np', L('Pred', {pk: 'n'}), [L('NP', {case: '?k'})], {fam: 'predicate_nominal', head: 0, disp: null, when: (v, C) => C('case', OBJ(v.k))});
+rule('pred_pp', L('Pred', {pk: 'p'}), [L('PP')], {fam: 'predicate_prepositional', head: 0, disp: null});
+// Adjuncts after a predicative complement ("was safe today", "is safe in the
+// garden"). A PP adjunct follows only an adjective: after a nominal it is
+// already an NP modifier, after a PP it would only re-bracket.
+rule('pred_post', L('Pred', {tm: '?u', pk: '?k'}), [L('Pred', {tm: '?t', pk: '?k'}), L('AdvPost', {tm: '?a'})],
+  {fam: 'postverbal_adverb', head: 0, deps: [[1, 'advmod']], disp: null, when: (v) => TM_ADD(v.t, v.a) === v.u});
+rule('pred_post_later', L('Pred', {tm: '?u', pk: '?k'}), [L('Pred', {tm: 'n', pk: '?k'}), L('AdvPost', {tm: 'later'}), L('AdvPost', {tm: '?a'})],
+  {fam: 'postverbal_adverb', head: 0, deps: [[1, 'advmod'], [2, 'advmod']], disp: null, when: (v) => (v.a === 'day' || v.a === 'fday') && TM_ADD('n', v.a) === v.u});
+rule('pred_pp_adj', L('Pred', {tm: '?t', pk: 'a'}), [L('Pred', {tm: '?t', pk: 'a'}), L('PP')], {fam: 'prepositional_phrase', head: 0, deps: [[1, 'obl']], disp: null});
 
 // ---------------------------------------------------------------- finite predicates
 // FP carries subject agreement features. Each agreement check is named.
@@ -214,14 +241,15 @@ rule('fp_modal_neg', L('FP', {num: '?n', per: '?p'}), [L('Modal'), L('Not'), L('
   {fam: 'negation', head: 2, deps: [[0, 'aux'], [1, 'neg']], disp: 'FP'});
 rule('fp_modal_be', L('FP', {num: '?n', per: '?p'}), [L('Modal'), L('Be'), L('Pred')],
   {fam: 'copula', head: 2, deps: [[0, 'aux'], [1, 'cop']], disp: 'FP'});
-rule('fp_cop', L('FP', {num: '?n', per: '?p'}), [L('Cop', {ct: '?c'}), L('Pred')],
-  {fam: 'copula', head: 1, deps: [[0, 'cop']], disp: 'FP', when: (v, C) => C('agreement', AGREE(v.c, v.n, v.p))});
-rule('fp_cop_neg', L('FP', {num: '?n', per: '?p'}), [L('Cop', {ct: '?c'}), L('Not'), L('Pred')],
-  {fam: 'negation', head: 2, deps: [[0, 'cop'], [1, 'neg']], disp: 'FP', when: (v, C) => C('agreement', AGREE(v.c, v.n, v.p))});
-rule('fp_do', L('FP', {num: '?n', per: '?p'}), [L('Do', {dt: '?d'}), L('Not'), L('VP', {vf: 'base'})],
-  {fam: 'negation', head: 2, deps: [[0, 'aux'], [1, 'neg']], disp: 'FP', when: (v, C) => C('agreement', AGREE(v.d, v.n, v.p))});
-rule('fp_do_emph', L('FP', {num: '?n', per: '?p'}), [L('Do', {dt: '?d'}), L('VP', {vf: 'base'})],
-  {fam: 'do_support', head: 1, deps: [[0, 'aux']], disp: 'FP', cost: 0.2, when: (v, C) => C('agreement', AGREE(v.d, v.n, v.p))});
+const PAST_COP = c => c === 'was' || c === 'were';
+rule('fp_cop', L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Cop', {ct: '?c'}), L('Pred', {tm: '?m'})],
+  {fam: 'copula', head: 1, deps: [[0, 'cop']], disp: 'FP', when: (v, C) => v.q === PT_OF(PAST_COP(v.c), v.m) && C('agreement', AGREE(v.c, v.n, v.p))});
+rule('fp_cop_neg', L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Cop', {ct: '?c'}), L('Not'), L('Pred', {tm: '?m'})],
+  {fam: 'negation', head: 2, deps: [[0, 'cop'], [1, 'neg']], disp: 'FP', when: (v, C) => v.q === PT_OF(PAST_COP(v.c), v.m) && C('agreement', AGREE(v.c, v.n, v.p))});
+rule('fp_do', L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Do', {dt: '?d'}), L('Not'), L('VP', {vf: 'base', tm: '?m'})],
+  {fam: 'negation', head: 2, deps: [[0, 'aux'], [1, 'neg']], disp: 'FP', when: (v, C) => v.q === PT_OF(v.d === 'did', v.m) && C('agreement', AGREE(v.d, v.n, v.p))});
+rule('fp_do_emph', L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Do', {dt: '?d'}), L('VP', {vf: 'base', tm: '?m'})],
+  {fam: 'do_support', head: 1, deps: [[0, 'aux']], disp: 'FP', cost: 0.2, when: (v, C) => v.q === PT_OF(v.d === 'did', v.m) && C('agreement', AGREE(v.d, v.n, v.p))});
 rule('fp_perfect', L('FP', {num: '?n', per: '?p'}), [L('HaveAux', {ht: '?h'}), L('VP', {vf: 'ppart'})],
   {fam: 'perfect', head: 1, deps: [[0, 'aux']], disp: 'FP', when: (v, C) => C('agreement', AGREE(v.h, v.n, v.p))});
 // Post-auxiliary VP ellipsis (Phase 1): an auxiliary with its complement
@@ -232,10 +260,10 @@ rule('fp_perfect', L('FP', {num: '?n', per: '?p'}), [L('HaveAux', {ht: '?h'}), L
 for (const neg of [false, true]) {
   const N = neg ? [L('Not')] : [], dn = neg ? [[1, 'neg']] : [], sfx = neg ? '_neg' : '';
   rule('fp_ell_modal' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Modal'), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5});
-  rule('fp_ell_cop' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Cop', {ct: '?c'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
-    when: (v, C) => C('agreement', AGREE(v.c, v.n, v.p))});
-  rule('fp_ell_do' + sfx, L('FP', {num: '?n', per: '?p'}), [L('Do', {dt: '?d'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
-    when: (v, C) => C('agreement', AGREE(v.d, v.n, v.p))});
+  rule('fp_ell_cop' + sfx, L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Cop', {ct: '?c'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
+    when: (v, C) => v.q === PT_OF(PAST_COP(v.c), 'n') && C('agreement', AGREE(v.c, v.n, v.p))});
+  rule('fp_ell_do' + sfx, L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('Do', {dt: '?d'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
+    when: (v, C) => v.q === PT_OF(v.d === 'did', 'n') && C('agreement', AGREE(v.d, v.n, v.p))});
   rule('fp_ell_have' + sfx, L('FP', {num: '?n', per: '?p'}), [L('HaveAux', {ht: '?h'}), ...N], {fam: 'vp_ellipsis', head: 0, deps: dn, disp: 'FP', cost: 0.5,
     when: (v, C) => C('agreement', AGREE(v.h, v.n, v.p))});
 }
@@ -245,35 +273,54 @@ rule('fp_present', L('FP', {num: '?n', per: '?p'}), [L('VP', {vf: 'base'})],
   {fam: 'present_tense', head: 0, disp: 'FP', when: (v, C) => C('agreement', AGREE('base', v.n, v.p))});
 rule('fp_pres3', L('FP', {num: '?n', per: '?p'}), [L('VP', {vf: 'pres3'})],
   {fam: 'present_tense', head: 0, disp: 'FP', when: (v, C) => C('agreement', AGREE('pres3', v.n, v.p))});
-rule('fp_past', L('FP', {num: '?n', per: '?p'}), [L('VP', {vf: 'past'})], {fam: 'past_tense', head: 0, disp: 'FP'});
+rule('fp_past', L('FP', {num: '?n', per: '?p', pt: '?q'}), [L('VP', {vf: 'past', tm: '?m'})], {fam: 'past_tense', head: 0, disp: 'FP', when: (v) => v.q === PT_OF(true, v.m)});
 // Coordination of finite predicates sharing one subject.
-rule('fp_coord', L('FP', {num: '?n', per: '?p', co: 'y'}), [L('FPx', {num: '?n', per: '?p'}), L('FPTail', {num: '?n', per: '?p'})],
+rule('fp_coord', L('FP', {num: '?n', per: '?p', co: 'y', pt: '?t'}), [L('FPx', {num: '?n', per: '?p', pt: '?t'}), L('FPTail', {num: '?n', per: '?p'})],
   {fam: 'predicate_coordination', head: 0, deps: [[1, 'conj']], disp: 'FP'});
-rule('fpx', L('FPx', {num: '?n', per: '?p'}), [L('FP', {num: '?n', per: '?p', co: 'n'})], {head: 0, disp: null});
+rule('fpx', L('FPx', {num: '?n', per: '?p', pt: '?t'}), [L('FP', {num: '?n', per: '?p', co: 'n', pt: '?t'})], {head: 0, disp: null, when: (v, C) => C('time_reference', v.t !== 'y')});
 rule('fptail1', L('FPTail', {num: '?n', per: '?p'}), [L('Conj'), L('FPx', {num: '?n', per: '?p'})], {head: 1, deps: [[0, 'cc']], disp: null});
 rule('fptail2', L('FPTail', {num: '?n', per: '?p'}), [L('Conj'), L('FPx', {num: '?n', per: '?p'}), L('FPTail', {num: '?n', per: '?p'})], {head: 1, deps: [[0, 'cc'], [2, 'conj']], disp: null});
 
 // ---------------------------------------------------------------- clauses
-rule('s_subj', L('S'), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('FP', {num: '?n', per: '?p'})],
+rule('s_subj', L('S', {pt: '?t'}), [L('NP', {num: '?n', per: '?p', case: '?k'}), L('FP', {num: '?n', per: '?p', pt: '?t'})],
   {fam: 'clause', head: 1, deps: [[0, 'nsubj']], disp: 'S', when: (v, C) => C('case', SUBJ(v.k))});
 // Adverbial subordinate clauses, final or fronted (CGEL ch. 8, 11).
 rule('subcl', L('SubCl'), [L('Sub'), L('S')], {fam: 'subordinate_clause', head: 1, deps: [[0, 'mark']], disp: 'SubCl'});
-rule('s_sub_final', L('S'), [L('S'), L('SubCl')], {fam: 'subordinate_clause', head: 0, deps: [[1, 'advcl']], disp: 'S'});
-rule('s_sub_front', L('S'), [L('SubCl'), L('S')], {fam: 'subordinate_clause', head: 1, deps: [[0, 'advcl']], disp: 'S', cost: 0.1});
+rule('s_sub_final', L('S', {pt: '?t'}), [L('S', {pt: '?t'}), L('SubCl')], {fam: 'subordinate_clause', head: 0, deps: [[1, 'advcl']], disp: 'S'});
+rule('s_sub_front', L('S', {pt: '?t'}), [L('SubCl'), L('S', {pt: '?t'})], {fam: 'subordinate_clause', head: 1, deps: [[0, 'advcl']], disp: 'S', cost: 0.1});
+// Fronted adjuncts (CGEL ch. 8). Word Lab has no comma tile, so "Today the
+// cargo can ..." is written without one. At most one fronted adverb (or
+// "later today") and one fronted PP per clause; a fronted adverb scores as
+// the same adverb would at the end. A fronted 'tomorrow' over a past-tense
+// clause is a time-reference conflict, checked at main-clause level.
+const FRONT_PT = (a, t) => a === 'fday' && t === 'p' ? 'y' : t;
+rule('s_adv_front', L('S', {fa: 'y', fp: '?p', pt: '?u'}), [L('AdvFront', {tm: '?a'}), L('S', {co: 'n', fa: 'n', fp: '?p', pt: '?t'})],
+  {fam: 'postverbal_adverb', head: 1, deps: [[0, 'advmod']], disp: 'S', when: (v) => FRONT_PT(v.a, v.t) === v.u});
+rule('s_adv_front_later', L('S', {fa: 'y', fp: '?p', pt: '?u'}), [L('AdvFront', {tm: 'later'}), L('AdvFront', {tm: '?a'}), L('S', {co: 'n', fa: 'n', fp: '?p', pt: '?t'})],
+  {fam: 'postverbal_adverb', head: 2, deps: [[0, 'advmod'], [1, 'advmod']], disp: 'S', when: (v) => (v.a === 'day' || v.a === 'fday') && FRONT_PT(v.a, v.t) === v.u});
+rule('s_pp_front', L('S', {fa: '?a', fp: 'y', pt: '?t'}), [L('PP'), L('S', {co: 'n', fa: '?a', fp: 'n', pt: '?t'})],
+  {fam: 'prepositional_phrase', head: 1, deps: [[0, 'obl']], disp: 'S'});
 // Clause coordination, flat n-ary (CGEL ch. 15). A coordinate is any clause
 // that is not itself an unbracketed coordination, so chains stay flat.
 rule('s_coord', L('S', {co: 'y'}), [L('Sx'), L('STail')], {fam: 'clause_coordination', head: 0, deps: [[1, 'conj']], disp: 'S'});
-rule('sx', L('Sx'), [L('S', {co: 'n'})], {head: 0, disp: null});
+rule('sx', L('Sx'), [L('S', {co: 'n', pt: '?t'})], {head: 0, disp: null, when: (v, C) => C('time_reference', v.t !== 'y')});
 rule('stail1', L('STail'), [L('Conj'), L('Sx')], {head: 1, deps: [[0, 'cc']], disp: null});
 rule('stail2', L('STail'), [L('Conj'), L('Sx'), L('STail')], {head: 1, deps: [[0, 'cc'], [2, 'conj']], disp: null});
+// Clauses linked by a sequencing adverb where writing would use a semicolon or
+// dash ("the cargo can predict news then the castle can sleep").
+rule('s_link', L('S', {co: 'y'}), [L('Sx'), L('AdvLink'), L('Sx')], {fam: 'clause_coordination', head: 0, deps: [[2, 'conj'], [1, 'cc']], disp: 'S'});
 
 // Imperatives (CGEL ch. 10): a base-form VP with no subject.
 rule('imp', L('Imp'), [L('VP', {vf: 'base'})], {fam: 'imperative', head: 0, disp: 'Imp'});
-rule('imp_sub', L('Imp'), [L('Imp'), L('SubCl')], {fam: 'subordinate_clause', head: 0, deps: [[1, 'advcl']], disp: 'Imp'});
-rule('imp_sub_front', L('Imp'), [L('SubCl'), L('Imp')], {fam: 'subordinate_clause', head: 1, deps: [[0, 'advcl']], disp: 'Imp', cost: 0.1});
+rule('imp_sub', L('Imp', {fa: '?a'}), [L('Imp', {fa: '?a'}), L('SubCl')], {fam: 'subordinate_clause', head: 0, deps: [[1, 'advcl']], disp: 'Imp'});
+rule('imp_sub_front', L('Imp', {fa: '?a'}), [L('SubCl'), L('Imp', {fa: '?a'})], {fam: 'subordinate_clause', head: 1, deps: [[0, 'advcl']], disp: 'Imp', cost: 0.1});
 // Imperative coordinated with a declarative ("Open it and the cat can run").
-rule('imp_and_s', L('Imp'), [L('Imp'), L('Conj', {cj: 'and'}), L('S')],
-  {fam: 'imperative_declarative_coordination', head: 0, deps: [[1, 'cc'], [2, 'conj']], disp: 'Imp', cost: 0.2});
+rule('imp_and_s', L('Imp', {fa: '?a'}), [L('Imp', {fa: '?a'}), L('Conj', {cj: 'and'}), L('S', {pt: '?t'})],
+  {fam: 'imperative_declarative_coordination', head: 0, deps: [[1, 'cc'], [2, 'conj']], disp: 'Imp', cost: 0.2, when: (v, C) => C('time_reference', v.t !== 'y')});
+// Fronted adverb before an imperative ("Today inch toward the castle").
+rule('imp_adv_front', L('Imp', {fa: 'y'}), [L('AdvFront', {tm: '?a'}), L('Imp', {fa: 'n'})], {fam: 'postverbal_adverb', head: 1, deps: [[0, 'advmod']], disp: 'Imp'});
+rule('imp_adv_front_later', L('Imp', {fa: 'y'}), [L('AdvFront', {tm: 'later'}), L('AdvFront', {tm: '?a'}), L('Imp', {fa: 'n'})],
+  {fam: 'postverbal_adverb', head: 2, deps: [[0, 'advmod'], [1, 'advmod']], disp: 'Imp', when: (v) => v.a === 'day' || v.a === 'fday'});
 
 // Polar interrogatives (CGEL ch. 10).
 rule('q_modal', L('Q'), [L('Modal'), L('NP', {num: '?n', per: '?p', case: '?k'}), L('VP', {vf: 'base'})],
@@ -284,24 +331,30 @@ rule('q_cop', L('Q'), [L('Cop', {ct: '?c'}), L('NP', {num: '?n', per: '?p', case
   {fam: 'question', head: 2, deps: [[0, 'cop'], [1, 'nsubj']], disp: 'Q', when: (v, C) => C('agreement', AGREE(v.c, v.n, v.p)) && C('case', SUBJ(v.k))});
 
 // ---------------------------------------------------------------- utterances
-rule('core_s', L('Core'), [L('S')], {head: 0, disp: null, utype: 'declarative'});
+rule('core_s', L('Core'), [L('S', {pt: '?t'})], {head: 0, disp: null, utype: 'declarative', when: (v, C) => C('time_reference', v.t !== 'y')});
 rule('core_imp', L('Core'), [L('Imp')], {head: 0, disp: null, utype: 'imperative'});
 rule('utt_core', L('Utt'), [L('Core')], {head: 0, disp: null, inheritType: true});
 rule('utt_q', L('Utt'), [L('Q')], {head: 0, disp: null, utype: 'question'});
 // Causal coordinator 'for' (CGEL ch. 15): final position, finite clause only,
 // not itself coordinated with a preceding 'and'. Punctuation is orthographic.
-rule('utt_for', L('Utt'), [L('Core'), L('ForCoord'), L('S')],
-  {fam: 'causal_for_coordination', head: 0, deps: [[1, 'cc'], [2, 'conj_for']], disp: 'Utt', inheritType: true, cost: 0.1});
+rule('utt_for', L('Utt'), [L('Core'), L('ForCoord'), L('S', {pt: '?t'})],
+  {fam: 'causal_for_coordination', head: 0, deps: [[1, 'cc'], [2, 'conj_for']], disp: 'Utt', inheritType: true, cost: 0.1, when: (v, C) => C('time_reference', v.t !== 'y')});
 // Non-sentential utterances: nominal (caption/answer) and modal VP ellipsis.
 rule('utt_frag', L('Utt'), [L('NP', {case: '?k'})], {fam: 'nominal_utterance', head: 0, disp: 'Frag', utype: 'fragment', cost: 2, when: (v) => FRAG_CASE(v.k)});
 
-const RELAXABLE = ['agreement', 'article', 'det_noun', 'case', 'verb_frame'];
+const RELAXABLE = ['agreement', 'article', 'det_noun', 'case', 'verb_frame', 'time_reference'];
 const RELAX_TEXT = {
   agreement: 'subject–verb agreement',
   article: 'a/an before a vowel or consonant sound',
   det_noun: 'determiner and noun number/countability (including a singular count noun with no determiner)',
   case: 'pronoun case (subject versus object form)',
   verb_frame: 'what the verb needs after it (an object, or no object)',
+  time_reference: 'past tense with ‘tomorrow’',
 };
 
-module.exports = {CATS, DEFAULTS, RULES: R, RELAXABLE, RELAX_TEXT, DET_OK, ONSET_OK, AGREE};
+// Diagnosis cost per relaxed constraint (default 100). A time-reference clash
+// keeps every word in its ordinary class, so it is preferred over a reading
+// that turns the time adverb into a noun ("was safe tomorrow" is not a
+// determiner error on a noun 'tomorrow').
+const RELAX_COST = {time_reference: 90};
+module.exports = {CATS, DEFAULTS, RULES: R, RELAXABLE, RELAX_TEXT, RELAX_COST, DET_OK, ONSET_OK, AGREE};

@@ -204,7 +204,19 @@ push('## Recorded policy decisions', '',
   '- **Count→mass coercion ("grinding") is excluded from the default grammar** (Greg O\'Beirne, 2026-10-19). A singular count noun is used bare only where a mass reading is attested. This keeps determiner choice meaningful; grinding may later become a separately flagged rare reading.',
   '- Gold tiles supply closed-class roles only, plus lexical *has* and causal *for* (2026-10-19).',
   '- Unrecognised sentences may be saved with reserved blue tiles and zero competitive points, and are re-scored on grammar updates (2026-10-19).',
-  '- Creative-mode rescoring is allowed with version history; competitions freeze grammar and scoring versions (2026-10-19).', '');
+  '- Creative-mode rescoring is allowed with version history; competitions freeze grammar and scoring versions (2026-10-19).',
+  '- **No punctuation tiles, so the grammar accepts what would be correct with commas and dashes restored** (2026-10-28). Players write *Today the cargo can …* and *… news then the castle can …* as they would on paper. Constructions that only punctuation keeps apart (unlinked run-on clauses, appositives, vocatives) are not accepted, because without it almost any sequence of noun phrases would parse.', '');
+
+// ---------------------------------------------------------------- 0.2.0
+push('## Engine 0.2.0 grammar additions (measured)', '',
+  '- **Fronted adjuncts** (CGEL ch. 8): a time or place adverb (*today, tonight, tomorrow, later, now, then, soon, once, first, next, outside, inside*) before the subject or an imperative, or a PP before the subject, with no comma. At most one fronted adverb (or *later today*) and one fronted PP per clause. A fronted adverb scores as the same adverb at the end of the clause.',
+  '- **Linked clauses**: *then, later, next* join two clauses where writing would use a semicolon or dash. *and then* now works as well (*then* fronting the second clause).',
+  '- **Time adverbs before the verb**: *later, soon, then, now, once, first, next* (*the cargo can later inch toward the castle*). Not *today/tomorrow/tonight*, which cannot precede the verb (not *I tomorrow leave*).',
+  '- **One time adverb per position**: time adverbs no longer stack (not *today later soon the cargo …* or *… news today later soon*); *later today/tonight/tomorrow* is one phrase. A fronted time adverb and one inside the predicate can co-occur (*Today the cargo can predict news and later inch …*).',
+  '- **Time reference**: in a main clause, past tense (past verb, *was/were*, *did*) with *tomorrow* is a named conflict, `time_reference`. English has two tenses; *will* and *can* are present-tense modals with future time reference (CGEL ch. 3), so *Soon the cargo can …* is fine. Subordinate and content clauses are exempt (hypothetical or backshifted past).',
+  '- **Adjuncts after a predicative complement**: *was safe today*, *is safe in the garden* (PP only after an adjective; after a noun it is already an NP modifier).',
+  '- **Lexicon**: *cargo* gains a mass reading (Cambridge Dictionary: [C or U]), so *all rude cargo* is recognised.',
+  '- **Limitations**: a past-tense clause rejected for *tomorrow* can still be accepted as a nominal fragment when its words also form a noun phrase (*the cargo left tomorrow* as a compound); a fronted *tomorrow* over coordinated predicates is checked against the first predicate only.', '');
 
 // ---------------------------------------------------------------- Phase 1
 push('## Phase 1 grammar additions (measured)', '',

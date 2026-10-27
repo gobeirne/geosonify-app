@@ -1,108 +1,108 @@
 {
- "version": "phase0-0.1.0",
+ "version": "phase0-0.2.0",
  "seed": 20261019,
- "generated": 1595,
- "targeted": 95,
+ "generated": 1644,
+ "targeted": 144,
  "minPerFamily": 40,
- "recognised": 1595,
- "recovered": 1595,
+ "recognised": 1644,
+ "recovered": 1644,
  "recoveryFailures": [],
  "coverage": [
   {
    "family": "adjective",
-   "generated": 436,
-   "recovered": 436,
-   "v11Rejected": 363
+   "generated": 365,
+   "recovered": 365,
+   "v11Rejected": 305
   },
   {
    "family": "adjective_modifier",
-   "generated": 316,
-   "recovered": 316,
-   "v11Rejected": 262
-  },
-  {
-   "family": "bare_idiomatic_pp",
-   "generated": 142,
-   "recovered": 142,
-   "v11Rejected": 142
-  },
-  {
-   "family": "bare_np",
-   "generated": 703,
-   "recovered": 703,
-   "v11Rejected": 671
-  },
-  {
-   "family": "causal_for_coordination",
-   "generated": 41,
-   "recovered": 41,
-   "v11Rejected": 41
-  },
-  {
-   "family": "clause",
-   "generated": 636,
-   "recovered": 636,
-   "v11Rejected": 627
-  },
-  {
-   "family": "clause_coordination",
-   "generated": 377,
-   "recovered": 377,
-   "v11Rejected": 377
-  },
-  {
-   "family": "complement_clause",
-   "generated": 209,
-   "recovered": 209,
-   "v11Rejected": 208
-  },
-  {
-   "family": "copula",
-   "generated": 40,
-   "recovered": 40,
-   "v11Rejected": 37
-  },
-  {
-   "family": "degree_modifier",
-   "generated": 274,
-   "recovered": 274,
+   "generated": 313,
+   "recovered": 313,
    "v11Rejected": 248
   },
   {
+   "family": "bare_idiomatic_pp",
+   "generated": 265,
+   "recovered": 265,
+   "v11Rejected": 265
+  },
+  {
+   "family": "bare_np",
+   "generated": 689,
+   "recovered": 689,
+   "v11Rejected": 654
+  },
+  {
+   "family": "causal_for_coordination",
+   "generated": 40,
+   "recovered": 40,
+   "v11Rejected": 40
+  },
+  {
+   "family": "clause",
+   "generated": 597,
+   "recovered": 597,
+   "v11Rejected": 597
+  },
+  {
+   "family": "clause_coordination",
+   "generated": 84,
+   "recovered": 84,
+   "v11Rejected": 84
+  },
+  {
+   "family": "complement_clause",
+   "generated": 73,
+   "recovered": 73,
+   "v11Rejected": 73
+  },
+  {
+   "family": "copula",
+   "generated": 52,
+   "recovered": 52,
+   "v11Rejected": 52
+  },
+  {
+   "family": "degree_modifier",
+   "generated": 201,
+   "recovered": 201,
+   "v11Rejected": 173
+  },
+  {
    "family": "determiner",
-   "generated": 517,
-   "recovered": 517,
-   "v11Rejected": 423
+   "generated": 588,
+   "recovered": 588,
+   "v11Rejected": 480
   },
   {
    "family": "ditransitive",
-   "generated": 58,
-   "recovered": 58,
-   "v11Rejected": 56
-  },
-  {
-   "family": "do_support",
    "generated": 40,
    "recovered": 40,
    "v11Rejected": 39
   },
   {
+   "family": "do_support",
+   "generated": 41,
+   "recovered": 41,
+   "v11Rejected": 41
+  },
+  {
    "family": "focus_modifier",
-   "generated": 250,
-   "recovered": 250,
-   "v11Rejected": 250
+   "generated": 286,
+   "recovered": 286,
+   "v11Rejected": 286
   },
   {
    "family": "fused_head",
    "generated": 40,
    "recovered": 40,
-   "v11Rejected": 35
+   "v11Rejected": 36
   },
   {
    "family": "imperative",
-   "generated": 582,
-   "recovered": 582,
-   "v11Rejected": 508
+   "generated": 471,
+   "recovered": 471,
+   "v11Rejected": 433
   },
   {
    "family": "imperative_declarative_coordination",
@@ -112,266 +112,272 @@
   },
   {
    "family": "infinitive",
-   "generated": 148,
-   "recovered": 148,
-   "v11Rejected": 146
+   "generated": 56,
+   "recovered": 56,
+   "v11Rejected": 56
   },
   {
    "family": "intransitive",
-   "generated": 785,
-   "recovered": 785,
-   "v11Rejected": 753
+   "generated": 738,
+   "recovered": 738,
+   "v11Rejected": 720
   },
   {
    "family": "lexical_copula",
-   "generated": 200,
-   "recovered": 200,
-   "v11Rejected": 168
+   "generated": 109,
+   "recovered": 109,
+   "v11Rejected": 96
   },
   {
    "family": "modal",
-   "generated": 41,
-   "recovered": 41,
-   "v11Rejected": 41
+   "generated": 40,
+   "recovered": 40,
+   "v11Rejected": 40
   },
   {
    "family": "negation",
-   "generated": 103,
-   "recovered": 103,
-   "v11Rejected": 100
+   "generated": 99,
+   "recovered": 99,
+   "v11Rejected": 99
   },
   {
    "family": "nominal_utterance",
-   "generated": 352,
-   "recovered": 352,
-   "v11Rejected": 238
+   "generated": 433,
+   "recovered": 433,
+   "v11Rejected": 284
   },
   {
    "family": "noun_compound",
-   "generated": 333,
-   "recovered": 333,
+   "generated": 331,
+   "recovered": 331,
    "v11Rejected": 255
   },
   {
    "family": "noun_coordination",
-   "generated": 625,
-   "recovered": 625,
-   "v11Rejected": 604
+   "generated": 732,
+   "recovered": 732,
+   "v11Rejected": 701
   },
   {
    "family": "noun_head",
-   "generated": 1058,
-   "recovered": 1058,
-   "v11Rejected": 933
+   "generated": 1077,
+   "recovered": 1077,
+   "v11Rejected": 936
   },
   {
    "family": "np_premodifier",
-   "generated": 1058,
-   "recovered": 1058,
-   "v11Rejected": 933
+   "generated": 1077,
+   "recovered": 1077,
+   "v11Rejected": 936
   },
   {
    "family": "past_tense",
-   "generated": 260,
-   "recovered": 260,
-   "v11Rejected": 260
+   "generated": 238,
+   "recovered": 238,
+   "v11Rejected": 238
   },
   {
    "family": "perfect",
-   "generated": 41,
-   "recovered": 41,
-   "v11Rejected": 41
+   "generated": 40,
+   "recovered": 40,
+   "v11Rejected": 40
   },
   {
    "family": "postverbal_adverb",
-   "generated": 57,
-   "recovered": 57,
-   "v11Rejected": 55
+   "generated": 1041,
+   "recovered": 1041,
+   "v11Rejected": 1031
   },
   {
    "family": "predicate_adjective",
-   "generated": 152,
-   "recovered": 152,
-   "v11Rejected": 150
+   "generated": 101,
+   "recovered": 101,
+   "v11Rejected": 101
   },
   {
    "family": "predicate_coordination",
-   "generated": 360,
-   "recovered": 360,
-   "v11Rejected": 360
+   "generated": 339,
+   "recovered": 339,
+   "v11Rejected": 339
   },
   {
    "family": "predicate_nominal",
-   "generated": 47,
-   "recovered": 47,
-   "v11Rejected": 46
+   "generated": 80,
+   "recovered": 80,
+   "v11Rejected": 80
   },
   {
    "family": "predicate_prepositional",
-   "generated": 66,
-   "recovered": 66,
-   "v11Rejected": 64
+   "generated": 103,
+   "recovered": 103,
+   "v11Rejected": 103
   },
   {
    "family": "prepositional_phrase",
-   "generated": 427,
-   "recovered": 427,
-   "v11Rejected": 418
+   "generated": 868,
+   "recovered": 868,
+   "v11Rejected": 857
   },
   {
    "family": "prepositional_verb",
-   "generated": 90,
-   "recovered": 90,
-   "v11Rejected": 77
+   "generated": 40,
+   "recovered": 40,
+   "v11Rejected": 30
   },
   {
    "family": "present_tense",
-   "generated": 150,
-   "recovered": 150,
-   "v11Rejected": 150
+   "generated": 58,
+   "recovered": 58,
+   "v11Rejected": 58
   },
   {
    "family": "preverbal_adverb",
-   "generated": 73,
-   "recovered": 73,
-   "v11Rejected": 69
+   "generated": 172,
+   "recovered": 172,
+   "v11Rejected": 171
   },
   {
    "family": "pronoun",
-   "generated": 1149,
-   "recovered": 1149,
-   "v11Rejected": 1099
+   "generated": 1176,
+   "recovered": 1176,
+   "v11Rejected": 1131
+  },
+  {
+   "family": "proper_noun",
+   "generated": 249,
+   "recovered": 249,
+   "v11Rejected": 237
   },
   {
    "family": "question",
-   "generated": 369,
-   "recovered": 369,
-   "v11Rejected": 356
+   "generated": 368,
+   "recovered": 368,
+   "v11Rejected": 360
   },
   {
    "family": "relative_clause",
    "generated": 260,
    "recovered": 260,
-   "v11Rejected": 257
+   "v11Rejected": 259
   },
   {
    "family": "subordinate_clause",
-   "generated": 291,
-   "recovered": 291,
-   "v11Rejected": 291
+   "generated": 224,
+   "recovered": 224,
+   "v11Rejected": 224
   },
   {
    "family": "verb_coordination",
-   "generated": 545,
-   "recovered": 545,
-   "v11Rejected": 537
+   "generated": 380,
+   "recovered": 380,
+   "v11Rejected": 379
   },
   {
    "family": "verb_object",
-   "generated": 120,
-   "recovered": 120,
-   "v11Rejected": 107
+   "generated": 50,
+   "recovered": 50,
+   "v11Rejected": 45
   },
   {
    "family": "vp_ellipsis",
-   "generated": 726,
-   "recovered": 726,
-   "v11Rejected": 721
+   "generated": 640,
+   "recovered": 640,
+   "v11Rejected": 639
   }
  ],
  "corruption": {
-  "agreement": {
-   "n": 1208,
-   "oursAccept": 75,
-   "oursConflict": 1133,
-   "oursConflictMatches": 1103,
-   "v11Accept": 0,
-   "v11Applicable": 1208
-  },
   "case": {
-   "n": 1434,
-   "oursAccept": 104,
-   "oursConflict": 1300,
-   "oursConflictMatches": 1300,
-   "v11Accept": 19,
-   "v11Applicable": 1434
+   "n": 1103,
+   "oursAccept": 127,
+   "oursConflict": 941,
+   "oursConflictMatches": 940,
+   "v11Accept": 26,
+   "v11Applicable": 1103
   },
   "adjacent_swap": {
-   "n": 1477,
-   "oursAccept": 266,
-   "oursConflict": 145,
+   "n": 1548,
+   "oursAccept": 347,
+   "oursConflict": 196,
    "oursConflictMatches": 0,
-   "v11Accept": 81,
-   "v11Applicable": 1477
+   "v11Accept": 55,
+   "v11Applicable": 1548
   },
   "token_delete": {
-   "n": 1477,
-   "oursAccept": 522,
-   "oursConflict": 235,
+   "n": 1548,
+   "oursAccept": 660,
+   "oursConflict": 202,
    "oursConflictMatches": 0,
-   "v11Accept": 90,
-   "v11Applicable": 1477
-  },
-  "article": {
-   "n": 35,
-   "oursAccept": 0,
-   "oursConflict": 35,
-   "oursConflictMatches": 35,
-   "v11Accept": 0,
-   "v11Applicable": 35
+   "v11Accept": 80,
+   "v11Applicable": 1548
   },
   "det_drop": {
-   "n": 174,
-   "oursAccept": 42,
-   "oursConflict": 132,
-   "oursConflictMatches": 131,
-   "v11Accept": 3,
-   "v11Applicable": 174
+   "n": 192,
+   "oursAccept": 50,
+   "oursConflict": 142,
+   "oursConflictMatches": 139,
+   "v11Accept": 7,
+   "v11Applicable": 192
+  },
+  "agreement": {
+   "n": 908,
+   "oursAccept": 63,
+   "oursConflict": 845,
+   "oursConflictMatches": 817,
+   "v11Accept": 0,
+   "v11Applicable": 908
+  },
+  "article": {
+   "n": 30,
+   "oursAccept": 0,
+   "oursConflict": 30,
+   "oursConflictMatches": 30,
+   "v11Accept": 0,
+   "v11Applicable": 30
   },
   "object_drop": {
-   "n": 60,
-   "oursAccept": 9,
-   "oursConflict": 51,
-   "oursConflictMatches": 50,
+   "n": 18,
+   "oursAccept": 4,
+   "oursConflict": 14,
+   "oursConflictMatches": 9,
    "v11Accept": 0,
-   "v11Applicable": 60
+   "v11Applicable": 18
   }
  },
  "differentialPositives": {
-  "v11Accept": 209,
-  "v11Reject": 1386,
+  "v11Accept": 195,
+  "v11Reject": 1449,
   "v11NA": 0
  },
  "timing": {
-  "15-20": {
-   "n": 387,
-   "p50": 2.45,
-   "p95": 10.01,
-   "max": 36.31
+  "9-14": {
+   "n": 536,
+   "p50": 1.86,
+   "p95": 7.99,
+   "max": 32.88
   },
   "1-8": {
-   "n": 571,
-   "p50": 0.61,
-   "p95": 4.77,
-   "max": 29.77
-  },
-  "9-14": {
-   "n": 465,
-   "p50": 1.58,
-   "p95": 7.33,
-   "max": 21.29
+   "n": 585,
+   "p50": 0.77,
+   "p95": 6.34,
+   "max": 23.17
   },
   "21-24": {
-   "n": 172,
-   "p50": 3.33,
-   "p95": 12.4,
-   "max": 37.42
+   "n": 141,
+   "p50": 4.22,
+   "p95": 17.02,
+   "max": 34.93
+  },
+  "15-20": {
+   "n": 382,
+   "p50": 3.13,
+   "p95": 14.01,
+   "max": 55.48
   }
  },
  "grammar": {
-  "strictRules": 7924,
-  "relaxedRules": 19555,
-  "symbols": 596
+  "strictRules": 9269,
+  "relaxedRules": 22831,
+  "symbols": 709
  },
- "compileMs": 209.04302699999994
+ "compileMs": 221.019152
 }

@@ -73,7 +73,7 @@ const MARKERS = new Set(['cc', 'det', 'mark', 'case']);
 const PRIMARY = Object.fromEntries(G.RULES.map(r => [r.id, ((r.deps || []).find(([, t]) => !MARKERS.has(t)) || [])[1] || null]));
 const isInstanceRel = r => PRIMARY[r.rule] === r.type;
 const FUNCTION_POS = new Set(['Det', 'P', 'Conj', 'Sub', 'Comp', 'Rel', 'Modal', 'Cop', 'Do', 'HaveAux', 'Not', 'To', 'ForCoord', 'Be']);
-const MOD_POS = new Set(['AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus']);
+const MOD_POS = new Set(['AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'AdvFront']);
 
 function scoreReading(reading, tiles) {
   const n = tiles.length;

@@ -66,7 +66,7 @@ function compileGrammar(G, {preps, idiomPreps, relax = []} = {}) {
         for (const [k, v] of Object.entries(f)) g[k] = typeof v === 'string' && v.startsWith('?') ? bind[v.slice(1)] : v;
         return intern(symName(cat, g, cats[cat]));
       });
-      rules.push({lhs: inst[0], rhs: inst.slice(1), spec, violations, cost: (spec.cost || 0) + 100 * violations.length});
+      rules.push({lhs: inst[0], rhs: inst.slice(1), spec, violations, cost: (spec.cost || 0) + violations.reduce((t, x) => t + ((G.RELAX_COST && G.RELAX_COST[x]) || 100), 0)});
     };
     const rec = i => {
       if (i === names_.length) return emit();
@@ -75,7 +75,7 @@ function compileGrammar(G, {preps, idiomPreps, relax = []} = {}) {
     rec(0);
   }
   // Remove useless rules: keep productive (derives terminals) and reachable.
-  const preterminalCats = new Set(['N', 'NIdiom', 'PropN', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'V', 'VPrep', 'Det', 'Pron', 'P',
+  const preterminalCats = new Set(['N', 'NIdiom', 'PropN', 'Adj', 'AdjFused', 'AdvDeg', 'AdvPre', 'AdvPost', 'AdvFocus', 'AdvFront', 'AdvLink', 'V', 'VPrep', 'Det', 'Pron', 'P',
     'Modal', 'Cop', 'Be', 'Do', 'HaveAux', 'Not', 'To', 'Conj', 'ForCoord', 'Sub', 'Comp', 'Rel']);
   const preFlag = new Uint8Array(names.length);
   names.forEach((n, i) => { preFlag[i] = preterminalCats.has(n.split('[')[0]) ? 1 : 0; });
