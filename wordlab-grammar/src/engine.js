@@ -17,7 +17,7 @@ const G = require('./grammar');
 const {compileLexicon, readingsFor} = require('./lexicon');
 const {compileGrammar, earley, buildForest, countTrees, kBest, diverseRoots} = require('./parser');
 
-const VERSION = 'phase0-0.2.0';
+const VERSION = 'phase0-0.2.1';
 // Monotonic milliseconds in both Node and browsers.
 const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Number(process.hrtime.bigint()) / 1e6;
 

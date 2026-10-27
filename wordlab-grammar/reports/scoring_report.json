@@ -21,15 +21,15 @@
   "violations": 0
  },
  "P6": {
-  "sentencesWithAlternatives": 522,
-  "medianRelativeSpread": 0.052,
-  "p90RelativeSpread": 0.233
+  "sentencesWithAlternatives": 511,
+  "medianRelativeSpread": 0.049,
+  "p90RelativeSpread": 0.223
  },
- "P2readingChanges": 8,
+ "P2readingChanges": 22,
  "P2": {
-  "insertions": 698,
+  "insertions": 770,
   "violations": 0,
-  "insertionsThatChangeStructure": 8
+  "insertionsThatChangeStructure": 22
  },
  "P3": {
   "goldOnlySentences": 150,
@@ -346,7 +346,7 @@
   "compound": "linear (10 per modifier)"
  },
  "J": {
-  "joins": 10,
+  "joins": 4,
   "violations": 0
  },
  "S": [
@@ -458,186 +458,187 @@
   "candidates": 6000,
   "perTileBySize": {
    "1-2": {
-    "n": 568,
+    "n": 929,
     "median": 7.6,
     "p90": 12.2
    },
    "3-4": {
-    "n": 1601,
-    "median": 13,
-    "p90": 17.5
+    "n": 1425,
+    "median": 13.4,
+    "p90": 17.6
    },
    "5-6": {
-    "n": 1646,
-    "median": 16.8,
-    "p90": 22.2
+    "n": 1407,
+    "median": 17.9,
+    "p90": 22.7
    },
    "7-9": {
-    "n": 1539,
-    "median": 21.5,
-    "p90": 27
+    "n": 1479,
+    "median": 22.7,
+    "p90": 27.8
    },
    "10+": {
-    "n": 646,
-    "median": 23.4,
-    "p90": 27.6
+    "n": 760,
+    "median": 24.5,
+    "p90": 28.7
    }
   },
   "greedyByPointsPerTile": {
-   "sentences": 64,
-   "blueTilesUsed": 125,
-   "total": 1912,
-   "perTile": 15.29,
-   "meanBluePerSentence": 2,
+   "sentences": 65,
+   "blueTilesUsed": 137,
+   "total": 2121,
+   "perTile": 15.48,
+   "meanBluePerSentence": 2.1,
    "utteranceTypes": {
-    "imperative": 21,
-    "question": 10,
-    "ellipsis": 4,
-    "fragment": 29
+    "imperative": 24,
+    "declarative": 3,
+    "question": 8,
+    "ellipsis": 2,
+    "fragment": 28
    },
-   "structuralShare": 0.33,
-   "listItems": 3,
+   "structuralShare": 0.34,
+   "listItems": 0,
    "topFamilies": [
     [
      "noun_head",
-     47
+     28
     ],
     [
      "np_premodifier",
-     47
-    ],
-    [
-     "determiner",
-     39
+     28
     ],
     [
      "nominal_utterance",
-     29
+     28
     ],
     [
      "imperative",
-     21
+     24
     ],
     [
      "intransitive",
-     20
+     24
     ],
     [
-     "bare_np",
-     11
+     "determiner",
+     23
     ],
     [
-     "question",
-     10
+     "noun_coordination",
+     21
+    ],
+    [
+     "prepositional_phrase",
+     9
     ],
     [
      "adjective",
-     10
+     8
     ],
     [
-     "verb_coordination",
+     "bare_np",
      8
     ]
    ],
    "best": [
     {
-     "score": 342,
-     "text": "later forget because in speed staff has for tonight in jeans and all a level can and has"
+     "score": 314,
+     "text": "guess on stage october is later tonight for in the unknown nation the output is"
     },
     {
-     "score": 255,
-     "text": "taste unknown and retire and castle and mistake and output can run and blossom and must parrot"
+     "score": 311,
+     "text": "today the core can clump and win for on the inch affair and autumn chat and occur for warfare"
     },
     {
-     "score": 216,
-     "text": "is october barely silly on display in the need and just the core"
+     "score": 192,
+     "text": "is the text steel on all and jeans on august staff on display"
     },
     {
-     "score": 173,
-     "text": "is a melt umbrella vocal toward the nation and stairs today"
+     "score": 151,
+     "text": "is junk tissue barely original in timber and canvas"
     },
     {
-     "score": 82,
-     "text": "is a security august hybrid gadget on stage"
+     "score": 111,
+     "text": "for salad human and castle taste angry"
     }
    ]
   },
   "greedyByScore": {
-   "sentences": 57,
-   "blueTilesUsed": 123,
-   "total": 1721,
-   "perTile": 13.99,
-   "meanBluePerSentence": 2.2,
+   "sentences": 58,
+   "blueTilesUsed": 137,
+   "total": 2057,
+   "perTile": 15.02,
+   "meanBluePerSentence": 2.4,
    "utteranceTypes": {
-    "question": 9,
-    "imperative": 20,
-    "fragment": 25,
-    "ellipsis": 3
+    "imperative": 19,
+    "question": 8,
+    "fragment": 30,
+    "ellipsis": 1
    },
-   "structuralShare": 0.26,
-   "listItems": 4,
+   "structuralShare": 0.32,
+   "listItems": 1,
    "topFamilies": [
     [
+     "nominal_utterance",
+     30
+    ],
+    [
+     "noun_coordination",
+     24
+    ],
+    [
      "noun_head",
-     39
+     23
     ],
     [
      "np_premodifier",
-     39
-    ],
-    [
-     "determiner",
-     37
-    ],
-    [
-     "nominal_utterance",
-     25
-    ],
-    [
-     "intransitive",
-     20
+     23
     ],
     [
      "imperative",
-     20
+     19
     ],
     [
-     "question",
-     9
+     "intransitive",
+     18
     ],
     [
-     "noun_compound",
-     8
+     "determiner",
+     17
     ],
     [
      "adjective",
-     7
+     8
     ],
     [
-     "verb_coordination",
-     6
+     "bare_np",
+     8
+    ],
+    [
+     "question",
+     8
     ]
    ],
    "best": [
     {
-     "score": 499,
-     "text": "must all clean angry cargo fun mistake today just canvas is cheap tonight and later say for jeans and stairs for display"
+     "score": 480,
+     "text": "taste unknown because today for display fun is later jeans blossom for tonight on all output umbrella staff forget and clump"
     },
     {
-     "score": 299,
-     "text": "is a half favorite autumn need output unknown barely hybrid in october on the august original inch umbrella core"
+     "score": 261,
+     "text": "can the same steel in the inch win just affair and figure vivid stairs"
     },
     {
-     "score": 86,
-     "text": "consider a stem banana the staff nation"
+     "score": 154,
+     "text": "list and coast and speed and close toward october and half"
     },
     {
-     "score": 61,
-     "text": "is the primary timber the nice palm"
+     "score": 151,
+     "text": "is junk tissue barely original in timber and canvas"
     },
     {
-     "score": 47,
-     "text": "can a badge taste close"
+     "score": 135,
+     "text": "can banner and salad reopen a uniform angry joke"
     }
    ]
   }

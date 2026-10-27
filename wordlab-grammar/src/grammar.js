@@ -171,6 +171,12 @@ const CASE_MEET = (a, b) => a === 'any' ? b : b === 'any' ? a : a === b ? a : nu
 // on the bracketing: 'and' gives plural, 'or' takes the nearest conjunct.
 rule('np_coord', L('NP', {num: '?m', per: '3', case: '?k', co: '?j'}), [L('NPx', {num: '?f', case: '?x', co: '?j'}), L('NPTail', {num: '?n', cj: '?j', case: '?y'})],
   {fam: 'noun_coordination', head: 0, deps: [[1, 'conj']], disp: 'NP', when: (v, C) => v.j !== 'n' && v.m === (v.j === 'and' ? 'pl' : v.f === v.n ? v.n : 'mix') && C('case', CASE_MEET(v.x, v.y) !== null) && v.k === (CASE_MEET(v.x, v.y) || v.x)});
+// Bare coordinated pair of singular count nouns ("knife and fork", "sword and
+// symbol"; CGEL ch. 5): exactly two unmodified nouns joined by 'and', plural.
+// A modified noun still needs its determiner (*sad august symbol and ...).
+// Marked 'and'-coordinated so it does not nest inside a flat 'and' chain.
+rule('np_bare_pair', L('NP', {num: 'pl', per: '3', case: 'any', co: 'and'}), [L('N', {num: 'sg', cnt: 'count'}), L('Conj', {cj: 'and'}), L('N', {num: 'sg', cnt: 'count'})],
+  {fam: 'noun_coordination', head: 0, deps: [[2, 'conj'], [1, 'cc']], disp: 'NP', cost: 0.3});
 rule('npx', L('NPx', {num: '?n', per: '?p', case: '?k', co: '?j'}), [L('NP', {num: '?n', per: '?p', case: '?k', co: '?c'})], {head: 0, disp: null, when: (v) => v.j !== 'n' && v.c !== v.j});
 rule('nptail1', L('NPTail', {num: '?n', cj: '?j', case: '?k'}), [L('Conj', {cj: '?j'}), L('NPx', {num: '?n', case: '?k', co: '?j'})],
   {head: 1, deps: [[0, 'cc']], disp: null, when: (v) => v.j !== 'but'});

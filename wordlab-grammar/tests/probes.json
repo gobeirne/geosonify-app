@@ -1084,6 +1084,38 @@
    "expect": {
     "state": "not_recognised"
    }
+  },
+  {
+   "id": "T18",
+   "src": "0.2.0: bare coordinated pair of singular count nouns (CGEL ch. 5)",
+   "text": "Combine sword and symbol.",
+   "expect": {
+    "state": "recognised",
+    "type": "imperative",
+    "where": "canonical",
+    "roles": {
+     "sword": "N:obj",
+     "symbol": "N:conj"
+    }
+   }
+  },
+  {
+   "id": "T19",
+   "src": "0.2.0: a bare pair is plural",
+   "text": "Sword and symbol is sad.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "agreement"
+   }
+  },
+  {
+   "id": "T20",
+   "src": "0.2.0: a modified singular count noun still needs its determiner, even in a pair",
+   "text": "Combine half speed sword and sad august symbol.",
+   "expect": {
+    "state": "conflict",
+    "conflict": "det_noun"
+   }
   }
  ]
 }

@@ -10,7 +10,7 @@
   "botPar": "A floor to beat, not a ceiling: the best total from tools/build_challenges.js (bot-par-v2, recorded in botParMethod): grammar-generated sentences from the hand and a fixed helper set, packed greedily into disjoint-tile portfolios, best of two orderings over seeds 1-5."
  },
  "versions": {
-  "grammar": "phase0-0.2.0",
+  "grammar": "phase0-0.2.1",
   "scorer": "phase2-0.4.0"
  },
  "challenges": [
@@ -62,11 +62,11 @@
     "zoo"
    ],
    "handSize": 38,
-   "botPar": 710,
-   "botParSentences": 15,
-   "botParTilesUsed": 36,
+   "botPar": 751,
+   "botParSentences": 7,
+   "botParTilesUsed": 34,
    "stretchTiles": 35,
-   "botParSeed": 1
+   "botParSeed": 2
   },
   {
    "id": "retro-2026-09",
@@ -122,11 +122,11 @@
     "warfare"
    ],
    "handSize": 44,
-   "botPar": 839,
+   "botPar": 919,
    "botParSentences": 12,
-   "botParTilesUsed": 40,
+   "botParTilesUsed": 43,
    "stretchTiles": 40,
-   "botParSeed": 5
+   "botParSeed": 2
   },
   {
    "id": "retro-2026-10",
@@ -208,11 +208,11 @@
     "wrong"
    ],
    "handSize": 70,
-   "botPar": 1035,
-   "botParSentences": 26,
+   "botPar": 1214,
+   "botParSentences": 24,
    "botParTilesUsed": 60,
    "stretchTiles": 63,
-   "botParSeed": 4
+   "botParSeed": 3
   },
   {
    "id": "retro-2026-10-06",
@@ -271,10 +271,10 @@
    "handSize": 45,
    "note": "One outing produced 44 new words: a one-day sprint.",
    "stretchTiles": 41,
-   "botPar": 784,
-   "botParSentences": 18,
+   "botPar": 894,
+   "botParSentences": 12,
    "botParTilesUsed": 39,
-   "botParSeed": 3
+   "botParSeed": 5
   }
  ],
  "wordsRule": "find-words-v1",
@@ -311,7 +311,7 @@
   ],
   "par": "best total over seeds x packings, rounded once",
   "versions": {
-   "grammar": "phase0-0.2.0",
+   "grammar": "phase0-0.2.1",
    "scorer": "phase2-0.4.0"
   },
   "computed": "2026-10-28"

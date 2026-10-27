@@ -1,6 +1,6 @@
 # Starpin Word Lab — grammar, scoring and game (Phases 0–3): report
 
-Engine `phase0-0.2.0` · strict grammar 9269 atomic rules, relaxed 22831, 709 symbols · strict-grammar compile 347 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 523 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
+Engine `phase0-0.2.1` · strict grammar 9278 atomic rules, relaxed 22840, 709 symbols · strict-grammar compile 334 ms at start-up; relaxed (diagnostic) grammar compiled lazily on first failure in 505 ms (Node). Compiling at start-up is a prototype convenience: Phase 3 should ship the compiled grammar.
 
 Status labels: **measured** = produced by the scripts in this folder; **proposal** = design for later phases; **limitation** = known gap. Nothing here modifies the Word Lab game or any session.
 
@@ -8,16 +8,16 @@ Status labels: **measured** = produced by the scripts in this folder; **proposal
 
 | Criterion | Result |
 |---|---|
-| Every handover §5 probe yields its intended roles | 80/80 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
-| Generated derivations recognised and exactly recovered | 1644/1644 |
+| Every handover §5 probe yields its intended roles | 83/83 probes pass (B intended reading via one optional pin; E2 intended fragment offered, canonical is a genuine clause) |
+| Generated derivations recognised and exactly recovered | 1666/1666 |
 | Typed corruptions caught, with the right constraint named | see corruption table |
-| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 17.8 ms; generated 21–24 tokens p95 17.02 ms |
+| p95 parse time ≤ 20 ms for ~40 tokens (Node) | 40-token realistic sentence 37.3 ms; generated 21–24 tokens p95 10.3 ms |
 | ERG batch emitted | 49 probe, 400 generated positive, 600 corruption accepted, 300 corruption rejected |
 | Phone timing | **not yet measured**: open `bench/wordlab_grammar_bench.html` on an iPhone |
 
 ## What Phase 0 is
 
-A declarative feature grammar (`src/grammar.js`: 92 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
+A declarative feature grammar (`src/grammar.js`: 93 rule schemas, each with a construction family, head, typed dependencies and CGEL chapter reference) compiled to an atomic context-free grammar, parsed by an Earley chart parser with FIRST-set lookahead into a packed forest (`src/parser.js`). There are no depth limits, no per-stage result caps and no step budgets. Noun compounds are a flat modifier sequence with a rightmost head, so compound length is unbounded and internal bracketing (semantic, Catalan-explosive) is not enumerated.
 
 Each parse returns one of three states:
 
@@ -113,61 +113,64 @@ Full analyses, alternative readings and choice points: `reports/probe_analyses.m
 | T15 | 0.2.0: past tense with 'tomorrow' (main clause) | conflict (time_reference) | reject | — |  |
 | T16 | 0.2.0: past tense with 'tomorrow' after a predicative complement | conflict (time_reference) | reject | — |  |
 | T17 | 0.2.0: 'home' does not front a clause | unrecognised | reject | — |  |
+| T18 | 0.2.0: bare coordinated pair of singular count nouns (CGEL ch. 5) | recognised | reject | 44 | `[Imp [VP combine [NP sword and symbol]]]` |
+| T19 | 0.2.0: a bare pair is plural | conflict (agreement) | reject | — |  |
+| T20 | 0.2.0: a modified singular count noun still needs its determiner, even in a pair | conflict (det_noun) | reject | — |  |
 
 ## Construction-level coverage (measured)
 
-1500 random derivations plus 144 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
+1500 random derivations plus 166 targeted ones so that every family has at least 40 samples (seed 20261019); tiles drawn from the real BIP39 lexicon and the 47 helper candidates. "Recovered" means the parser's forest contains the exact generating tree. The v1.1 column shows how often the shipped parser rejects sentences containing the family.
 
 | Construction family | Generated sentences | Recovered | v1.1 rejected |
 |---|---:|---:|---:|
-| adjective | 365 | 365 | 84% |
-| adjective_modifier | 313 | 313 | 79% |
-| bare_idiomatic_pp | 265 | 265 | 100% |
-| bare_np | 689 | 689 | 95% |
+| adjective | 332 | 332 | 87% |
+| adjective_modifier | 287 | 287 | 83% |
+| bare_idiomatic_pp | 262 | 262 | 100% |
+| bare_np | 655 | 655 | 96% |
 | causal_for_coordination | 40 | 40 | 100% |
-| clause | 597 | 597 | 100% |
-| clause_coordination | 84 | 84 | 100% |
-| complement_clause | 73 | 73 | 100% |
-| copula | 52 | 52 | 100% |
-| degree_modifier | 201 | 201 | 86% |
-| determiner | 588 | 588 | 82% |
-| ditransitive | 40 | 40 | 98% |
-| do_support | 41 | 41 | 100% |
-| focus_modifier | 286 | 286 | 100% |
-| fused_head | 40 | 40 | 90% |
-| imperative | 471 | 471 | 92% |
+| clause | 629 | 629 | 100% |
+| clause_coordination | 81 | 81 | 100% |
+| complement_clause | 75 | 75 | 100% |
+| copula | 40 | 40 | 100% |
+| degree_modifier | 187 | 187 | 89% |
+| determiner | 530 | 530 | 84% |
+| ditransitive | 41 | 41 | 98% |
+| do_support | 41 | 41 | 98% |
+| focus_modifier | 268 | 268 | 100% |
+| fused_head | 40 | 40 | 93% |
+| imperative | 413 | 413 | 95% |
 | imperative_declarative_coordination | 40 | 40 | 100% |
-| infinitive | 56 | 56 | 100% |
-| intransitive | 738 | 738 | 98% |
-| lexical_copula | 109 | 109 | 88% |
-| modal | 40 | 40 | 100% |
-| negation | 99 | 99 | 100% |
-| nominal_utterance | 433 | 433 | 66% |
-| noun_compound | 331 | 331 | 77% |
-| noun_coordination | 732 | 732 | 96% |
-| noun_head | 1077 | 1077 | 87% |
-| np_premodifier | 1077 | 1077 | 87% |
-| past_tense | 238 | 238 | 100% |
-| perfect | 40 | 40 | 100% |
-| postverbal_adverb | 1041 | 1041 | 99% |
-| predicate_adjective | 101 | 101 | 100% |
-| predicate_coordination | 339 | 339 | 100% |
-| predicate_nominal | 80 | 80 | 100% |
-| predicate_prepositional | 103 | 103 | 100% |
-| prepositional_phrase | 868 | 868 | 99% |
-| prepositional_verb | 40 | 40 | 75% |
-| present_tense | 58 | 58 | 100% |
-| preverbal_adverb | 172 | 172 | 99% |
-| pronoun | 1176 | 1176 | 96% |
-| proper_noun | 249 | 249 | 95% |
-| question | 368 | 368 | 98% |
-| relative_clause | 260 | 260 | 100% |
-| subordinate_clause | 224 | 224 | 100% |
-| verb_coordination | 380 | 380 | 100% |
-| verb_object | 50 | 50 | 90% |
-| vp_ellipsis | 640 | 640 | 100% |
+| infinitive | 44 | 44 | 100% |
+| intransitive | 705 | 705 | 98% |
+| lexical_copula | 86 | 86 | 88% |
+| modal | 42 | 42 | 100% |
+| negation | 117 | 117 | 100% |
+| nominal_utterance | 442 | 442 | 71% |
+| noun_compound | 305 | 305 | 79% |
+| noun_coordination | 887 | 887 | 97% |
+| noun_head | 1023 | 1023 | 89% |
+| np_premodifier | 1023 | 1023 | 89% |
+| past_tense | 241 | 241 | 100% |
+| perfect | 42 | 42 | 100% |
+| postverbal_adverb | 1035 | 1035 | 100% |
+| predicate_adjective | 115 | 115 | 100% |
+| predicate_coordination | 363 | 363 | 100% |
+| predicate_nominal | 92 | 92 | 100% |
+| predicate_prepositional | 100 | 100 | 100% |
+| prepositional_phrase | 873 | 873 | 99% |
+| prepositional_verb | 43 | 43 | 91% |
+| present_tense | 59 | 59 | 100% |
+| preverbal_adverb | 164 | 164 | 100% |
+| pronoun | 1136 | 1136 | 97% |
+| proper_noun | 213 | 213 | 95% |
+| question | 391 | 391 | 97% |
+| relative_clause | 253 | 253 | 100% |
+| subordinate_clause | 223 | 223 | 100% |
+| verb_coordination | 339 | 339 | 100% |
+| verb_object | 59 | 59 | 92% |
+| vp_ellipsis | 655 | 655 | 100% |
 
-Overall v1.1 accepts 195/1644 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
+Overall v1.1 accepts 164/1666 of these generated sentences. Whether the remainder are v1.1 under-coverage or Phase 0 over-generation is exactly what the ERG batch adjudicates, by family.
 
 ## Typed corruptions (measured)
 
@@ -175,13 +178,13 @@ Each generated sentence is corrupted using its own tree, so each corruption know
 
 | Corruption | n | Phase 0 accepted | Phase 0 conflict naming the attacked constraint | v1.1 accepted |
 |---|---:|---:|---:|---:|
-| case | 1103 | 127 | 940 | 26/1103 |
-| adjacent swap | 1548 | 347 | — | 55/1548 |
-| token delete | 1548 | 660 | — | 80/1548 |
-| det drop | 192 | 50 | 139 | 7/192 |
-| agreement | 908 | 63 | 817 | 0/908 |
-| article | 30 | 0 | 30 | 0/30 |
-| object drop | 18 | 4 (verb kept as verb: 0) | 9 | 0/18 |
+| case | 1032 | 112 | 896 | 17/1032 |
+| adjacent swap | 1585 | 300 | — | 51/1585 |
+| token delete | 1586 | 619 | — | 87/1586 |
+| agreement | 924 | 52 | 846 | 0/924 |
+| det drop | 158 | 44 | 113 | 5/158 |
+| object drop | 21 | 2 (verb kept as verb: 0) | 12 | 0/21 |
+| article | 32 | 0 | 32 | 0/32 |
 
 Defects found by this stream and fixed during Phase 0: case was checked on the first conjunct only (*me and he can run*); PP and relative postmodifiers dropped pronoun case (*they about industry* as an object); NP-level *but* (*the cat but the dog*); mixed *and/or* chains flattened with the wrong number; reflexive *myself* without an antecedent; over-broad collective-noun and bare-PP evidence rules (see lexical policy).
 
@@ -189,29 +192,29 @@ Defects found by this stream and fixed during Phase 0: case was checked on the f
 
 | Generated length | n | p50 ms | p95 ms | max ms |
 |---|---:|---:|---:|---:|
-| 1-8 tokens | 585 | 0.77 | 6.34 | 23.17 |
-| 9-14 tokens | 536 | 1.86 | 7.99 | 32.88 |
-| 15-20 tokens | 382 | 3.13 | 14.01 | 55.48 |
-| 21-24 tokens | 141 | 4.22 | 17.02 | 34.93 |
+| 1-8 tokens | 585 | 0.74 | 4.68 | 13.69 |
+| 9-14 tokens | 565 | 1.67 | 6.48 | 23.49 |
+| 15-20 tokens | 393 | 2.6 | 8.54 | 45.33 |
+| 21-24 tokens | 123 | 3.54 | 10.3 | 19.03 |
 
 Adversarial inputs (full API: 24-best readings, diverse root readings, choice points):
 
 | Case | Tokens | State | Complete trees | ms |
 |---|---:|---|---:|---:|
-| 10-noun compound subject | 13 | recognised | 2 | 7.6 |
-| 20-noun compound subject | 23 | recognised | 96 | 18.8 |
-| 40-noun compound subject | 43 | recognised | 768 | 18 |
-| 50-noun compound subject | 53 | recognised | 1536 | 62.4 |
-| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 18.5 |
-| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 10 |
-| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 20.8 |
-| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 29 |
-| 8 coordinated clauses | 39 | recognised | 1 | 4.3 |
-| 16 coordinated clauses | 79 | recognised | 1 | 8.1 |
-| 40-token realistic | 42 | recognised | 11616 | 17.8 |
-| mixed subordination + coordination | 29 | recognised | 258 | 17 |
+| 10-noun compound subject | 13 | recognised | 2 | 8.7 |
+| 20-noun compound subject | 23 | recognised | 96 | 17.6 |
+| 40-noun compound subject | 43 | recognised | 768 | 16.5 |
+| 50-noun compound subject | 53 | recognised | 1536 | 34.2 |
+| 4 stacked PPs (attachment ambiguity) | 15 | recognised | 84 | 22.2 |
+| 6 stacked PPs (attachment ambiguity) | 21 | recognised | 858 | 27.9 |
+| 8 stacked PPs (attachment ambiguity) | 27 | recognised | 19448 | 13.6 |
+| 10 stacked PPs (attachment ambiguity) | 33 | recognised | 705432 | 37.1 |
+| 8 coordinated clauses | 39 | recognised | 1 | 5.6 |
+| 16 coordinated clauses | 79 | recognised | 1 | 9.5 |
+| 40-token realistic | 42 | recognised | 11616 | 37.3 |
+| mixed subordination + coordination | 29 | recognised | 258 | 10.2 |
 
-The largest single-sentence time in the generated run was 55.48 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
+The largest single-sentence time in the generated run was 45.33 ms; such maxima are isolated (garbage collection / JIT warm-up), as the p95 column shows.
 
 Phone figures are unmeasured; expect several times slower. The runtime lexicon is currently compiled at start-up from raw evidence; Phase 3 should ship a precompiled grammar and lexicon.
 
@@ -413,7 +416,7 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 - Creative-mode rescoring is allowed with version history; competitions freeze grammar and scoring versions (2026-10-19).
 - **No punctuation tiles, so the grammar accepts what would be correct with commas and dashes restored** (2026-10-28). Players write *Today the cargo can …* and *… news then the castle can …* as they would on paper. Constructions that only punctuation keeps apart (unlinked run-on clauses, appositives, vocatives) are not accepted, because without it almost any sequence of noun phrases would parse.
 
-## Engine 0.2.0 grammar additions (measured)
+## Engine 0.2 grammar additions (measured)
 
 - **Fronted adjuncts** (CGEL ch. 8): a time or place adverb (*today, tonight, tomorrow, later, now, then, soon, once, first, next, outside, inside*) before the subject or an imperative, or a PP before the subject, with no comma. At most one fronted adverb (or *later today*) and one fronted PP per clause. A fronted adverb scores as the same adverb at the end of the clause.
 - **Linked clauses**: *then, later, next* join two clauses where writing would use a semicolon or dash. *and then* now works as well (*then* fronting the second clause).
@@ -421,6 +424,7 @@ End-to-end test (`tests/browser_game_test.py`, headless Chromium, 390×844 phone
 - **One time adverb per position**: time adverbs no longer stack (not *today later soon the cargo …* or *… news today later soon*); *later today/tonight/tomorrow* is one phrase. A fronted time adverb and one inside the predicate can co-occur (*Today the cargo can predict news and later inch …*).
 - **Time reference**: in a main clause, past tense (past verb, *was/were*, *did*) with *tomorrow* is a named conflict, `time_reference`. English has two tenses; *will* and *can* are present-tense modals with future time reference (CGEL ch. 3), so *Soon the cargo can …* is fine. Subordinate and content clauses are exempt (hypothetical or backshifted past).
 - **Adjuncts after a predicative complement**: *was safe today*, *is safe in the garden* (PP only after an adjective; after a noun it is already an NP modifier).
+- **Bare coordinated pairs** (0.2.1; CGEL ch. 5): two unmodified singular count nouns joined by *and* need no determiner (*combine sword and symbol*, *with knife and fork*) and take plural agreement. A modified noun still needs one (not *combine half speed sword and sad august symbol*).
 - **Lexicon**: *cargo* gains a mass reading (Cambridge Dictionary: [C or U]), so *all rude cargo* is recognised.
 - **Limitations**: a past-tense clause rejected for *tomorrow* can still be accepted as a nominal fragment when its words also form a noun phrase (*the cargo left tomorrow* as a compound); a fronted *tomorrow* over coordinated predicates is checked against the first predicate only.
 
@@ -459,12 +463,12 @@ The weights were set so that construction points are roughly 25–50% of a sente
 | Check | Result |
 |---|---|
 | P1 recognised + blue tile ⇒ score > 0 | 0 violations in 800 generated sentences |
-| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 698 insertions (8 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
+| P2 inserting a blue modifier (other words' structure unchanged) never lowers the score | 0 violations in 770 insertions (22 further insertions re-bracketed the sentence and are a reading change, not a P2 case) |
 | P3′ gold-only material earns nothing; unanchored links earn nothing | 0 non-zero of 150 gold-only sentences; anchor cases all as expected |
 | P4′ repeated constructions converge; another *and* adds 12.86 structural points, a new kind (relative clause) adds 69.86 | 0 failures |
 | P5 adjective stacks bounded (≤ 33); noun compounds linear and always ahead (8 modifiers: 80 vs 31.41) | 0 failures |
-| P6 score spread across alternative readings (tracked) | median 0.052, 90th percentile 0.233 of the canonical score |
-| Join test: clause-level join ≥ separate sum | 0 violations in 10 joins |
+| P6 score spread across alternative readings (tracked) | median 0.049, 90th percentile 0.223 of the canonical score |
+| Join test: clause-level join ≥ separate sum | 0 violations in 4 joins |
 
 Clause chains (same words; scores after 1–10 clauses):
 
@@ -503,15 +507,15 @@ Points per blue tile by strategy:
 | session sentence 1 | 16 | 370 | 23.1 |
 | embedding + relative | 9 | 175 | 19.49 |
 
-**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 64 sentences, 125 blue tiles, 1912 points (15.29 per tile); structural points 33% of the total; 3 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
+**Adversarial portfolio search** on the 167-word inventory embedded in v1.1 plus helpers the, is, in, and, a, can, for, on, has: 6000 distinct grammar-generated candidate sentences, packed greedily (disjoint blue tiles). Best portfolio: 65 sentences, 137 blue tiles, 2121 points (15.48 per tile); structural points 34% of the total; 0 tapered list items. No degenerate pattern dominates. Points per blue tile rise with sentence size:
 
 | Blue tiles in sentence | Candidates | Median per tile | 90th percentile per tile |
 |---|---:|---:|---:|
-| 1-2 | 568 | 7.6 | 12.2 |
-| 3-4 | 1601 | 13 | 17.5 |
-| 5-6 | 1646 | 16.8 | 22.2 |
-| 7-9 | 1539 | 21.5 | 27 |
-| 10+ | 646 | 23.4 | 27.6 |
+| 1-2 | 929 | 7.6 | 12.2 |
+| 3-4 | 1425 | 13.4 | 17.6 |
+| 5-6 | 1407 | 17.9 | 22.7 |
+| 7-9 | 1479 | 22.7 | 27.8 |
+| 10+ | 760 | 24.5 | 28.7 |
 
 Earlier drafts failed this search and were corrected: v0.1 let tiny elliptical structures farm link bonuses (*project all can and canvas*: 3 blue tiles, 95 points); the first v0.4 draft let short, construction-dense questions and fragments win per tile. The substantive-link rule, the size multiplier and the construction-substance scaling were introduced in response.
 
