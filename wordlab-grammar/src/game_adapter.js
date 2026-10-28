@@ -19,6 +19,7 @@
   const {createEngine} = req('./engine');
   const {scoreResult, SCORE_VERSION} = req('./score');
   const {HELPER_CANDIDATES} = req('./lexicon');
+  const {conflictMessages, conflictSummary, findFixes} = req('./feedback');
   const KIND = {declarative: 'clause', imperative: 'imperative', question: 'question', fragment: 'fragment', ellipsis: 'ellipsis'};
 
   function createGrammar(v11) {
@@ -53,12 +54,23 @@
       // Grammar-level failure: a specific conflict, or outside the grammar.
       const span = c => words.slice(c.span[0], c.span[1]).join(' ');
       if (res.state === 'conflict') {
-        const cs = res.conflicts;
+        const cs = res.conflicts, parts = conflictMessages(res), msgs = parts.map(p => p.message);
+        // Tested repairs re-parse the sentence, so they are computed only when
+        // the explanation or a tip is actually shown, then cached.
+        let fx = null;
+        const fixInfo = () => fx || (fx = findFixes(engine, res, parts, {canUseHelper: w => helpers.has(w), score: r => scoreResult(r, r.canonical).score}));
+        const fixLine = () => {
+          const f = fixInfo();
+          if (f.fixes.length) return ` Tested fix: ${f.fixes[0].text}. That sentence is recognised and scores ${Math.round(f.fixes[0].score)}.`;
+          if (f.locked.length) return ` A fix would need ${f.locked.map(w => '“' + w + '”').join(' or ')}, which you have not unlocked yet.`;
+          return '';
+        };
         return {valid: false, pending: true, reason: 'grammar_conflict', tokens: words, wl2: res,
           diagnostic: {
-            summary: cs.length === 1 ? `Conflict: ${cs[0].explanation}.` : `Two conflicts: ${cs.map(c => c.explanation).join('; and ')}.`,
-            detail: cs.map(c => `“${span(c)}” — ${c.explanation}.`).join(' ') + ' Every analysis this grammar can build breaks ' + (cs.length === 1 ? 'this rule.' : 'these rules.'),
-            hint: 'Change one of the highlighted words. You can also save it as pending: it keeps its tiles, scores 0 for now, and is re-checked whenever the grammar is updated.',
+            summary: conflictSummary(parts),
+            get detail() { return msgs.join(' ') + fixLine(); },
+            get fixes() { return fixInfo().fixes; },
+            hint: 'This is what this grammar expects, not a final verdict on English. You can also save it as pending: it keeps its tiles, scores 0 for now, and is re-checked whenever the grammar is updated.',
             issueIndex: cs[0].span[0], issueIndices: cs.map(c => c.span[0])}};
       }
       return {valid: false, pending: true, reason: 'outside_supported_grammar', tokens: words, wl2: res,

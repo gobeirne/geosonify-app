@@ -125,6 +125,16 @@
 
   <p>Firestore stores this data on Google's servers in Sydney, Australia, which is outside New Zealand.</p>
 
+  <h3>Word Lab: sentences sent for review</h3>
+  <p>In Word Lab, a sentence the grammar rejects can be sent for review with “I think this is fine”. Nothing is sent unless you press that button. Sending it signs in to Firebase anonymously, as above, and stores one Firestore record containing:</p>
+  <ul>
+    <li>the words of the sentence;</li>
+    <li>the grammar version and what the grammar said about the sentence;</li>
+    <li>the optional note you type;</li>
+    <li>the time it was sent.</li>
+  </ul>
+  <p>Unlike shared finds, this record is not encrypted: the operator reads it to decide whether the grammar should accept the sentence. The storage rules allow no other field, so the anonymous identifier is not stored with it, and no player can read, change or delete it. Only the operator can, after signing in. Do not put personal information in the note. Decided sentences may be kept as test sentences for later versions of the grammar.</p>
+
   <h2>5. Keeping and deleting information</h2>
   <div class="wrap"><table>
     <tr><th>Information</th><th>How long it is kept</th><th>How it is deleted</th></tr>
@@ -134,6 +144,9 @@
     <tr><td>Shared and synced records in Firestore</td>
         <td><span class="todo">[Until deleted by the operator. Confirm that no automatic expiry is configured, or state it.]</span></td>
         <td>They cannot be edited or deleted from the app: the storage rules forbid it. See below for what this means for your devices, and section 6 for requests.</td></tr>
+    <tr><td>Word Lab sentences sent for review</td>
+        <td><span class="todo">[Until the operator deletes them after deciding. State a maximum, e.g. deleted within 12 months of the decision.]</span> Decided sentences may be kept as test sentences in the Word Lab source code.</td>
+        <td>Not from the app. Because no identifier is stored, the operator can find and delete one on request only if you quote the sentence (section 6).</td></tr>
     <tr><td>Transfer copies of your identity</td>
         <td><span class="todo">[As above]</span></td>
         <td>Not from the app (section 4).</td></tr>

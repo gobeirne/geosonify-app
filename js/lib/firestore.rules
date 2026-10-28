@@ -86,6 +86,40 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ---- Word Lab appeals ("I think this is fine") -----------------------
+    // Players create; only the reviewer reads, decides or deletes. Written by
+    // js/lib/wordlab-appeals.js; reviewed in wordlab-appeals.html, where the
+    // reviewer signs in with an email link (Firebase Email-link sign-in), so
+    // the token carries a verified email address.
+    // An appeal holds no anonymous identifier: hasOnly() below forbids it.
+    function isReviewer() {
+      return request.auth != null
+             && request.auth.token.email == 'gregory.obeirne@canterbury.ac.nz'
+             && request.auth.token.email_verified == true;
+    }
+    function appealOk(d) {
+      return d.keys().hasOnly(['words', 'version', 'reason', 'summary', 'note', 'status', 'createdAt'])
+             && d.words is list && d.words.size() >= 1 && d.words.size() <= 40
+             && d.version is string && d.version.size() <= 40
+             && d.reason in ['grammar_conflict', 'outside_supported_grammar']
+             && d.summary is string && d.summary.size() <= 600
+             && d.note is string && d.note.size() <= 280
+             && d.status == 'open'
+             && d.createdAt == request.time;
+    }
+    match /wordlab_appeals/{id} {
+      allow create: if isAnon() && appealOk(request.resource.data);
+      allow get: if isReviewer();
+      allow list: if isReviewer() && request.query.limit != null && request.query.limit <= 500;
+      // The reviewer may only add a verdict: the player's fields stay as sent.
+      allow update: if isReviewer()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['status', 'reviewNote', 'reviewedAt', 'exportedAt'])
+                    && request.resource.data.status in ['open', 'accepted', 'rejected']
+                    && (!('reviewNote' in request.resource.data) || (request.resource.data.reviewNote is string && request.resource.data.reviewNote.size() <= 500));
+      allow delete: if isReviewer();
+    }
+
     // ---- everything else is denied, including /handles itself -------------
     // No rule permits reading or listing /handles, so handle enumeration is
     // impossible. No collection-group rule over 'blobs' exists, so a

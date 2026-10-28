@@ -140,9 +140,9 @@ The notebook now stores the derivation of every inspected reading, not just the 
 ## Layout
 
 ```
-src/        engine, grammar, parser, lexicon compiler, scorer, loader
+src/        engine, grammar, parser, lexicon compiler, scorer, conflict feedback, loader
 data/       v1_1_lexicon.json (from the v1.1 game), oewn_evidence.json (OEWN 2025), erg_verb_evidence.json + ERG_LICENSE.txt (ERG)
-tests/      probes.json, run_probes.js, generate.js, run_generated.js, stress.js, run_all.js
+tests/      probes.json, run_probes.js, generate.js, run_generated.js, run_feedback.js, stress.js, run_all.js
 erg/        prepare.js, analyse.js, ablate.js, rescore.js, Starpin_ERG_Phase0.ipynb,
             phase0_batch.jsonl + phase0_batch_tiles.jsonl (+ your erg_phase0_results.jsonl), phase0b_batch.jsonl
 tools/      extract_oewn.py, extract_v11.js, report_lexicon.js, build_report.js, build_bench.js
@@ -169,3 +169,34 @@ reports/    generated results (regenerate with npm run report)
 - **WordNet verb-frame IDs and VerbNet matches:** inherited from the v1.1 lexicon evidence. VerbNet's licence should be confirmed.
 - **English Resource Grammar lexicon:** MIT licence (`data/ERG_LICENSE.txt`), which requires the copyright notice to be kept with copies.
 - **The v1.1 lexicon itself:** the handover already flags that its redistribution terms need review.
+
+## Player appeals (“I think this is fine”)
+
+When the grammar rejects a sentence, the game offers **I think this is fine — send for review**, with an optional note for context. The appeal is one record in the Firestore collection `wordlab_appeals` (project `geosonify-starpin`): the words, grammar version, what the grammar said, the note and the time. It holds no player identifier. Players can create appeals but cannot read, change or delete them (`js/lib/firestore.rules`).
+
+The reviewer decides appeals at **`/wordlab-appeals.html`** (not linked from the site), signing in with an email link. **Export decisions** downloads `appeals.json`; put it at `wordlab-grammar/tests/appeals.json`. Then `node tests/run_appeals.js --list` shows, for the current grammar, accepted sentences it still rejects (the backlog for the next version) and rejected sentences it now accepts (over-acceptance). `run_all.js` prints the counts as an information line; appeals never fail a gate. An accepted sentence stays pending in the game until a grammar version recognises it, then scores like any other.
+
+**One-time setup (Firebase console, project `geosonify-starpin`):**
+1. Authentication → Sign-in method → enable **Email/Password** and its **Email link (passwordless sign-in)** option.
+2. Authentication → Settings → Authorised domains: make sure `geosonify.org` is listed.
+3. Firestore → Rules: publish the updated `js/lib/firestore.rules`. The reviewer is the verified address in `isReviewer()`.
+
+**Adding email later.** The records and rules do not change. Install the **Trigger Email from Firestore** extension (it sends whatever is written to a `mail` collection, through an SMTP account such as SendGrid or Mailgun), keep the rules' default deny on `mail`, and deploy one Cloud Function that turns each new appeal into a message:
+
+```js
+// functions/index.js (Node 20, firebase-functions v6)
+const {onDocumentCreated} = require('firebase-functions/v2/firestore');
+const {initializeApp} = require('firebase-admin/app');
+const {getFirestore} = require('firebase-admin/firestore');
+initializeApp();
+exports.wordlabAppealMail = onDocumentCreated({document: 'wordlab_appeals/{id}', region: 'australia-southeast1'}, async ev => {
+  const a = ev.data.data();
+  await getFirestore().collection('mail').add({
+    to: 'gregory.obeirne@canterbury.ac.nz',
+    message: {subject: 'Word Lab appeal: ' + a.words.join(' ').slice(0, 80),
+      text: `${a.words.join(' ')}\n\nGrammar ${a.version}: ${a.summary}\nNote: ${a.note || '(none)'}\n\nReview: https://geosonify.org/wordlab-appeals.html`}});
+});
+```
+
+The function runs with admin rights, so the address stays out of the public pages and the client rules. A daily digest is the same function on a schedule (`onSchedule`) reading appeals with `status == 'open'`.
+

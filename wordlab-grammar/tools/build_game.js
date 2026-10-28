@@ -45,6 +45,34 @@ ui = once(ui, "const grammar=window.StarpinGrammarV02.createEngine(lexicon),scor
   "const grammar=window.StarpinWL2.createGrammar(lexicon),scoreEngine=window.StarpinWL2.scorer;", 'engine');
 ui = once(ui, "/* Starpin Word Lab v1.1. Mobile-first browser prototype", "/* Starpin Word Lab v2.0 (grammar/scoring Phases 0–2). Mobile-first browser prototype", 'banner');
 
+// ---------------------------------------------------------------- appeals
+// "I think this is fine": a rejected sentence can be sent for review
+// (js/lib/wordlab-appeals.js, loaded only when used; reviewed in
+// wordlab-appeals.html). Accepted appeals become test sentences for later
+// grammar versions; until then the sentence stays pending.
+ui = once(ui, "  if(Number.isInteger(d.issueIndex)){\n    const focused=$('builder').querySelector('[data-tile=\"'+d.issueIndex+'\"]');",
+  "  if(info.pending)renderAppeal(panel,info);\n  if(Number.isInteger(d.issueIndex)){\n    const focused=$('builder').querySelector('[data-tile=\"'+d.issueIndex+'\"]');", 'appeal hook');
+ui = once(ui, "function renderTree(info){", `function renderAppeal(panel,info){
+  const sig=info.tokens.join(' '),sent=(state.appealed||{})[sig];
+  panel.insertAdjacentHTML('beforeend','<div class="appeal" style="margin-top:.7rem;border-top:1px solid rgba(127,127,127,.25);padding-top:.6rem">'+(sent
+    ?'<p class="tiny muted">Sent for review on '+htmlEscape(sent)+'. If it is accepted, a later grammar version will recognise it and it will score from then on.</p>'
+    :'<p class="tiny">Think this is good English? Send it for review. Add context if it helps, e.g. who is speaking.</p>'+
+     '<input id="appealNote" maxlength="280" placeholder="Optional note" style="width:100%;box-sizing:border-box;margin:.3rem 0;padding:.45rem;border-radius:8px;border:1px solid rgba(127,127,127,.4);font:inherit">'+
+     '<button type="button" class="diag-action" id="appealSend">I think this is fine — send for review →</button>')+'</div>');
+  const b=$('appealSend');if(b)b.addEventListener('click',()=>sendAppealFor(info,b));
+}
+async function sendAppealFor(info,button){
+  const sig=info.tokens.join(' ');button.disabled=true;button.textContent='Sending…';
+  try{
+    const mod=await import(new URL('js/lib/wordlab-appeals.js',location.href).href);
+    await mod.sendAppeal({words:info.tokens,version:info.wl2&&info.wl2.version,reason:info.reason,summary:(info.diagnostic&&info.diagnostic.summary)||'',note:($('appealNote')||{}).value||''});
+    state.appealed=state.appealed||{};state.appealed[sig]=new Date().toLocaleDateString('en-NZ');
+    setNotice('Sent for review. Thank you: accepted sentences shape the next grammar version.','good');
+  }catch(e){setNotice('Could not send it for review ('+(e&&e.message||e)+'). It is still saved here if you save it as pending.','bad');}
+  renderAll();
+}
+function renderTree(info){`, 'appeal functions');
+
 // ---------------------------------------------------------------- evaluation, pins, pending
 ui = once(ui, "function getDraftInfo(){return evaluate(state.draft,state.editingId);}", "function getDraftInfo(){return evaluate(state.draft,state.editingId,state.draftPins);}", 'draft pins');
 ui = once(ui, "function evaluate(tiles,ignoreId=null){", "function evaluate(tiles,ignoreId=null,pins=null){", 'evaluate sig');
@@ -458,7 +486,7 @@ const slimOewn = {source: oewn.source, licence: oewn.licence, noun_lexfiles: oew
   bare_prep_noun_usage: Object.fromEntries(Object.entries(oewn.bare_prep_noun_usage).map(([k, v]) => [k, {count: v.count, with_determiner: v.with_determiner}]))};
 const erg = JSON.parse(read('data/erg_verb_evidence.json'));
 const slimErg = {source: erg.source, licence: erg.licence, sha256: erg.sha256, verbs: erg.verbs};
-const modules = ['lexicon', 'grammar', 'parser', 'engine', 'score'];
+const modules = ['lexicon', 'grammar', 'parser', 'engine', 'score', 'feedback'];
 const bundle = `(function(){const __mods={},__cache={};
 ${modules.map(m => `__mods['./${m}']=function(module,exports,require){\n${read('src/' + m + '.js')}\n};`).join('\n')}
 window.__wl2req=function req(n){if(__cache[n])return __cache[n].exports;const module={exports:{}};__cache[n]=module;__mods[n](module,module.exports,req);return module.exports;};

@@ -11,6 +11,8 @@
  *      corruption (only 'myself' is available) may also be named as agreement
  *   G5 Node timing: p95 <= 25 ms for 21-24-token generated sentences
  *   G6 scoring invariants P1, P2, P3', P4', P5, J: zero failures
+ *   G7 feedback: for >= 90% of article/agreement/determiner conflicts on
+ *      corrupted generated sentences, a tested repair is offered
  * Usage: node tests/run_all.js [count=800]
  */
 const {execFileSync} = require('child_process');
@@ -42,7 +44,13 @@ try { sOut = execFileSync(process.execPath, [path.join(__dirname, 'run_scoring.j
 catch (e) { sOk = false; sOut = String(e.stdout || ''); }
 const sj = JSON.parse(sOut.split('\n')[0]);
 gates.push(['G6 scoring invariants', sOk && sj.failures === 0, `${sj.failures} failures (P1 ${sj.P1.violations}/${sj.P1.n}, P2 ${sj.P2.violations}/${sj.P2.insertions}, P3' ${sj.P3.nonzero}/${sj.P3.goldOnly})`]);
+const fb = JSON.parse(execFileSync(process.execPath, [path.join(__dirname, 'run_feedback.js'), '300'], {encoding: 'utf8', maxBuffer: 1 << 26}).trim().split('\n').pop());
+const fbT = Object.values(fb.byType).reduce((a, x) => ({c: a.c + x.conflicts, o: a.o + x.offered}), {c: 0, o: 0});
+gates.push(['G7 feedback repair offered', fbT.c === 0 || fbT.o / fbT.c >= 0.9, `${fbT.o}/${fbT.c} conflicts (${Object.entries(fb.byType).map(([k, x]) => k + ' ' + x.offered + '/' + x.conflicts).join(', ')}); p95 ${fb.msP95} ms`]);
+// Information only: reviewer-decided player appeals against this grammar.
+const ap = JSON.parse(execFileSync(process.execPath, [path.join(__dirname, 'run_appeals.js')], {encoding: 'utf8'}).trim().split('\n')[0]);
 let ok = true;
 console.log('\nGates');
 for (const [name, pass, detail] of gates) { console.log((pass ? 'PASS ' : 'FAIL ') + name.padEnd(32) + detail); ok = ok && pass; }
+console.log(`info  appeals: ${ap.appeals} decided; accepted and recognised ${ap.acceptedRecognised}, accepted but still rejected ${ap.acceptedStillRejected}, rejected but now recognised ${ap.rejectedNowRecognised}`);
 process.exitCode = ok ? 0 : 1;

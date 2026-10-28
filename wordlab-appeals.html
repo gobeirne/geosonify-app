@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Word Lab appeals — review</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d1d1b;--muted:#6b6a64;--line:#dcd8cc;--accent:#2f6f5e;--bad:#a2412b;--warn:#8a6514;color-scheme:light;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1f1f1d;--ink:#ecebe6;--muted:#a3a29b;--line:#34332f;--accent:#7cc2ad;--bad:#e08a73;--warn:#d9b45a;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+main{max-width:860px;margin:0 auto;padding:1rem}
+h1{font-size:1.35rem;margin:.4rem 0 .2rem}
+.muted{color:var(--muted)}.tiny{font-size:.82rem}
+.bar{display:flex;flex-wrap:wrap;gap:.4rem;align-items:center;margin:.8rem 0}
+button,input,textarea{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:.4rem .85rem;cursor:pointer}
+button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.accept{border-color:var(--accent);color:var(--accent)}button.reject{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+input,textarea{width:100%;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:.5rem .6rem}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:.85rem 1rem;margin:.7rem 0}
+.sentence{font-size:1.08rem;font-weight:600;margin:.1rem 0 .35rem;overflow-wrap:anywhere}
+.meta{display:flex;flex-wrap:wrap;gap:.3rem .9rem;font-size:.8rem;color:var(--muted)}
+.note{margin:.45rem 0;padding:.45rem .6rem;border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 9%,transparent);border-radius:4px}
+.status{font-weight:700}.status.accepted{color:var(--accent)}.status.rejected{color:var(--bad)}
+.actions{display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.55rem}
+#signin{max-width:420px}
+.msg{min-height:1.2rem;font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>Word Lab appeals</h1>
+  <p class="muted tiny">Sentences players sent with “I think this is fine”. Accept the ones that are good English; reject the rest. Export the decisions to <code>wordlab-grammar/tests/appeals.json</code>, where <code>node tests/run_appeals.js</code> checks them against each grammar version.</p>
+
+  <section id="signin" hidden>
+    <p>Sign in with the reviewer’s email address. A sign-in link is sent to that inbox.</p>
+    <input id="email" type="email" autocomplete="email" placeholder="email address">
+    <div class="bar"><button id="sendLink">Send sign-in link</button></div>
+  </section>
+
+  <section id="review" hidden>
+    <div class="bar" id="filters"></div>
+    <div class="bar"><button id="refresh">Refresh</button><button id="export">Export decisions (appeals.json)</button><button id="signout">Sign out</button></div>
+    <div id="list"></div>
+  </section>
+  <p class="msg" id="msg" role="status"></p>
+</main>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js';
+import { getAuth, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut }
+  from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js';
+import { getFirestore, collection, query, orderBy, limit, getDocs, doc, updateDoc, deleteDoc, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js';
+import { firebaseConfig } from './js/lib/wordlab-appeals.js';
+
+const app = initializeApp(firebaseConfig), auth = getAuth(app), db = getFirestore(app);
+const $ = id => document.getElementById(id);
+const say = (t, bad) => { $('msg').textContent = t; $('msg').style.color = bad ? 'var(--bad)' : ''; };
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+const EMAIL_KEY = 'wordlabAppealsEmail';
+const REASON = {grammar_conflict: 'specific conflict', outside_supported_grammar: 'outside the grammar'};
+let rows = [], filter = 'open';
+
+// ---- sign-in by email link ------------------------------------------------
+if (isSignInWithEmailLink(auth, location.href)) {
+  let email = localStorage.getItem(EMAIL_KEY) || prompt('Confirm the email address the link was sent to');
+  try { await signInWithEmailLink(auth, email, location.href); history.replaceState(null, '', location.pathname); }
+  catch (e) { say('Sign-in failed: ' + e.message, true); }
+}
+$('sendLink').onclick = async () => {
+  const email = $('email').value.trim();
+  if (!email) return;
+  try {
+    await sendSignInLinkToEmail(auth, email, {url: location.origin + location.pathname, handleCodeInApp: true});
+    localStorage.setItem(EMAIL_KEY, email);
+    say('Link sent. Open it on this device to sign in.');
+  } catch (e) { say('Could not send the link: ' + e.message, true); }
+};
+$('signout').onclick = () => signOut(auth);
+
+onAuthStateChanged(auth, user => {
+  const ok = !!(user && user.email && user.emailVerified);
+  $('signin').hidden = ok; $('review').hidden = !ok;
+  if (ok) { say('Signed in as ' + user.email + '.'); load(); } else if (!user) say('');
+});
+
+// ---- list and decide --------------------------------------------------------
+async function load() {
+  try {
+    const snap = await getDocs(query(collection(db, 'wordlab_appeals'), orderBy('createdAt', 'desc'), limit(500)));
+    rows = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    render();
+  } catch (e) {
+    say(e.code === 'permission-denied' ? 'This account is not the reviewer for Word Lab appeals.' : 'Could not load appeals: ' + e.message, true);
+  }
+}
+$('refresh').onclick = load;
+
+function when(ts) { const d = ts && ts.toDate ? ts.toDate() : null; return d ? d.toLocaleString('en-NZ', {dateStyle: 'medium', timeStyle: 'short'}) : '—'; }
+
+function render() {
+  const count = s => rows.filter(r => s === 'all' || r.status === s).length;
+  $('filters').innerHTML = ['open', 'accepted', 'rejected', 'all'].map(s =>
+    `<button data-f="${s}" class="${s === filter ? 'on' : ''}">${s[0].toUpperCase() + s.slice(1)} (${count(s)})</button>`).join('');
+  $('filters').querySelectorAll('button').forEach(b => b.onclick = () => { filter = b.dataset.f; render(); });
+  const shown = rows.filter(r => filter === 'all' || r.status === filter);
+  $('list').innerHTML = shown.length ? shown.map(r => `
+    <article class="card" data-id="${esc(r.id)}">
+      <div class="sentence">${esc((r.words || []).join(' '))}</div>
+      <div class="meta"><span class="status ${esc(r.status)}">${esc(r.status)}</span><span>${when(r.createdAt)}</span>
+        <span>grammar ${esc(r.version)}</span><span>${esc(REASON[r.reason] || r.reason)}</span>${r.reviewedAt ? `<span>decided ${when(r.reviewedAt)}</span>` : ''}</div>
+      ${r.summary ? `<p class="tiny muted">Grammar said: ${esc(r.summary)}</p>` : ''}
+      ${r.note ? `<div class="note"><b>Player’s note:</b> ${esc(r.note)}</div>` : ''}
+      <input class="rnote" maxlength="500" placeholder="Your note (optional): why, or what construction it needs" value="${esc(r.reviewNote || '')}">
+      <div class="actions">
+        <button class="accept" data-a="accepted">Accept</button><button class="reject" data-a="rejected">Reject</button>
+        ${r.status !== 'open' ? '<button data-a="open">Reopen</button>' : ''}<button data-a="delete">Delete</button>
+      </div>
+    </article>`).join('') : '<p class="muted">Nothing here.</p>';
+  $('list').querySelectorAll('.card').forEach(card => card.querySelectorAll('button').forEach(b => b.onclick = () => act(card, b.dataset.a)));
+}
+
+async function act(card, action) {
+  const id = card.dataset.id, ref = doc(db, 'wordlab_appeals', id);
+  card.querySelectorAll('button').forEach(b => b.disabled = true);
+  try {
+    if (action === 'delete') {
+      if (!confirm('Delete this appeal permanently?')) { render(); return; }
+      await deleteDoc(ref); rows = rows.filter(r => r.id !== id);
+    } else {
+      const reviewNote = card.querySelector('.rnote').value.trim().slice(0, 500);
+      await updateDoc(ref, {status: action, reviewNote, reviewedAt: serverTimestamp()});
+      const r = rows.find(x => x.id === id); Object.assign(r, {status: action, reviewNote, reviewedAt: {toDate: () => new Date()}});
+    }
+    render();
+  } catch (e) { say('Could not save: ' + e.message, true); render(); }
+}
+
+// ---- export for the test suite ---------------------------------------------
+$('export').onclick = () => {
+  const decided = rows.filter(r => r.status === 'accepted' || r.status === 'rejected').map(r => ({
+    id: r.id, status: r.status, text: (r.words || []).join(' '), words: r.words, note: r.note || '', reviewNote: r.reviewNote || '',
+    version: r.version, reason: r.reason,
+    createdAt: r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toISOString() : null,
+    reviewedAt: r.reviewedAt && r.reviewedAt.toDate ? r.reviewedAt.toDate().toISOString() : null}))
+    .sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  const blob = new Blob([JSON.stringify({format: 'wordlab-appeals-v1', exported: new Date().toISOString(), appeals: decided}, null, 1) + '\n'], {type: 'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'appeals.json'; a.click();
+  say(`Exported ${decided.length} decided appeal${decided.length === 1 ? '' : 's'}.`);
+};
+</script>
+</body>
+</html>

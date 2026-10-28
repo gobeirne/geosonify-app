@@ -251,6 +251,8 @@ function createEngine(v11Lexicon, oewnEvidence, options = {}) {
       readings.forEach((r, i) => { r.id = 'R' + (i + 1); });
       return {state: 'recognised', tiles, readings, canonical: readings[0], treeCount: s.count, choicePoints: choicePoints(s.forest, tiles, strict), pins: opts.pins || null, ...(opts.returnForest ? {forest: s.forest} : {}), earleyItems: s.chart.items, ms: ms(), version: VERSION};
     }
+    // strictOnly: a yes/no check (feedback testing candidate repairs).
+    if (opts.strictOnly) return {state: 'unrecognised', reason: 'strict_only', tiles, ms: ms(), version: VERSION};
     // Not recognised: try the relaxed grammar for a specific conflict.
     const relaxed = getRelaxed();
     const r = runGrammar(relaxed, tiles, 8);

@@ -219,6 +219,13 @@ push('## Engine 0.2 grammar additions (measured)', '',
   '- **Lexicon**: *cargo* gains a mass reading (Cambridge Dictionary: [C or U]), so *all rude cargo* is recognised.',
   '- **Limitations**: a past-tense clause rejected for *tomorrow* can still be accepted as a nominal fragment when its words also form a noun phrase (*the cargo left tomorrow* as a compound); a fronted *tomorrow* over coordinated predicates is checked against the first predicate only.', '');
 
+// ---------------------------------------------------------------- feedback
+push('## Conflict feedback in the game (`src/feedback.js`)', '',
+  '- **Plain-language messages** name the words and the reason, from the nearest analysis the relaxed grammar found: *“sword” and “symbol” each need a word such as “a”, “the” or “this” in front*; *“is” does not match its subject “sword and symbol”, which is plural. Try “are”.*',
+  '- **Tested repairs**: for missing or mismatched determiners, *is/are*-type agreement and *a/an*, candidate edits are re-parsed with the strict grammar (at most 12 variants) and only repairs that make the whole sentence recognised are offered, best score first, using only gold tiles the player has unlocked. They are computed only when the explanation or a tip is opened.',
+  '- **Verb frames and time reference** get a message but no automatic repair: they need a different content word. Verb-frame wording says what this grammar expects, not what English forbids, because context can license an object-less use of a transitive verb (*Can you bless? Yes, I can bless.*).',
+  '- **Gate G7** (`tests/run_feedback.js`): on article, agreement and determiner conflicts produced by corrupting generated sentences, a tested repair is offered in at least 90% of cases.', '');
+
 // ---------------------------------------------------------------- Phase 1
 push('## Phase 1 grammar additions (measured)', '',
   '- **Post-auxiliary ellipsis** after modals, *has/have*, *does/do/did* and *is/are/was/were*, optionally with *not*, as an ordinary finite predicate, so it also appears inside coordination and subordinate clauses (*The cat can run because the dog did.*). Agreement still applies (*The cat are.* is a conflict). *The cat is.* is now recognised as ellipsis, as ERG analyses it.',
