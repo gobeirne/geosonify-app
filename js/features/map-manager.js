@@ -1710,6 +1710,7 @@
     refreshHierarchicalGrid,
     toggleHierarchicalGrid,
     isGridVisible: () => gridLayersVisible,
+    getGridLayers: () => gridLayers.slice(),
     
     // Shape drawing
     drawPathPoly,

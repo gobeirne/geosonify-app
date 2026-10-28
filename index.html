@@ -775,7 +775,7 @@
 <!-- Features -->
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
 <script src="js/lib/geosonify-imagery-catalogue.js?v=20261025a"></script>
-<script src="js/features/map-manager.js?v=20261025b"></script>
+<script src="js/features/map-manager.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -1906,12 +1906,21 @@
           const _viewerFit = () => {
             try {
               m.invalidateSize(true);
-              let b = null;
+              // Fit to the SHAPE. The pin's nested precision cells (MapManager's
+              // hierarchical grid) are polygons on the map too, and the outermost
+              // can be many times the shape's size and off to one side of it, so
+              // they count only when there is no shape at all (a point link).
+              const cellSet = new Set((typeof MapManager !== 'undefined' && MapManager.getGridLayers)
+                ? MapManager.getGridLayers() : []);
+              let b = null, cb = null;
               m.eachLayer(layer => {
                 if (layer.getBounds && (layer instanceof L.Polygon || layer instanceof L.Polyline)) {
-                  b = b ? b.extend(layer.getBounds()) : layer.getBounds();
+                  const lb = layer.getBounds();
+                  if (cellSet.has(layer)) cb = cb ? cb.extend(lb) : L.latLngBounds(lb.getSouthWest(), lb.getNorthEast());
+                  else b = b ? b.extend(lb) : L.latLngBounds(lb.getSouthWest(), lb.getNorthEast());
                 }
               });
+              if (!b) b = cb;
               if (!isNaN(opts.zoom) && opts.zoom != null) {
                 const centre = (b && b.isValid()) ? b.getCenter() : m.getCenter();
                 const z = Math.max(m.getMinZoom() || 1, Math.min(m.getMaxZoom() || 22, opts.zoom));
