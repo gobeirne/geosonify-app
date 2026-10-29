@@ -2875,7 +2875,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
           const kind = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.kindOf) ? GeosonifyBasemap.kindOf(active) : '';
           const want = isSkyFrameNow() ? 'sky'
-            : ((kind === 'aerial' || kind === 'wayback') ? 'aerial' : (kind === 'topo' ? 'topo' : 'osm'));
+            : ((kind === 'aerial' || basemapIsDatedAerial(active)) ? 'aerial' : (kind === 'topo' ? 'topo' : 'osm'));
           const radio = document.querySelector(`input[name="displayBasemap"][value="${want}"]`);
           if (radio) radio.checked = true;
         }
@@ -4435,10 +4435,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // A sky shape has no Earth basemap: frame=icrs&epoch=J2000 (added by
         // buildShareURL) is what opens the viewer on the sky.
       } else if (basemap === 'aerial') {
-        params.push('basemap=' + encodeURIComponent(kind === 'wayback' ? active : 'aerial'));
+        // A dated Aerial (an Esri edition, or a layer from the historical
+        // catalogue) is carried as itself, not as the latest plain Aerial.
+        params.push('basemap=' + encodeURIComponent(basemapIsDatedAerial(active) ? active : 'aerial'));
       } else if (basemap === 'topo') {
         params.push('basemap=topo');
-      } else if (basemap === 'osm' && kind === 'custom') {
+      } else if (basemap === 'osm' && kind === 'custom' && !basemapIsDatedAerial(active)) {
         params.push('basemap=' + encodeURIComponent(active));
       }
       return params;
@@ -4463,6 +4465,25 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function refreshCellShareRow() {
       const row = document.getElementById('shareCellRow');
       if (row) row.style.display = cellShareAvailable() ? '' : 'none';
+    }
+
+    /*
+      Is this imagery a DATED Aerial: an Esri Wayback edition (aerial@date) or
+      a layer of the historical imagery catalogue (council, agency and library
+      photography)? Both light the Aerial chip, so the display panel shows them
+      under Aerial and a display link carries the layer itself. A catalogue
+      layer's kind is 'custom' (it is a URL), which is why the kind alone is
+      not enough: Aerial used to send plain 'aerial' and drop the layer.
+    */
+    function basemapIsDatedAerial(src) {
+      const B = (typeof GeosonifyBasemap !== 'undefined') ? GeosonifyBasemap : null;
+      const kind = B && B.kindOf ? B.kindOf(src) : '';
+      if (kind === 'wayback') return true;
+      if (kind !== 'custom') return false;
+      try {
+        const C = window.GeosonifyImageryCatalogue;
+        return !!(C && C.isLoaded && C.isLoaded() && C.byUrl(src));
+      } catch (e) { return false; }
     }
 
     // Compose the final share URL: base shape/enc URL plus any display params.
