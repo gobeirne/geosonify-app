@@ -627,6 +627,13 @@
             <div class="toggle"><input type="checkbox" id="shareDisplayMode" /><span class="toggle-slider"></span></div>
           </div>
 
+          <!-- &cell: share the code's whole cell as an outline, not just the point
+               (js/features/cell-outline.js). Shown for a point on a cell-based card. -->
+          <div class="list-row" id="shareCellRow" style="padding:0; margin-top:10px; display:none;">
+            <label>⬚ Share as cell outline</label>
+            <div class="toggle"><input type="checkbox" id="shareCellMode" /><span class="toggle-slider"></span></div>
+          </div>
+
           <div id="displaySharePanel" style="display:none; margin:6px 0 4px; padding:10px 12px; border:1px solid var(--ios-separator); border-radius:10px;">
             <p style="margin:0 0 10px; font-size:13px; color:var(--ios-secondary-label, #8a8a8e);">A display link opens a read-only viewer showing your shape on a chosen map. Pick what the recipient sees.</p>
 
@@ -776,6 +783,7 @@
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
 <script src="js/lib/geosonify-imagery-catalogue.js?v=20261025a"></script>
 <script src="js/features/map-manager.js?v=20261029a"></script>
+<script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -830,7 +838,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261024c"></script>
+<script src="js/lib/faq-data.js?v=20261029a"></script>
 <script src="js/ui/faq-ui.js?v=20261025b"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -2041,7 +2049,16 @@
       document.body.appendChild(tag);
     }
 
+    // A &cell link's cell, if one is showing on a plain point (the cell IS the shape).
+    function _viewerCell() {
+      if (typeof GeosonifyCell === 'undefined' || !GeosonifyCell.isOn()) return null;
+      if (lastSolution && lastSolution.type !== 'point') return null;
+      return GeosonifyCell.info();
+    }
+
     function _viewerComputeArea() {
+      const cell = _viewerCell();
+      if (cell) return cell.areaM2;
       if (!lastSolution) return null;
       let groups = [];
       if (lastSolution.groups && lastSolution.groups.length) {
@@ -2081,9 +2098,12 @@
     }
 
     function _viewerExport(fmt) {
-      if (!lastSolution) return;
+      const cell = _viewerCell();
+      if (!lastSolution && !cell) return;
       let groups = [];
-      if (lastSolution.groups && lastSolution.groups.length) {
+      if (cell) {
+        groups = [cell.ring.slice(0, -1)];   // the cell's boundary (closed by the format)
+      } else if (lastSolution.groups && lastSolution.groups.length) {
         groups = lastSolution.groups.map(g => g.map(p => Array.isArray(p) ? p : [p.lat, p.lon]));
       } else if (lastSolution.points) {
         groups = [lastSolution.points.map(p => Array.isArray(p) ? p : [p.lat, p.lon])];
@@ -2891,6 +2911,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           }
         } catch (e) {}
 
+        // Share as cell outline: an encrypted link re-encrypts with &cell inside.
+        const cellToggle = document.getElementById('shareCellMode');
+        if (cellToggle) cellToggle.addEventListener('change', () => { try { refreshEncryptedDisplayShare(); } catch (e) {} });
+
         toggle.addEventListener('change', () => {
           if (toggle.checked) seedZoom();
           panel.style.display = toggle.checked ? 'block' : 'none';
@@ -3495,6 +3519,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             const z = [4, 4, 10, 15, 19, 20, 20, 20, 20][Math.min(hpwWords, 8)];
             map.setView([currentCardCoord.lat, currentCardCoord.lon], z);
           }
+          // &cell: outline the words' own cell (half cell at odd word counts).
+          if (urlParams.has('cell') && typeof GeosonifyCell !== 'undefined') {
+            try {
+              GeosonifyCell.show(hpwCard, String(paramValue).trim(), hpwCoord[0], hpwCoord[1], {
+                words: hpwWords, sky: !!(urlFrame && urlFrame.sphere === 'sky')
+              });
+            } catch (e) { console.warn('[geosonify] &cell:', e); }
+          }
           if (hpwCoord.checksumValid === true) showToast('✓ Checksum valid', 'success');
           switchToTab('home');
           // With frame=icrs these words are a direction among the stars: open
@@ -3853,6 +3885,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
               delta: config.delta
             });
             
+            // &cell: the link names the code's whole cell (js/features/cell-outline.js).
+            // Point links only; without &cell nothing below changes.
+            const _cellLink = urlParams.has('cell') && !hasTilde && typeof GeosonifyCell !== 'undefined' &&
+              GeosonifyCell.supports(CARD_GRIDS[config.grid]);
+            if (_cellLink) GeosonifyCell.prepareDecode(config.grid, centroidCode, cardState);
+
             // Decode the centroid coordinate
             const result = decodeCardCode(config.grid, centroidCode, config.obf);
             if (result) {
@@ -4017,6 +4055,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                 } catch (e) {
                   console.warn('[geosonify] sky path from URL failed:', e);
                 }
+              }
+
+              // &cell: outline the code's own cell (map, and the sky with frame=icrs).
+              if (_cellLink) {
+                try {
+                  GeosonifyCell.show(config.grid, centroidCode, result[0], result[1], {
+                    obf: !!config.obf, sky: !!(urlFrame && urlFrame.sphere === 'sky')
+                  });
+                } catch (e) { console.warn('[geosonify] &cell:', e); }
               }
 
               // Show decode banner with grid and code for passphrase re-decode
@@ -4397,6 +4444,27 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       return params;
     }
 
+    /*
+      &cell for a share link: the Output tab's "Share as cell outline" toggle.
+      Only for a plain point on a card whose code names a cell (lat/lon grids,
+      HEALPix, HEALPix words) — never raw, GIS, a shape, or a board/swatch.
+    */
+    function cellShareAvailable() {
+      if (!lastSolution || lastSolution.type !== 'point' || rawModeActive) return false;
+      if (typeof GeosonifyCell === 'undefined' || !cardState) return false;
+      let k = cardState.active;
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.resolveMusicCardKey) k = CardRenderer.resolveMusicCardKey(k);
+      return GeosonifyCell.supports(CARD_GRIDS[k]);
+    }
+    function getCellShareParams() {
+      const t = document.getElementById('shareCellMode');
+      return (t && t.checked && cellShareAvailable()) ? ['cell'] : [];
+    }
+    function refreshCellShareRow() {
+      const row = document.getElementById('shareCellRow');
+      if (row) row.style.display = cellShareAvailable() ? '' : 'none';
+    }
+
     // Compose the final share URL: base shape/enc URL plus any display params.
     /*
       AN ENCRYPTED DISPLAY LINK keeps its display options inside the blob too:
@@ -4413,8 +4481,12 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     let _encDisp = { key: null, blob: null, promise: null };
     function encryptedDisplayKey() {
       if (!(encryptURL && encryptPassphrase) || !_encPlainQueryNoBasemap) return null;
-      const d = getDisplayShareParams();
-      return d.length ? _encPlainQueryNoBasemap + '&' + d.join('&') : null;
+      // &cell travels inside the blob too (the decrypted query is what is parsed).
+      // A display link sets its own imagery; a cell-only link keeps the sender's.
+      const disp = getDisplayShareParams(), cell = getCellShareParams();
+      if (!disp.length && !cell.length) return null;
+      const plain = disp.length ? _encPlainQueryNoBasemap : (_encPlainQuery || _encPlainQueryNoBasemap);
+      return plain + '&' + disp.concat(cell).join('&');
     }
     function refreshEncryptedDisplayShare() {
       const key = encryptedDisplayKey();
@@ -4445,6 +4517,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const base = buildBaseShareURL();
       if (base == null) return null;
       const dParams = getDisplayShareParams();
+      const cParams = getCellShareParams();
       // An encrypted link carries its frame and its labels INSIDE the blob
       // (updateCompactOutputs). Repeating them outside would show anyone that
       // it is a sky link, and what its points are called.
@@ -4453,7 +4526,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // The imagery: a display link's params already say (getDisplayShareParams);
       // an encrypted link has it inside the blob.
       const bParams = (encrypted || dParams.length) ? [] : basemapShareParams();
-      const all = dParams.concat(fParams, aParams, bParams);
+      const all = cParams.concat(dParams, fParams, aParams, bParams);
       if (!all.length) return base;
       return base + (base.includes('?') ? '&' : '?') + all.join('&');
     }
@@ -6618,6 +6691,8 @@ function encodeRaw(sol) {
         rawModeActive = CardRenderer.isRawMode();
       }
       
+      try { refreshCellShareRow(); } catch (e) {}
+
       const out = document.getElementById('compactOutput');
       if (!lastSolution) { out.textContent = ''; return; }
       

@@ -186,6 +186,14 @@
           },
 
           {
+            id: 'cell-outline',
+            q: 'Can I share the whole cell a code names, not just a point?',
+            a: `<p>Yes. Every Geosonify code names a cell: a box on the lat/lon grids, a curved diamond for HEALPix, and an exact half cell for an odd number of HEALPix words. A normal link drops a pin in the middle of it. A <strong>cell link</strong> draws the cell itself, as an outline in the shape colour (purple on the street and topographic maps, yellow on aerial photography), so the recipient sees the area you mean: the paddock to search, the square a find came from, or the patch of sky you are surveying tonight.</p>
+<p>In the <strong>Output</strong> tab, with a point on a cell-based card, switch on <strong>Share as cell outline</strong>. The link gains <code>&amp;cell</code>, for example <code>?hphex=95625281F&amp;cell</code>. It combines with everything else a link can carry: <code>&amp;display</code> for the read-only viewer (where <strong>Show measurements</strong> gives the cell's area and the GPX and KML downloads give its boundary), <code>basemap=</code> for the imagery, including historical photography, and <code>frame=icrs</code> for the sky, where the cell is outlined on the sky view.</p>
+<p>The cell is the one the code itself names, at the precision you shared: its number of symbols or words, or a HEALPix code's order. The recipient's own settings do not change it. Cell links are offered for the lat/lon grids, the HEALPix cards and the HEALPix words. They are not offered for GIS references such as MGRS or Plus Codes, whose cells follow their own standards, or for shapes. A link without <code>&amp;cell</code> opens exactly as it always has.</p>`
+          },
+
+          {
             id: 'sky-mode',
             q: 'What is Sky mode?',
             a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>
