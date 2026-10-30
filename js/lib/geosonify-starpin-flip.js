@@ -1430,6 +1430,9 @@ var GeosonifyStarpinFlip = (function () {
         bagged = {}; (names || []).forEach(function (n) { bagged[n] = 1; });
         earth.setBagged(names); schedule();
       },
+      // Lit and glowing patches (S.cellProgress at orders 12-14). Ground face
+      // only for now: the map module draws them under its lattice.
+      setPatches: function (progress) { if (earth.setPatches) earth.setPatches(progress); },
       setStreets: function (on) { streetsOn = !!on; if (on) settle(); schedule(); },
       view: viewState, redraw: schedule,
       destroy: function () {

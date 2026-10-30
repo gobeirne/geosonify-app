@@ -25,6 +25,11 @@
       map.setFix(lat, lon, accuracyM);
       map.setBagged(names); map.setHighlight(name);
       map.setBasemap('aerial');
+      map.setPatches(S.cellProgress(records, { orders: [12, 13, 14] }));
+
+  v0.9: patches. Lit and Bright cells are filled teal under the lattice, and
+  glowing cells (2 or 3 corners collected) get a dashed edge and a hollow pip
+  at each missing corner. See patchModel() below.
 */
 'use strict';
 
@@ -120,18 +125,21 @@ var GeosonifyStarpinMap = (function () {
     light:   { grid: '#775B24', highlight: '#CD8862', bagged: '#7D9D33',
                baggedRing: '#ffffff', you: '#CD8862', halo: '205,136,98',
                star: '#DCC949', starRing: '#4a3d08',
-               under: 'rgba(255,255,255,.78)' },
+               under: 'rgba(255,255,255,.78)',
+               patch: '20,128,122', patchA: 0.22, brightA: 0.22 },
     imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
                baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
-               under: 'rgba(0,0,0,.6)' },
+               under: 'rgba(0,0,0,.6)',
+               patch: '96,226,214', patchA: 0.26, brightA: 0.24 },
     // Over the night sky, with the streets drawn cool: the lattice goes warm
     // amber so the two never read as one, your finds stay green, and you are
     // the blue dot every map has taught people to look for.
     night:   { grid: '#F0A33A', highlight: '#FFFFFF', bagged: '#9FD36A',
                baggedRing: '#10200a', you: '#4DA3FF', halo: '77,163,255',
                star: '#FFF6D0', starRing: '#1b1b1b',
-               under: 'rgba(0,0,0,.55)' }
+               under: 'rgba(0,0,0,.55)',
+               patch: '72,214,200', patchA: 0.20, brightA: 0.22 }
   };
 
   var CSS = [
@@ -225,6 +233,102 @@ var GeosonifyStarpinMap = (function () {
     return m ? m[1].length : 12;
   }
 
+  // ── patches: lit and glowing cells (game design v2, phase 1) ─────────────
+  //
+  // Patches are HEALPix cells at orders 12, 13 and 14 (large, medium, small;
+  // about 1.6 km, 800 m and 400 m across). Nothing here decides completion:
+  // the host passes S.cellProgress(records, { orders: PATCH_ORDERS }) and this
+  // only draws it, so the map and the log can never disagree about what is lit.
+  //
+  //   Lit      all four corners collected                  soft teal fill
+  //   Bright   every order-14 patch inside it is lit       a second, stronger fill
+  //   Glowing  2 or 3 of 4 corners collected               dashed outline + a hollow
+  //                                                        pip at each missing corner
+  //
+  // ONE SIZE IS OUTLINED AT A TIME, chosen by zoom: the finest order whose
+  // cells are at least PATCH_OUTLINE_MIN_PX across. Fills are drawn at every
+  // order, but never twice over the same ground: a lit cell inside a lit
+  // coarser cell is skipped, so zooming out consolidates small patches into
+  // the larger ones they fill instead of stacking teal on teal.
+  var PATCH_ORDERS = [12, 13, 14];
+  var PATCH_OUTLINE_MIN_PX = 36;
+  var PATCH_DOT_PX = 3;            // below this a lit cell is a dot, so it never vanishes
+  var PATCH_SEGS = 6;              // points per edge: a 1.6 km edge bows well under a metre
+
+  // 'f9.1112…' -> { order, ipix } (BigInt), the inverse of the engine's pathStr.
+  function parseCellPath(path) {
+    var m = /^f(\d{1,2})\.([0-3]+)$/.exec(String(path || '').trim());
+    if (!m) return null;
+    var order = m[2].length, q = 0n;
+    for (var i = 0; i < m[2].length; i++) q = q * 4n + BigInt(m[2][i]);
+    return { order: order, ipix: BigInt(m[1]) * (1n << BigInt(2 * order)) + q };
+  }
+
+  // Which order gets outlines and glowing marks, given metres per pixel.
+  function patchDisplayOrder(mpp) {
+    for (var i = PATCH_ORDERS.length - 1; i >= 0; i--) {
+      var o = PATCH_ORDERS[i];
+      if (cellWidthM(o) / mpp >= PATCH_OUTLINE_MIN_PX) return o;
+    }
+    return PATCH_ORDERS[0];
+  }
+
+  // S.cellProgress output -> what the map draws. Pure, so the self-test can
+  // hold it to the rules without a canvas.
+  function patchModel(progress) {
+    var out = { lit: [], glow: [] };
+    if (!progress) return out;
+    var finest = PATCH_ORDERS[PATCH_ORDERS.length - 1], coarsest = PATCH_ORDERS[0];
+    var litKey = {};
+    (progress.complete || []).forEach(function (e) {
+      if (PATCH_ORDERS.indexOf(e.order) < 0) return;
+      var c = parseCellPath(e.cell); if (!c) return;
+      litKey[c.order + ':' + c.ipix] = 1;
+      out.lit.push({ cell: e.cell, order: c.order, ipix: c.ipix });
+    });
+    function ancestor(c, keyed) {
+      for (var a = c.order - 1; a >= coarsest; a--)
+        if (keyed[a + ':' + (c.ipix >> BigInt(2 * (c.order - a)))]) return true;
+      return false;
+    }
+    var brightKey = {};
+    out.lit.forEach(function (c) {
+      c.covered = ancestor(c, litKey);
+      c.bright = false;
+      if (c.order >= finest) return;
+      var n = 1n << BigInt(2 * (finest - c.order)), base = c.ipix * n, all = true;
+      for (var i = 0n; i < n; i++) if (!litKey[finest + ':' + (base + i)]) { all = false; break; }
+      c.bright = all;
+      if (all) brightKey[c.order + ':' + c.ipix] = 1;
+    });
+    out.lit.forEach(function (c) { c.brightCovered = c.bright && ancestor(c, brightKey); });
+    (progress.partial || []).forEach(function (e) {
+      if (PATCH_ORDERS.indexOf(e.order) < 0 || e.have < 2 || e.have > 3) return;
+      var c = parseCellPath(e.cell); if (!c) return;
+      out.glow.push({ cell: e.cell, order: c.order, ipix: c.ipix, have: e.have,
+        missing: (e.corners || []).filter(function (k) { return !k.have; })
+                                  .map(function (k) { return { lat: k.lat, lon: k.lon }; }) });
+    });
+    return out;
+  }
+
+  // A cell's outline as [lat, lon] points, edges subdivided like the lattice's.
+  function patchRing(order, ipix) {
+    var nside = Math.pow(2, order), ring = [];
+    for (var e = 0; e < 4; e++) {
+      for (var t = 0; t < PATCH_SEGS; t++) {
+        var f = t / PATCH_SEGS;
+        var uv = e === 0 ? [f, 0] : e === 1 ? [1, f] : e === 2 ? [1 - f, 1] : [0, 1 - f];
+        var v = HP._core.pixcoord2vec_nest(nside, ipix, uv[0], uv[1]);
+        var x = v.x != null ? v.x : v[0], y = v.y != null ? v.y : v[1], z = v.z != null ? v.z : v[2];
+        var r3 = Math.hypot(x, y, z);
+        if (Math.hypot(x, y) < 1e-12 * r3) continue;        // a pole: no longitude to draw
+        ring.push([Math.asin(z / r3) / D2R, Math.atan2(y, x) / D2R]);
+      }
+    }
+    return ring;
+  }
+
   function mount(container, opts) {
     if (typeof L === 'undefined') throw new Error('starpin-map v0.2 needs Leaflet');
     if (!S || !HP) throw new Error('starpin-map needs geosonify-healpix.js and geosonify-starpin.js');
@@ -279,6 +383,15 @@ var GeosonifyStarpinMap = (function () {
     root.appendChild(orderTag);
 
     var fix = null, bagged = [], finds = [], highlight = null, cache = {};
+    var patches = { lit: [], glow: [] }, ringCache = {};
+    function ringOf(c) {
+      var k = c.order + ':' + c.ipix;
+      if (!ringCache[k]) {
+        if (Object.keys(ringCache).length > 4000) ringCache = {};
+        ringCache[k] = patchRing(c.order, c.ipix);
+      }
+      return ringCache[k];
+    }
     var stars = [], hits = [];          // hits: screen-space targets for tapping
     var pin = null;                     // a read-only probe, never a claim
     var selected = null;                // {kind, id} -> gets the throb
@@ -423,9 +536,84 @@ var GeosonifyStarpinMap = (function () {
         });
         g.stroke();
       }
+      // Patches first, under the lattice: the grid stays the sharpest thing
+      // on screen, and a lit patch reads as ground that has changed colour.
+      var patchOrder = patchDisplayOrder(mpp);
+      function patchScreen(c) {
+        var cwPx = cellWidthM(c.order) / mpp;
+        var ring = ringOf(c);
+        if (!ring.length) return null;
+        var a = pt(ring[0][0], ring[0][1]);
+        if (a[0] < -cwPx * 2 - 20 || a[0] > size.x + cwPx * 2 + 20 ||
+            a[1] < -cwPx * 2 - 20 || a[1] > size.y + cwPx * 2 + 20) return null;
+        return { px: cwPx, pts: ring.map(function (q) { return pt(q[0], q[1]); }) };
+      }
+      function tracePatch(sc) {
+        if (sc.px < PATCH_DOT_PX) {                   // too small to outline: keep it as a dot
+          var cx = 0, cy = 0;
+          sc.pts.forEach(function (q) { cx += q[0]; cy += q[1]; });
+          cx /= sc.pts.length; cy /= sc.pts.length;
+          g.rect(cx - PATCH_DOT_PX / 2, cy - PATCH_DOT_PX / 2, PATCH_DOT_PX, PATCH_DOT_PX);
+          return;
+        }
+        sc.pts.forEach(function (q, i) { if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
+        g.closePath();
+      }
+      function fillPatches(list, alpha) {
+        if (!list.length) return;
+        g.beginPath();
+        var any = false;
+        list.forEach(function (c) { var sc = patchScreen(c); if (sc) { tracePatch(sc); any = true; } });
+        if (!any) return;
+        g.fillStyle = 'rgba(' + pal.patch + ',' + alpha + ')';
+        g.fill();
+      }
+      fillPatches(patches.lit.filter(function (c) { return !c.covered; }), pal.patchA);
+      fillPatches(patches.lit.filter(function (c) { return c.bright && !c.brightCovered; }), pal.brightA);
+
       layers.forEach(function (L) { strokeAll(L, pal.under, L.st.width + 1.8, L.st.alpha * 0.85); });
       layers.slice().reverse().forEach(function (L) { strokeAll(L, pal.grid, L.st.width, L.st.alpha); });
       g.globalAlpha = 1;
+
+      // Glowing patches, OVER the lattice: the dashed edge and the hollow pip
+      // at each missing corner are the nearest unfinished goal, and the one
+      // thing on this map meant to pull a walk. Only the size outlined at
+      // this zoom glows, so the three sizes never pile up on each other.
+      // Two strengths. One corner away (3 of 4) is the real pull: a bold
+      // dashed edge and a pip on the corner still to get. Two corners away
+      // (2 of 4) is every patch that shares an edge with lit ground, so it
+      // stays a faint dashed edge with no pips, or a lit area would sit in a
+      // wreath of identical outlines.
+      if (cellWidthM(patchOrder) / mpp >= PATCH_OUTLINE_MIN_PX) {
+        var dashed = typeof g.setLineDash === 'function';
+        [2, 3].forEach(function (have) {
+          var shown = [];
+          g.beginPath();
+          patches.glow.forEach(function (c) {
+            if (c.order !== patchOrder || c.have !== have) return;
+            var sc = patchScreen(c); if (!sc) return;
+            tracePatch(sc); shown.push(c);
+          });
+          if (!shown.length) return;
+          var strong = have === 3;
+          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.09 : 0.03) + ')'; g.fill();
+          if (dashed) g.setLineDash(strong ? [7, 5] : [3, 6]);
+          g.lineJoin = 'round';
+          if (strong) { g.strokeStyle = pal.under; g.lineWidth = 4; g.stroke(); }
+          g.strokeStyle = 'rgba(' + pal.patch + ',' + (strong ? 1 : 0.55) + ')';
+          g.lineWidth = strong ? 2 : 1.2; g.stroke();
+          if (dashed) g.setLineDash([]);
+          if (!strong) return;
+          shown.forEach(function (c) {
+            c.missing.forEach(function (m) {
+              var q = pt(m.lat, m.lon);
+              g.beginPath(); g.arc(q[0], q[1], 5.5, 0, 6.2832);
+              g.fillStyle = pal.under; g.fill();
+              g.strokeStyle = 'rgb(' + pal.patch + ')'; g.lineWidth = 2.2; g.stroke();
+            });
+          });
+        });
+      }
 
       hits = [];
 
@@ -636,6 +824,9 @@ var GeosonifyStarpinMap = (function () {
       },
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
+      // S.cellProgress(records, { orders: [12, 13, 14] }) -> lit and glowing patches.
+      setPatches: function (progress) { patches = patchModel(progress); redraw(); },
+      patches: function () { return { lit: patches.lit.slice(), glow: patches.glow.slice() }; },
       // [{ id, name, lat, lon, star? }] — bagged starpins, from the log.
       setFinds: function (list) { finds = (list || []).slice(); redraw(); },
       finds: function () { return finds.slice(); },
@@ -685,7 +876,10 @@ var GeosonifyStarpinMap = (function () {
     };
   }
 
-  return { VERSION: '0.8', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+  return { VERSION: '0.9', mount: mount, BASEMAPS: BASEMAPS, PALETTE: PALETTE,
+           PATCH_ORDERS: PATCH_ORDERS, PATCH_OUTLINE_MIN_PX: PATCH_OUTLINE_MIN_PX,
+           parseCellPath: parseCellPath, patchDisplayOrder: patchDisplayOrder,
+           patchModel: patchModel, patchRing: patchRing,
            cellWidthM: cellWidthM, strokeFor: strokeFor, dotRadius: dotRadius,
            orderOfName: orderOfName,
            wrapNear: wrapNear, ringCopies: ringCopies, setWeight: setWeight, weight: weight,

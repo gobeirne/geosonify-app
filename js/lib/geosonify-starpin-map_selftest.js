@@ -85,13 +85,14 @@ global.L = {
 };
 
 // count what the canvas was actually asked to draw
-var strokes = 0, arcs = 0, lastErr = null;
+var strokes = 0, arcs = 0, fills = 0, lastErr = null;
 var proto = dom.window.HTMLCanvasElement.prototype;
 proto.getContext = function () {
   return {
     setTransform: function () {}, clearRect: function () {}, scale: function () {},
     beginPath: function () {}, moveTo: function () {}, lineTo: function () {},
-    closePath: function () {}, arc: function () { arcs++; }, fill: function () {},
+    closePath: function () {}, arc: function () { arcs++; }, fill: function () { fills++; },
+    rect: function () {}, setLineDash: function () {},
     stroke: function () { strokes++; }, save: function () {}, restore: function () {},
     translate: function () {}, rotate: function () {}, fillRect: function () {},
     set lineWidth(v) {}, set strokeStyle(v) {}, set fillStyle(v) {}, set globalAlpha(v) {}
@@ -235,5 +236,109 @@ ok('defaults restored and still draw', (function () {
   strokes = 0; try { map.redraw(); } catch (e) { return false; } return strokes > 0;
 })());
 
+
+head('7: patches (game design v2, phase 1)');
+(function () {
+  var S = GeosonifyStarpin;
+  // A real record for a corner: the fix sits exactly on it, 5 m accuracy.
+  var nid = 0;
+  function rec(name, ms) {
+    var p = S.cornerstonePoint(name);
+    return { record_id: 'r' + (++nid), target: { cornerstone: name },
+             fix: { lat_1e7: Math.round(p.lat * 1e7), lon_1e7: Math.round(p.lon * 1e7), accuracy_m: 5 },
+             event: { time_ms: ms || 1.79e12 } };
+  }
+  // Every order-14 corner inside one order-12 cell: the 5 x 5 vertex grid.
+  var p12 = M.parseCellPath('f9.111202110020');
+  ok('parseCellPath reads order and index', p12 && p12.order === 12);
+  var names = {};
+  for (var i = 0n; i < 16n; i++) {
+    var ip = p12.ipix * 16n + i;
+    var digits = '', q = ip - 9n * (1n << 28n);
+    for (var d = 0; d < 14; d++) { digits = String(q & 3n) + digits; q >>= 2n; }
+    S.cellCornerstones('f9.' + digits).forEach(function (c) { names[c.name] = 1; });
+  }
+  var all = Object.keys(names);
+  ok('an order-12 cell has 25 order-14 vertices', all.length === 25, String(all.length));
+
+  var full = S.cellProgress(all.map(function (n) { return rec(n); }), { orders: M.PATCH_ORDERS });
+  var m = M.patchModel(full);
+  var big = m.lit.filter(function (c) { return c.order === 12; });
+  ok('all 25 corners light the large patch', big.length === 1 && big[0].cell === 'f9.111202110020',
+     big.map(function (c) { return c.cell; }).join(' '));
+  ok('...and make it Bright', big.length === 1 && big[0].bright === true);
+  ok('its 16 small patches are lit', m.lit.filter(function (c) {
+    return c.order === 14 && (c.ipix >> 4n) === p12.ipix; }).length === 16);
+  ok('cells inside a lit patch are not filled twice', m.lit.every(function (c) {
+    return c.order === 12 ? !c.covered : (((c.ipix >> BigInt(2 * (c.order - 12))) === p12.ipix) ? c.covered : true); }));
+  ok('a Bright patch inside a Bright patch is not filled twice', m.lit.filter(function (c) {
+    return c.order === 13 && c.bright; }).every(function (c) { return c.brightCovered; }));
+
+  // Take away the centre vertex of the 5 x 5 grid. Four small patches go dark,
+  // so nothing coarser can be Bright, but the large patch's own corners stand.
+  var dropped = null;
+  all.forEach(function (n) {
+    var p = S.cornerstonePoint(n), inc = S.cellsAtVertex(p.lat, p.lon, [12]);
+    if (!inc.length && !dropped) {
+      var at13 = S.cellsAtVertex(p.lat, p.lon, [13]);
+      if (at13.length === 4 && at13.every(function (c) { return c.cell.indexOf('f9.111202110020') === 0; })) dropped = n;
+    }
+  });
+  ok('found the centre vertex', !!dropped);
+  var less = S.cellProgress(all.filter(function (n) { return n !== dropped; })
+                              .map(function (n) { return rec(n); }), { orders: M.PATCH_ORDERS });
+  var m2 = M.patchModel(less);
+  var big2 = m2.lit.filter(function (c) { return c.order === 12; });
+  ok('the large patch is still lit by its own four corners', big2.length === 1);
+  ok('...but no longer Bright', big2.length === 1 && big2[0].bright === false);
+  ok('the four medium patches lose a corner and glow', m2.glow.filter(function (c) {
+    return c.order === 13 && c.have === 3; }).length === 4);
+  ok('a glowing patch marks each missing corner', m2.glow.every(function (c) {
+    return c.missing.length === 4 - c.have; }));
+  ok('...and the 3-of-4 ones mark the dropped vertex', m2.glow.filter(function (c) {
+    return c.order === 13 && c.have === 3; }).every(function (c) {
+    var p = S.cornerstonePoint(dropped);
+    return S.haversineM(c.missing[0].lat, c.missing[0].lon, p.lat, p.lon) < 0.5; }));
+  ok('a patch with one corner does not glow', M.patchModel(
+      S.cellProgress([rec(all[0])], { orders: M.PATCH_ORDERS })).glow.length === 0);
+  ok('no progress draws nothing and does not throw', (function () {
+    var e = M.patchModel(null); return e.lit.length === 0 && e.glow.length === 0; })());
+
+  // The log's cells are this same result narrowed to orders 13 and 14.
+  var direct = S.cellProgress(all.filter(function (n) { return n !== dropped; })
+                                .map(function (n) { return rec(n); }));
+  function keyOf(p, orders) {
+    return JSON.stringify(p.complete.filter(function (e) { return orders.indexOf(e.order) >= 0; })
+      .map(function (e) { return e.cell; })) + '|' +
+      JSON.stringify(p.partial.filter(function (e) { return orders.indexOf(e.order) >= 0; })
+      .map(function (e) { return e.cell + ':' + e.have; }));
+  }
+  ok('narrowing 12-14 to 13-14 equals running at 13-14', keyOf(less, S.CELL_ORDERS) === keyOf(direct, S.CELL_ORDERS));
+
+  ok('display order: small at neighbourhood zoom (2 km across 400 px)', M.patchDisplayOrder(2000 / 400) === 14);
+  ok('display order: medium across suburbs (8 km)', M.patchDisplayOrder(8000 / 400) === 13);
+  ok('display order: large across the city (20 km)', M.patchDisplayOrder(20000 / 400) === 12);
+  ok('display order: large, never finer, from a country view', M.patchDisplayOrder(2e6 / 400) === 12);
+
+  var ring = M.patchRing(12, p12.ipix);
+  ok('a patch ring closes round its own corners', ring.length === 24 && (function () {
+    return S.cellCornerstones('f9.111202110020').every(function (c) {
+      return ring.some(function (q) { return S.haversineM(q[0], q[1], c.lat, c.lon) < 0.5; }); });
+  })());
+
+  var mp = M.mount(document.getElementById('m'));
+  var drewAt = [];
+  [1200, 8000, 20000, 2000000].forEach(function (span) {
+    state.spanM = span; fills = 0; lastErr = null;
+    try { mp.setPatches(less); mp.redraw(); } catch (e) { lastErr = e; }
+    if (!lastErr && fills > 0) drewAt.push(span);
+    else if (lastErr) console.log('   ', lastErr.stack);
+  });
+  ok('patches draw at every zoom, and stay visible from a country view', drewAt.length === 4, drewAt.join(' '));
+  ok('setPatches(null) clears them', (function () {
+    try { mp.setPatches(null); mp.redraw(); } catch (e) { return false; }
+    return mp.patches().lit.length === 0;
+  })());
+})();
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

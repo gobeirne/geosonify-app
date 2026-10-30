@@ -749,12 +749,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261017"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261003"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261031"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261025"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261031"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
 
@@ -767,7 +767,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261003"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261031"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -3419,6 +3419,19 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     });
   }
 
+  // A cellProgress result narrowed to some of its orders. Cells at one order
+  // never depend on another, so this equals running cellProgress at those
+  // orders alone.
+  function cellsAtOrders(p, orders) {
+    function keep(e) { return orders.indexOf(e.order) >= 0; }
+    var counts = {};
+    orders.forEach(function (o) {
+      counts[o] = p.complete.filter(function (e) { return e.order === o; }).length; });
+    return { rule: p.rule, collect: p.collect, orders: orders.slice(),
+             complete: p.complete.filter(keep), partial: p.partial.filter(keep),
+             counts: counts, corners: p.corners };
+  }
+
   function drawLog() {
     $('lg-store').textContent = log.persisted() ? 'on this device' : 'memory only';
     // Collected cornerstones are derived from the records, never tracked
@@ -3439,7 +3452,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       collected[csName(r.target.cornerstone)] = 1;
     });
     flip.setBagged(Object.keys(collected));
-    try { cellState = S.cellProgress(log.current()); }
+    // One pass at orders 12-14 feeds the map's patches; the log's cells
+    // (orders 13 and 14, S.CELL_ORDERS) are the same result with order 12
+    // filtered out, so the two can never disagree.
+    try {
+      var patchState = S.cellProgress(log.current(), { orders: [12, 13, 14] });
+      cellState = cellsAtOrders(patchState, S.CELL_ORDERS);
+      if (flip.setPatches) flip.setPatches(patchState);
+    }
     catch (e) { cellState = null; console.warn('[starpin] cells:', e); }
     if (cellGoal && cellState && cellState.complete.some(function (c) { return c.cell === cellGoal; }))
       cellGoal = null;

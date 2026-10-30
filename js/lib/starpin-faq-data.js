@@ -80,6 +80,13 @@
 <p>Anything you have already bagged turns <strong>green</strong>, and the <strong>blue dot</strong> is you.</p>`
           },
           {
+            id: 'patches',
+            q: 'What are the teal patches?',
+            a: `<p>Every cornerstone is a corner of a patch of the grid. Collect all four corners of a patch and it lights up: it turns <strong>teal</strong> on your map.</p>
+<p>Patches come in three sizes, about 400 metres, 800 metres and 1.6 kilometres across, and the map outlines the size that suits how far you are zoomed in. A patch with a <strong>bold dashed edge</strong> is one corner away from lighting, and a ring marks the corner still to collect. A faint dashed edge means two corners to go.</p>
+<p>Neighbouring patches share corners, so each one you light makes the next cheaper. When every small patch inside a bigger one is lit, the bigger one turns a deeper teal. Patches are worked out from your log, so walks you made before this feature existed count too.</p>`
+          },
+          {
             id: 'blurry-sky',
             q: 'Why do the stars look blurry close up?',
             a: `<p>The sky photographs come from sky surveys, whose detail runs out long before a map's does. Each pixel of the survey covers about 25 metres of ground, so at street level the stars go soft.</p>
