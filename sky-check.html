@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Starpin · sky source check</title>
+<!--
+  sky-check.html: which of the outside services Starpin and Geosonify lean on
+  actually work FROM THIS BROWSER, right now. Made during the October 2026
+  CDS outage, when the question "is it down, or does the mirror just refuse
+  requests from geosonify.org?" could only be answered on a real phone.
+
+  Each source gets a CORS fetch (what the apps really do). When that fails,
+  a no-cors fetch tells "the server answered but does not allow this site"
+  (an opaque response) from "nothing answered at all" (a rejection).
+  Nothing is stored or sent anywhere; "Copy results" puts the table on the
+  clipboard to paste into a message.
+-->
+<style>
+:root{--bg:#F6F5EC;--card:#fff;--ink:#1d2410;--ink2:#5b6448;--line:#d9dccb;
+  --ok:#2e7d32;--warn:#a06800;--bad:#b3261e;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0b0f19;--card:#141a26;--ink:#e9ecdf;--ink2:#9aa38a;
+  --line:#2a3242;--ok:#7bd47f;--warn:#f2c14e;--bad:#ff8a80;color-scheme:dark}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.45 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
+  padding:env(safe-area-inset-top,0) 1rem env(safe-area-inset-bottom,0)}
+main{max-width:44rem;margin:0 auto;padding:1.2rem 0 2rem}
+h1{font-size:1.35rem;margin:.4rem 0 .2rem}
+h2{font-size:.78rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink2);margin:1.4rem 0 .4rem}
+p{color:var(--ink2);margin:.3rem 0 .8rem}
+.row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:.6rem .75rem;
+  margin:.4rem 0;display:grid;grid-template-columns:1.6rem 1fr auto;gap:.2rem .5rem;align-items:start}
+.mark{font-weight:800;font-size:1.05rem;line-height:1.3}
+.name{font-weight:700}
+.url{grid-column:2/4;font:12px/1.35 ui-monospace,"SF Mono",monospace;color:var(--ink2);overflow-wrap:anywhere}
+.note{grid-column:2/4;font-size:.85rem}
+.ms{font-size:.8rem;color:var(--ink2);white-space:nowrap}
+.ok .mark,.ok .note{color:var(--ok)} .warn .mark,.warn .note{color:var(--warn)} .bad .mark,.bad .note{color:var(--bad)}
+button{font:inherit;font-weight:700;padding:.7rem 1rem;border-radius:12px;border:2px solid var(--ink2);
+  background:var(--card);color:var(--ink);margin:.3rem .4rem .3rem 0}
+#sum{font-weight:700;color:var(--ink)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Sky source check</h1>
+  <p>Tests every outside service Starpin and Geosonify use for stars, sky photos and names,
+     from this browser, now. Takes about ten seconds.</p>
+  <p id="sum">Starting…</p>
+  <button type="button" id="again">Check again</button>
+  <button type="button" id="copy">Copy results</button>
+  <div id="out"></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var T = 8000;                                   // per request
+  var VZ = '/viz-bin/asu-tsv?-source=I/355/gaiadr3&-c=172.6355%20-43.5333&-c.rs=30' +
+           '&-out=RA_ICRS,DE_ICRS,Source,Gmag&-out.max=3';
+  var ADQL1 = 'SELECT TOP 1 source_id FROM gaiadr3.gaia_source';
+  var SIMQ = 'SELECT TOP 1 main_id FROM basic';
+  var GROUPS = [
+    { title: 'Star catalogue (essential: no catalogue, no starpins)', items: [
+      { name: 'VizieR, CDS Strasbourg', url: 'https://vizier.cds.unistra.fr' + VZ, want: 'tsv' },
+      { name: 'VizieR mirror, CfA Harvard', url: 'https://vizier.cfa.harvard.edu' + VZ, want: 'tsv' },
+      { name: 'VizieR mirror, IDIA South Africa', url: 'https://vizier.idia.ac.za' + VZ, want: 'tsv' },
+      { name: 'ESA Gaia Archive (independent of CDS)',
+        url: 'https://gea.esac.esa.int/tap-server/tap/sync?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=' +
+             encodeURIComponent(ADQL1), want: 'csv' },
+      { name: 'GAVO data centre, Heidelberg (independent of CDS)',
+        url: 'https://dc.g-vo.org/tap/sync?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=' +
+             encodeURIComponent('SELECT TOP 1 source_id FROM gaia.dr3lite'), want: 'csv' }
+    ]},
+    { title: 'Sky photos: the viewer library', items: [
+      { name: 'Aladin Lite, CDS', url: 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js', want: 'js' },
+      { name: 'Aladin Lite 3.9.0-beta, jsDelivr (npm)', url: 'https://cdn.jsdelivr.net/npm/aladin-lite@3.9.0-beta/dist/aladin.js', want: 'js' }
+    ]},
+    { title: 'Sky photos: DSS2 colour tiles', items: [
+      'https://alasky.cds.unistra.fr/DSS/DSSColor|CDS Strasbourg (primary)',
+      'https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/DSSColor|MAST, STScI (AWS)',
+      'https://casda.csiro.au/hips/DSS2/color|CSIRO CASDA, Australia',
+      'https://irsa.ipac.caltech.edu/data/hips/CDS/DSS2/color|IRSA, Caltech',
+      'https://cdn.skies.esac.esa.int/DSSColor|ESA ESASky',
+      'https://healpix.ias.u-psud.fr/CDS_P_DSS2_color|IAS, Paris-Saclay'
+    ].map(function (s) { var a = s.split('|'); return { name: a[1], url: a[0], want: 'hips' }; }) },
+    { title: 'Names (Geosonify search and identify)', items: [
+      { name: 'Sesame, CDS', url: 'https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/~SNV?Vega', want: 'sesame' },
+      { name: 'Sesame, CfA Harvard', url: 'https://vizier.cfa.harvard.edu/viz-bin/nph-sesame/-ox/~SNV?Vega', want: 'sesame' },
+      { name: 'Sesame, IDIA', url: 'https://vizier.idia.ac.za/viz-bin/nph-sesame/-ox/~SNV?Vega', want: 'sesame' },
+      { name: 'SIMBAD TAP, CDS', url: 'https://simbad.cds.unistra.fr/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(SIMQ), want: 'json' },
+      { name: 'SIMBAD TAP, CfA Harvard', url: 'https://simbad.cfa.harvard.edu/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(SIMQ), want: 'json' },
+      { name: 'SIMBAD TAP, IDIA', url: 'https://simbad.idia.ac.za/simbad/sim-tap/sync?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(SIMQ), want: 'json' }
+    ]},
+    { title: 'Star-card thumbnails', items: [
+      { name: 'hips2fits, CDS', url: 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits?hips=CDS%2FP%2FDSS2%2Fcolor&width=64&height=64&fov=0.05&ra=279.23&dec=38.78&format=jpg', want: 'image' }
+    ]}
+  ];
+
+  function timed(url, mode) {
+    var ctl = new AbortController(), t0 = performance.now();
+    var timer = setTimeout(function () { ctl.abort(); }, T);
+    return fetch(url, { mode: mode || 'cors', signal: ctl.signal, cache: 'no-store' })
+      .then(function (r) { clearTimeout(timer); r.ms = performance.now() - t0; return r; },
+            function (e) { clearTimeout(timer); e.ms = performance.now() - t0; throw e; });
+  }
+  function shape(want, r, body) {
+    if (!r.ok) return 'HTTP ' + r.status;
+    if (want === 'tsv') return /RA_ICRS/.test(body) && /Gmag/.test(body) ? '' : 'answered, but no Gaia DR3 table';
+    if (want === 'csv') return /source_id/i.test(body) ? '' : 'answered, but not a query result';
+    if (want === 'js') return body.length > 100000 ? '' : 'too small to be the library';
+    if (want === 'sesame') return /<Sesame/i.test(body) ? (/<jradeg>/.test(body) ? '' : 'answered, but could not resolve Vega') : 'not a Sesame answer';
+    if (want === 'json') { try { return Array.isArray(JSON.parse(body).metadata) ? '' : 'not a TAP result'; } catch (e) { return 'not JSON'; } }
+    if (want === 'image') return /image/.test(r.headers.get('content-type') || '') ? '' : 'not an image';
+    return '';
+  }
+  // no-cors after a failed cors fetch: resolves (opaque) if the server
+  // answered at all, rejects if nothing did.
+  function why(url) {
+    return timed(url, 'no-cors').then(function () { return 'warn'; }, function () { return 'bad'; });
+  }
+  function check(it) {
+    if (it.want === 'hips') return checkHips(it);
+    return timed(it.url).then(function (r) {
+      return r.text().then(function (b) {
+        var bad = shape(it.want, r, b);
+        return { cls: bad ? 'bad' : 'ok', note: bad || 'works', ms: r.ms };
+      });
+    }, function (e) {
+      return why(it.url).then(function (k) {
+        return { cls: k, ms: e.ms, note: k === 'warn'
+          ? 'the server answers, but does not allow requests from this site (CORS)'
+          : (e.name === 'AbortError' ? 'no answer within ' + T / 1000 + ' s' : 'no answer') };
+      });
+    });
+  }
+  // A HiPS mirror needs BOTH its properties file and its tiles readable
+  // cross-origin, because Aladin draws the tiles with WebGL.
+  function checkHips(it) {
+    return timed(it.url + '/properties').then(function (r) {
+      return r.text().then(function (b) {
+        if (!r.ok || !/hips_/.test(b)) return { cls: 'bad', ms: r.ms, note: r.ok ? 'not a HiPS properties file' : 'HTTP ' + r.status };
+        var fmt = (/hips_tile_format\s*=\s*([^\n]+)/.exec(b) || [])[1] || 'jpeg';
+        var ext = /jpe?g/.test(fmt) ? 'jpg' : /png/.test(fmt) ? 'png' : 'jpg';
+        var tile = it.url + '/Norder3/Dir0/Npix300.' + ext;
+        return timed(tile).then(function (t) {
+          if (!t.ok) return { cls: 'bad', ms: r.ms + t.ms, note: 'properties fine, tile HTTP ' + t.status };
+          return t.blob().then(function (bl) {
+            return { cls: 'ok', ms: r.ms + t.ms, note: 'works (tile ' + Math.round(bl.size / 1024) + ' KB, ' + ext + ')' };
+          });
+        }, function (e) {
+          return why(tile).then(function (k) {
+            return { cls: k, ms: r.ms + (e.ms || 0), note: k === 'warn'
+              ? 'properties fine, but tiles are blocked for this site (CORS)'
+              : 'properties fine, but no tile came back' };
+          });
+        });
+      });
+    }, function (e) {
+      return why(it.url + '/properties').then(function (k) {
+        return { cls: k, ms: e.ms, note: k === 'warn'
+          ? 'the server answers, but does not allow requests from this site (CORS)'
+          : (e.name === 'AbortError' ? 'no answer within ' + T / 1000 + ' s' : 'no answer') };
+      });
+    });
+  }
+
+  var results = [];
+  function run() {
+    var out = document.getElementById('out'), sum = document.getElementById('sum');
+    out.textContent = ''; results = [];
+    sum.textContent = 'Checking…';
+    var all = [];
+    GROUPS.forEach(function (g) {
+      var h = document.createElement('h2'); h.textContent = g.title; out.appendChild(h);
+      g.items.forEach(function (it) {
+        var row = document.createElement('div'); row.className = 'row';
+        row.innerHTML = '<div class="mark">\u2026</div><div class="name"></div><div class="ms"></div>' +
+                        '<div class="note">checking</div><div class="url"></div>';
+        row.querySelector('.name').textContent = it.name;
+        row.querySelector('.url').textContent = it.url.length > 110 ? it.url.slice(0, 110) + '\u2026' : it.url;
+        out.appendChild(row);
+        all.push(check(it).then(function (res) {
+          row.className = 'row ' + res.cls;
+          row.querySelector('.mark').textContent = res.cls === 'ok' ? '\u2713' : res.cls === 'warn' ? '!' : '\u2717';
+          row.querySelector('.note').textContent = res.note;
+          row.querySelector('.ms').textContent = Math.round(res.ms || 0) + ' ms';
+          results.push({ group: g.title, name: it.name, res: res });
+        }));
+      });
+    });
+    Promise.all(all).then(function () {
+      var ok = results.filter(function (r) { return r.res.cls === 'ok'; }).length;
+      sum.textContent = ok + ' of ' + results.length + ' sources work from this browser (' +
+        new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC).';
+    });
+  }
+  document.getElementById('again').addEventListener('click', run);
+  document.getElementById('copy').addEventListener('click', function () {
+    var txt = 'Sky source check, ' + navigator.userAgent + '\n' + results.map(function (r) {
+      return (r.res.cls === 'ok' ? 'OK  ' : r.res.cls === 'warn' ? 'CORS' : 'FAIL') + '  ' + r.name +
+             ' \u2014 ' + r.res.note + ' (' + Math.round(r.res.ms || 0) + ' ms)';
+    }).join('\n');
+    (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject())
+      .then(function () { document.getElementById('copy').textContent = 'Copied'; },
+            function () { window.prompt('Copy these results:', txt); });
+  });
+  run();
+})();
+</script>
+</body>
+</html>

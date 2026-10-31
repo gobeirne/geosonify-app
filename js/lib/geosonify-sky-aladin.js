@@ -86,6 +86,9 @@
   var SURVEY_MIRRORS = {
     'P/DSS2/color': [
       'https://alasky.cds.unistra.fr/DSS/DSSColor',               // CDS, Strasbourg (primary)
+      // MAST (STScI, where DSS was made), on AWS open data; its registry
+      // record says it is for use "through Aladin or Aladin-lite"
+      'https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/DSSColor',
       'https://casda.csiro.au/hips/DSS2/color',                   // CSIRO, Australia
       'https://irsa.ipac.caltech.edu/data/hips/CDS/DSS2/color',   // IRSA, Caltech
       'https://cdn.skies.esac.esa.int/DSSColor',                  // ESA, ESAC
@@ -111,20 +114,27 @@
     survey has no mirrors listed), else the first mirror URL that answers.
     Never rejects. When nothing answers it returns the id, and Aladin fails
     exactly as it would have before.
+
+    All mirrors are probed AT ONCE (one PROBE_MS wait at most, not one per
+    mirror), and the earliest in the list that answered wins, so the order
+    above is still the preference order.
   */
   function resolveSurvey(id) {
     var list = SURVEY_MIRRORS[id];
     if (!list) return Promise.resolve(id);
     var c = _surveyCache[id];
     if (c && Date.now() - c.ms < SURVEY_CACHE_MS) return Promise.resolve(c.use);
+    var probes = list.map(probe);
     var i = 0;
     function next() {
       if (i >= list.length) return Promise.resolve(id);
       var k = i++;
-      return probe(list[k]).then(function (ok) {
+      return probes[k].then(function (ok) {
         if (!ok) return next();
         var use = k === 0 ? id : list[k];
         _surveyCache[id] = { use: use, ms: Date.now() };
+        if (k > 0 && typeof console !== 'undefined')
+          console.info('[geosonify] sky imagery from mirror ' + list[k]);
         return use;
       });
     }

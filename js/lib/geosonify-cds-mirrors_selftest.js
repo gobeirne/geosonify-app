@@ -82,7 +82,7 @@ var steps = [
     A = require('./geosonify-sky-aladin.js');
     plan = { [DSS[0]]: 'err', [DSS[1]]: '<html>not a HiPS</html>', [DSS[2]]: PROPS };
     return A.resolveSurvey('P/DSS2/color').then(function (u) {
-      ok('Strasbourg down, CASDA wrong shape: the IRSA mirror URL is used', u === DSS[2], u);
+      ok('Strasbourg down, the next mirror the wrong shape: the one after is used', u === DSS[2], u);
       ok('...and surveyFor() remembers it for a survey switch', A.surveyFor('P/DSS2/color') === DSS[2]);
     });
   },
@@ -95,6 +95,21 @@ var steps = [
   function () {
     return A.resolveSurvey('P/PanSTARRS/DR1/color-z-zg-g').then(function (u) { ok('a survey with no mirrors listed is passed through untouched', u === 'P/PanSTARRS/DR1/color-z-zg-g'); });
   },
+  function () {
+    delete require.cache[require.resolve('./geosonify-sky-aladin.js')];
+    A = require('./geosonify-sky-aladin.js');
+    var hang = {};
+    DSS.slice(0, 3).forEach(function (u) { hang[u] = 'hang'; });
+    hang[DSS[3]] = PROPS; hang[DSS[4]] = PROPS;
+    plan = hang; calls = [];
+    var t0 = Date.now();
+    return A.resolveSurvey('P/DSS2/color').then(function (u) {
+      var s = (Date.now() - t0) / 1000;
+      ok('mirrors are probed together: three hanging cost one wait (' + s.toFixed(1) + ' s), not three',
+         u === DSS[3] && s < 5.5, u + ' ' + s);
+    });
+  },
+  function () { ok('the MAST copy (STScI, on AWS) is the first mirror', /stpubdata.*mast.*DSSColor/.test(DSS[1])); },
   function () { ok('the library fallback is pinned, not "latest"', A.LIB_FALLBACKS.every(function (u) { return /@\d+\.\d+\.\d+/.test(u) && !/latest/.test(u); })); }
 ];
 steps.reduce(function (p, f) { return p.then(f); }, Promise.resolve()).then(function () {
