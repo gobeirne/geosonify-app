@@ -1945,9 +1945,19 @@
                   else b = b ? b.extend(lb) : L.latLngBounds(lb.getSouthWest(), lb.getNorthEast());
                 }
               });
+              const pointLink = !b;
               if (!b) b = cb;
               if (!isNaN(opts.zoom) && opts.zoom != null) {
-                const centre = (b && b.isValid()) ? b.getCenter() : m.getCenter();
+                /*
+                  A point link centres on its POINT. The cell union is the
+                  nested precision cells, and its middle is the middle of the
+                  outermost one: for four HEALPix words that is the one-word
+                  cell, 35.7–45.0°S, so ?hpwen=…&display&zoom=16 opened on
+                  the sea off Farewell Spit instead of in Christchurch.
+                */
+                const pt = (pointLink && currentCardCoord && isFinite(currentCardCoord.lat) && isFinite(currentCardCoord.lon))
+                  ? L.latLng(currentCardCoord.lat, currentCardCoord.lon) : null;
+                const centre = pt || ((b && b.isValid()) ? b.getCenter() : m.getCenter());
                 const z = Math.max(m.getMinZoom() || 1, Math.min(m.getMaxZoom() || 22, opts.zoom));
                 m.setView(centre, z);
               } else if (b && b.isValid()) {
