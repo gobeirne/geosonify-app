@@ -21,6 +21,7 @@ global.fetch = function (url, o) {
     text: function () { return Promise.resolve(typeof b === 'string' ? b : JSON.stringify(b)); },
     json: function () { return typeof b === 'string' ? Promise.reject(new Error('not json')) : Promise.resolve(b); } });
 };
+global.GeosonifySkyStars = require('./geosonify-sky-stars.js');
 var L = require('./geosonify-sky-lookup.js');
 var A = require('./geosonify-sky-aladin.js');
 var TAPJSON = { metadata: [{ name: 'main_id' }], data: [['* alf Lyr']] };
@@ -54,6 +55,21 @@ var steps = [
     setTimeout(function () { ctl.abort(); }, 200);
     return p.then(function () { ok('a caller abort stops the run', false); },
       function (e) { ok('a caller abort stops the run, without trying the rest', e.name === 'AbortError' && calls.length < L.SIMBAD_BASES.length && Date.now() - t0 < 2000, calls.length); });
+  },
+  function () {
+    console.log('\nbuilt-in names');
+    var N = L._test.localName;
+    function near(h, ra, dec) { return h && Math.abs(h.ra - ra) < 0.1 && Math.abs(h.dec - dec) < 0.1; }
+    ok('Vega is found offline', near(N('Vega'), 279.2346, 38.7837));
+    ok('M31, "m 31", "Messier 31" and "NGC 224" are all Andromeda',
+       ['M31', 'm 31', 'Messier 31', 'NGC 224'].every(function (q) { return near(N(q), 10.68, 41.27); }));
+    ok('"Andromeda Galaxy" finds it by its common name', near(N('Andromeda Galaxy'), 10.68, 41.27));
+    ok('"Orion Nebula" is M42', near(N('Orion Nebula'), 83.85, -5.45));
+    ok('"the Pleiades" is M45', near(N('the Pleiades'), 56.75, 24.12));
+    ok('M13 is at RA 250.4, not -109.6', near(N('M13'), 250.42, 36.47));
+    ok('all 110 Messier objects are in the table', L._test.MESSIER.length === 110 &&
+       L._test.MESSIER.every(function (m, i) { return m[0] === i + 1 && m[1] >= 0 && m[1] < 360; }));
+    ok('an unknown name is left for Sesame', N('HD 172167') === null);
   },
   function () { console.log('\nDSS2 imagery'); },
   function () {
