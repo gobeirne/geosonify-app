@@ -171,9 +171,13 @@ dl{margin:.7rem 0 0}
 #route-dlg{border:2px solid #2fbfae;border-radius:20px;padding:1rem 1.1rem;max-width:22rem;
   width:calc(100% - 2.4rem);background:var(--card);color:var(--ink)}
 #route-dlg::backdrop{background:rgba(0,0,0,.45)}
-#route-dlg h3{margin:0 0 .3rem;font-size:1.05rem}
+#route-dlg h3{margin:0 0 .3rem;font-size:1.05rem;outline:none}
 #route-dlg p{margin:.2rem 0 .7rem;font-size:.86rem;color:var(--ink-2)}
 #route-dlg label{display:flex;gap:.5rem;align-items:center;font-size:.9rem;font-weight:700;margin:.2rem 0 .8rem}
+/* the page's input rule (full width, padded, bordered) is for text boxes; a
+   tick box needs none of it */
+#route-dlg input[type=checkbox]{width:1.35rem;height:1.35rem;flex:0 0 auto;margin:0;padding:0;
+  border:0;border-radius:0;box-shadow:none;background:none;accent-color:#2fbfae}
 #route-dlg .btnrow{margin:.45rem 0 0}
 #route-dlg small{display:block;margin-top:.6rem;font-size:.74rem;color:var(--ink-2)}
 .next-follow{border:2px solid #2fbfae;border-radius:16px;padding:.6rem .8rem;margin:.6rem 0 0;
@@ -475,7 +479,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      4&nbsp;km/h, with 30% added because streets are never straight. They are
      still as the crow flies: a river or a motorway can make a walk longer.</p>
   <dialog id="route-dlg" aria-labelledby="route-dlg-h">
-    <h3 id="route-dlg-h">Open this walk in maps</h3>
+    <h3 id="route-dlg-h" tabindex="-1" autofocus>Open this walk in maps</h3>
     <p id="route-dlg-what"></p>
     <label><input type="checkbox" id="route-dlg-back" checked> Back to where I started</label>
     <div class="btnrow">
