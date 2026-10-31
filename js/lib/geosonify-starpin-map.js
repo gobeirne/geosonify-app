@@ -616,12 +616,43 @@ var GeosonifyStarpinMap = (function () {
       // enough. One corner away (3 of 4) is drawn strongest. Every size that
       // fits the screen glows, coarsest first, so a medium patch that is your
       // nearest goal does not vanish when you zoom in to walk it.
+      // Middle of the on-screen part of a polygon: average of a coarse grid of
+      // screen points that fall inside it, kept clear of the edges by a badge's
+      // half-width. Null when too little of it is visible to hold a badge.
+      function visibleMiddle(poly) {
+        var inset = 50, nx = 12, ny = 18, sx = 0, sy = 0, n = 0;
+        for (var i = 0; i <= nx; i++) for (var j = 0; j <= ny; j++) {
+          var x = inset + (size.x - 2 * inset) * i / nx, y = inset + (size.y - 2 * inset) * j / ny;
+          if (inPoly(x, y, poly)) { sx += x; sy += y; n++; }
+        }
+        return n >= 2 ? [sx / n, sy / n] : null;
+      }
+      function inPoly(x, y, poly) {
+        var inside = false;
+        for (var i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+          var xi = poly[i][0], yi = poly[i][1], xj = poly[j][0], yj = poly[j][1];
+          if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+        }
+        return inside;
+      }
       var maxPx = Math.max(size.x, size.y) * 1.6;
       var glowOrders = PATCH_ORDERS.filter(function (o) {
         var px = cellWidthM(o) / mpp;
         return px >= PATCH_OUTLINE_MIN_PX && px <= maxPx;
       });
+      // The finest size that fits is the PRIMARY glow; coarser sizes behind
+      // it are drawn thinner and dimmer, so on the first field test their
+      // long edges no longer read as stray lines through your small patches.
+      // Primary = the finest size with a glowing patch actually on screen, so
+      // a lone medium goal is never dimmed in favour of nothing.
+      var primaryOrder = null;
+      glowOrders.forEach(function (o) {
+        if (patches.glow.some(function (c) { return c.order === o && !c.shadowed && patchScreen(c); }))
+          primaryOrder = o;
+      });
+      var badges = [];
       glowOrders.forEach(function (gOrder) {
+        var k = gOrder === primaryOrder ? 1 : 0.55;
         [2, 3].forEach(function (have) {
           var shown = [];
           g.beginPath();
@@ -632,45 +663,60 @@ var GeosonifyStarpinMap = (function () {
           });
           if (!shown.length) return;
           var strong = have === 3;
-          var col = 'rgb(' + pal.patch + ')';
-          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.12 : 0.07) + ')'; g.fill();
+          var col = 'rgba(' + pal.patch + ',' + (k === 1 ? 1 : 0.7) + ')';
+          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.12 : 0.07) * k + ')'; g.fill();
           g.lineJoin = 'round';
-          g.strokeStyle = pal.under; g.lineWidth = strong ? 6 : 5; g.stroke();
+          g.strokeStyle = pal.under; g.lineWidth = (strong ? 6 : 5) * k; g.stroke();
           g.save();
-          g.shadowColor = col; g.shadowBlur = strong ? 14 : 9;
-          g.strokeStyle = col; g.lineWidth = strong ? 3 : 2.2; g.stroke();
+          g.shadowColor = col; g.shadowBlur = (strong ? 14 : 9) * k;
+          g.strokeStyle = col; g.lineWidth = (strong ? 3 : 2.2) * k; g.stroke();
           g.restore();
 
           shown.forEach(function (o) {
             o.c.missing.forEach(function (m) {
-              var q = pt(m.lat, m.lon), r = strong ? 10 : 8;
+              var q = pt(m.lat, m.lon), r = (strong ? 10 : 8) * (k === 1 ? 1 : 0.8);
               g.beginPath(); g.arc(q[0], q[1], r, 0, 6.2832);
               g.fillStyle = pal.under; g.fill();
               g.save();
-              g.shadowColor = col; g.shadowBlur = strong ? 12 : 8;
-              g.strokeStyle = col; g.lineWidth = strong ? 3.2 : 2.6; g.stroke();
+              g.shadowColor = col; g.shadowBlur = (strong ? 12 : 8) * k;
+              g.strokeStyle = col; g.lineWidth = (strong ? 3.2 : 2.6) * (k === 1 ? 1 : 0.8); g.stroke();
               g.restore();
               g.beginPath(); g.arc(q[0], q[1], strong ? 3.2 : 2.6, 0, 6.2832);
               g.fillStyle = col; g.fill();
             });
-            // The badge, at the patch's middle, once there is room for it.
+            // The badge goes in the middle of the part of the patch you can
+            // SEE, so a patch that runs off screen is still labelled, and its
+            // edges are never unexplained lines.
             if (o.sc.px >= 70 && typeof g.fillText === 'function') {
-              var cx = 0, cy = 0;
-              o.sc.pts.forEach(function (q) { cx += q[0]; cy += q[1]; });
-              cx /= o.sc.pts.length; cy /= o.sc.pts.length;
-              var label = o.c.have + ' of 4 \u00b7 ' + PATCH_SIZE_WORD[o.c.order];
-              g.font = '700 12px -apple-system, system-ui, sans-serif';
-              var w = (g.measureText ? g.measureText(label).width : 34) + 14;
-              g.beginPath();
-              if (g.roundRect) g.roundRect(cx - w / 2, cy - 10, w, 20, 10);
-              else g.rect(cx - w / 2, cy - 10, w, 20);
-              g.fillStyle = pal.under; g.fill();
-              g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
-              g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
-              g.fillText(label, cx, cy + 0.5);
+              var at = visibleMiddle(o.sc.pts);
+              if (!at) return;
+              badges.push({ x: at[0], y: at[1], col: col, primary: k === 1, have: o.c.have,
+                            label: o.c.have + ' of 4 \u00b7 ' + PATCH_SIZE_WORD[o.c.order] });
             }
           });
         });
+      });
+
+      // Badges last, over every edge, primary size first and 3-of-4 before
+      // 2-of-4; any badge that would overlap one already placed is dropped,
+      // so labels never pile up where patches of two sizes meet.
+      badges.sort(function (a, b) {
+        return (b.primary - a.primary) || (b.have - a.have); });
+      var placed = [];
+      badges.forEach(function (b) {
+        g.font = '700 ' + (b.primary ? 12 : 11) + 'px -apple-system, system-ui, sans-serif';
+        var w = (g.measureText ? g.measureText(b.label).width : 34) + 14;
+        var box = [b.x - w / 2 - 3, b.y - 13, b.x + w / 2 + 3, b.y + 13];
+        if (placed.some(function (p) {
+          return box[0] < p[2] && p[0] < box[2] && box[1] < p[3] && p[1] < box[3]; })) return;
+        placed.push(box);
+        g.beginPath();
+        if (g.roundRect) g.roundRect(b.x - w / 2, b.y - 10, w, 20, 10);
+        else g.rect(b.x - w / 2, b.y - 10, w, 20);
+        g.fillStyle = pal.under; g.fill();
+        g.strokeStyle = b.col; g.lineWidth = 1.5; g.stroke();
+        g.fillStyle = b.col; g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.fillText(b.label, b.x, b.y + 0.5);
       });
 
       hits = [];
