@@ -37,9 +37,32 @@
   'use strict';
 
   var VERSION = 'v0.1';
-  var TAP_URL = 'https://simbad.cds.unistra.fr/simbad/sim-tap/sync';
-  var SESAME_URL = 'https://cds.unistra.fr/cgi-bin/nph-sesame/-ox/~SNV?';
-  var SIMBAD_ID_URL = 'https://simbad.cds.unistra.fr/simbad/sim-id?Ident=';
+  /*
+    MIRRORS. SIMBAD and Sesame live at the CDS in Strasbourg, which went
+    offline for days after a security incident in late October 2026. The CDS
+    named these mirrors at the time. Each is tried in order, 5 s apiece, and
+    whichever answered last goes first next time (for this page's life).
+
+    UNVERIFIED from the sandbox this was written in: whether each mirror
+    offers the TAP service (not just the web pages) and sends CORS headers.
+    A mirror that fails either way is skipped, and only an answer of the right
+    shape counts. The IDIA SIMBAD mirror is listed at its root, so both the
+    usual /simbad path and the root are tried there.
+  */
+  var SIMBAD_BASES = [
+    'https://simbad.cds.unistra.fr/simbad',      // CDS, Strasbourg (primary)
+    'https://simbad.cfa.harvard.edu/simbad',     // CfA, Harvard
+    'https://simbad.idia.ac.za/simbad',          // IDIA, South Africa
+    'https://simbad.idia.ac.za'
+  ];
+  var SESAME_BASES = [
+    'https://cds.unistra.fr/cgi-bin/nph-sesame',
+    'https://vizier.cfa.harvard.edu/viz-bin/nph-sesame',
+    'https://vizier.idia.ac.za/viz-bin/nph-sesame'
+  ];
+  var PER_HOST_MS = 5000;
+  var lastGood = { simbad: 0, sesame: 0 };      // index of the base that answered last
+  function SIMBAD_ID_URL() { return SIMBAD_BASES[lastGood.simbad] + '/sim-id?Ident='; }
   var TIMEOUT_MS = 9000;
 
   // Pick radius bounds (arcsec): below 2" SIMBAD's own astrometry is the limit;
@@ -111,9 +134,9 @@
 
   // ── network ──────────────────────────────────────────────────────────────
 
-  function fetchWithTimeout(url, signal) {
+  function fetchWithTimeout(url, signal, ms) {
     var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, TIMEOUT_MS);
+    var timer = setTimeout(function () { if (ctl) ctl.abort(); }, ms || TIMEOUT_MS);
     if (signal && ctl) {
       if (signal.aborted) ctl.abort();
       else signal.addEventListener('abort', function () { ctl.abort(); });
@@ -125,12 +148,42 @@
     }, function (e) { clearTimeout(timer); throw e; });
   }
 
+  // Each base in turn, the last good one first, until one gives a body that
+  // read() turns into a non-null value. A caller's abort stops the whole run.
+  function viaMirrors(kind, bases, suffix, read, signal) {
+    var order = [lastGood[kind]];
+    for (var b = 0; b < bases.length; b++) if (b !== lastGood[kind]) order.push(b);
+    var k = 0, lastErr = null;
+    function next() {
+      if (signal && signal.aborted) {
+        var ab = new Error('aborted'); ab.name = 'AbortError'; return Promise.reject(ab);
+      }
+      if (k >= order.length) return Promise.reject(lastErr || new Error('no mirror answered'));
+      var idx = order[k++];
+      return fetchWithTimeout(bases[idx] + suffix, signal, PER_HOST_MS)
+        .then(read)
+        .then(function (v) {
+          if (v == null) throw new Error('unexpected answer from ' + bases[idx]);
+          lastGood[kind] = idx;
+          return v;
+        })
+        .catch(function (e) {
+          if (signal && signal.aborted) throw e;
+          lastErr = e; return next();
+        });
+    }
+    return next();
+  }
+
   // SIMBAD TAP, JSON out. The response is {metadata:[{name}], data:[[...]]};
   // rows are returned as objects keyed by column name, so a column added or
   // reordered upstream cannot shift a value into the wrong field.
   function tap(adql, signal) {
-    var url = TAP_URL + '?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(adql);
-    return fetchWithTimeout(url, signal).then(function (r) { return r.json(); }).then(function (j) {
+    var suffix = '/sim-tap/sync?request=doQuery&lang=adql&format=json&query=' + encodeURIComponent(adql);
+    return viaMirrors('simbad', SIMBAD_BASES, suffix, function (r) {
+      return r.json().then(function (j) { return j && Array.isArray(j.metadata) ? j : null; },
+                           function () { return null; });
+    }, signal).then(function (j) {
       var cols = (j && j.metadata || []).map(function (m) { return String(m.name || '').toLowerCase(); });
       return (j && j.data || []).map(function (row) {
         var o = {};
@@ -255,7 +308,7 @@
   }
 
   function link(id, text) {
-    return '<a href="' + SIMBAD_ID_URL + encodeURIComponent(id) + '" target="_blank" rel="noopener">' + esc(text) + '</a>';
+    return '<a href="' + SIMBAD_ID_URL() + encodeURIComponent(id) + '" target="_blank" rel="noopener">' + esc(text) + '</a>';
   }
 
   function render(best, alts, inside, name, rArcsec) {
@@ -340,7 +393,9 @@
   // ── search by name ───────────────────────────────────────────────────────
 
   function sesame(name) {
-    return fetchWithTimeout(SESAME_URL + encodeURIComponent(name)).then(function (r) { return r.text(); })
+    return viaMirrors('sesame', SESAME_BASES, '/-ox/~SNV?' + encodeURIComponent(name), function (r) {
+      return r.text().then(function (t) { return /<Sesame/i.test(t) ? t : null; });
+    })
       .then(function (txt) {
         var doc = new DOMParser().parseFromString(txt, 'text/xml');
         var res = doc.getElementsByTagName('Resolver');
@@ -459,7 +514,10 @@
     identify: identify,
     lookupName: lookupName,
     hide: hide,
-    _test: { prettyId: prettyId, rank: rank, typeText: typeText, fmtArcsec: fmtArcsec }
+    SIMBAD_BASES: SIMBAD_BASES,
+    SESAME_BASES: SESAME_BASES,
+    _test: { prettyId: prettyId, rank: rank, typeText: typeText, fmtArcsec: fmtArcsec,
+             tap: tap, viaMirrors: viaMirrors }
   };
   global.GeosonifySkyLookup = API;
 

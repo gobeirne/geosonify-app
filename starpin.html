@@ -162,6 +162,9 @@ dl{margin:.7rem 0 0}
 .next-card .nh{font-size:1rem;font-weight:800;margin:.2rem 0 .15rem;line-height:1.3}
 .next-card .nm{font-size:.8rem;color:var(--ink-2);font-weight:600;margin-bottom:.55rem}
 .next-card .nm.over{color:var(--rust-deep)}
+.next-card .nw{font-size:.95rem;font-weight:800;color:var(--ink);overflow-wrap:anywhere;margin:-.25rem 0 .2rem}
+.next-card .nw small{font-size:.7rem;font-weight:600;color:var(--ink-2);margin-right:.4rem}
+.next-card .nw ~ button{margin-top:.5rem}
 @media (prefers-color-scheme:dark){.next-card .nm.over{color:var(--rust-lit)}}
 .next-follow{border:2px solid #2fbfae;border-radius:16px;padding:.6rem .8rem;margin:.6rem 0 0;
   font-size:.84rem;font-weight:700;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
@@ -773,7 +776,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
 <script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
-<script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
+<script src="js/lib/geosonify-sky-neighbour.js?v=20261031"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261025"></script>
 <script src="js/lib/geosonify-starpin-next.js?v=20261031"></script>
@@ -785,10 +788,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261031c"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20260731"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261031b"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261031"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
 
@@ -1341,6 +1344,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // 30%, there and back, until walking-network distance arrives.
   var NX = (typeof GeosonifyStarpinNext !== 'undefined') ? GeosonifyStarpinNext : null;
   var nextBudget = 30, nextPlan = null, nextStars = null, nextStarsAt = null, nextShown = false;
+  // true when the last star lookup failed or timed out: the catalogue could
+  // not be reached, which is not the same as "no starpins here".
+  var nextStarsDown = false, NEXT_STARS_TIMEOUT_MS = 20000;
 
   function nextStop() {
     if (!nextGoal || nextGoal.kind !== 'corners') return null;
@@ -1357,13 +1363,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // it is looking until the lookup answers.
   function nextFetchStars(done) {
     if (!SN || !SN.lookupRemote || !fix) { nextStars = []; done(); return; }
-    if (nextStars && nextStarsAt &&
+    if (nextStars && !nextStarsDown && nextStarsAt &&
         S.haversineM(fix.lat, fix.lon, nextStarsAt.lat, nextStarsAt.lon) < 250) { done(); return; }
     var at = { lat: fix.lat, lon: fix.lon };
     var radiusArcmin = Math.max(0.3, NX.metresFor(60) / 2 / S.M_PER_ARCSEC / 60);
-    nextStars = null; done();
-    Promise.resolve(SN.lookupRemote(at.lat, at.lon, { radiusArcmin: radiusArcmin, limit: 80 }))
+    nextStars = null; nextStarsDown = false; done();
+    // lookupRemote tries Strasbourg and then the VizieR mirrors, 6 s each.
+    // This is a backstop over all of them, so the card can never be left
+    // "looking" forever; pressing the button again retries.
+    var timer = new Promise(function (res) { setTimeout(function () { res('timeout'); }, NEXT_STARS_TIMEOUT_MS); });
+    Promise.race([Promise.resolve(SN.lookupRemote(at.lat, at.lon, { radiusArcmin: radiusArcmin, limit: 80 })), timer])
       .then(function (list) {
+        if (list === 'timeout' || list === null) {          // null: could not look
+          nextStars = []; nextStarsDown = true; nextStarsAt = at; nextReplan(); return;
+        }
         nextStars = (list || []).map(function (n) {
           var s2 = n.star, a = S.starpinAddress(String(s2.ra), String(s2.dec));
           return { name: s2.name, ra: s2.ra, dec: s2.dec, mag: s2.mag,
@@ -1371,7 +1384,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         });
         nextStarsAt = at; nextReplan();
       })
-      .catch(function () { nextStars = []; nextStarsAt = at; nextReplan(); });
+      .catch(function () { nextStars = []; nextStarsDown = true; nextStarsAt = at; nextReplan(); });
   }
 
   function nextReplan() {
@@ -1403,7 +1416,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     card('star', st, rare ? 'A rare starpin' : 'A starpin', 'star',
          st ? 'A starpin you have not collected, ' + st.detail : null,
          st === undefined ? 'Looking for starpins near you\u2026'
-                          : 'No starpins you have not collected within reach.');
+         : nextStarsDown ? 'The star catalogue is not answering: VizieR in Strasbourg and its mirrors ' +
+                           'all failed. Press \u201cWhat should I do next?\u201d to try again.'
+         : 'No starpins you have not collected within reach.');
 
     function freshLine(t) {
       var n = t.effects.filter(function (e) { return e.from === 0; }).length;
@@ -1421,6 +1436,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         nextKm(t.metres) + ' there and back \u00b7 about ' + Math.max(1, Math.round(t.minutes)) + ' min';
       if (t.overBudget) meta += ' \u2014 longer than your ' + nextBudget;
       c.appendChild(el('div', 'nm' + (t.overBudget ? ' over' : ''), meta));
+      // Each stop's four HEALPix words (find-words-v1), the same words the
+      // find will give Word Lab, so a walk can be read out or shared.
+      t.stops.forEach(function (s, i) {
+        var w = null;
+        try {
+          w = S.findWords ? S.findWords(kind === 'star'
+                ? S.starpinAddress(String(s.star.ra), String(s.star.dec))
+                : { cornerstone: s.name }) : null;
+        } catch (e) {}
+        if (!w) return;
+        var d = el('div', 'nw');
+        d.appendChild(el('small', null, t.stops.length > 1 ? 'corner ' + (i + 1) : 'HEALPix words'));
+        d.appendChild(document.createTextNode(w.text));
+        c.appendChild(d);
+      });
       var b = el('button', null, 'Take me there'); b.type = 'button';
       b.addEventListener('click', function () { nextFollow(kind, t, headline); });
       c.appendChild(b);

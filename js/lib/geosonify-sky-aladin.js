@@ -59,10 +59,82 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.4';
+  var VERSION = 'v0.5';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
+  /*
+    MIRRORS, for when Strasbourg is down (it was, for days, after a security
+    incident in late October 2026). Both lists are tried in order and the
+    first that answers wins; with Strasbourg up, behaviour is exactly as
+    before.
+
+    The library: the same LGPL bundle CDS publishes to npm, served by jsDelivr,
+    PINNED to the version this adapter was verified against (3.9.0-beta: see
+    the module-shape note below), not a mutable "latest". Still a separate,
+    unmodified file loaded at runtime, so the licensing arrangement holds.
+
+    The imagery: the IVOA registry record for ivo://CDS/P/DSS2/color lists
+    these mirrors. Each is probed with its HiPS "properties" file (a few
+    hundred bytes); the first that answers is handed to Aladin as a URL. The
+    primary answering means the survey ID is used unchanged, as before.
+    UNVERIFIED from the sandbox this was written in: whether each mirror sends
+    CORS headers, which WebGL tiles need. A mirror that does not is skipped by
+    the probe, because the probe is itself a cross-origin fetch.
+  */
+  var LIB_FALLBACKS = ['https://cdn.jsdelivr.net/npm/aladin-lite@3.9.0-beta/dist/aladin.js'];
+  var SURVEY_MIRRORS = {
+    'P/DSS2/color': [
+      'https://alasky.cds.unistra.fr/DSS/DSSColor',               // CDS, Strasbourg (primary)
+      'https://casda.csiro.au/hips/DSS2/color',                   // CSIRO, Australia
+      'https://irsa.ipac.caltech.edu/data/hips/CDS/DSS2/color',   // IRSA, Caltech
+      'https://cdn.skies.esac.esa.int/DSSColor',                  // ESA, ESAC
+      'https://healpix.ias.u-psud.fr/CDS_P_DSS2_color'            // IAS, Paris-Saclay
+    ]
+  };
+  var PROBE_MS = 4000, SURVEY_CACHE_MS = 30 * 60 * 1000;
+  var _surveyCache = {};          // id -> { use, ms }
+
+  function probe(url) {
+    if (typeof fetch !== 'function') return Promise.resolve(false);
+    var ctl = null, timer = null;
+    try { ctl = new AbortController(); } catch (e) {}
+    if (ctl) timer = setTimeout(function () { ctl.abort(); }, PROBE_MS);
+    return fetch(url + '/properties', ctl ? { signal: ctl.signal } : undefined)
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (t) { if (timer) clearTimeout(timer); return /hips_/.test(String(t)); })
+      .catch(function () { if (timer) clearTimeout(timer); return false; });
+  }
+
+  /*
+    id -> what to hand Aladin: the id itself when the primary answers (or the
+    survey has no mirrors listed), else the first mirror URL that answers.
+    Never rejects. When nothing answers it returns the id, and Aladin fails
+    exactly as it would have before.
+  */
+  function resolveSurvey(id) {
+    var list = SURVEY_MIRRORS[id];
+    if (!list) return Promise.resolve(id);
+    var c = _surveyCache[id];
+    if (c && Date.now() - c.ms < SURVEY_CACHE_MS) return Promise.resolve(c.use);
+    var i = 0;
+    function next() {
+      if (i >= list.length) return Promise.resolve(id);
+      var k = i++;
+      return probe(list[k]).then(function (ok) {
+        if (!ok) return next();
+        var use = k === 0 ? id : list[k];
+        _surveyCache[id] = { use: use, ms: Date.now() };
+        return use;
+      });
+    }
+    return next();
+  }
+  // The last resolution for id, synchronously (the id itself if none yet).
+  function surveyFor(id) {
+    var c = _surveyCache[id];
+    return c ? c.use : id;
+  }
 
   // Every visible Aladin control, off. The reticle and coordinate readout go too:
   // those are precisely the elements a user would read as "this is Aladin".
@@ -150,7 +222,15 @@
     try {
       if (typeof document !== 'undefined' && document.baseURI) url = new URL(url, document.baseURI).href;
     } catch (e) {}
-    _modulePromise = new Function('u', 'return import(u);')(url)
+    // The page's own src (or the CDS CDN) first, then the pinned npm copy.
+    var tries = [url].concat(LIB_FALLBACKS.filter(function (u) { return u !== url; }));
+    function importFirst(k, lastErr) {
+      if (k >= tries.length) return Promise.reject(lastErr || new Error('Aladin Lite could not be loaded'));
+      return new Function('u', 'return import(u);')(tries[k])
+        .then(function (mod) { url = tries[k]; return mod; },
+              function (e) { return importFirst(k + 1, e); });
+    }
+    _modulePromise = importFirst(0, null)
       .then(function (mod) {
         // A side-effecting classic build assigns a global instead of exporting.
         var g = (typeof window !== 'undefined') ? window : null;
@@ -230,7 +310,9 @@
       svg.appendChild(gOverlay);
       container.appendChild(svg);
 
-      return loadAladin(opts.src).then(function (mod) {
+      var wantSurvey = opts.survey || 'P/DSS2/color';
+      return Promise.all([loadAladin(opts.src), resolveSurvey(wantSurvey)]).then(function (got) {
+        var mod = got[0];
         if (destroyed) return false;
         A = mod;
         var options = {};
@@ -239,7 +321,7 @@
         options.fov = pendingFov;
         options.cooFrame = opts.cooFrame || 'ICRS';
         options.backgroundColor = opts.background || '#0b0f19';
-        options.survey = opts.survey || 'P/DSS2/color';
+        options.survey = got[1];                 // the id, or a mirror's URL
         if (opts.aladinOptions) {
           for (var j in opts.aladinOptions) options[j] = opts.aladinOptions[j];
         }
@@ -431,6 +513,10 @@
   var API = {
     VERSION: VERSION,
     CDN_URL: CDN_URL,
+    LIB_FALLBACKS: LIB_FALLBACKS,
+    SURVEY_MIRRORS: SURVEY_MIRRORS,
+    resolveSurvey: resolveSurvey,
+    surveyFor: surveyFor,
     CHROME_OFF: CHROME_OFF,
     isAvailable: isAvailable,
     webgl2Available: webgl2Available,

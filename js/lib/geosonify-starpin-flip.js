@@ -1269,7 +1269,14 @@ var GeosonifyStarpinFlip = (function () {
       var sv2 = survey();
       try { if (store) store.setItem('starpin.flip.survey', String(surveyIdx)); } catch (e) {}
       var al = renderer && renderer._aladin ? renderer._aladin() : null;
-      if (al && al.setBaseImageLayer) { try { al.setBaseImageLayer(sv2.id); } catch (e) {} }
+      // Through the adapter's mirror resolver: during a CDS outage this is a
+      // mirror's URL rather than the survey id (only DSS2 has mirrors listed).
+      if (al && al.setBaseImageLayer) {
+        Promise.resolve(SA && SA.resolveSurvey ? SA.resolveSurvey(sv2.id) : sv2.id).then(function (use) {
+          if (survey().id !== sv2.id) return;          // switched again meanwhile
+          try { al.setBaseImageLayer(use); } catch (e) {}
+        });
+      }
       applyFace();
       var v = viewState();
       var warn = v.lat < sv2.decMin ? sv2.label + ' does not reach this far south.' : sv2.note;

@@ -46,9 +46,10 @@ w.__A = {
 
 var src = fs.readFileSync('geosonify-sky-aladin.js', 'utf8');
 // swap the dynamic import for the mock, leaving every other line intact
+// (v0.5 tries the page's src, then a pinned npm copy, through importFirst)
 src = src.replace(
-  "_modulePromise = new Function('u', 'return import(u);')(url)",
-  "_modulePromise = Promise.resolve({ default: window.__A })");
+  "return new Function('u', 'return import(u);')(tries[k])",
+  "return Promise.resolve({ default: window.__A })");
 // WebGL2 is unavailable in jsdom; force the probe true so the rest can run
 src = src.replace('function webgl2Available() {', 'function webgl2Available() { if (window.__forceWebGL) return true;');
 w.__forceWebGL = true;

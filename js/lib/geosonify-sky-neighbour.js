@@ -265,6 +265,76 @@
   var PC_TO_LY = 3.2615638;
 
   /*
+    VIZIER MIRRORS. The catalogue is what makes a starpin exist at all, so it
+    must not have a single point of failure. In late October 2026 a security
+    incident took the CDS's Strasbourg servers offline, and every starpin
+    lookup failed with them.
+
+    Tried in order, starting from whichever host answered last (remembered for
+    a few hours, then Strasbourg is tried first again). HTTPS only: the app is
+    served over HTTPS, and a browser blocks plain-HTTP requests from it, which
+    rules out the China-VO and NAOJ mirrors as listed by the CDS.
+
+    UNVERIFIED: whether each mirror allows cross-origin requests, and whether
+    it holds Gaia DR3 (I/355/gaiadr3). Neither can be checked from the sandbox
+    this was written in. Both failures are safe: a blocked or empty answer from
+    a mirror moves on to the next host, and only a real table counts.
+  */
+  var VIZIER_HOSTS = [
+    'https://vizier.cds.unistra.fr',      // CDS, Strasbourg (primary)
+    'https://vizier.cfa.harvard.edu',     // CfA, Harvard
+    'https://vizier.idia.ac.za'           // IDIA, South Africa
+  ];
+  var VIZIER_TIMEOUT_MS = 6000;
+  var VIZIER_STICKY_MS = 6 * 3600 * 1000;
+  var VIZIER_KEY = 'geosonify.vizier.host';
+  var vizierLast = null;                   // { host, ms } of the last host that answered
+
+  function vizierOrder() {
+    var last = vizierLast;
+    if (!last) {
+      try { last = JSON.parse(localStorage.getItem(VIZIER_KEY) || 'null'); } catch (e) { last = null; }
+    }
+    var order = VIZIER_HOSTS.slice();
+    if (last && last.host && VIZIER_HOSTS.indexOf(last.host) > 0 &&
+        Date.now() - (last.ms || 0) < VIZIER_STICKY_MS) {
+      order.splice(order.indexOf(last.host), 1);
+      order.unshift(last.host);
+    }
+    return order;
+  }
+  function vizierRemember(host) {
+    vizierLast = { host: host, ms: Date.now() };
+    try { localStorage.setItem(VIZIER_KEY, JSON.stringify(vizierLast)); } catch (e) {}
+  }
+
+  // GET pathAndQuery from each host in turn until one returns a body that
+  // isTable() accepts. Resolves { text, host }, or null when no host could.
+  // A primary-site answer with no table is believed (an empty cone); a
+  // mirror's is not, because a mirror may simply not hold the catalogue.
+  function vizierFetch(pathAndQuery, isTable) {
+    var order = vizierOrder(), i = 0;
+    function next() {
+      if (i >= order.length) return Promise.resolve(null);
+      var host = order[i++], ctl = null, timer = null;
+      try { ctl = new AbortController(); } catch (e) {}
+      if (ctl) timer = setTimeout(function () { ctl.abort(); }, VIZIER_TIMEOUT_MS);
+      return fetch(host + pathAndQuery, ctl ? { signal: ctl.signal } : undefined)
+        .then(function (r) { return r.ok ? r.text() : null; })
+        .catch(function () { return null; })
+        .then(function (text) {
+          if (timer) clearTimeout(timer);
+          if (text != null && (isTable(text) || host === VIZIER_HOSTS[0])) {
+            vizierRemember(host);
+            return { text: text, host: host };
+          }
+          return next();
+        });
+    }
+    return next();
+  }
+
+  /*
     How many rows to keep from a cone search, regardless of how many the card
     shows. See the note in lookupRemote(): retaining only the displayed few is
     what made the cache unable to notice a star becoming nearest.
@@ -342,7 +412,7 @@
     */
     var limit = POOL;
 
-    var url = 'https://vizier.cds.unistra.fr/viz-bin/asu-tsv' +
+    var query = '/viz-bin/asu-tsv' +
       '?-source=' + encodeURIComponent(cat.source) +
       '&-c=' + encodeURIComponent(ra.toFixed(6) + (lat < 0 ? '' : '+') + lat.toFixed(6)) +
       '&-c.rm=' + radiusArcmin +
@@ -355,9 +425,14 @@
       catalogue is unreachable" and "there is genuinely no star here" are
       different sentences and one of them is not the user's fault.
     */
-    return fetch(url).then(function (r) { return r.ok ? r.text() : null; })
-      .then(function (text) {
-        if (text === null || text === undefined) return null;
+    function isTable(text) {
+      return String(text).split('\n').some(function (l) {
+        return l.charAt(0) !== '#' && l.split('\t').indexOf(cat.raCol) !== -1; });
+    }
+    return vizierFetch(query, isTable)
+      .then(function (got) {
+        if (!got) return null;
+        var text = got.text;
         return parseTsv(text, cat).map(function (row) {
           var name = cat.label + ' ' + row.id;
           if (!ucac4Agrees(row.id, row.dec)) {
@@ -815,6 +890,8 @@
     ucac4Agrees: ucac4Agrees,
     lookupLocal: lookupLocal,
     lookupRemote: lookupRemote,
+    VIZIER_HOSTS: VIZIER_HOSTS,
+    vizierHost: function () { return vizierLast ? vizierLast.host : null; },
     lookup: lookup,
     neighbours: neighbours,
     offlineNote: offlineNote,
