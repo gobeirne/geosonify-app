@@ -28,8 +28,8 @@
       map.setPatches(S.cellProgress(records, { orders: [12, 13, 14] }));
 
   v0.9: patches. Lit and Bright cells are filled teal under the lattice, and
-  glowing cells (2 or 3 corners collected) get a dashed edge and a hollow pip
-  at each missing corner. See patchModel() below.
+  glowing cells (2 or 3 corners collected) get a solid glowing edge, a ring
+  on each missing corner and an "N of 4" badge. See patchModel() below.
 */
 'use strict';
 
@@ -126,12 +126,12 @@ var GeosonifyStarpinMap = (function () {
                baggedRing: '#ffffff', you: '#CD8862', halo: '205,136,98',
                star: '#DCC949', starRing: '#4a3d08',
                under: 'rgba(255,255,255,.78)',
-               patch: '20,128,122', patchA: 0.22, brightA: 0.22 },
+               patch: '0,128,118', patchA: 0.38, brightA: 0.25 },
     imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
                baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.6)',
-               patch: '96,226,214', patchA: 0.26, brightA: 0.24 },
+               patch: '64,236,220', patchA: 0.42, brightA: 0.26 },
     // Over the night sky, with the streets drawn cool: the lattice goes warm
     // amber so the two never read as one, your finds stay green, and you are
     // the blue dot every map has taught people to look for.
@@ -139,7 +139,7 @@ var GeosonifyStarpinMap = (function () {
                baggedRing: '#10200a', you: '#4DA3FF', halo: '77,163,255',
                star: '#FFF6D0', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.55)',
-               patch: '72,214,200', patchA: 0.20, brightA: 0.22 }
+               patch: '64,236,220', patchA: 0.40, brightA: 0.25 }
   };
 
   var CSS = [
@@ -242,8 +242,9 @@ var GeosonifyStarpinMap = (function () {
   //
   //   Lit      all four corners collected                  soft teal fill
   //   Bright   every order-14 patch inside it is lit       a second, stronger fill
-  //   Glowing  2 or 3 of 4 corners collected               dashed outline + a hollow
-  //                                                        pip at each missing corner
+  //   Glowing  2 or 3 of 4 corners collected               solid glowing edge, a ring
+  //                                                        on each missing corner, and
+  //                                                        an "N of 4" badge
   //
   // ONE SIZE IS OUTLINED AT A TIME, chosen by zoom: the finest order whose
   // cells are at least PATCH_OUTLINE_MIN_PX across. Fills are drawn at every
@@ -253,7 +254,8 @@ var GeosonifyStarpinMap = (function () {
   var PATCH_ORDERS = [12, 13, 14];
   var PATCH_OUTLINE_MIN_PX = 36;
   var PATCH_DOT_PX = 3;            // below this a lit cell is a dot, so it never vanishes
-  var PATCH_SEGS = 6;              // points per edge: a 1.6 km edge bows well under a metre
+  var PATCH_SEGS = 6;
+  var PATCH_SIZE_WORD = { 12: 'large', 13: 'medium', 14: 'small' };              // points per edge: a 1.6 km edge bows well under a metre
 
   // 'f9.1112…' -> { order, ipix } (BigInt), the inverse of the engine's pathStr.
   function parseCellPath(path) {
@@ -306,8 +308,26 @@ var GeosonifyStarpinMap = (function () {
       if (PATCH_ORDERS.indexOf(e.order) < 0 || e.have < 2 || e.have > 3) return;
       var c = parseCellPath(e.cell); if (!c) return;
       out.glow.push({ cell: e.cell, order: c.order, ipix: c.ipix, have: e.have,
+        held: (e.corners || []).filter(function (k) { return k.have; })
+                               .map(function (k) { return { lat: k.lat, lon: k.lon }; }),
         missing: (e.corners || []).filter(function (k) { return !k.have; })
                                   .map(function (k) { return { lat: k.lat, lon: k.lon }; }) });
+    });
+    // A 2-of-4 patch whose two corners both already belong to a lit or a
+    // 3-of-4 patch of the same size is only a NEIGHBOUR of that progress: it
+    // shares an edge with it. Drawn at full strength, every lit area would sit
+    // in a wreath of such patches, so it is marked shadowed and left out. With
+    // nothing lit yet, every 2-of-4 patch still shows.
+    function pkey(o, q) { return o + ':' + q.lat.toFixed(6) + ',' + q.lon.toFixed(6); }
+    var strong = {};
+    (progress.complete || []).forEach(function (e) {
+      (e.corners || []).forEach(function (k) { strong[pkey(e.order, k)] = 1; });
+    });
+    out.glow.forEach(function (c) {
+      if (c.have === 3) c.held.forEach(function (k) { strong[pkey(c.order, k)] = 1; });
+    });
+    out.glow.forEach(function (c) {
+      c.shadowed = c.have === 2 && c.held.every(function (k) { return strong[pkey(c.order, k)]; });
     });
     return out;
   }
@@ -570,50 +590,88 @@ var GeosonifyStarpinMap = (function () {
       }
       fillPatches(patches.lit.filter(function (c) { return !c.covered; }), pal.patchA);
       fillPatches(patches.lit.filter(function (c) { return c.bright && !c.brightCovered; }), pal.brightA);
+      // A lit patch also gets a crisp solid edge at the size outlined at this
+      // zoom, so it reads as a finished shape and not as a tint on the streets.
+      (function () {
+        var edged = patches.lit.filter(function (c) { return c.order === patchOrder && !c.covered; });
+        if (!edged.length || cellWidthM(patchOrder) / mpp < PATCH_OUTLINE_MIN_PX) return;
+        g.beginPath();
+        var any = false;
+        edged.forEach(function (c) { var sc = patchScreen(c); if (sc) { tracePatch(sc); any = true; } });
+        if (!any) return;
+        g.lineJoin = 'round';
+        g.strokeStyle = 'rgba(' + pal.patch + ',0.9)'; g.lineWidth = 2; g.stroke();
+      })();
 
       layers.forEach(function (L) { strokeAll(L, pal.under, L.st.width + 1.8, L.st.alpha * 0.85); });
       layers.slice().reverse().forEach(function (L) { strokeAll(L, pal.grid, L.st.width, L.st.alpha); });
       g.globalAlpha = 1;
 
-      // Glowing patches, OVER the lattice: the dashed edge and the hollow pip
-      // at each missing corner are the nearest unfinished goal, and the one
-      // thing on this map meant to pull a walk. Only the size outlined at
-      // this zoom glows, so the three sizes never pile up on each other.
-      // Two strengths. One corner away (3 of 4) is the real pull: a bold
-      // dashed edge and a pip on the corner still to get. Two corners away
-      // (2 of 4) is every patch that shares an edge with lit ground, so it
-      // stays a faint dashed edge with no pips, or a lit area would sit in a
-      // wreath of identical outlines.
-      if (cellWidthM(patchOrder) / mpp >= PATCH_OUTLINE_MIN_PX) {
-        var dashed = typeof g.setLineDash === 'function';
+      // Glowing patches, OVER the lattice and meant to be impossible to miss:
+      // the nearest unfinished goals, and the thing on this map meant to pull
+      // a walk. SOLID edges, never dashed: the street layer dashes footpaths,
+      // and a dashed patch edge vanished among them on the first field test.
+      // A real glow (canvas shadow) round the edge, a ring on every corner
+      // still to collect, and an "N of 4 · size" badge when the patch is big
+      // enough. One corner away (3 of 4) is drawn strongest. Every size that
+      // fits the screen glows, coarsest first, so a medium patch that is your
+      // nearest goal does not vanish when you zoom in to walk it.
+      var maxPx = Math.max(size.x, size.y) * 1.6;
+      var glowOrders = PATCH_ORDERS.filter(function (o) {
+        var px = cellWidthM(o) / mpp;
+        return px >= PATCH_OUTLINE_MIN_PX && px <= maxPx;
+      });
+      glowOrders.forEach(function (gOrder) {
         [2, 3].forEach(function (have) {
           var shown = [];
           g.beginPath();
           patches.glow.forEach(function (c) {
-            if (c.order !== patchOrder || c.have !== have) return;
-            var sc = patchScreen(c); if (!sc) return;
-            tracePatch(sc); shown.push(c);
+            if (c.order !== gOrder || c.have !== have || c.shadowed) return;
+            var sc = patchScreen(c); if (!sc || sc.px < PATCH_DOT_PX) return;
+            tracePatch(sc); shown.push({ c: c, sc: sc });
           });
           if (!shown.length) return;
           var strong = have === 3;
-          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.09 : 0.03) + ')'; g.fill();
-          if (dashed) g.setLineDash(strong ? [7, 5] : [3, 6]);
+          var col = 'rgb(' + pal.patch + ')';
+          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.12 : 0.07) + ')'; g.fill();
           g.lineJoin = 'round';
-          if (strong) { g.strokeStyle = pal.under; g.lineWidth = 4; g.stroke(); }
-          g.strokeStyle = 'rgba(' + pal.patch + ',' + (strong ? 1 : 0.55) + ')';
-          g.lineWidth = strong ? 2 : 1.2; g.stroke();
-          if (dashed) g.setLineDash([]);
-          if (!strong) return;
-          shown.forEach(function (c) {
-            c.missing.forEach(function (m) {
-              var q = pt(m.lat, m.lon);
-              g.beginPath(); g.arc(q[0], q[1], 5.5, 0, 6.2832);
+          g.strokeStyle = pal.under; g.lineWidth = strong ? 6 : 5; g.stroke();
+          g.save();
+          g.shadowColor = col; g.shadowBlur = strong ? 14 : 9;
+          g.strokeStyle = col; g.lineWidth = strong ? 3 : 2.2; g.stroke();
+          g.restore();
+
+          shown.forEach(function (o) {
+            o.c.missing.forEach(function (m) {
+              var q = pt(m.lat, m.lon), r = strong ? 10 : 8;
+              g.beginPath(); g.arc(q[0], q[1], r, 0, 6.2832);
               g.fillStyle = pal.under; g.fill();
-              g.strokeStyle = 'rgb(' + pal.patch + ')'; g.lineWidth = 2.2; g.stroke();
+              g.save();
+              g.shadowColor = col; g.shadowBlur = strong ? 12 : 8;
+              g.strokeStyle = col; g.lineWidth = strong ? 3.2 : 2.6; g.stroke();
+              g.restore();
+              g.beginPath(); g.arc(q[0], q[1], strong ? 3.2 : 2.6, 0, 6.2832);
+              g.fillStyle = col; g.fill();
             });
+            // The badge, at the patch's middle, once there is room for it.
+            if (o.sc.px >= 70 && typeof g.fillText === 'function') {
+              var cx = 0, cy = 0;
+              o.sc.pts.forEach(function (q) { cx += q[0]; cy += q[1]; });
+              cx /= o.sc.pts.length; cy /= o.sc.pts.length;
+              var label = o.c.have + ' of 4 \u00b7 ' + PATCH_SIZE_WORD[o.c.order];
+              g.font = '700 12px -apple-system, system-ui, sans-serif';
+              var w = (g.measureText ? g.measureText(label).width : 34) + 14;
+              g.beginPath();
+              if (g.roundRect) g.roundRect(cx - w / 2, cy - 10, w, 20, 10);
+              else g.rect(cx - w / 2, cy - 10, w, 20);
+              g.fillStyle = pal.under; g.fill();
+              g.strokeStyle = col; g.lineWidth = 1.5; g.stroke();
+              g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
+              g.fillText(label, cx, cy + 0.5);
+            }
           });
         });
-      }
+      });
 
       hits = [];
 

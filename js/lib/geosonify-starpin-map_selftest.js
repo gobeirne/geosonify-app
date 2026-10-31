@@ -85,14 +85,15 @@ global.L = {
 };
 
 // count what the canvas was actually asked to draw
-var strokes = 0, arcs = 0, fills = 0, lastErr = null;
+var strokes = 0, arcs = 0, fills = 0, texts = 0, lastErr = null;
 var proto = dom.window.HTMLCanvasElement.prototype;
 proto.getContext = function () {
   return {
     setTransform: function () {}, clearRect: function () {}, scale: function () {},
     beginPath: function () {}, moveTo: function () {}, lineTo: function () {},
     closePath: function () {}, arc: function () { arcs++; }, fill: function () { fills++; },
-    rect: function () {}, setLineDash: function () {},
+    rect: function () {}, setLineDash: function () {}, roundRect: function () {},
+    fillText: function () { texts++; }, measureText: function () { return { width: 30 }; },
     stroke: function () { strokes++; }, save: function () {}, restore: function () {},
     translate: function () {}, rotate: function () {}, fillRect: function () {},
     set lineWidth(v) {}, set strokeStyle(v) {}, set fillStyle(v) {}, set globalAlpha(v) {}
@@ -299,6 +300,15 @@ head('7: patches (game design v2, phase 1)');
     return c.order === 13 && c.have === 3; }).every(function (c) {
     var p = S.cornerstonePoint(dropped);
     return S.haversineM(c.missing[0].lat, c.missing[0].lon, p.lat, p.lon) < 0.5; }));
+  ok('2-of-4 patches that only border lit or 3-of-4 ground are shadowed', m2.glow.filter(function (c) {
+    return c.have === 2; }).every(function (c) { return c.shadowed; }));
+  ok('3-of-4 patches are never shadowed', m2.glow.filter(function (c) {
+    return c.have === 3; }).every(function (c) { return !c.shadowed; }));
+  ok('with nothing lit, a 2-of-4 patch still glows', (function () {
+    var two = S.cellCornerstones('f9.1112021011333').slice(0, 2).map(function (n) { return rec(n.name); });
+    var g2 = M.patchModel(S.cellProgress(two, { orders: M.PATCH_ORDERS })).glow;
+    return g2.some(function (c) { return c.cell === 'f9.1112021011333' && !c.shadowed; });
+  })());
   ok('a patch with one corner does not glow', M.patchModel(
       S.cellProgress([rec(all[0])], { orders: M.PATCH_ORDERS })).glow.length === 0);
   ok('no progress draws nothing and does not throw', (function () {
@@ -327,6 +337,10 @@ head('7: patches (game design v2, phase 1)');
   })());
 
   var mp = M.mount(document.getElementById('m'));
+  // Centre the stand-in map on the patch, or every patch is culled off screen
+  // and the fills counted below would be the markers'.
+  var home = { lat: state.lat, lon: state.lon }, at = S.cornerstonePoint(dropped);
+  state.lat = at.lat; state.lon = at.lon;
   var drewAt = [];
   [1200, 8000, 20000, 2000000].forEach(function (span) {
     state.spanM = span; fills = 0; lastErr = null;
@@ -335,10 +349,16 @@ head('7: patches (game design v2, phase 1)');
     else if (lastErr) console.log('   ', lastErr.stack);
   });
   ok('patches draw at every zoom, and stay visible from a country view', drewAt.length === 4, drewAt.join(' '));
+  ok('a glowing patch gets its "N of 4" badge once it is big enough', (function () {
+    state.spanM = 1200; texts = 0;
+    try { mp.setPatches(less); mp.redraw(); } catch (e) { return false; }
+    return texts > 0;
+  })());
   ok('setPatches(null) clears them', (function () {
     try { mp.setPatches(null); mp.redraw(); } catch (e) { return false; }
     return mp.patches().lit.length === 0;
   })());
+  state.lat = home.lat; state.lon = home.lon;
 })();
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);
