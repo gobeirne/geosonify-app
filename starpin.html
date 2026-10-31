@@ -168,6 +168,14 @@ dl{margin:.7rem 0 0}
 .next-card .nw small{font-size:.7rem;font-weight:600;color:var(--ink-2);margin-right:.4rem}
 .next-card .nw ~ button{margin-top:.5rem}
 @media (prefers-color-scheme:dark){.next-card .nm.over{color:var(--rust-lit)}}
+#route-dlg{border:2px solid #2fbfae;border-radius:20px;padding:1rem 1.1rem;max-width:22rem;
+  width:calc(100% - 2.4rem);background:var(--card);color:var(--ink)}
+#route-dlg::backdrop{background:rgba(0,0,0,.45)}
+#route-dlg h3{margin:0 0 .3rem;font-size:1.05rem}
+#route-dlg p{margin:.2rem 0 .7rem;font-size:.86rem;color:var(--ink-2)}
+#route-dlg label{display:flex;gap:.5rem;align-items:center;font-size:.9rem;font-weight:700;margin:.2rem 0 .8rem}
+#route-dlg .btnrow{margin:.45rem 0 0}
+#route-dlg small{display:block;margin-top:.6rem;font-size:.74rem;color:var(--ink-2)}
 .next-follow{border:2px solid #2fbfae;border-radius:16px;padding:.6rem .8rem;margin:.6rem 0 0;
   font-size:.84rem;font-weight:700;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
 .next-follow button{width:auto;flex:0 0 auto;padding:.45rem .8rem}
@@ -466,6 +474,18 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <p class="hint" id="next-hint">Times are there and back from where you are, at an easy
      4&nbsp;km/h, with 30% added because streets are never straight. They are
      still as the crow flies: a river or a motorway can make a walk longer.</p>
+  <dialog id="route-dlg" aria-labelledby="route-dlg-h">
+    <h3 id="route-dlg-h">Open this walk in maps</h3>
+    <p id="route-dlg-what"></p>
+    <label><input type="checkbox" id="route-dlg-back" checked> Back to where I started</label>
+    <div class="btnrow">
+      <button type="button" id="route-dlg-google">Google Maps</button>
+      <button type="button" id="route-dlg-apple">Apple Maps</button>
+    </div>
+    <div class="btnrow"><button type="button" id="route-dlg-close">Cancel</button></div>
+    <small>Walking directions, with the stops in this order; your maps app can reorder them.
+      Apple Maps needs iOS 18.4 or later for routes with stops.</small>
+  </dialog>
 </section>
 
 <section data-tab="go">
@@ -1399,6 +1419,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         starHave: function (st) { return !!starsHave[sourceIdOf(st.name)]; },
         rarity: function (m) { return F.starTier(m).rarity; }
       });
+      nextPlan.from = { lat: fix.lat, lon: fix.lon };      // where the walk starts and ends
     } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
     paintNextCards();
   }
@@ -1461,12 +1482,63 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         d.appendChild(a);
         c.appendChild(d);
       });
+      var row = el('div', 'btnrow');
       var b = el('button', null, 'Take me there'); b.type = 'button';
       b.addEventListener('click', function () { nextFollow(kind, t, headline); });
-      c.appendChild(b);
+      var r = el('button', null, 'Route in maps'); r.type = 'button';
+      r.addEventListener('click', function () { routeDialog(t, headline, p.from); });
+      row.appendChild(b); row.appendChild(r);
+      c.appendChild(row);
       box.appendChild(c);
     }
   }
+
+  // ── the whole walk in a maps app ──
+  // Google: /maps/dir/?api=1 with waypoints (| separated) and a destination;
+  // Apple: maps.apple.com/directions with repeated waypoint (iOS 18.4+).
+  // No origin, so both start from the device's own location. Round trips end
+  // back at the point the plan was made from; one-way trips end at the last
+  // stop. At most two stops here, inside Google's mobile-browser limit of 3.
+  // Coordinates go in as plain "lat,lon" (digits, '-', '.', ','), as in
+  // both services' own examples; only Google's '|' separator is encoded.
+  var routeTrip = null;
+  function routeLL(p) { return p.lat.toFixed(7) + ',' + p.lon.toFixed(7); }
+  function routeStops(back) {
+    var pts = routeTrip.t.stops.map(function (s) { return { lat: s.lat, lon: s.lon }; });
+    if (back && routeTrip.from) pts.push(routeTrip.from);
+    return { via: pts.slice(0, -1), to: pts[pts.length - 1] };
+  }
+  function googleRoute(back) {
+    var r = routeStops(back);
+    return 'https://www.google.com/maps/dir/?api=1&travelmode=walking' +
+      (r.via.length ? '&waypoints=' + r.via.map(routeLL).join('%7C') : '') +
+      '&destination=' + routeLL(r.to);
+  }
+  function appleRoute(back) {
+    var r = routeStops(back);
+    return 'https://maps.apple.com/directions?' +
+      r.via.map(function (p) { return 'waypoint=' + routeLL(p) + '&'; }).join('') +
+      'destination=' + routeLL(r.to) + '&mode=walking';
+  }
+  function routeDialog(t, title, from) {
+    var d = $('route-dlg');
+    routeTrip = { t: t, from: from };
+    var n = t.stops.length;
+    $('route-dlg-what').textContent = title + ' \u2014 ' + n + ' stop' + (n === 1 ? '' : 's') + '.';
+    $('route-dlg-back').checked = true;
+    if (d.showModal) d.showModal(); else d.setAttribute('open', '');
+  }
+  function routeClose() { var d = $('route-dlg'); if (d.close) d.close(); else d.removeAttribute('open'); }
+  $('route-dlg-google').addEventListener('click', function () {
+    if (!routeTrip) return;
+    window.open(googleRoute($('route-dlg-back').checked), '_blank', 'noopener'); routeClose();
+  });
+  $('route-dlg-apple').addEventListener('click', function () {
+    if (!routeTrip) return;
+    window.open(appleRoute($('route-dlg-back').checked), '_blank', 'noopener'); routeClose();
+  });
+  $('route-dlg-close').addEventListener('click', routeClose);
+  $('route-dlg').addEventListener('click', function (e) { if (e.target === this) routeClose(); });
 
   function nextFollow(kind, t, title) {
     cellGoal = null;
