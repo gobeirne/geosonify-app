@@ -446,12 +446,8 @@
     }
   }
 
-  function mapsLink(lat, lon, label) {
-    const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0;
-    return isApple
-      ? { url: `maps://maps.apple.com/?q=${encodeURIComponent(label)}&ll=${lat},${lon}`, label: 'Open in Apple Maps' }
-      : { url: `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, label: 'Open in Google Maps' };
-  }
+  // Apple Maps on iPhone/iPad, Google Maps elsewhere (js/ui/geosonify-nav.js).
+  function mapsLink(lat, lon, label) { return GeosonifyNav.pinLink(lat, lon, label); }
 
   function codeString(gridKey, idx) { return HW().format(lang(gridKey), idx); }
 

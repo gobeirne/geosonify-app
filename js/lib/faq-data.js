@@ -194,6 +194,15 @@
           },
 
           {
+            id: 'directions-links',
+            q: 'Can a link offer directions to the place?',
+            a: `<p>Yes. Add <code>&amp;nav</code> to a link for a single point, for example <code>?hpwen=nice-barely-parrot-need&amp;nav</code>. The recipient sees the pin on the map first, then a small panel offering directions in <strong>Google Maps</strong> or <strong>Apple Maps</strong>, and on Android in <strong>another app</strong> such as OsmAnd, Organic Maps or Waze. The maps app chooses the route and asks how they are travelling; nothing opens until they tap. <code>&amp;nav=g</code>, <code>&amp;nav=a</code> or <code>&amp;nav=geo</code> lists Google, Apple or the other app first.</p>
+<p>Directions go to the middle of the cell the code names. When the code is coarse (a cell more than about a kilometre across, such as two HEALPix words) the panel says so, because the middle of a large area is rarely where anyone means. Links that make a shape, and links in the sky, do not offer directions. To make one, switch on <strong>Offer directions</strong> in the <strong>Output</strong> tab, or add <code>&amp;nav</code> to a link from another tool.</p>
+<p>A link with <code>&amp;nav</code> is treated as one a tool has generated: it opens without the <em>Not where you expected?</em> prompt. If the code was made with a grid passphrase, add <code>&amp;pass</code> as well (or switch on <strong>Ask recipient for the passphrase</strong>). The recipient is asked for the passphrase before anything is decoded, and offered directions after. The passphrase itself never goes in the link: one written as <code>pass=…</code> is ignored and removed from the address bar. A wrong passphrase cannot be detected, since it still names a real place, so check the pin before you set off. To send the key with the link, use an encrypted link instead (see <em>What is the difference between obfuscation, passphrases and encryption?</em>).</p>
+<p>Obfuscated codes need nothing extra: the link already says how to read them.</p>`
+          },
+
+          {
             id: 'sky-mode',
             q: 'What is Sky mode?',
             a: `<p>Every Geosonify code names a point on a sphere. Usually that sphere is the Earth, but the same code works just as well on the sky. In Sky mode, latitude becomes <strong>declination</strong> and longitude becomes <strong>right ascension</strong>, so a code names a direction among the stars instead of a place on the ground. Nothing is converted: the digits, words, colours and notes are exactly the same.</p>

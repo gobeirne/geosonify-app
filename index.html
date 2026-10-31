@@ -634,6 +634,21 @@
             <div class="toggle"><input type="checkbox" id="shareCellMode" /><span class="toggle-slider"></span></div>
           </div>
 
+          <!-- &nav: the recipient is offered directions to the point in a maps app
+               (js/ui/geosonify-nav.js). Shown for a single point on Earth. -->
+          <div class="list-row" id="shareNavRow" style="padding:0; margin-top:10px; display:none;">
+            <label>🧭 Offer directions</label>
+            <div class="toggle"><input type="checkbox" id="shareNavMode" /><span class="toggle-slider"></span></div>
+          </div>
+
+          <!-- &pass: the recipient is asked for the grid passphrase before the code
+               is decoded. The passphrase itself is never put in the link.
+               Shown while a grid passphrase is set. -->
+          <div class="list-row" id="sharePassRow" style="padding:0; margin-top:10px; display:none;">
+            <label>🔑 Ask recipient for the passphrase</label>
+            <div class="toggle"><input type="checkbox" id="sharePassMode" /><span class="toggle-slider"></span></div>
+          </div>
+
           <div id="displaySharePanel" style="display:none; margin:6px 0 4px; padding:10px 12px; border:1px solid var(--ios-separator); border-radius:10px;">
             <p style="margin:0 0 10px; font-size:13px; color:var(--ios-secondary-label, #8a8a8e);">A display link opens a read-only viewer showing your shape on a chosen map. Pick what the recipient sees.</p>
 
@@ -832,13 +847,15 @@
 <script src="js/lib/geosonify-precision.js?v=20260622"></script>
 <script src="js/lib/import-accuracy.js?v=20260613"></script>
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
-<script src="js/ui/card-renderer.js?v=20261023a"></script>
+<!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
+<script src="js/ui/geosonify-nav.js?v=20261031a"></script>
+<script src="js/ui/card-renderer.js?v=20261031a"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
-<script src="js/lib/geosonify-bip39-entry.js?v=20260929"></script>
-<script src="js/lib/geosonify-hpwords-entry.js?v=20261009a"></script>
-<script src="js/lib/faq-data.js?v=20261029a"></script>
+<script src="js/lib/geosonify-bip39-entry.js?v=20261031a"></script>
+<script src="js/lib/geosonify-hpwords-entry.js?v=20261031a"></script>
+<script src="js/lib/faq-data.js?v=20261031a"></script>
 <script src="js/ui/faq-ui.js?v=20261025b"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -1433,9 +1450,9 @@
       overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
     }
     
-    function showDecodeBanner(gridKey, code) {
+    function showDecodeBanner(gridKey, code, opts) {
       if (typeof CardRenderer !== 'undefined') {
-        CardRenderer.showDecodeBanner(gridKey, code);
+        CardRenderer.showDecodeBanner(gridKey, code, null, null, opts || {});
       }
     }
     
@@ -2914,6 +2931,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // Share as cell outline: an encrypted link re-encrypts with &cell inside.
         const cellToggle = document.getElementById('shareCellMode');
         if (cellToggle) cellToggle.addEventListener('change', () => { try { refreshEncryptedDisplayShare(); } catch (e) {} });
+        // So do &nav and &pass.
+        ['shareNavMode', 'sharePassMode'].forEach(id => {
+          const t = document.getElementById(id);
+          if (t) t.addEventListener('change', () => { try { refreshEncryptedDisplayShare(); } catch (e) {} });
+        });
 
         toggle.addEventListener('change', () => {
           if (toggle.checked) seedZoom();
@@ -3176,6 +3198,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           }
           passphrase = gridPass;
           updatePassphraseUI();
+          // Answers an &pass inside the blob: do not ask a second time.
+          _linkPass.state = 'given';
         }
         // If no grid passphrase provided, leave it blank — the codes will decode
         // as-is (correct for no-passphrase case, and the decode banner handles
@@ -3214,6 +3238,162 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       };
     }
     
+    /*
+      ── Code-link actions: &pass and &nav (Oct 2026) ─────────────────────
+      Every point-link family ends the same way, whichever branch of
+      parseURLParameters() decoded it: finishPointLink() below. Before this the
+      decode banner ("Try passphrase") was shown only by the generic param loop
+      (?a=, ?bip=, ?hphex=, z.…); the branches added later (GIS, chessboard,
+      HEALPix words, HEALPix ChromaCoord) each copied part of the set-up and
+      left the banner out.
+
+        plain link    decode as sent; passphrase-capable families show the banner
+        &pass         ask for the grid passphrase BEFORE decoding (linkPassGate)
+        &nav          a generated link: no banner, offer directions
+        &pass&nav     ask, decode, offer directions. Cancelling the ask means
+                      the place is untrustworthy: banner, and no directions.
+
+      A passphrase never travels in a code link. A value on &pass (pass=…) is
+      dropped from the address bar unread and the receiver is asked anyway; the
+      way to send a key with a link is ?enc=. (The address pipeline's own
+      pass=, read further down, is a different thing — an ENCODE setting — and
+      is untouched.) GIS links ignore &pass: those schemes have no passphrase.
+      A wrong passphrase cannot be detected (grid-passphrase v1 is frozen and
+      carries no check), so the pin is always shown before the directions.
+    */
+    const _linkPass = { state: null, query: null };   // state: null | 'given' | 'cancelled'
+
+    function _isHealpixFamily(key) {
+      let gd = key && CARD_GRIDS[key];
+      for (let i = 0; gd && i < 4; i++) {
+        if (gd.healpix || gd.hpwords) return true;
+        const next = gd.chessOf || gd.chromaOf;
+        if (!next) return false;
+        gd = CARD_GRIDS[next];
+      }
+      return false;
+    }
+
+    // true = the prompt has taken over; the caller returns and the URL is
+    // parsed again once the receiver answers.
+    function linkPassGate(urlParams) {
+      if (!urlParams.has('pass') || _linkPass.state !== null) return false;
+      const hadValue = !!urlParams.get('pass');
+      if (hadValue) {
+        const clean = new URLSearchParams(window.location.search);
+        clean.set('pass', '');
+        window.history.replaceState({}, '', window.location.pathname + '?' + clean.toString());
+      }
+      _linkPass.query = window.location.search;
+      showLinkPassphrasePrompt(hadValue);
+      return true;
+    }
+
+    function showLinkPassphrasePrompt(hadValue) {
+      document.querySelectorAll('.link-pass-prompt').forEach(el => el.remove());
+      const overlay = document.createElement('div');
+      overlay.className = 'link-pass-prompt';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-label', 'Passphrase for this link');
+      dialog.style.cssText = 'background:var(--ios-card, #fff);color:var(--ios-text, #000);border-radius:16px;padding:24px;max-width:90vw;width:360px;text-align:center;';
+      dialog.innerHTML = `
+        <div style="font-size:40px;margin-bottom:8px;">🔑</div>
+        <h3 style="margin:0 0 8px;font-size:18px;">This code needs its passphrase</h3>
+        <p style="font-size:14px;color:var(--ios-gray, #8E8E93);margin:0 0 12px;line-height:1.4;">It was made with a grid passphrase. Without it the code still opens, but somewhere else.</p>
+        ${hadValue ? '<p style="font-size:12px;color:#B45309;margin:0 0 12px;line-height:1.4;">The link included a passphrase. It has not been used and is gone from the address bar: passphrases should not travel in links.</p>' : ''}
+        <input type="text" id="linkPassInput" placeholder="Grid passphrase" autocomplete="off" autocapitalize="off" spellcheck="false"
+          style="width:100%;padding:12px;font-size:16px;border:1px solid var(--ios-separator, #ccc);border-radius:8px;box-sizing:border-box;margin-bottom:8px;background:var(--ios-bg, #fff);color:var(--ios-text, #000);">
+        <div id="linkPassError" style="color:#FF3B30;font-size:13px;margin-bottom:8px;display:none;">Enter the passphrase, or open the code without it.</div>
+        <button id="linkPassGo" type="button" style="width:100%;padding:12px;border-radius:8px;border:none;background:var(--primary, #325756);color:#fff;font-size:16px;cursor:pointer;margin-bottom:8px;">Show the place</button>
+        <button id="linkPassSkip" type="button" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--ios-separator, #ccc);background:transparent;color:var(--ios-text, #000);font-size:14px;cursor:pointer;">Open without it</button>
+      `;
+      overlay.appendChild(dialog);
+      document.body.appendChild(overlay);
+      const input = dialog.querySelector('#linkPassInput');
+      const err = dialog.querySelector('#linkPassError');
+      input.focus();
+      function go() {
+        const p = input.value;
+        if (!p) { err.style.display = 'block'; input.focus(); return; }
+        overlay.remove();
+        if (typeof CardRenderer !== 'undefined' && CardRenderer.setPassphrase) CardRenderer.setPassphrase(p);
+        passphrase = p;
+        updatePassphraseUI();
+        _linkPass.state = 'given';
+        parseURLParameters();
+      }
+      function skip() {
+        overlay.remove();
+        _linkPass.state = 'cancelled';
+        parseURLParameters();
+      }
+      dialog.querySelector('#linkPassGo').onclick = go;
+      dialog.querySelector('#linkPassSkip').onclick = skip;
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    }
+
+    // From the directions sheet: ask again and decode the link afresh.
+    function retryLinkPass() {
+      if (_linkPass.query == null) return;
+      _linkPass.state = null;
+      window.history.replaceState({}, '', window.location.pathname + _linkPass.query);
+      parseURLParameters();
+    }
+
+    // The destination comes from the exact point the decode stamped (with the
+    // code's precision) when it matches; otherwise the decoded doubles.
+    function offerNavFor(label, lat, lon, preferred) {
+      if (typeof GeosonifyNav === 'undefined') return;
+      let la = lat, lo = lon, unc = null;
+      try {
+        const ex = (typeof GeosonifyMain !== 'undefined' && GeosonifyMain.getExact) ? GeosonifyMain.getExact() : null;
+        if (ex && Math.abs(Number(ex.lat.toString()) - lat) < 1e-6 && Math.abs(Number(ex.lon.toString()) - lon) < 1e-6) {
+          la = ex.lat; lo = ex.lon;
+          unc = ex.meta ? ex.meta.uncertaintyMetres : null;
+        }
+      } catch (e) {}
+      GeosonifyNav.offer(la, lo, {
+        label: label,
+        uncertaintyMetres: unc,
+        preferred: preferred,
+        onRetryPass: _linkPass.state === 'given' ? retryLinkPass : null
+      });
+    }
+
+    /*
+      The shared tail of every code-link branch. Call it after the pin and
+      the map are set.
+        o.cardKey      the card the link opened (null for ?r=)
+        o.code         the code as the passphrase re-decode wants it
+                       (chessboard/ChromaCoord: the recovered hex)
+        o.label        what the sender sent, for the directions sheet
+        o.lat, o.lon   the decoded point
+        o.obf          the obfuscation the param declared (true | 'v1' | false)
+        o.isPoint      false for shapes and paths: no directions
+        o.passCapable  false for GIS and raw coordinates: no banner
+        o.stamp        stamp provenance here (branches that did not already)
+    */
+    function finishPointLink(o) {
+      const sky = !!(o.urlFrame && o.urlFrame.sphere === 'sky');
+      if (o.stamp && o.isPoint && o.cardKey && CardRenderer.stampDecodedProvenance) {
+        try { CardRenderer.stampDecodedProvenance(o.cardKey, o.code, o.lat, o.lon); } catch (e) {}
+      }
+      const nav = (o.isPoint && !sky && typeof GeosonifyNav !== 'undefined')
+        ? GeosonifyNav.parseParam(o.urlParams) : null;
+      const offerNav = !!nav && _linkPass.state !== 'cancelled';
+      if (o.passCapable && o.cardKey && !offerNav) {
+        showDecodeBanner(o.cardKey, o.code, {
+          obf: o.obf || false,
+          hideSwitch: _isHealpixFamily(o.cardKey),
+          // Passphrase found from the banner after a cancelled ask: directions now.
+          onDecoded: nav ? (la, lo) => offerNavFor(o.label, la, lo, nav.preferred) : null
+        });
+      }
+      if (offerNav) setTimeout(() => offerNavFor(o.label, o.lat, o.lon, nav.preferred), 350);
+    }
+
     function parseURLParameters() {
       const urlParams = new URLSearchParams(window.location.search);
 
@@ -3356,9 +3536,16 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // Decode URI component in case of encoded characters
         const decoded = decodeURIComponent(rawParam);
         document.getElementById('redrawString').value = decoded;
+        // A bare "lat,lon" is a point, and can offer directions (&nav).
+        const rawPt = /^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/.exec(decoded);
         // Small delay to ensure map is ready
         setTimeout(() => {
           redrawFromString();
+          if (rawPt) {
+            finishPointLink({ urlParams, urlFrame, cardKey: null, code: decoded, label: decoded,
+              lat: parseFloat(rawPt[1]), lon: parseFloat(rawPt[2]), obf: false,
+              isPoint: true, passCapable: false, stamp: false });
+          }
         }, 100);
         return;
       }
@@ -3395,6 +3582,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
           switchToTab('home');
+          // No passphrase in a GIS scheme: &pass is ignored, no banner.
+          finishPointLink({ urlParams, urlFrame, cardKey: paramName, code: decodedVal, label: decodedVal,
+            lat: coord[0], lon: coord[1], obf: false, isPoint: true, passCapable: false, stamp: false });
           setTimeout(() => { _suppressURLUpdate = false; }, 500);
         }, 200);
         return;
@@ -3435,6 +3625,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           setTimeout(() => showToast('Chessboard support not loaded', 'error'), 200);
           return;
         }
+        if (linkPassGate(urlParams)) return;   // &pass: ask first, then parse again
         const gridDef = CARD_GRIDS[chessCfg.card];
         const fmt = gridDef.chessFormat || 'standard';
         // Strip from the first space/'+' onward so a whole Lichess FEN pasted into
@@ -3466,6 +3657,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
           switchToTab('home');
+          finishPointLink({ urlParams, urlFrame, cardKey: chessCfg.card, code: res.hex, label: fenField,
+            lat: coord[0], lon: coord[1], obf: chessCfg.obf, isPoint: true, passCapable: true, stamp: true });
           setTimeout(() => { _suppressURLUpdate = false; }, 500);
         }, 200);
         return;
@@ -3495,6 +3688,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           setTimeout(() => showToast('HEALPix word card not available', 'error'), 200);
           return;
         }
+        if (linkPassGate(urlParams)) return;   // &pass: ask first, then parse again
         const hpwCoord = decodeCardCode(hpwCard, String(paramValue).trim(), hpwObf);
         if (!hpwCoord || !Array.isArray(hpwCoord)) {
           setTimeout(() => showToast('Could not read these HEALPix words (check the words and the 3-digit checksum)', 'error'), 200);
@@ -3533,6 +3727,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           // the sky on it, as the other code links do. (Before this the frame
           // was recorded and ignored, so a sky word link opened on land.)
           openSkyAt(urlFrame, hpwCoord[0], hpwCoord[1], null);
+          finishPointLink({ urlParams, urlFrame, cardKey: hpwCard, code: String(paramValue).trim(),
+            label: String(paramValue).trim(), lat: hpwCoord[0], lon: hpwCoord[1], obf: hpwObf,
+            isPoint: true, passCapable: true, stamp: true });
           setTimeout(() => { _suppressURLUpdate = false; }, 500);
         }, 200);
         return;
@@ -3557,6 +3754,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           setTimeout(() => showToast('ChromaCoord support not loaded', 'error'), 200);
           return;
         }
+        if (linkPassGate(urlParams)) return;   // &pass: ask first, then parse again
         const val = decodeURIComponent(paramValue).trim();
         let hex = null;
         if (RGB111Lib.colorStringToHex) {
@@ -3588,6 +3786,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             map.setView([currentCardCoord.lat, currentCardCoord.lon], 15);
           }
           switchToTab('home');
+          finishPointLink({ urlParams, urlFrame, cardKey: chromaCfg.card, code: hex, label: val,
+            lat: coord[0], lon: coord[1], obf: chromaCfg.obf, isPoint: true, passCapable: true, stamp: true });
           setTimeout(() => { _suppressURLUpdate = false; }, 500);
         }, 200);
         return;
@@ -3794,6 +3994,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
         
         if (!config) continue;
+        if (paramValue && linkPassGate(urlParams)) return;   // &pass: ask first, then parse again
 
         // 'c' flag: octave compression. Sonification only —
         // decodeHierarchical walks the subdivision by token POSITION and never
@@ -4066,8 +4267,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
                 } catch (e) { console.warn('[geosonify] &cell:', e); }
               }
 
-              // Show decode banner with grid and code for passphrase re-decode
-              showDecodeBanner(config.grid, decoded);
+              // Banner (passphrase re-decode) or, for an &nav point, directions.
+              finishPointLink({ urlParams, urlFrame, cardKey: config.grid, code: decoded, label: centroidCode,
+                lat: result[0], lon: result[1], obf: config.obf, isPoint: !(hasTilde && shapeSuffix),
+                passCapable: true, stamp: false });
               
               // Clear suppress flag after a short delay to allow all sync rendering to complete.
               // This lets the URL update when the user next interacts (decode, click map, etc).
@@ -4465,6 +4668,41 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function refreshCellShareRow() {
       const row = document.getElementById('shareCellRow');
       if (row) row.style.display = cellShareAvailable() ? '' : 'none';
+      refreshLinkActionRows();
+    }
+
+    /*
+      &nav and &pass for a share link: "Offer directions" (a single point on
+      Earth) and "Ask recipient for the passphrase" (while a grid passphrase is
+      set, on a card that uses one — not raw coordinates or a GIS scheme).
+      The receiving side is finishPointLink() / linkPassGate().
+    */
+    function navShareAvailable() {
+      return !!(lastSolution && lastSolution.type === 'point') && !isSkyFrameNow() &&
+        typeof GeosonifyNav !== 'undefined';
+    }
+    function passShareAvailable() {
+      if (!lastSolution || rawModeActive || !cardState) return false;
+      const p = (typeof CardRenderer !== 'undefined' && CardRenderer.getPassphrase) ? CardRenderer.getPassphrase() : passphrase;
+      if (!p) return false;
+      let k = cardState.active;
+      if (typeof CardRenderer !== 'undefined' && CardRenderer.resolveMusicCardKey) k = CardRenderer.resolveMusicCardKey(k);
+      const gd = CARD_GRIDS[k];
+      return !!gd && !gd.gis;
+    }
+    function getLinkActionShareParams() {
+      const n = document.getElementById('shareNavMode');
+      const p = document.getElementById('sharePassMode');
+      const out = [];
+      if (p && p.checked && passShareAvailable()) out.push('pass');
+      if (n && n.checked && navShareAvailable()) out.push('nav');
+      return out;
+    }
+    function refreshLinkActionRows() {
+      const nr = document.getElementById('shareNavRow');
+      if (nr) nr.style.display = navShareAvailable() ? '' : 'none';
+      const pr = document.getElementById('sharePassRow');
+      if (pr) pr.style.display = passShareAvailable() ? '' : 'none';
     }
 
     /*
@@ -4504,7 +4742,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (!(encryptURL && encryptPassphrase) || !_encPlainQueryNoBasemap) return null;
       // &cell travels inside the blob too (the decrypted query is what is parsed).
       // A display link sets its own imagery; a cell-only link keeps the sender's.
-      const disp = getDisplayShareParams(), cell = getCellShareParams();
+      const disp = getDisplayShareParams(), cell = getCellShareParams().concat(getLinkActionShareParams());
       if (!disp.length && !cell.length) return null;
       const plain = disp.length ? _encPlainQueryNoBasemap : (_encPlainQuery || _encPlainQueryNoBasemap);
       return plain + '&' + disp.concat(cell).join('&');
@@ -4538,7 +4776,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const base = buildBaseShareURL();
       if (base == null) return null;
       const dParams = getDisplayShareParams();
-      const cParams = getCellShareParams();
+      const cParams = getCellShareParams().concat(getLinkActionShareParams());
       // An encrypted link carries its frame and its labels INSIDE the blob
       // (updateCompactOutputs). Repeating them outside would show anyone that
       // it is a sky link, and what its points are called.

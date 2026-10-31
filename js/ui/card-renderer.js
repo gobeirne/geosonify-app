@@ -1829,17 +1829,15 @@
    * @param {string} label - Optional label for the pin
    */
   function openInMaps(lat, lon, label = 'Decoded Location') {
-    const encodedLabel = encodeURIComponent(label);
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isMac = /Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0; // iPad in desktop mode
-    
-    if (isIOS || isMac) {
-      // Apple Maps - use maps: protocol
-      window.location.href = `maps://maps.apple.com/?q=${encodedLabel}&ll=${lat},${lon}`;
-    } else {
-      // Google Maps - works on Android and as web fallback
-      window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, '_blank');
-    }
+    // One maps hand-off for the whole app (js/ui/geosonify-nav.js): Apple Maps
+    // on iPhone/iPad, Google Maps elsewhere — the same URLs as before. Pages
+    // that load card-renderer without the nav module (starpin.html,
+    // starpin-demo.html) get the same pin directly.
+    if (typeof GeosonifyNav !== 'undefined') return GeosonifyNav.openPin(lat, lon, label);
+    const isApple = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0);
+    if (isApple) window.location.href = `maps://maps.apple.com/?q=${encodeURIComponent(label)}&ll=${lat},${lon}`;
+    else window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lon}`, '_blank');
   }
   
   function showToast(msg, style = 'default') {
@@ -6106,7 +6104,17 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     };
   }
   
-  function showPassphraseDecodeModal(gridKey, code) {
+  /*
+    opts (all optional, from a code link's decode banner):
+      obf        the obfuscation the link declared (true | 'v1' | false). Without
+                 it the code is decoded unobfuscated, as it always has been for a
+                 typed code; with it an obfuscated link (?oa=, ?hpwenj=, ?hpchso=)
+                 is re-decoded the way it was sent.
+      hideSwitch hide "Switch to …" (HEALPix links: the param names the variant)
+      onDecoded  (lat, lon) after a successful re-decode (index.html offers
+                 directions here for a &nav link)
+  */
+  function showPassphraseDecodeModal(gridKey, code, opts = {}) {
     const tildeIdx = code.indexOf('~');
     const hasTilde = tildeIdx > 0;
     const centroidCode = hasTilde ? code.substring(0, tildeIdx) : code;
@@ -6146,7 +6154,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       passphrase = tempPassphrase;
       clearGridCache();
       
-      const result = decodeCardCode(gridKey, centroidCode, false);
+      const result = decodeCardCode(gridKey, centroidCode, opts.obf !== undefined ? opts.obf : false);
       
       if (result) {
         if (callbacks.onUserInteraction) callbacks.onUserInteraction();
@@ -6174,7 +6182,10 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
           if (map) map.panTo([result[0], result[1]]);
         }
         modal.remove();
-        showDecodeBanner(gridKey, code, result[0], result[1]);
+        showDecodeBanner(gridKey, code, result[0], result[1], opts);
+        if (typeof opts.onDecoded === 'function' && !hasTilde) {
+          try { opts.onDecoded(result[0], result[1]); } catch (e) {}
+        }
       } else {
         passphrase = oldPassphrase;
         clearGridCache();
@@ -6183,7 +6194,8 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     };
   }
   
-  function showDecodeBanner(gridKey = null, code = null, decodedLat = null, decodedLon = null) {
+  function showDecodeBanner(gridKey = null, code = null, decodedLat = null, decodedLon = null, opts = {}) {
+    opts = opts || {};
     document.querySelectorAll('.decode-banner').forEach(b => b.remove());
     
     const banner = document.createElement('div');
@@ -6201,7 +6213,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     banner.innerHTML = `
       ${coordsHtml}
       <button class="try-passphrase-btn" style="background:#FF9500;border:none;color:white;font-size:14px;cursor:pointer;padding:4px 10px;border-radius:12px;margin-left:6px;">Try passphrase</button>
-      <button class="switch-mode-btn" style="background:#5856D6;border:none;color:white;font-size:14px;cursor:pointer;padding:4px 10px;border-radius:12px;margin-left:6px;">${switchBtnText}</button>
+      ${opts.hideSwitch ? '' : `<button class="switch-mode-btn" style="background:#5856D6;border:none;color:white;font-size:14px;cursor:pointer;padding:4px 10px;border-radius:12px;margin-left:6px;">${switchBtnText}</button>`}
       <button class="close-btn" style="background:none;border:none;color:white;font-size:18px;cursor:pointer;margin-left:10px;">×</button>
     `;
     banner.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.85);color:white;padding:10px 16px;border-radius:20px;font-size:14px;z-index:1500;display:flex;align-items:center;flex-wrap:wrap;gap:6px;justify-content:center;';
@@ -6216,7 +6228,8 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
       };
     }
     
-    banner.querySelector('.switch-mode-btn').onclick = () => {
+    const switchBtn = banner.querySelector('.switch-mode-btn');
+    if (switchBtn) switchBtn.onclick = () => {
       banner.remove();
       obfuscated = !obfuscated;
       const obfBtn = document.getElementById('obfuscateBtn');
@@ -6251,7 +6264,9 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
             const map = callbacks.getMap ? callbacks.getMap() : null;
             if (map) map.setView([result[0], result[1]], 16, { animate: true });
           }
-          showDecodeBanner(gridKey, code, result[0], result[1]);
+          // A link's declared obfuscation follows the switch from here on.
+          showDecodeBanner(gridKey, code, result[0], result[1],
+            opts.obf !== undefined ? Object.assign({}, opts, { obf: obfuscated }) : opts);
         }
       }
     };
@@ -6259,7 +6274,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     banner.querySelector('.try-passphrase-btn').onclick = () => {
       banner.remove();
       if (gridKey && code) {
-        showPassphraseDecodeModal(gridKey, code);
+        showPassphraseDecodeModal(gridKey, code, opts);
       } else {
         const passphraseModal = document.getElementById('passphraseModal');
         if (passphraseModal) {

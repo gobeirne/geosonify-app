@@ -991,12 +991,10 @@
       const lat = ((bounds.latMin + bounds.latMax) / 2).toFixed(6);
       const lon = ((bounds.lonMin + bounds.lonMax) / 2).toFixed(6);
       const codeStr = state.locked.join('-').toLowerCase() + '.' + finalCs;
-      // Detect iOS/macOS for Apple Maps, otherwise Google Maps
-      const isApple = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 0;
-      const mapsUrl = isApple
-        ? `maps://maps.apple.com/?q=${encodeURIComponent(codeStr)}&ll=${lat},${lon}`
-        : `https://www.google.com/maps/search/?api=1&query=${lat},${lon}`;
-      const mapsLabel = isApple ? 'Open in Apple Maps' : 'Open in Google Maps';
+      // Apple Maps on iPhone/iPad, Google Maps elsewhere (js/ui/geosonify-nav.js).
+      const _pin = GeosonifyNav.pinLink(lat, lon, codeStr);
+      const mapsUrl = _pin.url;
+      const mapsLabel = _pin.label;
 
       html += `
         <div style="margin-top:8px; padding:6px 0 2px; border-top:1px solid rgba(22,101,52,0.2); text-align:center;">
