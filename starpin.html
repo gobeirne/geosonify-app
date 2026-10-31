@@ -149,6 +149,24 @@ dl{margin:.7rem 0 0}
 .btnrow button{flex:1}
 .btnrow select{width:auto;flex:0 0 auto}
 
+/* "What next?" cards. Teal, the patch colour, for anything that lights the
+   map; gold, the starpin colour, for the star card. */
+.next-chips{display:flex;gap:.45rem;margin:.1rem 0 .7rem}
+.next-chips button{flex:1;padding:.5rem .4rem;font-size:.84rem}
+.next-card{border:2px solid var(--line);border-radius:18px;padding:.8rem .9rem;margin:.7rem 0 0;
+  background:var(--card)}
+.next-card.patch{border-color:#2fbfae}
+.next-card.star{border-color:var(--sun)}
+.next-card .nk{font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;font-weight:800;
+  color:var(--ink-2)}
+.next-card .nh{font-size:1rem;font-weight:800;margin:.2rem 0 .15rem;line-height:1.3}
+.next-card .nm{font-size:.8rem;color:var(--ink-2);font-weight:600;margin-bottom:.55rem}
+.next-card .nm.over{color:var(--rust-deep)}
+@media (prefers-color-scheme:dark){.next-card .nm.over{color:var(--rust-lit)}}
+.next-follow{border:2px solid #2fbfae;border-radius:16px;padding:.6rem .8rem;margin:.6rem 0 0;
+  font-size:.84rem;font-weight:700;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
+.next-follow button{width:auto;flex:0 0 auto;padding:.45rem .8rem}
+
 /* target tabs: big, colour-coded, unmistakable */
 .tabs{display:flex;gap:.55rem;margin:.9rem 0 .7rem}
 .tab{flex:1;font-size:.92rem;font-weight:800}
@@ -428,6 +446,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <section id="clock-panel" data-tab="sky">
   <h2>the clock</h2>
   <div id="clock"></div>
+</section>
+
+<section data-tab="go" id="next-panel">
+  <h2>what next?</h2>
+  <div class="next-chips" role="group" aria-label="time you have">
+    <button type="button" data-min="15" aria-pressed="false">15 min</button>
+    <button type="button" data-min="30" aria-pressed="true">30 min</button>
+    <button type="button" data-min="60" aria-pressed="false">60 min</button>
+  </div>
+  <button id="next-go" type="button">What should I do next?</button>
+  <div id="next-follow"></div>
+  <div id="next-cards"></div>
+  <p class="hint" id="next-hint">Times are there and back from where you are, at an easy
+     4&nbsp;km/h, with 30% added because streets are never straight. They are
+     still as the crow flies: a river or a motorway can make a walk longer.</p>
 </section>
 
 <section data-tab="go">
@@ -743,6 +776,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261025"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261031"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
@@ -767,7 +801,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261031b"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261031c"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -786,6 +820,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // Completed and partial order-13/14 cells (cells-v1), DERIVED in drawLog.
   // cellGoal is the one cell the compass is walking you round, if any.
   var cellState = null, cellGoal = null;
+  // "What next?": patchAll is the orders 12-14 progress the map draws;
+  // starsHave the source ids of starpins that COLLECT; nextGoal the walk the
+  // compass is following, { kind: 'corners', stops, title } or
+  // { kind: 'star', star, title }.
+  var patchAll = null, starsHave = {}, nextGoal = null;
 
   function bearing(a1, o1, a2, o2) {
     var d = Math.PI / 180, y = Math.sin((o2 - o1) * d) * Math.cos(a2 * d);
@@ -858,6 +897,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // so the answer cannot lag behind your feet.
   function nearestStarpin() {
     if (!fix) return null;
+    if (nextGoal && nextGoal.kind === 'star') {
+      var gs = nextGoal.star;
+      if (!starsHave[sourceIdOf(gs.name)])
+        return { star: gs, distanceM: S.haversineM(fix.lat, fix.lon, gs.lat, gs.lon) };
+      nextGoal = null; paintNextFollow();           // collected: the walk is done
+    }
     var best = null;
     map.stars().forEach(function (st) {
       if (st.lat == null) return;
@@ -1100,6 +1145,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (e && e.complete && !row.goal) return;
       btn.addEventListener('click', function () {
         cellGoal = row.goal ? null : row.cell;
+        nextGoal = null; paintNextFollow();
         cornerstone(); paintTabBody();
       });
       dd.appendChild(btn);
@@ -1242,6 +1288,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // line crossing a common one) unreachable — you could stand on it and the
     // compass would send you to a coarser vertex hundreds of metres away.
     var maxTier = Math.max(6, Math.min(14, parseFloat($('order').value) || 12));
+    // Following a "What next?" walk: the target is its next stop you do not
+    // have yet, in the planned order.
+    if (nextGoal && nextGoal.kind === 'corners') {
+      var stop = nextStop();
+      if (stop) {
+        try {
+          lastCs = S.nearestCornerstone(stop.lat, stop.lon, 14);
+          lastCs.distanceM = S.haversineM(fix.lat, fix.lon, lastCs.lat, lastCs.lon);
+          map.setHighlight(lastCs.name);
+          paintTargets(); paintNextFollow();
+          return;
+        } catch (e) {}
+      }
+      nextGoal = null; paintNextFollow();
+    }
     // Guided round a cell: the target is the nearest corner of it you do not
     // have yet, whatever its tier — the rarity floor is for wandering, and a
     // cell's corners are mostly tier 13–14 by construction.
@@ -1271,6 +1332,158 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     map.setHighlight(lastCs.name);
     paintTargets();
   }
+
+
+  // ── "What next?" (what-next-v0, js/lib/geosonify-starpin-next.js) ───────
+  // Three different kinds of walk, never just the most efficient: finish a
+  // patch you have started, start somewhere new, or go for a starpin. The
+  // planner is pure; everything here is wiring. Times are crow-flies plus
+  // 30%, there and back, until walking-network distance arrives.
+  var NX = (typeof GeosonifyStarpinNext !== 'undefined') ? GeosonifyStarpinNext : null;
+  var nextBudget = 30, nextPlan = null, nextStars = null, nextStarsAt = null, nextShown = false;
+
+  function nextStop() {
+    if (!nextGoal || nextGoal.kind !== 'corners') return null;
+    for (var i = 0; i < nextGoal.stops.length; i++)
+      if (!collected[csName(nextGoal.stops[i].name)]) return nextGoal.stops[i];
+    return null;
+  }
+  function nextKm(m) {
+    return m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(1) + ' km';
+  }
+
+  // One cone search per place, big enough for the 60-minute chip, so
+  // switching chips never refetches. Cards show at once; the star card says
+  // it is looking until the lookup answers.
+  function nextFetchStars(done) {
+    if (!SN || !SN.lookupRemote || !fix) { nextStars = []; done(); return; }
+    if (nextStars && nextStarsAt &&
+        S.haversineM(fix.lat, fix.lon, nextStarsAt.lat, nextStarsAt.lon) < 250) { done(); return; }
+    var at = { lat: fix.lat, lon: fix.lon };
+    var radiusArcmin = Math.max(0.3, NX.metresFor(60) / 2 / S.M_PER_ARCSEC / 60);
+    nextStars = null; done();
+    Promise.resolve(SN.lookupRemote(at.lat, at.lon, { radiusArcmin: radiusArcmin, limit: 80 }))
+      .then(function (list) {
+        nextStars = (list || []).map(function (n) {
+          var s2 = n.star, a = S.starpinAddress(String(s2.ra), String(s2.dec));
+          return { name: s2.name, ra: s2.ra, dec: s2.dec, mag: s2.mag,
+                   distLy: n.distLy, links: n.links, lat: a.lat, lon: a.lon };
+        });
+        nextStarsAt = at; nextReplan();
+      })
+      .catch(function () { nextStars = []; nextStarsAt = at; nextReplan(); });
+  }
+
+  function nextReplan() {
+    if (!NX || !fix) { paintNextCards(); return; }
+    try {
+      nextPlan = NX.plan({
+        S: S, fix: fix, progress: patchAll, budgetMin: nextBudget,
+        isCollected: function (n) { return !!collected[csName(n)]; },
+        stars: nextStars || undefined,
+        starHave: function (st) { return !!starsHave[sourceIdOf(st.name)]; },
+        rarity: function (m) { return F.starTier(m).rarity; }
+      });
+    } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
+    paintNextCards();
+  }
+
+  function paintNextCards() {
+    var box = $('next-cards'); box.textContent = '';
+    if (!nextShown) return;
+    if (!fix) { box.appendChild(el('p', 'hint', 'Finding where you are\u2026')); return; }
+    if (!nextPlan) { box.appendChild(el('p', 'hint', 'Nothing to suggest yet.')); return; }
+    var p = nextPlan;
+    card('finish', p.finish, 'Finish something', 'patch',
+         p.finish ? p.finish.detail : null,
+         'Nothing to finish yet. Collect two corners of any patch and it shows up here.');
+    card('fresh', p.fresh, 'New ground', 'patch', p.fresh ? freshLine(p.fresh) : null,
+         'No untouched ground within reach of this time.');
+    var st = p.star, rare = st && st.rarity >= 0.5;
+    card('star', st, rare ? 'A rare starpin' : 'A starpin', 'star',
+         st ? 'A starpin you have not collected, ' + st.detail : null,
+         st === undefined ? 'Looking for starpins near you\u2026'
+                          : 'No starpins you have not collected within reach.');
+
+    function freshLine(t) {
+      var n = t.effects.filter(function (e) { return e.from === 0; }).length;
+      var m = t.effects.length - n;
+      return 'This corner starts ' + n + ' new patch' + (n === 1 ? '' : 'es') +
+        (m ? ' and adds to ' + m + ' you have started' : '');
+    }
+    function card(kind, t, kicker, cls, headline, empty) {
+      var c = el('div', 'next-card ' + cls);
+      c.appendChild(el('div', 'nk', kicker));
+      if (!t) { c.appendChild(el('p', 'hint', empty)); box.appendChild(c); return; }
+      c.appendChild(el('div', 'nh', headline));
+      var stops = t.stops.length;
+      var meta = (kind === 'star' ? '' : stops + ' corner' + (stops === 1 ? '' : 's') + ' \u00b7 ') +
+        nextKm(t.metres) + ' there and back \u00b7 about ' + Math.max(1, Math.round(t.minutes)) + ' min';
+      if (t.overBudget) meta += ' \u2014 longer than your ' + nextBudget;
+      c.appendChild(el('div', 'nm' + (t.overBudget ? ' over' : ''), meta));
+      var b = el('button', null, 'Take me there'); b.type = 'button';
+      b.addEventListener('click', function () { nextFollow(kind, t, headline); });
+      c.appendChild(b);
+      box.appendChild(c);
+    }
+  }
+
+  function nextFollow(kind, t, title) {
+    cellGoal = null;
+    if (kind === 'star') {
+      nextGoal = { kind: 'star', star: t.star, title: title };
+      $('tab-star').click();
+    } else {
+      nextGoal = { kind: 'corners', title: title, stops: t.stops.map(function (s) {
+        return { name: s.name, lat: s.lat, lon: s.lon }; }) };
+      $('tab-corner').click();
+      cornerstone();
+    }
+    paintNextFollow();
+    var c = $('cs-prox');
+    if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function paintNextFollow() {
+    var box = $('next-follow'); if (!box) return;
+    box.textContent = '';
+    if (!nextGoal) return;
+    var txt = 'Following: ' + nextGoal.title;
+    if (nextGoal.kind === 'corners' && nextGoal.stops.length > 1) {
+      var got = nextGoal.stops.filter(function (s) { return collected[csName(s.name)]; }).length;
+      txt += ' \u00b7 corner ' + Math.min(got + 1, nextGoal.stops.length) + ' of ' + nextGoal.stops.length;
+    }
+    var d = el('div', 'next-follow');
+    d.appendChild(el('span', null, txt));
+    var b = el('button', null, 'stop'); b.type = 'button';
+    b.addEventListener('click', function () { nextGoal = null; paintNextFollow(); cornerstone(); paintTargets(); });
+    d.appendChild(b);
+    box.appendChild(d);
+  }
+
+  // After every log change: a walk whose stops are all collected is done, and
+  // open suggestions are re-planned against what you now hold.
+  function nextAfterLog() {
+    if (nextGoal && nextGoal.kind === 'corners' && !nextStop()) nextGoal = null;
+    if (nextGoal && nextGoal.kind === 'star' && starsHave[sourceIdOf(nextGoal.star.name)]) nextGoal = null;
+    paintNextFollow();
+    if (nextShown) nextReplan();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.next-chips button'), function (b) {
+    b.addEventListener('click', function () {
+      nextBudget = +b.getAttribute('data-min');
+      Array.prototype.forEach.call(document.querySelectorAll('.next-chips button'), function (x) {
+        x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      if (nextShown) nextReplan();
+    });
+  });
+  $('next-go').addEventListener('click', function () {
+    if (!NX) return;
+    nextShown = true;
+    function go() { nextFetchStars(nextReplan); }
+    if (!fix) { paintNextCards(); acquireFix(go); } else go();
+  });
 
   // ── records ────────────────────────────────────────────────────────────
   var L = GeosonifyStarpinLog, log = L.open();
@@ -3452,17 +3665,23 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       collected[csName(r.target.cornerstone)] = 1;
     });
     flip.setBagged(Object.keys(collected));
+    starsHave = {};
+    log.current().forEach(function (r) {
+      if (r.target && r.target.starpin && S.collects(r)) starsHave[sourceIdOf(r.target.starpin)] = 1;
+    });
     // One pass at orders 12-14 feeds the map's patches; the log's cells
     // (orders 13 and 14, S.CELL_ORDERS) are the same result with order 12
     // filtered out, so the two can never disagree.
     try {
       var patchState = S.cellProgress(log.current(), { orders: [12, 13, 14] });
+      patchAll = patchState;
       cellState = cellsAtOrders(patchState, S.CELL_ORDERS);
       if (flip.setPatches) flip.setPatches(patchState);
     }
     catch (e) { cellState = null; console.warn('[starpin] cells:', e); }
     if (cellGoal && cellState && cellState.complete.some(function (c) { return c.cell === cellGoal; }))
       cellGoal = null;
+    if (typeof nextAfterLog === 'function') nextAfterLog();
 
     // Bagged STARPINS come from the record too, and the record carries the
     // ground address, so they draw at any zoom without a catalogue lookup.
@@ -3814,6 +4033,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         gd.type = 'button';
         gd.addEventListener('click', function () {
           cellGoal = e.cell;
+          nextGoal = null; paintNextFollow();
           $('tab-corner').click();          // the compass's cornerstone mode
           cornerstone();
           goTab('go');
