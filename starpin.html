@@ -163,6 +163,8 @@ dl{margin:.7rem 0 0}
 .next-card .nm{font-size:.8rem;color:var(--ink-2);font-weight:600;margin-bottom:.55rem}
 .next-card .nm.over{color:var(--rust-deep)}
 .next-card .nw{font-size:.95rem;font-weight:800;color:var(--ink);overflow-wrap:anywhere;margin:-.25rem 0 .2rem}
+.next-card .nw a{color:inherit;text-decoration:underline;text-decoration-color:#2fbfae;
+  text-decoration-thickness:2px;text-underline-offset:3px}
 .next-card .nw small{font-size:.7rem;font-weight:600;color:var(--ink-2);margin-right:.4rem}
 .next-card .nw ~ button{margin-top:.5rem}
 @media (prefers-color-scheme:dark){.next-card .nm.over{color:var(--rust-lit)}}
@@ -1448,7 +1450,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         if (!w) return;
         var d = el('div', 'nw');
         d.appendChild(el('small', null, t.stops.length > 1 ? 'corner ' + (i + 1) : 'HEALPix words'));
-        d.appendChild(document.createTextNode(w.text));
+        // The words open the point in Geosonify (?hpwen=, English words),
+        // and &nav offers directions to it in a maps app. Absolute, because
+        // Starpin will move to its own domain and Geosonify stays put. A new
+        // tab, so the walk being planned here is not lost.
+        var a = el('a', null, w.text);
+        a.href = 'https://geosonify.org/?hpwen=' + encodeURIComponent(w.text) + '&nav';
+        a.target = '_blank'; a.rel = 'noopener';
+        a.title = 'Open in Geosonify, with directions';
+        d.appendChild(a);
         c.appendChild(d);
       });
       var b = el('button', null, 'Take me there'); b.type = 'button';
