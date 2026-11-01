@@ -90,14 +90,17 @@
   var SURVEY_MIRRORS = {
     'P/DSS2/color': [
       'https://alasky.cds.unistra.fr/DSS/DSSColor',               // CDS, Strasbourg (primary)
+      /*
+        In the order they answered an iPhone and a desktop in NZ, 1 Nov 2026,
+        all with tiles readable from geosonify.org (sky-check.html).
+        Removed after the same check: IRSA (irsa.ipac.caltech.edu) sends no
+        CORS header; IAS (healpix.ias.u-psud.fr) did not answer at all.
+      */
+      'https://casda.csiro.au/hips/DSS2/color',                   // CSIRO, Australia
+      'https://cdn.skies.esac.esa.int/DSSColor',                  // ESA, ESAC
       // MAST (STScI, where DSS was made), on AWS open data; its registry
       // record says it is for use "through Aladin or Aladin-lite"
-      'https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/DSSColor',
-      'https://casda.csiro.au/hips/DSS2/color',                   // CSIRO, Australia
-      // (IRSA's copy, irsa.ipac.caltech.edu, was removed 1 Nov 2026: a real
-      // phone showed it sends no CORS header, so WebGL can never use it.)
-      'https://cdn.skies.esac.esa.int/DSSColor',                  // ESA, ESAC
-      'https://healpix.ias.u-psud.fr/CDS_P_DSS2_color'            // IAS, Paris-Saclay
+      'https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/DSSColor'
     ]
   };
   var PROBE_MS = 4000, SURVEY_CACHE_MS = 30 * 60 * 1000;

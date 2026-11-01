@@ -270,8 +270,8 @@
     incident took the CDS's Strasbourg servers offline, and every starpin
     lookup failed with them.
 
-    Tried in order, starting from whichever host answered last (remembered for
-    a few hours, then Strasbourg is tried first again). HTTPS only: the app is
+    How they are tried, alongside the independent GAVO copy, is described at
+    catalogueFetch() below. HTTPS only: the app is
     served over HTTPS, and a browser blocks plain-HTTP requests from it, which
     rules out the China-VO and NAOJ mirrors as listed by the CDS.
 
@@ -285,53 +285,118 @@
     'https://vizier.cfa.harvard.edu',     // CfA, Harvard
     'https://vizier.idia.ac.za'           // IDIA, South Africa
   ];
-  var VIZIER_TIMEOUT_MS = 6000;
+  // 12 s, not 6: in the outage the mirrors answered, but a Gaia cone took
+  // them more than 8 s (seen on a phone and a desktop, 1 Nov 2026).
+  var VIZIER_TIMEOUT_MS = 12000;
   var VIZIER_STICKY_MS = 6 * 3600 * 1000;
   var VIZIER_KEY = 'geosonify.vizier.host';
   var vizierLast = null;                   // { host, ms } of the last host that answered
 
-  function vizierOrder() {
-    var last = vizierLast;
-    if (!last) {
-      try { last = JSON.parse(localStorage.getItem(VIZIER_KEY) || 'null'); } catch (e) { last = null; }
-    }
-    var order = VIZIER_HOSTS.slice();
-    if (last && last.host && VIZIER_HOSTS.indexOf(last.host) > 0 &&
-        Date.now() - (last.ms || 0) < VIZIER_STICKY_MS) {
-      order.splice(order.indexOf(last.host), 1);
-      order.unshift(last.host);
-    }
-    return order;
-  }
   function vizierRemember(host) {
     vizierLast = { host: host, ms: Date.now() };
     try { localStorage.setItem(VIZIER_KEY, JSON.stringify(vizierLast)); } catch (e) {}
   }
 
-  // GET pathAndQuery from each host in turn until one returns a body that
-  // isTable() accepts. Resolves { text, host }, or null when no host could.
-  // A primary-site answer with no table is believed (an empty cone); a
-  // mirror's is not, because a mirror may simply not hold the catalogue.
-  function vizierFetch(pathAndQuery, isTable) {
-    var order = vizierOrder(), i = 0;
-    function next() {
-      if (i >= order.length) return Promise.resolve(null);
-      var host = order[i++], ctl = null, timer = null;
+  /*
+    GAVO, INDEPENDENT OF THE CDS ALTOGETHER. The GAVO Data Centre (Heidelberg)
+    serves Gaia DR3 as gaia.dr3lite through a TAP service that allows requests
+    from other sites: on 1 Nov 2026 it answered a desktop browser at
+    geosonify.org in 2.6 s while every VizieR copy was still working past 8 s.
+    Same catalogue, same source_id, same epoch-2016.0 positions as VizieR's
+    I/355/gaiadr3, so a starpin is the same starpin whichever answers. Its CSV
+    is renamed into VizieR's column names, so the parser below is unchanged.
+  */
+  var GAVO_TAP = 'https://dc.g-vo.org/tap/sync';
+  var GAVO_COLS = { source_id: 'Source', ra: 'RA_ICRS', dec: 'DE_ICRS',
+                    parallax: 'Plx', phot_g_mean_mag: 'Gmag' };
+  function gavoQuery(ra, dec, radiusArcmin, limit) {
+    var c = "POINT('ICRS', ra, dec)", p = "POINT('ICRS', " + ra.toFixed(6) + ', ' + dec.toFixed(6) + ')';
+    var adql = 'SELECT TOP ' + limit + ' source_id, ra, dec, parallax, phot_g_mean_mag, ' +
+      'DISTANCE(' + c + ', ' + p + ') AS sep FROM gaia.dr3lite WHERE 1 = CONTAINS(' + c +
+      ", CIRCLE('ICRS', " + ra.toFixed(6) + ', ' + dec.toFixed(6) + ', ' + (radiusArcmin / 60).toFixed(6) +
+      ')) ORDER BY sep';
+    return GAVO_TAP + '?REQUEST=doQuery&LANG=ADQL&FORMAT=csv&QUERY=' + encodeURIComponent(adql);
+  }
+  // GAVO's CSV -> the TSV shape parseTsv() reads, or null if it is not a result.
+  function gavoToTsv(text) {
+    var lines = String(text || '').replace(/\r/g, '').split('\n').filter(Boolean);
+    if (!lines.length) return null;
+    var head = lines[0].split(',').map(function (h) { return h.trim().replace(/^"|"$/g, ''); });
+    if (head.indexOf('source_id') < 0 || head.indexOf('ra') < 0) return null;
+    var out = [head.map(function (h) { return GAVO_COLS[h] || h; }).join('\t')];
+    for (var i = 1; i < lines.length; i++) out.push(lines[i].split(',').join('\t'));
+    return out.join('\n');
+  }
+
+  /*
+    The catalogue sources, in the order to try them:
+      1. whichever answered last on this device (for VIZIER_STICKY_MS);
+      2. Strasbourg's VizieR and GAVO TOGETHER, the first good table winning,
+         so an outage at either costs nothing;
+      3. the VizieR mirrors, one at a time.
+    Resolves { text, host } or null when nothing could be read.
+  */
+  function catalogueFetch(query, isTable, gavoUrl) {
+    var sources = VIZIER_HOSTS.map(function (h) {
+      // A table always counts. Strasbourg's table-less answer counts as an
+      // empty cone only when it is VizieR's own TSV (its '#' header names
+      // VizieR) rather than, say, an outage page: otherwise that page could
+      // win the race below and hide GAVO's real stars.
+      return { id: h, url: h + query, read: function (t) {
+        if (isTable(t)) return t;
+        return h === VIZIER_HOSTS[0] && /^#.*VizieR/m.test(t) && !/<html/i.test(t) ? t : null; } };
+    });
+    if (gavoUrl) sources.push({ id: GAVO_TAP, url: gavoUrl, read: function (t) {
+      var tsv = gavoToTsv(t); return tsv && isTable(tsv) ? tsv : null; } });
+    function byId(id) { return sources.filter(function (s) { return s.id === id; })[0]; }
+
+    function one(src) {
+      var ctl = null, timer = null;
       try { ctl = new AbortController(); } catch (e) {}
       if (ctl) timer = setTimeout(function () { ctl.abort(); }, VIZIER_TIMEOUT_MS);
-      return fetch(host + pathAndQuery, ctl ? { signal: ctl.signal } : undefined)
+      return fetch(src.url, ctl ? { signal: ctl.signal } : undefined)
         .then(function (r) { return r.ok ? r.text() : null; })
         .catch(function () { return null; })
         .then(function (text) {
           if (timer) clearTimeout(timer);
-          if (text != null && (isTable(text) || host === VIZIER_HOSTS[0])) {
-            vizierRemember(host);
-            return { text: text, host: host };
-          }
-          return next();
+          var t = text == null ? null : src.read(text);
+          if (t == null) return null;
+          vizierRemember(src.id);
+          return { text: t, host: src.id };
         });
     }
-    return next();
+    // The first non-null of several requests made together.
+    function race(list) {
+      if (!list.length) return Promise.resolve(null);
+      return new Promise(function (res) {
+        var left = list.length;
+        list.forEach(function (src) {
+          one(src).then(function (got) {
+            if (got) { res(got); return; }
+            if (--left === 0) res(null);
+          });
+        });
+      });
+    }
+    function inTurn(list) {
+      var i = 0;
+      function next() {
+        if (i >= list.length) return Promise.resolve(null);
+        return one(list[i++]).then(function (got) { return got || next(); });
+      }
+      return next();
+    }
+
+    var last = vizierLast;
+    if (!last) { try { last = JSON.parse(localStorage.getItem(VIZIER_KEY) || 'null'); } catch (e) { last = null; } }
+    var sticky = last && last.host && Date.now() - (last.ms || 0) < VIZIER_STICKY_MS ? byId(last.host) : null;
+    var wave = [sources[0]].concat(gavoUrl ? [byId(GAVO_TAP)] : [])
+      .filter(function (s) { return s !== sticky; });
+    var rest = sources.slice(1, VIZIER_HOSTS.length)
+      .filter(function (s) { return s !== sticky; });
+    return (sticky ? one(sticky) : Promise.resolve(null))
+      .then(function (got) { return got || race(wave); })
+      .then(function (got) { return got || inTurn(rest); });
   }
 
   /*
@@ -429,7 +494,8 @@
       return String(text).split('\n').some(function (l) {
         return l.charAt(0) !== '#' && l.split('\t').indexOf(cat.raCol) !== -1; });
     }
-    return vizierFetch(query, isTable)
+    var gavoUrl = cat === CATALOGUES.gaia ? gavoQuery(ra, lat, radiusArcmin, limit) : null;
+    return catalogueFetch(query, isTable, gavoUrl)
       .then(function (got) {
         if (!got) return null;
         var text = got.text;
@@ -891,6 +957,8 @@
     lookupLocal: lookupLocal,
     lookupRemote: lookupRemote,
     VIZIER_HOSTS: VIZIER_HOSTS,
+    GAVO_TAP: GAVO_TAP,
+    _gavoToTsv: gavoToTsv,
     vizierHost: function () { return vizierLast ? vizierLast.host : null; },
     lookup: lookup,
     neighbours: neighbours,

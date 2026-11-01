@@ -802,7 +802,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
 <script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
 <script src="js/ui/card-renderer.js?v=20260703b"></script>
-<script src="js/lib/geosonify-sky-neighbour.js?v=20261031"></script>
+<script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261025"></script>
 <script src="js/lib/geosonify-starpin-next.js?v=20261031"></script>
@@ -814,7 +814,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261031c"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261101b"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261101c"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
@@ -1372,7 +1372,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var nextBudget = 30, nextPlan = null, nextStars = null, nextStarsAt = null, nextShown = false;
   // true when the last star lookup failed or timed out: the catalogue could
   // not be reached, which is not the same as "no starpins here".
-  var nextStarsDown = false, NEXT_STARS_TIMEOUT_MS = 20000;
+  var nextStarsDown = false, NEXT_STARS_TIMEOUT_MS = 50000;
 
   function nextStop() {
     if (!nextGoal || nextGoal.kind !== 'corners') return null;
@@ -1394,9 +1394,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var at = { lat: fix.lat, lon: fix.lon };
     var radiusArcmin = Math.max(0.3, NX.metresFor(60) / 2 / S.M_PER_ARCSEC / 60);
     nextStars = null; nextStarsDown = false; done();
-    // lookupRemote tries Strasbourg and then the VizieR mirrors, 6 s each.
-    // This is a backstop over all of them, so the card can never be left
-    // "looking" forever; pressing the button again retries.
+    // lookupRemote tries the last source that worked, then Strasbourg and
+    // GAVO together, then the VizieR mirrors, 12 s each. This is a backstop
+    // over all of them, so the card can never be left "looking" forever;
+    // pressing the button again retries.
     var timer = new Promise(function (res) { setTimeout(function () { res('timeout'); }, NEXT_STARS_TIMEOUT_MS); });
     Promise.race([Promise.resolve(SN.lookupRemote(at.lat, at.lon, { radiusArcmin: radiusArcmin, limit: 80 })), timer])
       .then(function (list) {
@@ -1443,8 +1444,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     card('star', st, rare ? 'A rare starpin' : 'A starpin', 'star',
          st ? 'A starpin you have not collected, ' + st.detail : null,
          st === undefined ? 'Looking for starpins near you\u2026'
-         : nextStarsDown ? 'The star catalogue is not answering: VizieR in Strasbourg and its mirrors ' +
-                           'all failed. Press \u201cWhat should I do next?\u201d to try again.'
+         : nextStarsDown ? 'The star catalogue is not answering: VizieR in Strasbourg, its mirrors and ' +
+                           'GAVO in Heidelberg all failed. Press \u201cWhat should I do next?\u201d to try again.'
          : 'No starpins you have not collected within reach.');
 
     function freshLine(t) {

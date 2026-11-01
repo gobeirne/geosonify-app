@@ -99,18 +99,18 @@ var steps = [
     delete require.cache[require.resolve('./geosonify-sky-aladin.js')];
     A = require('./geosonify-sky-aladin.js');
     var hang = {};
-    DSS.slice(0, 3).forEach(function (u) { hang[u] = 'hang'; });
-    hang[DSS[3]] = PROPS; hang[DSS[4]] = PROPS;
+    DSS.slice(0, 2).forEach(function (u) { hang[u] = 'hang'; });
+    hang[DSS[2]] = PROPS; hang[DSS[3]] = PROPS;
     plan = hang; calls = [];
     var t0 = Date.now();
     return A.resolveSurvey('P/DSS2/color').then(function (u) {
       var s = (Date.now() - t0) / 1000;
-      ok('mirrors are probed together: three hanging cost one wait (' + s.toFixed(1) + ' s), not three',
-         u === DSS[3] && s < 5.5, u + ' ' + s);
+      ok('mirrors are probed together: two hanging cost one wait (' + s.toFixed(1) + ' s), not two',
+         u === DSS[2] && s < 5.5, u + ' ' + s);
     });
   },
-  function () { ok('the MAST copy (STScI, on AWS) is the first mirror', /stpubdata.*mast.*DSSColor/.test(DSS[1])); },
-  function () { ok('IRSA (no CORS header, seen on a real phone) is no longer listed', !DSS.some(function (u) { return /irsa/.test(u); })); },
+  function () { ok('mirrors in the order they answered in NZ: CSIRO, ESA, MAST', /casda/.test(DSS[1]) && /esac/.test(DSS[2]) && /stpubdata/.test(DSS[3])); },
+  function () { ok('IRSA (no CORS) and IAS (no answer) are no longer listed', !DSS.some(function (u) { return /irsa|ias\.u-psud/.test(u); })); },
   function () {
     // A mirror that worked is preferred next time, even when it is later in
     // the list and an earlier one is slow to fail.
