@@ -225,11 +225,7 @@ var GeosonifyStarpinCard = (function () {
       img.crossOrigin = 'anonymous';
       img.referrerPolicy = 'no-referrer';
       var fov = d.fovArcsec || 48;
-      img.src = 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
-        '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
-        '&width=240&height=240&fov=' + (fov / 3600) +
-        '&projection=TAN&coordsys=icrs&format=jpg' +
-        '&ra=' + Number(d.ra).toFixed(6) + '&dec=' + Number(d.dec).toFixed(6);
+      setSky(img, dssUrl(d.ra, d.dec, fov, 240));
       box.appendChild(img);
       var mk = doc.createElement('i'); mk.className = 'spc-target';
       box.appendChild(mk);
@@ -454,6 +450,18 @@ var GeosonifyStarpinCard = (function () {
   // east RIGHT, like the map -- so the image is flipped east-west, exactly as
   // the app's Sky view lays the sky under the streets, and every star in it
   // sits over its own starpin.
+  /*
+    Point a sky <img> at a hips2fits URL, through GeosonifySkyCutout when the
+    page loads it: that makes the picture on the device from a working DSS2
+    copy (CSIRO, ESA, MAST), so cards keep their sky when CDS is down (as in
+    the 2026 outage). Without it, or when no copy answers, the URL is used.
+  */
+  function setSky(img, url) {
+    var g = (typeof window !== 'undefined') ? window : null;
+    var SC = g && g.GeosonifySkyCutout;
+    if (SC && SC.setImg) SC.setImg(img, url); else img.src = url;
+  }
+
   function dssUrl(ra, dec, fovArcsec, px) {
     return 'https://alasky.cds.unistra.fr/hips-image-services/hips2fits' +
       '?hips=' + encodeURIComponent('CDS/P/DSS2/color') +
@@ -473,7 +481,7 @@ var GeosonifyStarpinCard = (function () {
       img.alt = 'DSS image of the sky around this star, mirrored to lie on the ground beneath it';
       img.crossOrigin = 'anonymous';
       img.referrerPolicy = 'no-referrer';
-      img.src = dssUrl(d.ra, d.dec, fov, 400);
+      setSky(img, dssUrl(d.ra, d.dec, fov, 400));
       box.appendChild(img);
     }
     var rPx = R_ARCSEC / fov * SZ, gap = Math.max(4, rPx * 0.3), arm = Math.max(6, rPx * 0.45);
@@ -1142,7 +1150,7 @@ var GeosonifyStarpinCard = (function () {
       img.onload = function () { drawSky(true); };
       img.onerror = function () { drawSky(false); };
       setTimeout(function () { drawSky(false); }, 6000);
-      img.src = dssUrl(d.ra, d.dec, d.fovArcsec || STAR_FOV_ARCSEC, 480);
+      setSky(img, dssUrl(d.ra, d.dec, d.fovArcsec || STAR_FOV_ARCSEC, 480));
     });
   }
 

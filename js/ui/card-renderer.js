@@ -2897,6 +2897,14 @@
         ? state().anchor
         : { dec: dec, ra: ra };
       const url = N.thumbnailUrl(anchor.dec, anchor.ra, { px: PX, fovArcsec: FOV });
+      /*
+        The URL stays the hips2fits one: it is the state key and what Copy
+        reports. The PICTURE comes through GeosonifySkyCutout when it is loaded,
+        which makes it on the device from a working DSS2 copy (CSIRO, ESA,
+        MAST) and falls back to this URL. Added in the 2026 CDS outage, when
+        hips2fits was down and every thumbnail was black.
+      */
+      const skySrc = (u) => (window.GeosonifySkyCutout ? window.GeosonifySkyCutout.src(u) : Promise.resolve(u));
 
       /*
         The height-reserving placeholder is a plain div, so the frame lookup
@@ -2932,7 +2940,7 @@
           Assigning here is free: the browser has the image cached from the
           previous tick, so it paints from cache without a request.
         */
-        img.src = url;
+        skySrc(url).then((u) => { img.src = u; });
         wrap.appendChild(img);
         thumb.appendChild(wrap);
       }
@@ -2952,13 +2960,15 @@
         // provide a document without it. A throw here would kill the whole
         // paint, taking the markers and the list down with the picture.
         const pre = document.createElement('img');
-        pre.onload = () => {
-          if (!wrap.isConnected) return;
-          const live = wrap.querySelector('.skyneighbours-img');
-          if (live) live.src = url;
-        };
-        pre.onerror = () => { /* keep whatever is showing; dark is fine */ };
-        pre.src = url;
+        skySrc(url).then((u) => {
+          pre.onload = () => {
+            if (!wrap.isConnected) return;
+            const live = wrap.querySelector('.skyneighbours-img');
+            if (live) live.src = u;
+          };
+          pre.onerror = () => { /* keep whatever is showing; dark is fine */ };
+          pre.src = u;
+        });
       }
       _skyThumbState[stateKey] = { url: url, anchor: anchor, fov: FOV };
 

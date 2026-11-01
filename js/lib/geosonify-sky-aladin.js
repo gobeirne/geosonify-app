@@ -146,26 +146,55 @@
     if (!list) return Promise.resolve(id);
     var c = _surveyCache[id];
     if (c && Date.now() - c.ms < SURVEY_CACHE_MS) return Promise.resolve(c.use);
+    return firstGood(id).then(function (k) {
+      if (k < 0) return id;
+      var use = k === 0 ? id : list[k];
+      _surveyCache[id] = { use: use, ms: Date.now() };
+      return use;
+    });
+  }
+
+  // The index in SURVEY_MIRRORS[id] of the copy to use, or -1 if none answers.
+  // One probe round per id at a time, shared by every caller (the sky view and
+  // every thumbnail asking at once cost one set of requests).
+  var _firstGood = {};
+  function firstGood(id) {
+    var list = SURVEY_MIRRORS[id];
+    if (!list) return Promise.resolve(-1);
+    var held = _firstGood[id];
+    if (held && Date.now() - held.ms < SURVEY_CACHE_MS) return held.p;
     var probes = list.map(probe);
     var order = list.map(function (u, k) { return k; });
     var good = stickyGet(id), gk = list.indexOf(good);
     if (gk > 0) { order.splice(gk, 1); order.unshift(gk); }
     var i = 0;
     function next() {
-      if (i >= order.length) return Promise.resolve(id);
+      if (i >= order.length) return Promise.resolve(-1);
       var k = order[i++];
       return probes[k].then(function (ok) {
         if (!ok) return next();
-        var use = k === 0 ? id : list[k];
-        _surveyCache[id] = { use: use, ms: Date.now() };
         stickySet(id, list[k]);
         if (k > 0 && typeof console !== 'undefined')
           console.info('[geosonify] sky imagery from mirror ' + list[k]);
-        return use;
+        return k;
       });
     }
-    return next();
+    var p = next().then(function (k) { if (k < 0) delete _firstGood[id]; return k; });
+    _firstGood[id] = { p: p, ms: Date.now() };
+    return p;
   }
+
+  /*
+    The BASE URL of a working copy of survey id (the primary's included), for
+    code that fetches tiles itself, such as the device-made thumbnails in
+    geosonify-sky-cutout.js. null when no copy answers or id has no list.
+  */
+  function surveyBaseUrl(id) {
+    var list = SURVEY_MIRRORS[id];
+    if (!list) return Promise.resolve(null);
+    return firstGood(id).then(function (k) { return k < 0 ? null : list[k]; });
+  }
+
   // The last resolution for id, synchronously (the id itself if none yet).
   function surveyFor(id) {
     var c = _surveyCache[id];
@@ -562,6 +591,7 @@
     SURVEY_MIRRORS: SURVEY_MIRRORS,
     resolveSurvey: resolveSurvey,
     surveyFor: surveyFor,
+    surveyBaseUrl: surveyBaseUrl,
     CHROME_OFF: CHROME_OFF,
     isAvailable: isAvailable,
     webgl2Available: webgl2Available,

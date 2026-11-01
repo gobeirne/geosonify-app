@@ -1326,7 +1326,9 @@ function assert(condition) {
     OBF_V2_PASS,
     // core exposed for tests
     _core: { ang2pix_nest, pix2ang_nest, corners_nest, pixcoord2vec_nest,
-             order2nside, nside2pixarea, orderpix2uniq }
+             order2nside, nside2pixarea, orderpix2uniq,
+             // continuous face coordinates, for geosonify-sky-cutout.js
+             za2tu, tu2fpq, fxy2nest, nest2fxy }
   };
 })();
 

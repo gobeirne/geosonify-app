@@ -787,7 +787,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="js/lib/geosonify-healpix.js?v=20260808"></script>
+<script src="js/lib/geosonify-healpix.js?v=20261101"></script>
 <script src="js/lib/gis-grids.js?v=20260808"></script>
 <!-- Geosonify vocabularies: card-renderer already exposes encodeCardCoordinate
      and CARD_GRIDS, so the readout uses the real frozen encoders rather than
@@ -801,7 +801,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <!-- HEALPix words (healpix-bip39-v1, frozen): the codec and its pinned wordlists, as Geosonify loads them -->
 <script src="js/lib/bip39-official-wordlists.js?v=20260929c"></script>
 <script src="js/lib/geosonify-hpwords.js?v=20260930b"></script>
-<script src="js/ui/card-renderer.js?v=20260703b"></script>
+<script src="js/ui/card-renderer.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261025"></script>
@@ -814,12 +814,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261031c"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261101c"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
+<script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
-<script src="js/lib/geosonify-starpin-card.js?v=20261003"></script>
+<script src="js/lib/geosonify-starpin-card.js?v=20261101"></script>
 
 <!-- ── Starpin group sharing (Step 4A: boot/loading only; no UI yet) ──────────
      Load order matters: vendored crypto and the shared target helper first,
@@ -2628,8 +2629,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var img = document.createElement('img');
     img.alt = 'sky around ' + (st.name || 'this source');
     img.loading = 'lazy';
+    // Made on the device from a working DSS2 copy when CDS's hips2fits is
+    // down (GeosonifySkyCutout); otherwise the hips2fits URL as before.
     try {
-      img.src = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: fovArcsec, px: PX });
+      var turl = SN.thumbnailUrl(st.dec, st.ra, { fovArcsec: fovArcsec, px: PX });
+      if (window.GeosonifySkyCutout) GeosonifySkyCutout.setImg(img, turl); else img.src = turl;
     } catch (e) {}
     frame.appendChild(img);
     th.appendChild(frame);
@@ -3536,12 +3540,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         try {
           var url = SN.thumbnailUrl(near.star.dec, near.star.ra,
             { fovArcsec: 900, px: 900 });
-          var pre = new Image();
-          pre.onload = function () {
-            sky.style.backgroundImage = 'url(' + url + ')';
-            m.classList.add('hassky'); ret.hidden = false;
-          };
-          pre.src = url;
+          Promise.resolve(window.GeosonifySkyCutout ? GeosonifySkyCutout.src(url) : url).then(function (u) {
+            var pre = new Image();
+            pre.onload = function () {
+              sky.style.backgroundImage = 'url("' + u + '")';
+              m.classList.add('hassky'); ret.hidden = false;
+            };
+            pre.src = u;
+          });
         } catch (e) {}
       }
     }
