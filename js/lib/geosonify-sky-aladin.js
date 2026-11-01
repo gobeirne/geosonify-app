@@ -73,6 +73,10 @@
     PINNED to the version this adapter was verified against (3.9.0-beta: see
     the module-shape note below), not a mutable "latest". Still a separate,
     unmodified file loaded at runtime, so the licensing arrangement holds.
+    Since 1 Nov 2026 it is tried FIRST, ahead of the CDS "latest" build: on a
+    phone the CDS request took the browser's full connection timeout to fail
+    (a long blank wait), and a pinned copy is the better default anyway. A
+    page's own src, when it gives one, still comes first.
 
     The imagery: the IVOA registry record for ivo://CDS/P/DSS2/color lists
     these mirrors. Each is probed with its HiPS "properties" file (a few
@@ -90,13 +94,28 @@
       // record says it is for use "through Aladin or Aladin-lite"
       'https://stpubdata.s3.us-east-1.amazonaws.com/mast/skybackgrounds/DSSColor',
       'https://casda.csiro.au/hips/DSS2/color',                   // CSIRO, Australia
-      'https://irsa.ipac.caltech.edu/data/hips/CDS/DSS2/color',   // IRSA, Caltech
+      // (IRSA's copy, irsa.ipac.caltech.edu, was removed 1 Nov 2026: a real
+      // phone showed it sends no CORS header, so WebGL can never use it.)
       'https://cdn.skies.esac.esa.int/DSSColor',                  // ESA, ESAC
       'https://healpix.ias.u-psud.fr/CDS_P_DSS2_color'            // IAS, Paris-Saclay
     ]
   };
   var PROBE_MS = 4000, SURVEY_CACHE_MS = 30 * 60 * 1000;
+  var LIB_TIMEOUT_MS = 10000;     // give up on one library copy, try the next
+  var STICKY_MS = 6 * 3600 * 1000, STICKY_KEY = 'geosonify.hips.good.';
   var _surveyCache = {};          // id -> { use, ms }
+  // The mirror that worked last time (on this device, for STICKY_MS) is
+  // preferred over the list order, so a known-good copy is not kept waiting
+  // behind a primary that is timing out.
+  function stickyGet(id) {
+    try {
+      var v = JSON.parse(localStorage.getItem(STICKY_KEY + id) || 'null');
+      return v && Date.now() - v.ms < STICKY_MS ? v.url : null;
+    } catch (e) { return null; }
+  }
+  function stickySet(id, url) {
+    try { localStorage.setItem(STICKY_KEY + id, JSON.stringify({ url: url, ms: Date.now() })); } catch (e) {}
+  }
 
   function probe(url) {
     if (typeof fetch !== 'function') return Promise.resolve(false);
@@ -125,14 +144,18 @@
     var c = _surveyCache[id];
     if (c && Date.now() - c.ms < SURVEY_CACHE_MS) return Promise.resolve(c.use);
     var probes = list.map(probe);
+    var order = list.map(function (u, k) { return k; });
+    var good = stickyGet(id), gk = list.indexOf(good);
+    if (gk > 0) { order.splice(gk, 1); order.unshift(gk); }
     var i = 0;
     function next() {
-      if (i >= list.length) return Promise.resolve(id);
-      var k = i++;
+      if (i >= order.length) return Promise.resolve(id);
+      var k = order[i++];
       return probes[k].then(function (ok) {
         if (!ok) return next();
         var use = k === 0 ? id : list[k];
         _surveyCache[id] = { use: use, ms: Date.now() };
+        stickySet(id, list[k]);
         if (k > 0 && typeof console !== 'undefined')
           console.info('[geosonify] sky imagery from mirror ' + list[k]);
         return use;
@@ -232,11 +255,20 @@
     try {
       if (typeof document !== 'undefined' && document.baseURI) url = new URL(url, document.baseURI).href;
     } catch (e) {}
-    // The page's own src (or the CDS CDN) first, then the pinned npm copy.
-    var tries = [url].concat(LIB_FALLBACKS.filter(function (u) { return u !== url; }));
+    // The page's own src if it gave one, then the pinned npm copy, then the
+    // CDS "latest" build. Each gets LIB_TIMEOUT_MS: a dynamic import cannot
+    // be cancelled, but it can be stopped from holding everything up.
+    var tries = (src ? [url] : []).concat(LIB_FALLBACKS, [CDN_URL])
+      .filter(function (u, i, a) { return a.indexOf(u) === i; });
+    function importOne(k) {
+      return new Function('u', 'return import(u);')(tries[k]);
+    }
     function importFirst(k, lastErr) {
       if (k >= tries.length) return Promise.reject(lastErr || new Error('Aladin Lite could not be loaded'));
-      return new Function('u', 'return import(u);')(tries[k])
+      var late = new Promise(function (res, rej) {
+        setTimeout(function () { rej(new Error('timed out loading ' + tries[k])); }, LIB_TIMEOUT_MS);
+      });
+      return Promise.race([importOne(k), late])
         .then(function (mod) { url = tries[k]; return mod; },
               function (e) { return importFirst(k + 1, e); });
     }

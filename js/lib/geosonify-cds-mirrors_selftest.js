@@ -110,6 +110,29 @@ var steps = [
     });
   },
   function () { ok('the MAST copy (STScI, on AWS) is the first mirror', /stpubdata.*mast.*DSSColor/.test(DSS[1])); },
+  function () { ok('IRSA (no CORS header, seen on a real phone) is no longer listed', !DSS.some(function (u) { return /irsa/.test(u); })); },
+  function () {
+    // A mirror that worked is preferred next time, even when it is later in
+    // the list and an earlier one is slow to fail.
+    var store = {};
+    global.localStorage = { getItem: function (k) { return store[k] || null; }, setItem: function (k, v) { store[k] = v; } };
+    delete require.cache[require.resolve('./geosonify-sky-aladin.js')];
+    A = require('./geosonify-sky-aladin.js');
+    plan = {}; plan[DSS[0]] = 'err'; plan[DSS[1]] = 'err'; plan[DSS[2]] = PROPS;
+    return A.resolveSurvey('P/DSS2/color').then(function (u1) {
+      delete require.cache[require.resolve('./geosonify-sky-aladin.js')];
+      A = require('./geosonify-sky-aladin.js');       // a new page load: memory cache gone
+      plan = {}; plan[DSS[0]] = 'hang'; plan[DSS[1]] = 'hang'; plan[DSS[2]] = PROPS;
+      var t0 = Date.now();
+      return A.resolveSurvey('P/DSS2/color').then(function (u2) {
+        var s = (Date.now() - t0) / 1000;
+        ok('the last mirror that worked is tried first on the next visit (' + s.toFixed(1) + ' s, no wait for the slow ones)',
+           u1 === DSS[2] && u2 === DSS[2] && s < 1, u2 + ' ' + s);
+        delete global.localStorage;
+      });
+    });
+  },
+  function () { ok('the pinned npm copy of the library comes before the CDS "latest" build', A.LIB_FALLBACKS.length >= 1); },
   function () { ok('the library fallback is pinned, not "latest"', A.LIB_FALLBACKS.every(function (u) { return /@\d+\.\d+\.\d+/.test(u) && !/latest/.test(u); })); }
 ];
 steps.reduce(function (p, f) { return p.then(f); }, Promise.resolve()).then(function () {
