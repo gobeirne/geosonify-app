@@ -40,6 +40,11 @@ var GeosonifyStarpinNext = (function () {
   var STEP_W = { 1: 0.25, 2: 0.6, 3: 1.5, 4: 4 };
   var SIZE_WORD = { 12: 'large', 13: 'medium', 14: 'small' };
   var PAIR_POOL = 10;              // best single corners considered for pairs
+  // A walk longer than the chosen time is offered only when nothing fits,
+  // and never beyond OVER x that time. Without this cap, planning from a pin
+  // on the other side of the world offered "1 corner, 36,771 km, about 717041
+  // min": the nearest patch you had started, back home.
+  var OVER = 2;
 
   function minutesFor(metres) { return metres * DETOUR / (WALK_KMH * 1000 / 60); }
   function metresFor(minutes) { return minutes * (WALK_KMH * 1000 / 60) / DETOUR; }
@@ -138,6 +143,12 @@ var GeosonifyStarpinNext = (function () {
     var cands = finishCandidates(S, fix, progress, isCollected)
       .filter(function (c) { return c.advances; });
     if (!cands.length) return null;
+    // Only corners near enough to walk to and back within OVER x the time;
+    // the rest are someone else's day out. { far: true } says there WERE
+    // patches to finish, just none here, so the card can say so.
+    var reach = metresFor(OVER * budgetMin) / 2;
+    cands = cands.filter(function (c) { return S.haversineM(fix.lat, fix.lon, c.lat, c.lon) <= reach; });
+    if (!cands.length) return { far: true };
     var trips = cands.map(function (c) {
       return trip('finish', [c], fix, S, { value: c.value, effects: c.effects });
     });
@@ -160,6 +171,7 @@ var GeosonifyStarpinNext = (function () {
       pick = fit.sort(function (x, y) { return (y.perMin - x.perMin) || (x.minutes - y.minutes); })[0];
     } else {
       pick = trips.sort(function (x, y) { return x.minutes - y.minutes; })[0];
+      if (pick.minutes > OVER * budgetMin) return null;
       pick.overBudget = true;
     }
     pick.detail = pick.detail || describe(pick.effects || []);
@@ -221,16 +233,18 @@ var GeosonifyStarpinNext = (function () {
   function plan(opts) {
     var S = opts.S, fix = opts.fix, budget = opts.budgetMin || 30;
     var isCollected = opts.isCollected || function () { return false; };
+    var finish = bestFinish(S, fix, opts.progress, isCollected, budget);
     return {
       rule: RULE, budgetMin: budget,
-      finish: bestFinish(S, fix, opts.progress, isCollected, budget),
+      finish: finish && finish.far ? null : finish,
+      finishFar: !!(finish && finish.far),
       fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
       star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
                                   opts.rarity, budget) : undefined
     };
   }
 
-  return { VERSION: '0.1', RULE: RULE, WALK_KMH: WALK_KMH, DETOUR: DETOUR,
+  return { VERSION: '0.2', RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, DETOUR: DETOUR,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };
 })();

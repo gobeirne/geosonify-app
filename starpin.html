@@ -807,7 +807,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261025"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261031"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261102"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
@@ -1482,7 +1482,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var p = nextPlan;
     card('finish', p.finish, 'Finish something', 'patch',
          p.finish ? p.finish.detail : null,
-         'Nothing to finish yet. Collect two corners of any patch and it shows up here.');
+         p.finishFar ? 'Nothing you have started is within reach in this time. Try a longer walk, or new ground below.'
+                     : 'Nothing to finish yet. Collect two corners of any patch and it shows up here.');
     card('fresh', p.fresh, 'New ground', 'patch', p.fresh ? freshLine(p.fresh) : null,
          'No untouched ground within reach of this time.');
     var st = p.star, rare = st && st.rarity >= 0.5;

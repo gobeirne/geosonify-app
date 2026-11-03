@@ -55,8 +55,19 @@ var plan2 = N.plan({ S: S, fix: mid, progress: P2, isCollected: have2, budgetMin
 ok('a pair that lights a medium patch beats either corner alone',
    plan2.finish && plan2.finish.stops.length === 2 && /Lights a medium patch/.test(plan2.finish.detail),
    plan2.finish && plan2.finish.stops.length + ' ' + plan2.finish.detail);
-var tight = N.plan({ S: S, fix: mid, progress: P2, isCollected: have2, budgetMin: 1 });
-ok('nothing fits 1 minute: the shortest is offered and flagged', tight.finish && tight.finish.overBudget === true);
+var best1 = N.plan({ S: S, fix: mid, progress: P2, isCollected: have2, budgetMin: 90 }).finish;
+var oneLeg = N.finishCandidates(S, mid, P2, have2).filter(function (c) { return c.advances; })
+  .map(function (c) { return N.minutesFor(2 * S.haversineM(mid.lat, mid.lon, c.lat, c.lon)); })
+  .sort(function (a, b) { return a - b; })[0];
+var tight = N.plan({ S: S, fix: mid, progress: P2, isCollected: have2, budgetMin: oneLeg / 1.5 });
+ok('nothing fits, but something is within 2x the time: offered and flagged', tight.finish && tight.finish.overBudget === true,
+   oneLeg.toFixed(1) + ' min');
+var tiny = N.plan({ S: S, fix: mid, progress: P2, isCollected: have2, budgetMin: oneLeg / 3 });
+ok('nothing within 2x the time: no finish card, and it says the patches are far', tiny.finish === null && tiny.finishFar === true);
+var paris = N.plan({ S: S, fix: { lat: 48.8584, lon: 2.2945 }, progress: P2, isCollected: have2, budgetMin: 30 });
+ok('from a pin on the other side of the world, home patches are never suggested',
+   paris.finish === null && paris.finishFar === true);
+ok('...and new ground there is still offered', paris.fresh && paris.fresh.minutes < 60);
 
 console.log('\n3: new ground');
 ok('fresh: a corner is offered', !!plan.fresh);
