@@ -133,7 +133,10 @@ button{font:inherit;font-weight:700;padding:.7rem 1rem;border-radius:12px;border
       });
     }, function (e) {
       return why(it.url).then(function (k) {
-        return { cls: k, ms: e.ms, note: k === 'warn' && e.name !== 'AbortError'
+        // A timeout is "no answer", whatever the follow-up no-cors request
+        // says: that one can succeed late, which once labelled a dead row CORS.
+        if (e.name === 'AbortError') k = 'bad';
+        return { cls: k, ms: e.ms, note: k === 'warn'
           ? 'the server answers, but does not allow requests from this site (CORS)'
           : (e.name === 'AbortError' ? 'no answer within ' + lim / 1000 + ' s' : 'no answer') };
       });
@@ -163,6 +166,7 @@ button{font:inherit;font-weight:700;padding:.7rem 1rem;border-radius:12px;border
       });
     }, function (e) {
       return why(it.url + '/properties').then(function (k) {
+        if (e.name === 'AbortError') k = 'bad';
         return { cls: k, ms: e.ms, note: k === 'warn'
           ? 'the server answers, but does not allow requests from this site (CORS)'
           : (e.name === 'AbortError' ? 'no answer within ' + T / 1000 + ' s' : 'no answer') };

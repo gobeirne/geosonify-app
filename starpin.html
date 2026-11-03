@@ -473,15 +473,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     <button type="button" data-min="60" aria-pressed="false">60 min</button>
   </div>
   <button id="next-go" type="button">What should I do next?</button>
+  <div id="next-from"></div>
   <div id="next-follow"></div>
   <div id="next-cards"></div>
-  <p class="hint" id="next-hint">Times are there and back from where you are, at an easy
+  <p class="hint" id="next-hint">With a pin dropped on the Place tab, suggestions start from the pin
+     instead of from you. Times are there and back from that starting point, at an easy
      4&nbsp;km/h, with 30% added because streets are never straight. They are
      still as the crow flies: a river or a motorway can make a walk longer.</p>
   <dialog id="route-dlg" aria-labelledby="route-dlg-h">
     <h3 id="route-dlg-h" tabindex="-1" autofocus>Open this walk in maps</h3>
     <p id="route-dlg-what"></p>
-    <label><input type="checkbox" id="route-dlg-back" checked> Back to where I started</label>
+    <label><input type="checkbox" id="route-dlg-back" checked> <span id="route-dlg-backlbl">Back to where I started</span></label>
     <div class="btnrow">
       <button type="button" id="route-dlg-google">Google Maps</button>
       <button type="button" id="route-dlg-apple">Apple Maps</button>
@@ -1381,18 +1383,58 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (!collected[csName(nextGoal.stops[i].name)]) return nextGoal.stops[i];
     return null;
   }
-  function nextKm(m) {
-    return m < 1000 ? Math.round(m / 10) * 10 + ' m' : (m / 1000).toFixed(1) + ' km';
+  /*
+    WHERE THE PLAN STARTS. A pin dropped on the Place tab wins over GPS, so you
+    can see what Starpin would suggest anywhere in the world; "Use my
+    location" sets it aside until a different pin is dropped. The plan's own
+    corners, patches and stars all come from that point, and so do the walking
+    times and the maps link. Your log is still yours: patches you have
+    started near the pin count, and anywhere you have never been, everything
+    is new ground.
+  */
+  var nextIgnorePin = null;            // the pin "Use my location" set aside
+  function nextOrigin() {
+    var pin = (map && map.pin) ? map.pin() : null;
+    if (pin && !(nextIgnorePin && nextIgnorePin.lat === pin.lat && nextIgnorePin.lon === pin.lon))
+      return { lat: pin.lat, lon: pin.lon, pin: true };
+    return fix ? { lat: fix.lat, lon: fix.lon, pin: false } : null;
   }
+  function paintNextFrom() {
+    var box = $('next-from'); if (!box) return;
+    box.textContent = '';
+    var o = nextOrigin();
+    if (!o || !o.pin) return;
+    var w = null;
+    try { w = S.findWords({ lat_1e7: Math.round(o.lat * 1e7), lon_1e7: Math.round(o.lon * 1e7) }); } catch (e) {}
+    var d = el('div', 'next-follow');
+    d.appendChild(el('span', null, 'Planning from your pin' + (w ? ' at ' + w.text : '') +
+      (fix ? ', ' + nextKm(S.haversineM(fix.lat, fix.lon, o.lat, o.lon)) + ' from you' : '')));
+    var b = el('button', null, 'Use my location'); b.type = 'button';
+    b.addEventListener('click', function () {
+      nextIgnorePin = { lat: o.lat, lon: o.lon };
+      paintNextFrom();
+      if (nextShown) { function go() { nextFetchStars(nextReplan); } if (!fix) acquireFix(go); else go(); }
+    });
+    d.appendChild(b);
+    box.appendChild(d);
+  }
+
+  function nextKm(m) {
+    if (m < 1000) return Math.round(m / 10) * 10 + ' m';
+    if (m < 100000) return (m / 1000).toFixed(1) + ' km';
+    return Math.round(m / 1000).toLocaleString() + ' km';
+  }
+
 
   // One cone search per place, big enough for the 60-minute chip, so
   // switching chips never refetches. Cards show at once; the star card says
   // it is looking until the lookup answers.
   function nextFetchStars(done) {
-    if (!SN || !SN.lookupRemote || !fix) { nextStars = []; done(); return; }
+    var o = nextOrigin();
+    if (!SN || !SN.lookupRemote || !o) { nextStars = []; done(); return; }
     if (nextStars && !nextStarsDown && nextStarsAt &&
-        S.haversineM(fix.lat, fix.lon, nextStarsAt.lat, nextStarsAt.lon) < 250) { done(); return; }
-    var at = { lat: fix.lat, lon: fix.lon };
+        S.haversineM(o.lat, o.lon, nextStarsAt.lat, nextStarsAt.lon) < 250) { done(); return; }
+    var at = { lat: o.lat, lon: o.lon };
     var radiusArcmin = Math.max(0.3, NX.metresFor(60) / 2 / S.M_PER_ARCSEC / 60);
     nextStars = null; nextStarsDown = false; done();
     // lookupRemote tries the last source that worked, then Strasbourg and
@@ -1416,16 +1458,18 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
 
   function nextReplan() {
-    if (!NX || !fix) { paintNextCards(); return; }
+    var o = nextOrigin();
+    paintNextFrom();
+    if (!NX || !o) { paintNextCards(); return; }
     try {
       nextPlan = NX.plan({
-        S: S, fix: fix, progress: patchAll, budgetMin: nextBudget,
+        S: S, fix: o, progress: patchAll, budgetMin: nextBudget,
         isCollected: function (n) { return !!collected[csName(n)]; },
         stars: nextStars || undefined,
         starHave: function (st) { return !!starsHave[sourceIdOf(st.name)]; },
         rarity: function (m) { return F.starTier(m).rarity; }
       });
-      nextPlan.from = { lat: fix.lat, lon: fix.lon };      // where the walk starts and ends
+      nextPlan.from = o;                                   // where the walk starts and ends
     } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
     paintNextCards();
   }
@@ -1433,7 +1477,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function paintNextCards() {
     var box = $('next-cards'); box.textContent = '';
     if (!nextShown) return;
-    if (!fix) { box.appendChild(el('p', 'hint', 'Finding where you are\u2026')); return; }
+    if (!nextOrigin()) { box.appendChild(el('p', 'hint', 'Finding where you are\u2026')); return; }
     if (!nextPlan) { box.appendChild(el('p', 'hint', 'Nothing to suggest yet.')); return; }
     var p = nextPlan;
     card('finish', p.finish, 'Finish something', 'patch',
@@ -1514,15 +1558,19 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (back && routeTrip.from) pts.push(routeTrip.from);
     return { via: pts.slice(0, -1), to: pts[pts.length - 1] };
   }
+  // From a pin, the route must start at the pin, not wherever the phone is:
+  // Google's origin and Apple's source (both documented parameters).
+  function routeFromPin() { return routeTrip.from && routeTrip.from.pin ? routeTrip.from : null; }
   function googleRoute(back) {
-    var r = routeStops(back);
+    var r = routeStops(back), o = routeFromPin();
     return 'https://www.google.com/maps/dir/?api=1&travelmode=walking' +
+      (o ? '&origin=' + routeLL(o) : '') +
       (r.via.length ? '&waypoints=' + r.via.map(routeLL).join('%7C') : '') +
       '&destination=' + routeLL(r.to);
   }
   function appleRoute(back) {
-    var r = routeStops(back);
-    return 'https://maps.apple.com/directions?' +
+    var r = routeStops(back), o = routeFromPin();
+    return 'https://maps.apple.com/directions?' + (o ? 'source=' + routeLL(o) + '&' : '') +
       r.via.map(function (p) { return 'waypoint=' + routeLL(p) + '&'; }).join('') +
       'destination=' + routeLL(r.to) + '&mode=walking';
   }
@@ -1532,6 +1580,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var n = t.stops.length;
     $('route-dlg-what').textContent = title + ' \u2014 ' + n + ' stop' + (n === 1 ? '' : 's') + '.';
     $('route-dlg-back').checked = true;
+    $('route-dlg-backlbl').textContent = from && from.pin ? 'Back to the pin' : 'Back to where I started';
     if (d.showModal) d.showModal(); else d.setAttribute('open', '');
   }
   function routeClose() { var d = $('route-dlg'); if (d.close) d.close(); else d.removeAttribute('open'); }
@@ -1600,7 +1649,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (!NX) return;
     nextShown = true;
     function go() { nextFetchStars(nextReplan); }
-    if (!fix) { paintNextCards(); acquireFix(go); } else go();
+    if (!nextOrigin()) { paintNextCards(); acquireFix(go); } else go();
   });
 
   // ── records ────────────────────────────────────────────────────────────
