@@ -28,6 +28,12 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.12: the Sky list says why a source is not showing: "(loading…)",
+  "(checking…)" while the coverage lookup is out, "(not checked)" when it did
+  not answer, "(zoom in to check)" over 30°, "(not here)", "(unavailable)";
+  and when the chosen source is not on screen, the line under the list gives
+  the reason (from GeosonifySkyAladin v0.8's getImagery()).
+
   v1.11: SKY, HERE. While the sky is showing, a row under the chips lists its
   imagery the way the Aerial row lists editions: "Best" first (naming the
   source on top), then Webb, Hubble, ESO, Pan-STARRS1 and DSS2, each marked
@@ -75,7 +81,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.11';
+  const __FAQ_UI_VER__ = 'v1.12';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -983,13 +989,24 @@
     // Before the photographic renderer is attached there is nothing to list
     // but the choice itself.
     const src = (st.sources && st.sources.length) ? st.sources : [];
-    const fov = V.getFovDeg ? V.getFovDeg() : null;
-    const wide = fov && fov > 30;
-    const top = st.mode === 'best' ? src.filter(s => s.showing)[0] : null;
+    const cov = st.coverage || '';
+    const top = st.mode === 'best' ? src.filter(s => s.showing && s.key !== 'dss')[0] || src.filter(s => s.showing)[0] : null;
+    const note = s => {
+      if (s.showing) return '';
+      if (s.loading) return ' (loading\u2026)';
+      if (s.status === 'unavailable') return ' (unavailable)';
+      if (s.status === 'not-here') return ' (not here)';
+      if (s.status === 'unknown') {
+        if (cov === 'pending') return ' (checking\u2026)';
+        if (cov === 'wide') return ' (zoom in to check)';
+        if (cov === 'failed' || cov === 'off') return ' (not checked)';
+      }
+      return '';
+    };
     const opts = [{ value: 'best', label: 'Best' + (top ? ' \u00b7 ' + top.label : ''), disabled: false }]
       .concat(src.map(s => ({
         value: s.key,
-        label: s.label + (s.status === 'unknown' && !s.showing ? (wide ? ' (zoom in to check)' : '') : (SKY_SUFFIX[s.status] || '')),
+        label: s.label + note(s),
         disabled: s.status === 'unavailable' && st.mode !== s.key
       })));
     if (!src.length && st.mode !== 'best') opts.push({ value: st.mode, label: st.mode, disabled: false });
@@ -1005,7 +1022,15 @@
     if (document.activeElement !== sel) sel.value = st.mode || 'best';
     if (about) {
       const chosen = st.mode === 'best' ? top : src.filter(s => s.key === st.mode)[0];
-      about.textContent = chosen ? chosen.about + '.' : '';
+      let text = chosen ? chosen.about + '.' : '';
+      // Say why a chosen source is not on screen, rather than fail silently.
+      if (chosen && st.mode !== 'best' && !chosen.showing) {
+        if (chosen.loading) text += ' Loading\u2026';
+        else if (chosen.status === 'unavailable') text += ' Not available right now' + (chosen.why ? ': ' + chosen.why : '') + '.';
+        else if (chosen.status === 'not-here') text += ' It has no picture in this view, so DSS2 is shown.';
+      }
+      if (st.mode === 'best' && cov === 'failed') text += (text ? ' ' : '') + 'The coverage lookup at CDS did not answer, so the space-telescope pictures cannot be offered automatically; choose one from the list to try it.';
+      about.textContent = text;
     }
   }
 

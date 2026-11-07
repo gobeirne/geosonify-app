@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-aladin.js  v0.7  — Aladin Lite as a backend viewport
+  geosonify-sky-aladin.js  v0.8  — Aladin Lite as a backend viewport
 
   Implements the SAME contract as the built-in renderer (geosonify-sky-renderer.js),
   so nothing above the seam knows or cares which one is live. Aladin supplies sky
@@ -15,6 +15,19 @@
   geosonify-sky-flip.js turn it back to north-up before the way down to Earth.
   Callers must test for them (the built-in renderer cannot rotate and has
   neither) and must MEASURE the result rather than assume the sign convention.
+
+  v0.8: LOADED BY ADDRESS, AND SAYING WHY NOT. On a phone, v0.7 showed DSS2
+  for every choice with every source unmarked: each overlay was still being
+  looked up, and Aladin's lookup of a HiPS by ID goes through the CDS
+  MocServer with no time limit, so a MocServer that does not answer leaves
+  the layer pending for ever. The overlays are now loaded by their base URL on
+  alasky.cds.unistra.fr (the same host as the DSS2 tiles), which needs no
+  MocServer at all; the ID is tried once only if the URL fails. A layer that
+  has not loaded within LAYER_TIMEOUT_MS counts as unavailable. The coverage
+  lookup tries alasky.cds.unistra.fr's MocServer first. And getImagery()
+  reports, per source, whether it is loading and why it failed, and the state
+  of the coverage lookup, so the Map imagery card can say why a choice is not
+  showing instead of failing silently.
 
   v0.7: ONE OVERLAY AT A TIME. Every Aladin Lite 3.x image layer reserves a
   texture array of 128 tiles (renderable/hips/d2/buffer.rs), about 128 MB of
@@ -119,7 +132,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.7';
+  var VERSION = 'v0.8';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -394,13 +407,13 @@
     is always present.
   */
   var IMAGERY_SOURCES = [
-    { key: 'jwst', id: 'CDS/P/JWST/EPO', label: 'Webb', credit: 'ESA/Webb', sparse: true,
+    { key: 'jwst', url: 'https://alasky.cds.unistra.fr/JWST-outreach/CDS_P_JWST_EPO', id: 'CDS/P/JWST/EPO', label: 'Webb', credit: 'ESA/Webb', sparse: true,
       about: 'James Webb Space Telescope press images (ESA/Webb), near-infrared and mid-infrared' },
-    { key: 'hst',  id: 'CDS/P/HST/EPO',  label: 'Hubble', credit: 'NASA/ESA Hubble', sparse: true,
+    { key: 'hst',  url: 'https://alasky.cds.unistra.fr/HST-outreach/CDS_P_HST_EPO', id: 'CDS/P/HST/EPO',  label: 'Hubble', credit: 'NASA/ESA Hubble', sparse: true,
       about: 'Hubble Space Telescope press images (NASA/ESA), visible light' },
-    { key: 'eso',  id: 'CDS/P/ESO/EPO',  label: 'ESO', credit: 'ESO', sparse: true,
+    { key: 'eso',  url: 'https://alasky.cds.unistra.fr/ESO-outreach/CDS_P_ESO_EPO', id: 'CDS/P/ESO/EPO',  label: 'ESO', credit: 'ESO', sparse: true,
       about: 'European Southern Observatory press images (VLT, VISTA, VST and others)' },
-    { key: 'ps1',  id: 'CDS/P/PanSTARRS/DR1/color-z-zg-g', label: 'Pan-STARRS1', credit: 'Pan-STARRS1',
+    { key: 'ps1',  url: 'https://alasky.cds.unistra.fr/Pan-STARRS/DR1/color-z-zg-g', id: 'CDS/P/PanSTARRS/DR1/color-z-zg-g', label: 'Pan-STARRS1', credit: 'Pan-STARRS1',
       sparse: false, decFloor: -29.5,
       about: 'Pan-STARRS1 survey colour (University of Hawai\u02bbi), the sky north of declination \u221230\u00b0' },
     { key: 'dss',  id: 'P/DSS2/color', label: 'DSS2', credit: 'DSS2', base: true,
@@ -421,8 +434,11 @@
   // Coverage is asked about fields up to this size (no tiles: one small query).
   var COVERAGE_MAX_FOV_DEG = 30;
   var IMAGERY_SETTLE_MS = 350;
-  var MOCSERVER_URLS = ['https://alasky.unistra.fr/MocServer/query',
+  var MOCSERVER_URLS = ['https://alasky.cds.unistra.fr/MocServer/query',
+                        'https://alasky.unistra.fr/MocServer/query',
                         'https://alaskybis.unistra.fr/MocServer/query'];
+  // An overlay that has not loaded by then counts as unavailable.
+  var LAYER_TIMEOUT_MS = 25000;
   var MOCSERVER_TIMEOUT_MS = 6000;
 
   /*
@@ -556,9 +572,13 @@
     var coverCone = null;      // the cone `covered` answers for
     var coverGen = 0;          // drops answers to superseded questions
     var coverPending = false;  // a coverage answer is on its way
+    var coverState = 'none';   // 'ok' | 'pending' | 'failed' | 'off' | 'wide' | 'none'
+    var failedWhy = {};        // key -> why it is unavailable
+    var zombies = [];          // timed-out layers that may still arrive late
+    var layerSeq = 0;
     var settleTimer = null;
     var lastSig = '';          // what was last reported through 'imagery'
-    var pendingPolls = 0, MAX_PENDING_POLLS = 60;    // ~20 s of waiting for a layer
+    var pendingPolls = 0, MAX_PENDING_POLLS = 100;   // ~35 s of waiting for a layer
 
     function scheduleImagery() {
       if (destroyed || !aladin) return;
@@ -595,25 +615,41 @@
       return fmt === 'png' || fmt === 'webp';
     }
 
-    function addOverlay(src) {
+    function failOverlay(c, why) {
+      if (c.failed) return;
+      c.failed = true; failedKeys[c.key] = true; failedWhy[c.key] = why;
+      console.warn('[geosonify] sky imagery ' + c.src.label + ' unavailable: ' + why);
+      if (!(c.layer && c.layer.added)) zombies.push(c);
+      scheduleImagery();
+    }
+
+    // Load by base URL (no MocServer needed); fall back to the ID once.
+    function addOverlay(src, byId) {
       var make = (typeof A.HiPS === 'function') ? A.HiPS : A.imageHiPS;
-      var c = { key: src.key, src: src, layer: null, failed: false };
+      var c = { key: src.key, src: src, layer: null, failed: false, byId: !!byId,
+                name: 'gs-' + src.key + '-' + (++layerSeq), t0: Date.now() };
+      var what = byId || !src.url ? src.id : src.url;
       try {
-        var hips = make(src.id, {
+        var hips = make(what, {
           name: src.label,
           errorCallback: function (err) {
-            c.failed = true; failedKeys[src.key] = true;
-            console.warn('[geosonify] sky imagery ' + src.id + ' failed to load:', err);
-            scheduleImagery();
+            var msg = String(err && (err.message || err) || 'error');
+            if (!c.byId && src.url && cur === c) {       // try the ID once
+              console.warn('[geosonify] sky imagery ' + src.url + ' failed (' + msg + '); trying ' + src.id);
+              c.failed = true;
+              cur = addOverlay(src, true);
+              return;
+            }
+            failOverlay(c, 'the server did not provide it (' + msg.slice(0, 80) + ')');
           },
           successCallback: function () {
-            console.info('[geosonify] sky imagery ' + src.id + ' loaded (' + (c.layer && c.layer.imgFormat) + ' tiles)');
+            console.info('[geosonify] sky imagery ' + what + ' loaded (' + (c.layer && c.layer.imgFormat) + ' tiles)');
+            scheduleImagery();
           }
         });
-        c.layer = aladin.setOverlayImageLayer(hips, 'gs-' + src.key) || hips;
+        c.layer = aladin.setOverlayImageLayer(hips, c.name) || hips;
       } catch (e) {
-        c.failed = true; failedKeys[src.key] = true;
-        console.warn('[geosonify] sky imagery ' + src.id + ' not added:', e && e.message);
+        failOverlay(c, 'could not be added (' + (e && e.message) + ')');
       }
       return c;
     }
@@ -622,8 +658,17 @@
     // Lite 3.x), which is the point of keeping only one.
     function removeOverlay() {
       if (!cur) return;
-      try { aladin.removeImageLayer('gs-' + cur.key); } catch (e) {}
+      if (cur.layer && cur.layer.added) { try { aladin.removeImageLayer(cur.name); } catch (e) {} }
+      else zombies.push(cur);               // removed when (if) it arrives
       cur = null;
+    }
+
+    // Layers given up on that arrived anyway: take them off again.
+    function sweepZombies() {
+      zombies = zombies.filter(function (z) {
+        if (z.layer && z.layer.added) { try { aladin.removeImageLayer(z.name); } catch (e) {} return false; }
+        return Date.now() - z.t0 < 10 * 60 * 1000;
+      });
     }
 
     function sameCone(a, b) {
@@ -680,20 +725,20 @@
       var cone = fieldCone();
       // The caller may forbid sending the position anywhere (privacy on).
       var mayAsk = !(typeof opts.coverageAllowed === 'function' && !opts.coverageAllowed());
-      if (!mayAsk) { covered = {}; coverCone = null; coverGen++; coverPending = false; }
+      if (!mayAsk) { covered = {}; coverCone = null; coverGen++; coverPending = false; coverState = 'off'; }
       else if (cone && cone.r * 2 <= COVERAGE_MAX_FOV_DEG && !sameCone(cone, coverCone)) {
         var gen = ++coverGen, asked = cone;
         coverCone = asked;                 // asked: do not ask again for this view
-        coverPending = true;
+        coverPending = true; coverState = 'pending';
         queryCoverage(cone).then(function (found) {
           if (destroyed || gen !== coverGen) return;
-          coverPending = false;
+          coverPending = false; coverState = found ? 'ok' : 'failed';
           covered = found || {};
           if (!found) coverCone = null;    // no answer: ask again when the view moves
           applyImagery();
         });
       } else if (!cone || cone.r * 2 > COVERAGE_MAX_FOV_DEG) {
-        covered = {}; coverCone = null; coverGen++; coverPending = false;
+        covered = {}; coverCone = null; coverGen++; coverPending = false; coverState = 'wide';
       }
       applyImagery();
     }
@@ -731,12 +776,15 @@
       if (destroyed || !aladin) return;
       var cone = fieldCone();
       if (canOverlay()) {
+        sweepZombies();
+        if (inFlight(cur) && Date.now() - cur.t0 > LAYER_TIMEOUT_MS)
+          failOverlay(cur, 'no answer from the server in ' + Math.round(LAYER_TIMEOUT_MS / 1000) + ' s');
         // A loaded sparse layer that turned out to be JPEG would black out
         // DSS2 under it: retire it as unavailable.
         if (loaded(cur) && !transparentOk(cur)) {
-          console.warn('[geosonify] ' + cur.src.id + ' serves ' + cur.layer.imgFormat +
-                       ' tiles, not PNG; not shown, so it cannot black out the sky beneath');
           failedKeys[cur.key] = true;
+          failedWhy[cur.key] = 'its tiles are ' + cur.layer.imgFormat + ', which would hide the sky beneath';
+          console.warn('[geosonify] ' + cur.src.id + ': ' + failedWhy[cur.key]);
           removeOverlay();
         }
         if (cur && cur.failed) removeOverlay();
@@ -770,11 +818,13 @@
       var sources = IMAGERY_SOURCES.map(function (src) {
         var showing = src.base ? on !== 'ps1' : on === src.key;
         return { key: src.key, label: src.label, credit: src.credit, about: src.about,
-                 status: statusOf(src, cone), showing: showing };
+                 status: statusOf(src, cone), showing: showing,
+                 loading: !!(cur && cur.key === src.key && inFlight(cur)),
+                 why: failedWhy[src.key] || '' };
       });
       // Top of the stack first, as the eye meets it.
       var credits = sources.filter(function (s) { return s.showing; }).map(function (s) { return s.credit; });
-      return { mode: mode, sources: sources, credits: credits };
+      return { mode: mode, sources: sources, credits: credits, coverage: coverState };
     }
 
     function project(raDeg, decDeg) {
@@ -912,7 +962,7 @@
       setImagery: function (m) {
         var k = imageryMode(m);
         if (!k) return mode;
-        if (k !== mode) { mode = k; pendingPolls = 0; failedKeys = {}; scheduleImagery(); }
+        if (k !== mode) { mode = k; pendingPolls = 0; failedKeys = {}; failedWhy = {}; scheduleImagery(); }
         return mode;
       },
       getImagery: function () { return imageryState(); },
