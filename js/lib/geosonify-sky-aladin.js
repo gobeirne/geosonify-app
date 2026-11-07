@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-aladin.js  v0.8  — Aladin Lite as a backend viewport
+  geosonify-sky-aladin.js  v0.9  — Aladin Lite as a backend viewport
 
   Implements the SAME contract as the built-in renderer (geosonify-sky-renderer.js),
   so nothing above the seam knows or cares which one is live. Aladin supplies sky
@@ -15,6 +15,16 @@
   geosonify-sky-flip.js turn it back to north-up before the way down to Earth.
   Callers must test for them (the built-in renderer cannot rotate and has
   neither) and must MEASURE the result rather than assume the sign convention.
+
+  v0.9: CDS DOWN, SAID ONCE. All four overlays and the MocServer are hosted by
+  CDS in Strasbourg, which has been unreachable since about 29 October 2026
+  (DSS2 keeps working from its mirrors). No other host carries these four:
+  ESA's HiPS node mirrors DSS2, 2MASS, SDSS9 and others, but none of the
+  outreach collections or Pan-STARRS1 colour. So when one overlay times out,
+  CDS is taken to be down for CDS_RETRY_MS: every CDS source is reported
+  unavailable at once, with that reason, instead of each costing another
+  25-second wait, and the coverage lookup is not sent. After that it is tried
+  again by itself.
 
   v0.8: LOADED BY ADDRESS, AND SAYING WHY NOT. On a phone, v0.7 showed DSS2
   for every choice with every source unmarked: each overlay was still being
@@ -132,7 +142,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.8';
+  var VERSION = 'v0.9';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -439,6 +449,10 @@
                         'https://alaskybis.unistra.fr/MocServer/query'];
   // An overlay that has not loaded by then counts as unavailable.
   var LAYER_TIMEOUT_MS = 25000;
+  // After a time-out, how long CDS is assumed to be down before trying again.
+  var CDS_RETRY_MS = 5 * 60 * 1000;
+  var CDS_DOWN_WHY = 'CDS in Strasbourg, which hosts it, is not answering; DSS2 is shown from a mirror';
+  var _cdsDownUntil = 0;     // module-wide: shared by every renderer
   var MOCSERVER_TIMEOUT_MS = 6000;
 
   /*
@@ -576,6 +590,7 @@
     var failedWhy = {};        // key -> why it is unavailable
     var zombies = [];          // timed-out layers that may still arrive late
     var layerSeq = 0;
+    var retryTimer = null;
     var settleTimer = null;
     var lastSig = '';          // what was last reported through 'imagery'
     var pendingPolls = 0, MAX_PENDING_POLLS = 100;   // ~35 s of waiting for a layer
@@ -726,6 +741,7 @@
       // The caller may forbid sending the position anywhere (privacy on).
       var mayAsk = !(typeof opts.coverageAllowed === 'function' && !opts.coverageAllowed());
       if (!mayAsk) { covered = {}; coverCone = null; coverGen++; coverPending = false; coverState = 'off'; }
+      else if (cdsDown()) { covered = {}; coverCone = null; coverGen++; coverPending = false; coverState = 'failed'; }
       else if (cone && cone.r * 2 <= COVERAGE_MAX_FOV_DEG && !sameCone(cone, coverCone)) {
         var gen = ++coverGen, asked = cone;
         coverCone = asked;                 // asked: do not ask again for this view
@@ -741,12 +757,18 @@
         covered = {}; coverCone = null; coverGen++; coverPending = false; coverState = 'wide';
       }
       applyImagery();
+      // While CDS is assumed down, look again when the wait ends.
+      if (cdsDown() && !retryTimer) {
+        retryTimer = setTimeout(function () { retryTimer = null; failedKeys = {}; failedWhy = {}; scheduleImagery(); },
+                                _cdsDownUntil - Date.now() + 50);
+      }
     }
 
     // 'here' | 'not-here' | 'unknown' | 'unavailable' for one source, now.
+    function cdsDown() { return Date.now() < _cdsDownUntil; }
     function statusOf(src, cone) {
       if (src.base) return 'here';
-      if (failedKeys[src.key]) return 'unavailable';
+      if (failedKeys[src.key] || cdsDown()) return 'unavailable';
       if (src.decFloor !== undefined) {
         if (!cone) return 'unknown';
         return (cone.dec - cone.r) > src.decFloor ? 'here' : 'not-here';
@@ -777,8 +799,10 @@
       var cone = fieldCone();
       if (canOverlay()) {
         sweepZombies();
-        if (inFlight(cur) && Date.now() - cur.t0 > LAYER_TIMEOUT_MS)
-          failOverlay(cur, 'no answer from the server in ' + Math.round(LAYER_TIMEOUT_MS / 1000) + ' s');
+        if (inFlight(cur) && Date.now() - cur.t0 > LAYER_TIMEOUT_MS) {
+          _cdsDownUntil = Date.now() + CDS_RETRY_MS;
+          failOverlay(cur, CDS_DOWN_WHY);
+        }
         // A loaded sparse layer that turned out to be JPEG would black out
         // DSS2 under it: retire it as unavailable.
         if (loaded(cur) && !transparentOk(cur)) {
@@ -820,7 +844,7 @@
         return { key: src.key, label: src.label, credit: src.credit, about: src.about,
                  status: statusOf(src, cone), showing: showing,
                  loading: !!(cur && cur.key === src.key && inFlight(cur)),
-                 why: failedWhy[src.key] || '' };
+                 why: failedWhy[src.key] || (!src.base && cdsDown() ? CDS_DOWN_WHY : '') };
       });
       // Top of the stack first, as the eye meets it.
       var credits = sources.filter(function (s) { return s.showing; }).map(function (s) { return s.credit; });
@@ -873,6 +897,7 @@
       destroy: function () {
         destroyed = true;
         if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
+        if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
         if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
         if (svg && svg.parentNode) svg.parentNode.removeChild(svg);
         if (inner && inner.parentNode) inner.parentNode.removeChild(inner);

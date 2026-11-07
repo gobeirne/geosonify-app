@@ -28,6 +28,10 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.13: links in the FAQ answers and the credits use a teal light enough to
+  read in dark mode (they were the page default blue, and dark teal on black).
+  The Best-mode note names CDS when it is down.
+
   v1.12: the Sky list says why a source is not showing: "(loading…)",
   "(checking…)" while the coverage lookup is out, "(not checked)" when it did
   not answer, "(zoom in to check)" over 30°, "(not here)", "(unavailable)";
@@ -81,7 +85,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.12';
+  const __FAQ_UI_VER__ = 'v1.13';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -248,9 +252,13 @@
     padding: 0;
     font-size: inherit;
   }
-  .faq-answer a {
+  .faq-answer a, .faq-credits a {
     color: var(--kereru-teal, #325756);
     text-decoration: underline;
+  }
+  @media (prefers-color-scheme: dark) {
+    .faq-answer a, .faq-credits a { color: #7CC4BC; }
+    .faq-answer a:visited, .faq-credits a:visited { color: #A8D8D2; }
   }
 
   /* Answer tables */
@@ -563,7 +571,7 @@
       parts.push(`
 <div class="card">
   <div class="card-header">Credits &amp; Attribution</div>
-  <div class="card-body" style="font-size:13px; line-height:1.6;">`);
+  <div class="card-body faq-credits" style="font-size:13px; line-height:1.6;">`);
       for (const line of data.credits.lines) {
         parts.push(`    <p style="margin:0 0 4px 0;">${line}</p>`);
       }
@@ -1029,7 +1037,9 @@
         else if (chosen.status === 'unavailable') text += ' Not available right now' + (chosen.why ? ': ' + chosen.why : '') + '.';
         else if (chosen.status === 'not-here') text += ' It has no picture in this view, so DSS2 is shown.';
       }
-      if (st.mode === 'best' && cov === 'failed') text += (text ? ' ' : '') + 'The coverage lookup at CDS did not answer, so the space-telescope pictures cannot be offered automatically; choose one from the list to try it.';
+      const down = src.filter(s => s.status === 'unavailable' && /not answering/.test(s.why || ''))[0];
+      if (st.mode === 'best' && down) text += (text ? ' ' : '') + 'Webb, Hubble, ESO and Pan-STARRS1 are hosted by CDS in Strasbourg, which is not answering at the moment, so DSS2 is shown from a mirror. They will be tried again in a few minutes.';
+      else if (st.mode === 'best' && cov === 'failed') text += (text ? ' ' : '') + 'The coverage lookup at CDS did not answer, so the space-telescope pictures cannot be offered automatically; choose one from the list to try it.';
       about.textContent = text;
     }
   }
