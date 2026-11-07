@@ -30,6 +30,12 @@ Canterbury | 1995–1999 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/
 Canterbury | 2000–2004 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_2000_2004/MapServer
 Canterbury | 2010–2014 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_2010_2014/MapServer
 Canterbury | 2015–2019 | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Canterbury_Imagery_2015_2019/MapServer
+# Scanned survey maps, not photographs: the Black Maps, the earliest survey plans of
+# the Canterbury Land District (1848 to about 1870), scanned and georeferenced in a
+# project led by Te Rūnanga o Ngāi Tahu with Environment Canterbury, LINZ and
+# Archives New Zealand. NZTM, no tile cache, so drawn through /export. Since extended to
+# Ashburton, Timaru and Mackenzie. Box from the service's full extent.
+Canterbury | 1848–c.1870 Black Maps (map) | https://gis.ecan.govt.nz/arcgis/rest/services/Public/BlackMaps_Originals/MapServer | -45.5,169.4,-42.7,174.4
 Christchurch | September 2010 earthquake | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Christchurch_Post_Earthquake_Sep_2010_Imagery/MapServer
 Christchurch | June 2011 earthquake recovery | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Christchurch_Post_Earthquake_Jun_2011_Imagery/MapServer
 Christchurch | December 2011 earthquake recovery | https://gisbasemap.ecan.govt.nz/arcgis/rest/services/Imagery/Christchurch_Post_Earthquake_Dec_2011_Imagery/MapServer
