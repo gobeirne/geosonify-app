@@ -30,7 +30,7 @@
     } catch (e) {}
     return 'js/lib/geosonify-imagery-catalogue.json';
   })();
-  var CACHE_BUST = '20261107a';
+  var CACHE_BUST = '20261108a';
 
   var entries = null, byKey = null, loading = null;
 

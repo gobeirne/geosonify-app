@@ -1,6 +1,15 @@
 /**
- * geosonify-map-manager.js v1.8
+ * geosonify-map-manager.js v1.9
  *
+ * v1.9 (2026-11-07): an XYZ template only asks for the zoom levels its server
+ *   has. A WMTS GetTile template that names a limited tile-matrix set
+ *   (TILEMATRIXSET=PM_6_14, as IGN's Géoplateforme does for its historical maps)
+ *   now gets its zoom range from that name (maxNativeZoom; nothing drawn
+ *   below the first level), and a catalogue layer
+ *   with a recorded zoom range (zr) uses it. Beyond the last level the tiles
+ *   are enlarged, as Leaflet does for every source past its native zoom.
+ *   Before, every zoom up to 19 was requested; a Cassini or État-major map
+ *   (z6-14 / z6-15) returned nothing at street zoom, and the layer fell back.
  * v1.8 (2026-10-25): a tile layer falls back only once every tile asked for
  * has failed with nothing drawn (not after any three), and falls back to
  * options.fallback (Aerial, for a dated Aerial or a local layer), not always
@@ -758,6 +767,28 @@
     };
   }
 
+  // v1.9: the zoom levels an XYZ template's server actually has. A WMTS
+  // GetTile template naming a limited Web Mercator tile-matrix set
+  // ('PM_<min>_<max>') says so itself; otherwise a catalogue layer's recorded
+  // zoom range; otherwise 0-19 as before.
+  function _nativeZooms(tileUrl, sourceUrl) {
+    let min = 0, max = 19;
+    const m = /[?&]tilematrixset=PM_(\d{1,2})_(\d{1,2})(?:&|$)/i.exec(String(tileUrl || ''));
+    if (m) { min = +m[1]; max = +m[2]; }
+    else {
+      try {
+        const C = global.GeosonifyImageryCatalogue;
+        const e = (C && C.isLoaded && C.isLoaded() && C.byUrl) ? C.byUrl(sourceUrl || tileUrl) : null;
+        if (e && Array.isArray(e.zr)) {
+          if (e.zr[0] != null) min = e.zr[0];
+          if (e.zr[1] != null) max = e.zr[1];
+        }
+      } catch (err) {}
+    }
+    if (!(min >= 0 && max >= min && max <= 22)) { min = 0; max = 19; }
+    return { min, max };
+  }
+
   // ---- Esri World Imagery Wayback ('aerial@YYYY-MM-DD') --------------------
   // Resolved through GeosonifyWayback (js/lib/geosonify-wayback.js) to the
   // release published on that date or the latest before it. The catalogue is
@@ -839,9 +870,13 @@
       isImagery = true;   // any pasted custom basemap is assumed to be imagery
     }
 
+    const nz = _nativeZooms(tileUrl, options._sourceUrl);
     const newLayer = L.tileLayer(tileUrl, {
       attribution: attrib,
-      maxNativeZoom: 19,
+      // Below the first level nothing is drawn (minZoom, not minNativeZoom:
+      // stretching z6 tiles down to a continent would ask for thousands).
+      minZoom: nz.min,
+      maxNativeZoom: Math.min(nz.max, _basemapMaxZoom),
       maxZoom: _basemapMaxZoom
     });
     _installBasemap(newLayer, isImagery, tileUrl === _OSM_URL, options, _tileWatch(newLayer));
@@ -1756,6 +1791,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.8 loaded');
+  console.log('[geosonify] map-manager v1.9 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
