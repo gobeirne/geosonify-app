@@ -44,12 +44,12 @@
 
     sections: [
 
-      // ================================================================
+      // =================================================================
       // The reader sees the plain-language FAQ. Every place where the old
       // version carried precise technical detail, that detail is preserved
       // verbatim inside a collapsible <details> block ("The details are
       // here"), hidden from casual readers but one tap away for the curious.
-      // ================================================================
+      // =================================================================
 
       {
         id: 'about',
