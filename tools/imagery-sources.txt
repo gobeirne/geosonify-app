@@ -559,29 +559,33 @@ Berlin | 1953, 1:22,000 | https://gdi.berlin.de/services/wms/luftbild_1953_22?la
 # Berlin 1956 (Spandau North) and 1959 offer only photo centres and flight coverage, no mosaic:
 #   https://gdi.berlin.de/services/wms/luftbild_1956_08   https://gdi.berlin.de/services/wms/luftbild_1959_04
 Brandenburg | 1953, 1 m orthophoto | https://isk.geobasis-bb.de/mapproxy/dop100g_1953/service/wms?layers=bb_dop100g_1953 | 51.36,11.26,53.56,14.77
-Helsinki | 1932 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1932 | 60.10,24.78,60.30,25.26
-Helsinki | 1943 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1943 | 60.10,24.78,60.30,25.26
-Helsinki | 1950 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1950 | 60.10,24.78,60.30,25.26
-Helsinki | 1954 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1954 | 60.10,24.78,60.30,25.26
-Helsinki | 1956 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1956 | 60.10,24.78,60.30,25.26
-Helsinki | 1961 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1961 | 60.10,24.78,60.30,25.26
-Helsinki | 1964 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1964 | 60.10,24.78,60.30,25.26
-Helsinki | 1969 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1969 | 60.10,24.78,60.30,25.26
-Helsinki | 1972 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1972 | 60.10,24.78,60.30,25.26
-Helsinki | 1976 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1976 | 60.10,24.78,60.30,25.26
-Helsinki | 1982 false colour | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Vaaravariortoilmakuva_1982 | 60.10,24.78,60.30,25.26
-Helsinki | 1987 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1987 | 60.10,24.78,60.30,25.26
-Helsinki | 1988 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1988 | 60.10,24.78,60.30,25.26
-Helsinki | 1991 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1991 | 60.10,24.78,60.30,25.26
-Helsinki | 1993 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1993 | 60.10,24.78,60.30,25.26
-Helsinki | 1995 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1995 | 60.10,24.78,60.30,25.26
-Helsinki | 1996 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1996 | 60.10,24.78,60.30,25.26
-Helsinki | 1997 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1997 | 60.10,24.78,60.30,25.26
-Helsinki | 1998 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1998 | 60.10,24.78,60.30,25.26
-Helsinki | 2001 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2001 | 60.10,24.78,60.30,25.26
-Helsinki | 2004, 5 cm | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2004_5cm | 60.10,24.78,60.30,25.26
-Helsinki | 2005 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2005 | 60.10,24.78,60.30,25.26
-Helsinki | 2010 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2010 | 60.10,24.78,60.30,25.26
+# Skipped: Helsinki (kartta.hel.fi), 23 layers 1932–2010. Its WMS stalls the
+# builder for a long time and every layer failed in the 2026-11-07 run
+# (capabilities unreadable, image requests failed), so none is in the catalogue.
+# Uncomment to try again.
+# Helsinki | 1932 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1932 | 60.10,24.78,60.30,25.26
+# Helsinki | 1943 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1943 | 60.10,24.78,60.30,25.26
+# Helsinki | 1950 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1950 | 60.10,24.78,60.30,25.26
+# Helsinki | 1954 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1954 | 60.10,24.78,60.30,25.26
+# Helsinki | 1956 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1956 | 60.10,24.78,60.30,25.26
+# Helsinki | 1961 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1961 | 60.10,24.78,60.30,25.26
+# Helsinki | 1964 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1964 | 60.10,24.78,60.30,25.26
+# Helsinki | 1969 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1969 | 60.10,24.78,60.30,25.26
+# Helsinki | 1972 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1972 | 60.10,24.78,60.30,25.26
+# Helsinki | 1976 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1976 | 60.10,24.78,60.30,25.26
+# Helsinki | 1982 false colour | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Vaaravariortoilmakuva_1982 | 60.10,24.78,60.30,25.26
+# Helsinki | 1987 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1987 | 60.10,24.78,60.30,25.26
+# Helsinki | 1988 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1988 | 60.10,24.78,60.30,25.26
+# Helsinki | 1991 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1991 | 60.10,24.78,60.30,25.26
+# Helsinki | 1993 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1993 | 60.10,24.78,60.30,25.26
+# Helsinki | 1995 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1995 | 60.10,24.78,60.30,25.26
+# Helsinki | 1996 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1996 | 60.10,24.78,60.30,25.26
+# Helsinki | 1997 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1997 | 60.10,24.78,60.30,25.26
+# Helsinki | 1998 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_1998 | 60.10,24.78,60.30,25.26
+# Helsinki | 2001 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2001 | 60.10,24.78,60.30,25.26
+# Helsinki | 2004, 5 cm | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2004_5cm | 60.10,24.78,60.30,25.26
+# Helsinki | 2005 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2005 | 60.10,24.78,60.30,25.26
+# Helsinki | 2010 | https://kartta.hel.fi/ws/geoserver/avoindata/wms?layers=Ortoilmakuva_2010 | 60.10,24.78,60.30,25.26
 Espoo / Kauniainen | 1950 | https://kartat.espoo.fi/teklaogcweb/wms.ashx?layers=Ortokartta_1950 | 60.10,24.50,60.36,24.85
 Espoo / Kauniainen | 1969 | https://kartat.espoo.fi/teklaogcweb/wms.ashx?layers=Ortokartta_1969 | 60.10,24.50,60.36,24.85
 Espoo / Kauniainen | 1976 | https://kartat.espoo.fi/teklaogcweb/wms.ashx?layers=Ortokartta_1976 | 60.10,24.50,60.36,24.85
@@ -649,7 +653,7 @@ Norfolk | 1988 (alternative) | https://maps.norfolk.gov.uk/arcgis/rest/services/
 # Switzerland (swisstopo, free geodata, credit swisstopo). XYZ on the federal
 # WMTS: https://wmts.geo.admin.ch/1.0.0/<layer>/default/<time>/3857/{z}/{x}/{y}.png
 Switzerland | 1845–1865 Dufour map, first edition (map) | https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hiks-dufour/default/current/3857/{z}/{x}/{y}.png | 45.8,5.9,47.85,10.5
-Switzerland | 1870–1926 Siegfried map, first edition (map) | https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hiks-siegfried/default/19260101/3857/{z}/{x}/{y}.png | 45.8,5.9,47.85,10.5
+Switzerland | 1870–1926 Siegfried map, first edition (map) | https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.hiks-siegfried/default/current/3857/{z}/{x}/{y}.png | 45.8,5.9,47.85,10.5
 # "Journey through time": the national map as it stood at the end of each year.
 Switzerland | 1864 national map (map) | https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.zeitreihen/default/18641231/3857/{z}/{x}/{y}.png | 45.8,5.9,47.85,10.5
 Switzerland | 1900 national map (map) | https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.zeitreihen/default/19001231/3857/{z}/{x}/{y}.png | 45.8,5.9,47.85,10.5
@@ -668,8 +672,9 @@ France | 1950 IGN map, SCAN 50 (map) | https://data.geopf.fr/wmts?SERVICE=WMTS&R
 # Flanders (Digitaal Vlaanderen, open data). One WMS, one layer per map.
 Flanders | 1571 Pourbus map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=pourbus | 50.68,2.53,51.52,5.92
 Flanders | 1712 Frickx map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=frickx | 50.68,2.53,51.52,5.92
-Flanders | 1729–1730 Masse map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=masse | 50.68,2.53,51.52,5.92
-Flanders | 1745–1748 Villaret map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=villaret | 50.68,2.53,51.52,5.92
+# Layer names are case-sensitive; the capabilities spell these two with a capital.
+Flanders | 1729–1730 Masse map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=Masse | 50.68,2.53,51.52,5.92
+Flanders | 1745–1748 Villaret map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=Villaret | 50.68,2.53,51.52,5.92
 Flanders | 1771–1778 Ferraris map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=ferraris | 50.68,2.53,51.52,5.92
 Flanders | c. 1840 Atlas der Buurtwegen (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=abw | 50.68,2.53,51.52,5.92
 Flanders | 1842–1879 Popp cadastral map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=popp | 50.68,2.53,51.52,5.92
