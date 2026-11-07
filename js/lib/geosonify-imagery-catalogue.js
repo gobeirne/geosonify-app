@@ -30,7 +30,7 @@
     } catch (e) {}
     return 'js/lib/geosonify-imagery-catalogue.json';
   })();
-  var CACHE_BUST = '20261108a';
+  var CACHE_BUST = '20261108b';
 
   var entries = null, byKey = null, loading = null;
 
@@ -38,7 +38,10 @@
     try { return new URL(String(u).trim()).href.replace(/\/+(\?|$)/, '$1'); } catch (e) { return String(u || '').trim(); }
   }
   function yearOf(e) {
-    var m = String(e.l || '').match(/(1[89]\d\d|20\d\d)/);
+    // The first year in the label, 1500-2099 ("1571 Pourbus map", "1940s",
+    // "c. 1756-1815"). Before, only 1800-2099 counted, so maps from the 1500s
+    // and 1700s had no year and sorted above Latest.
+    var m = String(e.l || '').match(/(?:^|[^\d])(1[5-9]\d\d|20\d\d)(?!\d)/);
     if (m) return +m[1];
     return e.y || null;
   }

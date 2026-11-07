@@ -1052,7 +1052,8 @@
     a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  const yearOf = s => { const m = String(s).match(/\b(1[89]\d\d|20\d\d)\b/); return m ? +m[1] : null; };
+  // The first year in a label, 1500-2099, also inside "1940s" or "c. 1756-1815".
+  const yearOf = s => { const m = String(s).match(/(?:^|[^\d])(1[5-9]\d\d|20\d\d)(?!\d)/); return m ? +m[1] : null; };
   $('#dlCat').addEventListener('click', () => {
     const usable = entries.filter(e => e.status === 'confirmed' || e.status === 'loaded');
     const out = {

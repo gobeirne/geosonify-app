@@ -1,6 +1,22 @@
 /**
- * geosonify-map-manager.js v1.9
+ * geosonify-map-manager.js v1.10
  *
+ * v1.10 (2026-11-08): A MAP IS SHOWN WHEREVER ITS DATA EXISTS, enlarged if need
+ *   be, rather than failing. Three parts:
+ *   - Tiled imagery (XYZ templates and ArcGIS tile caches) is drawn by an
+ *     OverzoomTiles layer: a tile that fails to load is replaced by the
+ *     matching quarter (eighth, ...) of its parent tile, up to OVERZOOM_LEVELS
+ *     levels up, so zooming past a server's last level, or into a gap in a
+ *     sparse cache, shows the most detailed picture there is, enlarged.
+ *   - A zoom range known in advance (a WMTS 'PM_<min>_<max>' tile-matrix set,
+ *     or a catalogue layer's zr from the service's scale limits) sets
+ *     maxNativeZoom for every kind of layer, including WMS and ArcGIS /export,
+ *     whose servers return a blank picture outside their scale range rather
+ *     than an error; Leaflet then asks for the last level and enlarges it.
+ *   - Below the first level the first level is shrunk (minNativeZoom) for two
+ *     zoom levels (one for server-drawn layers, which redraw every request);
+ *     further out nothing is drawn, which keeps the number of requests sane.
+ *   v1.9's minZoom cut-off (nothing shown below the first level) is gone.
  * v1.9 (2026-11-07): an XYZ template only asks for the zoom levels its server
  *   has. A WMTS GetTile template that names a limited tile-matrix set
  *   (TILEMATRIXSET=PM_6_14, as IGN's Géoplateforme does for its historical maps)
@@ -342,10 +358,88 @@
     }
   }));
   const _bbox = b => b.map(v => v.toFixed(2)).join(',');
-  function _exportTileLayer(urlFor, attribution, bounds) {
-    const opts = { tileSize: EXPORT_TILE, maxZoom: _basemapMaxZoom, attribution: attribution };
+  function _exportTileLayer(urlFor, attribution, bounds, zr) {
+    const opts = Object.assign({ tileSize: EXPORT_TILE, maxZoom: _basemapMaxZoom, attribution: attribution },
+                               _zoomRangeOpts(zr, 1));
     if (bounds) opts.bounds = bounds;
     return new (_defineExportTiles())(urlFor, opts);
+  }
+
+  /*
+    v1.10: Leaflet options for a layer whose server has data only between
+    zr[0] and zr[1] (either may be null). Past the last level the last level is
+    enlarged (maxNativeZoom); below the first, the first is shrunk for
+    `shrink` levels (minNativeZoom), and nothing is drawn further out.
+  */
+  function _zoomRangeOpts(zr, shrink) {
+    const o = {};
+    if (!Array.isArray(zr)) return o;
+    const lo = zr[0], hi = zr[1];
+    if (hi != null && hi >= 0) o.maxNativeZoom = Math.min(hi, _basemapMaxZoom);
+    if (lo != null && lo > 0 && (hi == null || lo <= hi)) {
+      o.minNativeZoom = lo;
+      o.minZoom = Math.max(0, lo - (shrink || 0));
+    }
+    return o;
+  }
+
+  /*
+    v1.10: tiles that fall back to their ancestors. When a tile fails, the same
+    place is taken from the tile one level up (then two, ...), shown at the
+    right size and offset, so a server's missing levels or gaps show its most
+    detailed picture enlarged instead of nothing. Only when no ancestor within
+    OVERZOOM_LEVELS loads does the tile count as failed (which is what the
+    fall-back watch in _tileWatch counts).
+  */
+  const OVERZOOM_LEVELS = 8;
+  let OverzoomTiles = null;
+  const _defineOverzoomTiles = () => OverzoomTiles || (OverzoomTiles = L.TileLayer.extend({
+    createTile: function (coords, done) {
+      const ts = this.getTileSize();
+      const tile = document.createElement('div');
+      tile.style.overflow = 'hidden';
+      const img = document.createElement('img');
+      img.alt = '';
+      img.setAttribute('role', 'presentation');
+      if (this.options.crossOrigin || this.options.crossOrigin === '') {
+        img.crossOrigin = this.options.crossOrigin === true ? '' : this.options.crossOrigin;
+      }
+      img.style.position = 'absolute';
+      img.style.left = '0'; img.style.top = '0';
+      img.style.width = ts.x + 'px'; img.style.height = ts.y + 'px';
+      img.style.maxWidth = 'none';
+      tile.appendChild(img);
+      let k = 0;
+      const self = this;
+      const urlAt = (lev) => {
+        if (lev === 0) return self.getTileUrl(coords);
+        const saved = self._tileZoom;
+        try {
+          self._tileZoom = saved - lev;
+          return self.getTileUrl({ x: coords.x >> lev, y: coords.y >> lev, z: coords.z - lev });
+        } finally { self._tileZoom = saved; }
+      };
+      const place = (lev) => {
+        const n = 1 << lev;
+        img.style.width = (ts.x * n) + 'px';
+        img.style.height = (ts.y * n) + 'px';
+        img.style.left = (-(coords.x & (n - 1)) * ts.x) + 'px';
+        img.style.top = (-(coords.y & (n - 1)) * ts.y) + 'px';
+      };
+      img.onload = () => done(null, tile);
+      img.onerror = (e) => {
+        k++;
+        const zUrl = (self._tileZoom || 0) - k;
+        if (k > OVERZOOM_LEVELS || zUrl < (self.options.minNativeZoom || 0)) { done(e, tile); return; }
+        place(k);
+        img.src = urlAt(k);
+      };
+      img.src = urlAt(0);
+      return tile;
+    }
+  }));
+  function _overzoomTileLayer(url, opts) {
+    return new (_defineOverzoomTiles())(url, opts);
   }
   // Coverage to restrict requests to: the service's own (Web Mercator/WGS84)
   // extent, else the curated catalogue's boxes.
@@ -593,6 +687,7 @@
       maxZoom: _basemapMaxZoom,
       attribution: attribution || _catAttrib(entry, 'Imagery © its provider')
     };
+    Object.assign(opts, _zoomRangeOpts(entry && entry.zr, 1));   // v1.10
     if (w.time || cw.time) opts.TIME = w.time || cw.time;          // unknown options become WMS parameters
     const layer = L.tileLayer.wms(cw.base || w.base, opts);
     _installBasemap(layer, true, false, options, _tileWatch(layer));
@@ -605,7 +700,7 @@
     const tok = is.token ? '&token=' + encodeURIComponent(is.token) : '';
     const layer = _exportTileLayer((b, w, h) => is.root + '/exportImage?bbox=' + _bbox(b) +
       '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&format=jpgpng&f=image' + tok,
-      attribution || _catAttrib(entry, 'Imagery © its provider'), _coverBounds(null, entry));
+      attribution || _catAttrib(entry, 'Imagery © its provider'), _coverBounds(null, entry), entry && entry.zr);
     _installBasemap(layer, true, false, options, _tileWatch(layer));
     return { ok: true, mode: 'image', url: is.root, label: entry ? entry.r + ' ' + entry.l : '' };
   }
@@ -742,7 +837,9 @@
         maxZoom: _basemapMaxZoom
       };
       if (plan.bounds) opts.bounds = L.latLngBounds(plan.bounds).pad(0.02);
-      const layer = L.tileLayer(tileUrl, opts);
+      // Below the first level of the cache, shrink it for two levels only.
+      if (opts.minNativeZoom > 0) opts.minZoom = Math.max(0, opts.minNativeZoom - 2);
+      const layer = _overzoomTileLayer(tileUrl, opts);
       _installBasemap(layer, true, false, options, _tileWatch(layer));
       return { ok: true, mode: 'tiles', url: tileUrl, label: plan.label };
     }
@@ -755,7 +852,7 @@
     const layer = _exportTileLayer((b, w, h) => ms.root + '/export?bbox=' + _bbox(b) +
       '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&dpi=96&format=' + plan.format +
       '&transparent=true&f=image' + lyr + tokenQS.replace('?', '&'),
-      attrib, _coverBounds(plan.bounds, entry));
+      attrib, _coverBounds(plan.bounds, entry), entry && entry.zr);
     _installBasemap(layer, true, false, options, _tileWatch(layer));
     return {
       ok: true, mode: 'export', url: ms.root, label: plan.layerName ? (plan.label ? plan.label + ' · ' : '') + plan.layerName : plan.label,
@@ -871,14 +968,14 @@
     }
 
     const nz = _nativeZooms(tileUrl, options._sourceUrl);
-    const newLayer = L.tileLayer(tileUrl, {
+    // v1.10: past the last level enlarge it; a missing tile is taken from
+    // its ancestors (OverzoomTiles); below the first level shrink it for two
+    // levels, then nothing.
+    const newLayer = (isImagery ? _overzoomTileLayer : L.tileLayer)(tileUrl, Object.assign({
       attribution: attrib,
-      // Below the first level nothing is drawn (minZoom, not minNativeZoom:
-      // stretching z6 tiles down to a continent would ask for thousands).
-      minZoom: nz.min,
-      maxNativeZoom: Math.min(nz.max, _basemapMaxZoom),
+      maxNativeZoom: 19,
       maxZoom: _basemapMaxZoom
-    });
+    }, _zoomRangeOpts([nz.min || null, nz.max], 2)));
     _installBasemap(newLayer, isImagery, tileUrl === _OSM_URL, options, _tileWatch(newLayer));
     return { ok: true, url: tileUrl };
   }
@@ -1791,6 +1888,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.9 loaded');
+  console.log('[geosonify] map-manager v1.10 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
