@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-aladin.js  v0.3  — Aladin Lite as a backend viewport
+  geosonify-sky-aladin.js  v0.6  — Aladin Lite as a backend viewport
 
   Implements the SAME contract as the built-in renderer (geosonify-sky-renderer.js),
   so nothing above the seam knows or cares which one is live. Aladin supplies sky
@@ -15,6 +15,54 @@
   geosonify-sky-flip.js turn it back to north-up before the way down to Earth.
   Callers must test for them (the built-in renderer cannot rotate and has
   neither) and must MEASURE the result rather than assume the sign convention.
+
+  v0.6: THE BEST PICTURE WHEREVER THERE IS ONE, AND THE OTHERS ON REQUEST.
+  DSS2 colour stays the base (whole sky, ~1 arcsec, with the mirrors below).
+  Over it, bottom to top (IMAGERY_SOURCES, read top-down):
+
+      Webb outreach            ESA/Webb press images          CDS/P/JWST/EPO
+      Hubble outreach          NASA/ESA press images, 25 mas  CDS/P/HST/EPO
+      ESO outreach             ESO press images               CDS/P/ESO/EPO
+      Pan-STARRS1 DR1 colour   ~0.25 arcsec, dec > -29.5      CDS/P/PanSTARRS/DR1/color-z-zg-g
+
+  setImagery('best') shows every source that has a picture in the field, in
+  that order, once the field is narrower than IMAGERY_ON_FOV_DEG. setImagery(
+  key) shows that one source alone over DSS2, at any field, so two sources can
+  be compared at the same place. getImagery() reports, for each source, whether
+  it has a picture HERE ('here', 'not-here', 'unknown', 'unavailable'), which
+  is what the Map imagery card lists. 'imagery' is emitted when that changes.
+
+  Facts read from the Aladin Lite source that decide how this is built:
+
+    * A layer whose tiles are JPEG (no alpha) at opacity 1 is treated as
+      covering the sky, and every layer BENEATH it is skipped (renderable/
+      mod.rs, `full_covering_hips`). Pan-STARRS colour is JPEG-only, so outside
+      its footprint it would paint black over DSS2: it is shown only when the
+      whole field lies north of its floor. A sparse layer that turns out to
+      serve JPEG is never shown, for the same reason.
+    * Layers at opacity 0 still fetch tiles (app.rs, look_for_new_tiles loops
+      over every HiPS), so a hidden layer is not free. The overlays are created
+      only when first needed.
+    * Stacking order is creation order (each layer's add waits on every earlier
+      layer's query), so all four are created together, once, bottom to top;
+      after that, showing and hiding is opacity only.
+    * A HiPS constructor reads `opacity || 1`, so a layer cannot be created
+      hidden: it is hidden immediately after.
+
+  Which sparse sources have a picture in the field comes from the CDS
+  MocServer (one cone query per settled view, reused while the view stays
+  roughly put). These four sources and the MocServer all live in Strasbourg,
+  which was down for days in late October 2026. So nothing is assumed: an
+  unanswered coverage query leaves the sparse sources 'unknown', which Best
+  does not show or credit, and a layer Aladin fails to load is 'unavailable'.
+  In an outage the view is exactly the DSS2 (mirror) view it was before.
+
+  The coverage query sends the field's centre and size to Strasbourg, which is
+  also a place on Earth; opts.coverageAllowed() returning false (the sky view
+  passes its privacy check) stops it, and the sparse sources stay 'unknown'.
+
+  Not part of the renderer contract: setImagery / getImagery and the
+  'imagery' event. The built-in renderer has none of them; callers test.
 
   WHY WE DO NOT USE aladin.addMOC()
   ---------------------------------
@@ -59,7 +107,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.5';
+  var VERSION = 'v0.6';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
   var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
@@ -328,6 +376,44 @@
   function isAvailable() { return webgl2Available(); }
 
   /*
+    The imagery sources, top to bottom (see the header). `key` is what a link
+    carries (?skyimg=); `sparse` sources are islands with transparent tiles
+    around them; `decFloor` is a survey's southern limit. DSS2 is the base and
+    is always present.
+  */
+  var IMAGERY_SOURCES = [
+    { key: 'jwst', id: 'CDS/P/JWST/EPO', label: 'Webb', credit: 'ESA/Webb', sparse: true,
+      about: 'James Webb Space Telescope press images (ESA/Webb), near-infrared and mid-infrared' },
+    { key: 'hst',  id: 'CDS/P/HST/EPO',  label: 'Hubble', credit: 'NASA/ESA Hubble', sparse: true,
+      about: 'Hubble Space Telescope press images (NASA/ESA), visible light' },
+    { key: 'eso',  id: 'CDS/P/ESO/EPO',  label: 'ESO', credit: 'ESO', sparse: true,
+      about: 'European Southern Observatory press images (VLT, VISTA, VST and others)' },
+    { key: 'ps1',  id: 'CDS/P/PanSTARRS/DR1/color-z-zg-g', label: 'Pan-STARRS1', credit: 'Pan-STARRS1',
+      sparse: false, decFloor: -29.5,
+      about: 'Pan-STARRS1 survey colour (University of Hawai\u02bbi), the sky north of declination \u221230\u00b0' },
+    { key: 'dss',  id: 'P/DSS2/color', label: 'DSS2', credit: 'DSS2', base: true,
+      about: 'Digitized Sky Survey 2 colour (STScI), the whole sky from photographic plates' }
+  ];
+  var IMAGERY_MODES = ['best'].concat(IMAGERY_SOURCES.map(function (s) { return s.key; }));
+  function imageryMode(v) {
+    var k = String(v == null ? '' : v).trim().toLowerCase();
+    return IMAGERY_MODES.indexOf(k) >= 0 ? k : null;
+  }
+  function imagerySource(key) {
+    for (var i = 0; i < IMAGERY_SOURCES.length; i++) if (IMAGERY_SOURCES[i].key === key) return IMAGERY_SOURCES[i];
+    return null;
+  }
+  // Best engages below the first field (smaller side, degrees) and releases
+  // above the second: hysteresis, so a field near the line does not flicker.
+  var IMAGERY_ON_FOV_DEG = 3, IMAGERY_OFF_FOV_DEG = 4;
+  // Coverage is asked about fields up to this size (no tiles: one small query).
+  var COVERAGE_MAX_FOV_DEG = 30;
+  var IMAGERY_SETTLE_MS = 350;
+  var MOCSERVER_URLS = ['https://alasky.unistra.fr/MocServer/query',
+                        'https://alaskybis.unistra.fr/MocServer/query'];
+  var MOCSERVER_TIMEOUT_MS = 6000;
+
+  /*
     Create an Aladin-backed renderer.
 
     Asynchronous, unlike the built-in one, because the module must load first.
@@ -338,7 +424,7 @@
     opts = opts || {};
     var aladin = null, A = null;
     var svg = null, gOverlay = null, inner = null;
-    var listeners = { move: [], zoom: [], resize: [], click: [] };
+    var listeners = { move: [], zoom: [], resize: [], click: [], imagery: [] };
     var ro = null, destroyed = false;
 
     var pendingRa = opts.ra === undefined ? 0 : opts.ra;
@@ -420,9 +506,10 @@
         aladin.on('positionChanged', function (p) {
           if (p && p.dragging && downAt) dragged = true;
           emit('move', { ra: p && p.ra, dec: p && p.dec, dragging: !!(p && p.dragging) });
+          scheduleImagery();
         });
-        aladin.on('zoomChanged', function () { emit('zoom', { fovDeg: getFovDeg() }); });
-        aladin.on('resizeChanged', function () { syncOverlaySize(); emit('resize', size()); });
+        aladin.on('zoomChanged', function () { emit('zoom', { fovDeg: getFovDeg() }); scheduleImagery(); });
+        aladin.on('resizeChanged', function () { syncOverlaySize(); emit('resize', size()); scheduleImagery(); });
         aladin.on('click', function (e) {
           var wasDrag = dragged;
           downAt = null; dragged = false;
@@ -442,8 +529,213 @@
           ro.observe(container);
         }
         syncOverlaySize();
+        scheduleImagery();
         return true;
       });
+    }
+
+    /* ── the imagery sources (v0.6) ───────────────────────────────────── */
+
+    var mode = imageryMode(opts.imagery) || 'best';
+    var stack = null;          // {key: entry} once created; entry = {src, layer, shown, failed}
+    var engaged = false;       // Best: field narrow enough for the overlays
+    var covered = {};          // sparse key -> true / false; absent = not known
+    var coverCone = null;      // the cone `covered` answers for
+    var coverGen = 0;          // drops answers to superseded questions
+    var settleTimer = null;
+    var lastSig = '';          // what was last reported through 'imagery'
+    var pendingPolls = 0, MAX_PENDING_POLLS = 60;    // ~20 s of waiting for layers
+
+    function scheduleImagery() {
+      if (destroyed || !aladin) return;
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(function () { settleTimer = null; updateImagery(); }, IMAGERY_SETTLE_MS);
+    }
+
+    // The field as a cone: centre, and the radius that reaches its corners.
+    function fieldCone() {
+      var c = null, f = null;
+      try { c = aladin.getRaDec(); } catch (e) {}
+      try { f = aladin.getFov(); } catch (e) {}
+      if (!c || !isFinite(c[0]) || !isFinite(c[1])) return null;
+      var fx = Array.isArray(f) ? f[0] : f, fy = Array.isArray(f) ? f[1] : f;
+      if (!isFinite(fx)) return null;
+      if (!isFinite(fy) || fy >= 179.999) {
+        var sz = size();
+        fy = (sz.width && sz.height) ? fx * sz.height / sz.width : fx;
+      }
+      return { ra: +c[0], dec: +c[1], r: Math.min(90, 0.5 * Math.sqrt(fx * fx + fy * fy)) };
+    }
+
+    // Create the four overlays once, bottom to top, all hidden. False if this
+    // Aladin build lacks the calls (the test mock does; that is fine).
+    function ensureStack() {
+      if (stack) return true;
+      if (!A || !aladin || typeof aladin.setOverlayImageLayer !== 'function') return false;
+      var make = (typeof A.HiPS === 'function') ? A.HiPS
+               : (typeof A.imageHiPS === 'function') ? A.imageHiPS : null;
+      if (!make) return false;
+      stack = {};
+      IMAGERY_SOURCES.slice().reverse().forEach(function (src) {
+        if (src.base) return;
+        var entry = { src: src, layer: null, shown: false, failed: false };
+        stack[src.key] = entry;
+        try {
+          var hips = make(src.id, {
+            name: src.label,
+            errorCallback: function () { entry.failed = true; scheduleImagery(); }
+          });
+          entry.layer = aladin.setOverlayImageLayer(hips, 'gs-' + src.key) || hips;
+          if (entry.layer && typeof entry.layer.setOpacity === 'function') entry.layer.setOpacity(0);
+        } catch (e) {
+          entry.failed = true;
+          console.warn('[geosonify] sky layer ' + src.id + ' not added:', e && e.message);
+        }
+      });
+      return true;
+    }
+
+    function loaded(entry) { return !!(entry && entry.layer && entry.layer.added && !entry.failed); }
+
+    // A sparse layer is usable only with transparent tiles (see the header).
+    function transparentOk(entry) {
+      if (!entry.src.sparse) return true;
+      var fmt = String(entry.layer && entry.layer.imgFormat || '').toLowerCase();
+      if (fmt === 'png' || fmt === 'webp') return true;
+      if (!entry.warned) {
+        entry.warned = true;
+        console.warn('[geosonify] ' + entry.src.id + ' serves ' + (fmt || 'no') +
+                     ' tiles, not PNG; kept hidden so it cannot black out the sky beneath');
+      }
+      return false;
+    }
+
+    function sameCone(a, b) {
+      if (!a || !b) return false;
+      var cosd = Math.cos(a.dec * Math.PI / 180);
+      var dra = ((a.ra - b.ra + 540) % 360) - 180;
+      var sep = Math.sqrt(Math.pow(dra * cosd, 2) + Math.pow(a.dec - b.dec, 2));
+      return sep < 0.25 * Math.min(a.r, b.r) && Math.abs(a.r / b.r - 1) < 0.2;
+    }
+
+    /*
+      Which sparse sources have any picture inside the cone, from the CDS
+      MocServer. Resolves to {key: true|false}, or null when it could not be
+      asked or did not answer -- never to a guess.
+    */
+    function queryCoverage(cone) {
+      if (typeof fetch !== 'function') return Promise.resolve(null);
+      var sparse = IMAGERY_SOURCES.filter(function (s) { return s.sparse; });
+      var qs = 'expr=' + encodeURIComponent('ID=' + sparse.map(function (s) { return s.id; }).join(',')) +
+               '&RA=' + cone.ra.toFixed(6) + '&DEC=' + cone.dec.toFixed(6) +
+               '&SR=' + Math.max(cone.r, 1e-4).toFixed(6) +
+               '&get=record&fmt=json&fields=ID';
+      function attempt(i) {
+        if (i >= MOCSERVER_URLS.length) return Promise.reject(new Error('MocServer unreachable'));
+        var ctl = null, t = null;
+        try { ctl = new AbortController(); } catch (e) {}
+        if (ctl) t = setTimeout(function () { ctl.abort(); }, MOCSERVER_TIMEOUT_MS);
+        return fetch(MOCSERVER_URLS[i] + '?' + qs, ctl ? { signal: ctl.signal } : undefined)
+          .then(function (r) { if (t) clearTimeout(t); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .catch(function () { if (t) clearTimeout(t); return attempt(i + 1); });
+      }
+      return attempt(0).then(function (rows) {
+        if (!Array.isArray(rows)) return null;
+        var found = {};
+        sparse.forEach(function (s) { found[s.key] = false; });
+        rows.forEach(function (row) {
+          var id = String(row && typeof row === 'object' ? (row.ID || row.id || '') : row).replace(/^ivo:\/\//, '');
+          sparse.forEach(function (s) { if (id === s.id) found[s.key] = true; });
+        });
+        return found;
+      }, function () { return null; });
+    }
+
+    function updateImagery() {
+      if (destroyed || !aladin) return;
+      var fov = getFovDeg();
+      if (!engaged && fov <= IMAGERY_ON_FOV_DEG) engaged = true;
+      else if (engaged && fov > IMAGERY_OFF_FOV_DEG) engaged = false;
+      if (engaged || mode !== 'best') ensureStack();
+
+      var cone = fieldCone();
+      // The caller may forbid sending the position anywhere (privacy on).
+      var mayAsk = !(typeof opts.coverageAllowed === 'function' && !opts.coverageAllowed());
+      if (!mayAsk) { covered = {}; coverCone = null; coverGen++; }
+      else if (cone && cone.r * 2 <= COVERAGE_MAX_FOV_DEG && !sameCone(cone, coverCone)) {
+        var gen = ++coverGen, asked = cone;
+        coverCone = asked;                 // asked: do not ask again for this view
+        queryCoverage(cone).then(function (found) {
+          if (destroyed || gen !== coverGen) return;
+          covered = found || {};
+          if (!found) coverCone = null;    // no answer: ask again when the view moves
+          applyImagery();
+        });
+      } else if (!cone || cone.r * 2 > COVERAGE_MAX_FOV_DEG) {
+        covered = {}; coverCone = null; coverGen++;
+      }
+      applyImagery();
+      // Layers finish loading after they are created: look again until they
+      // have (or have failed), but not forever.
+      if (stack && pendingPolls < MAX_PENDING_POLLS &&
+          Object.keys(stack).some(function (k) { var e = stack[k]; return !e.failed && !(e.layer && e.layer.added); })) {
+        pendingPolls++;
+        scheduleImagery();
+      }
+    }
+
+    // 'here' | 'not-here' | 'unknown' | 'unavailable' for one source, now.
+    function statusOf(src, cone) {
+      if (src.base) return 'here';
+      var entry = stack && stack[src.key];
+      if (entry && entry.failed) return 'unavailable';
+      if (src.decFloor !== undefined) {
+        if (!cone) return 'unknown';
+        return (cone.dec - cone.r) > src.decFloor ? 'here' : 'not-here';
+      }
+      if (entry && loaded(entry) && !transparentOk(entry)) return 'unavailable';
+      if (covered[src.key] === true) return 'here';
+      if (covered[src.key] === false) return 'not-here';
+      return 'unknown';
+    }
+
+    function applyImagery() {
+      var cone = fieldCone();
+      var report = IMAGERY_SOURCES.map(function (src) {
+        var st = statusOf(src, cone), show = false;
+        if (!src.base) {
+          var entry = stack && stack[src.key];
+          if (mode === 'best') show = engaged && st === 'here';
+          else if (mode === src.key) show = st === 'here' || (src.sparse && st === 'unknown');
+          if (show && !loaded(entry)) show = false;
+          if (entry && entry.layer && entry.shown !== show) {
+            entry.shown = show;
+            try { entry.layer.setOpacity(show ? 1 : 0); } catch (e) {}
+          }
+        }
+        return { key: src.key, status: st, showing: show };
+      });
+      // DSS2 is seen unless Pan-STARRS covers the whole field over it.
+      var ps1 = report.filter(function (r) { return r.key === 'ps1'; })[0];
+      report.forEach(function (r) { if (r.key === 'dss') r.showing = !(ps1 && ps1.showing); });
+      var sig = mode + '|' + report.map(function (r) { return r.key + ':' + r.status + ':' + (r.showing ? 1 : 0); }).join(',');
+      if (sig !== lastSig) {
+        lastSig = sig;
+        emit('imagery', imageryState());
+      }
+    }
+
+    function imageryState() {
+      var cone = aladin ? fieldCone() : null;
+      var sources = IMAGERY_SOURCES.map(function (src) {
+        var entry = stack && stack[src.key];
+        var showing = src.base ? !(stack && stack.ps1 && stack.ps1.shown) : !!(entry && entry.shown);
+        return { key: src.key, label: src.label, credit: src.credit, about: src.about,
+                 status: statusOf(src, cone), showing: showing };
+      });
+      // Top of the stack first, as the eye meets it.
+      var credits = sources.filter(function (s) { return s.showing; }).map(function (s) { return s.credit; });
+      return { mode: mode, sources: sources, credits: credits };
     }
 
     function project(raDeg, decDeg) {
@@ -491,11 +783,12 @@
       init: init,
       destroy: function () {
         destroyed = true;
+        if (settleTimer) { clearTimeout(settleTimer); settleTimer = null; }
         if (ro) { try { ro.disconnect(); } catch (e) {} ro = null; }
         if (svg && svg.parentNode) svg.parentNode.removeChild(svg);
         if (inner && inner.parentNode) inner.parentNode.removeChild(inner);
         svg = gOverlay = inner = aladin = null;
-        listeners = { move: [], zoom: [], resize: [], click: [] };
+        listeners = { move: [], zoom: [], resize: [], click: [], imagery: [] };
       },
       project: project,
       unproject: unproject,
@@ -562,12 +855,28 @@
       overlayGroup: function () { return gOverlay; },
       // Not decorative. LGPL plus plain courtesy: the imagery and the projection
       // engine are CDS's work and the caller is expected to show this.
+      // v0.6: the sources on screen follow CDS, top of the stack first, and
+      // change as the view moves; 'imagery' is emitted when they do.
       attribution: function () {
+        var credits = aladin ? imageryState().credits : [];
         return {
-          text: 'Sky imagery: Aladin Lite / CDS, Strasbourg',
+          text: 'Sky imagery: Aladin Lite / CDS, Strasbourg' +
+                (credits.length ? ' \u00b7 ' + credits.join(' \u00b7 ') : ''),
           href: 'https://aladin.cds.unistra.fr/'
         };
       },
+      /*
+        OPTIONAL (not in the contract): which imagery to show. 'best', or one
+        source's key (IMAGERY_SOURCES) to see it alone over DSS2. Returns the
+        mode now in force; an unknown value changes nothing.
+      */
+      setImagery: function (m) {
+        var k = imageryMode(m);
+        if (!k) return mode;
+        if (k !== mode) { mode = k; pendingPolls = 0; scheduleImagery(); }
+        return mode;
+      },
+      getImagery: function () { return imageryState(); },
       capabilities: function () {
         return {
           name: 'Aladin Lite',
@@ -595,7 +904,10 @@
     CHROME_OFF: CHROME_OFF,
     isAvailable: isAvailable,
     webgl2Available: webgl2Available,
-    createAladinRenderer: createAladinRenderer
+    createAladinRenderer: createAladinRenderer,
+    IMAGERY_SOURCES: IMAGERY_SOURCES,
+    imageryMode: imageryMode,
+    imagerySource: imagerySource
   };
 
   global.GeosonifySkyAladin = API;

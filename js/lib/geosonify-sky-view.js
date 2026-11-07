@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-view.js  v0.9  — the in-app sky view
+  geosonify-sky-view.js  v0.11  — the in-app sky view
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -14,6 +14,14 @@
   in later without touching a line of this file. Geosonify owns the chrome, the
   readouts, the styling and the depth honesty; a renderer only ever answers
   "where on screen is this (ra, dec)?".
+
+  v0.11: which imagery the sky shows. setImagery('best' | 'jwst' | 'hst' |
+  'eso' | 'ps1' | 'dss') may be called before the view opens (a ?skyimg= link
+  does that) and survives renderer swaps and closing; it is handed to the
+  Aladin renderer whenever one is attached. getImagery() passes through what
+  the renderer reports (each source's status at the current field) with the
+  mode added, and the view emits 'imagery' when that changes. The credit line
+  follows the same event, so a source is credited while it is on screen.
 
   v0.7: three things.
     * IMAGERY THAT CANNOT GO THIS DEEP IS NOT SWAPPED IN. A ?moc=26/... link
@@ -77,7 +85,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.9';
+  var VERSION = 'v0.11';
   var SVGNS = 'http://www.w3.org/2000/svg';
   var RAMP = ['#475569', '#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0'];
   var ACCENT = '#f87171';
@@ -103,7 +111,30 @@
   // Who wants to know when the view moves or the renderer changes. Used by
   // geosonify-sky-flip.js to keep its street lines on the stars, and by
   // geosonify-sky-lookup.js to identify what was clicked.
-  var _listeners = { view: [], renderer: [], open: [], close: [], click: [] };
+  var _listeners = { view: [], renderer: [], open: [], close: [], click: [], imagery: [] };
+
+  // v0.11: the imagery mode, kept here so it outlives any one renderer.
+  var imageryMode = 'best';
+  function _imageryValid(m) {
+    var Al = _Aladin();
+    if (Al && Al.imageryMode) return Al.imageryMode(m);
+    var k = String(m == null ? '' : m).trim().toLowerCase();
+    return ['best', 'jwst', 'hst', 'eso', 'ps1', 'dss'].indexOf(k) >= 0 ? k : null;
+  }
+  function getImagery() {
+    var st = (renderer && typeof renderer.getImagery === 'function') ? renderer.getImagery() : null;
+    if (!st) return { mode: imageryMode, sources: [], credits: [], live: false };
+    st.mode = imageryMode; st.live = true;
+    return st;
+  }
+  function setImagery(m) {
+    var k = _imageryValid(m);
+    if (!k) return false;
+    imageryMode = k;
+    if (renderer && typeof renderer.setImagery === 'function') renderer.setImagery(k);
+    emit('imagery', getImagery());
+    return true;
+  }
   function emit(evt, payload) {
     (_listeners[evt] || []).slice().forEach(function (fn) { try { fn(payload); } catch (e) {} });
   }
@@ -1258,6 +1289,9 @@
       retryImageryIfShallowEnough(r);
     });
     r.on('resize', draw);
+    // v0.11: optional event; the built-in renderer never emits it.
+    if (typeof r.setImagery === 'function') r.setImagery(imageryMode);
+    r.on('imagery', function () { showAttribution(); emit('imagery', getImagery()); });
     r.on('click', function (p) {
       var asp = measuredAsp();
       var radius = (asp && isFinite(asp)) ? asp * CLICK_PICK_PX : null;
@@ -1304,7 +1338,9 @@
     var fov = renderer ? renderer.getFovDeg() : 1.5;
     var candidate = Al.createAladinRenderer(els.canvasWrap, {
       ra: centre[0], dec: centre[1], fovDeg: fov,
-      background: '#0b0f19', src: opts.aladinSrc
+      background: '#0b0f19', src: opts.aladinSrc, imagery: imageryMode,
+      // No coverage lookup (a position sent to CDS) while privacy is on.
+      coverageAllowed: function () { return !_privacyOn(); }
     });
     // The candidate's own DOM, so it can be kept invisible until it is placed.
     var wrapBefore = Array.prototype.slice.call(els.canvasWrap.children);
@@ -1691,6 +1727,8 @@
     isReadOnly: readOnly,
     on: on,
     getRenderer: function () { return renderer; },
+    setImagery: setImagery,
+    getImagery: getImagery,
     getHost: function () { return host; },
     getCanvasWrap: function () { return els ? els.canvasWrap : null; },
     getShapeLayer: shapeLayer,

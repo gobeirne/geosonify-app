@@ -28,6 +28,16 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.11: SKY, HERE. While the sky is showing, a row under the chips lists its
+  imagery the way the Aerial row lists editions: "Best" first (naming the
+  source on top), then Webb, Hubble, ESO, Pan-STARRS1 and DSS2, each marked
+  when it has no picture in the field, has not been checked yet, or is
+  unavailable. Choosing one shows that source alone over DSS2, for comparing
+  two telescopes' pictures of one object; the choice travels in links as
+  ?skyimg= (built in index.html). A line under the list says what the chosen
+  source is. The statuses come from GeosonifySkyView.getImagery() and are
+  rebuilt on its 'imagery' event.
+
   v1.10: the Aerial list no longer jumps back to the top while it fills in:
   labels change in place, and any reordering waits until it is closed.
   A failing dated Aerial or local layer falls back to Aerial, not Standard.
@@ -65,7 +75,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.10';
+  const __FAQ_UI_VER__ = 'v1.11';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -320,6 +330,8 @@
     border: 1.5px solid var(--ios-separator, #C6C6C8); border-radius: 8px;
     background: var(--ios-card, #fff); color: var(--ios-text, #000);
   }
+  .basemap-sky-about { margin: 6px 0 0; font-size: 12px; line-height: 1.4; color: var(--ios-secondary, #3C3C43); }
+  .basemap-sky-about:empty { display: none; }
   .basemap-forget {
     padding: 9px 12px; border-radius: 10px; font-size: 14px; cursor: pointer;
     border: 1.5px solid var(--ios-separator, #C6C6C8);
@@ -452,6 +464,11 @@
       <label for="basemapWaybackSelect" id="basemapWaybackLabel">Aerial as published</label>
       <select id="basemapWaybackSelect"><option value="">Latest</option></select>
     </div>
+    <div class="basemap-wayback-row" id="basemapSkyRow" style="display:none;">
+      <label for="basemapSkySelect" id="basemapSkyLabel">Sky, here</label>
+      <select id="basemapSkySelect"><option value="best">Best</option></select>
+    </div>
+    <p class="basemap-sky-about" id="basemapSkyAbout"></p>
     <p class="basemap-warn" id="basemapWarn"></p>`;
   }
 
@@ -777,6 +794,7 @@
     }
     chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
     _syncWaybackRow();
+    _syncSkyRow();
   }
 
   function _resyncChips() {
@@ -912,7 +930,83 @@
     if (!presets) return;
     presets.querySelectorAll('.basemap-chip').forEach(chip => _wireChip(chip, presets));
     _wireWayback(scope);
+    _wireSkyRow(scope);
     _resyncChips();
+  }
+
+  // ── Sky, here (v1.11) ──────────────────────────────────────────────────────
+  //
+  // The sky's imagery sources, like the Aerial editions: the best first, the
+  // rest behind it, each marked when it has nothing in the field.
+  const SKY_SUFFIX = {
+    'not-here': ' (not here)',
+    'unavailable': ' (unavailable)',
+    'unknown': ''
+  };
+  let _skyHooked = false;
+
+  function _skyView() {
+    return (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.getImagery) ? GeosonifySkyView : null;
+  }
+
+  function _hookSkyView() {
+    const V = _skyView();
+    if (_skyHooked || !V || !V.on) return;
+    _skyHooked = true;
+    ['imagery', 'open', 'close', 'renderer'].forEach(ev => V.on(ev, () => _syncSkyRow()));
+  }
+
+  function _wireSkyRow(scope) {
+    const sel = scope.querySelector('#basemapSkySelect');
+    if (!sel) return;
+    sel.addEventListener('change', () => {
+      const V = _skyView();
+      if (!V) return;
+      V.setImagery(sel.value || 'best');
+      try { global.dispatchEvent(new CustomEvent('geosonify:skyimagery', { detail: { mode: sel.value } })); } catch (e) {}
+      _syncSkyRow();
+    });
+    _hookSkyView();
+  }
+
+  function _syncSkyRow() {
+    const row = document.getElementById('basemapSkyRow');
+    const sel = document.getElementById('basemapSkySelect');
+    const about = document.getElementById('basemapSkyAbout');
+    if (!row || !sel) return;
+    _hookSkyView();
+    const V = _skyView();
+    const show = !!V && skyIsOpen();
+    row.style.display = show ? 'flex' : 'none';
+    if (!show) { if (about) about.textContent = ''; return; }
+    const st = V.getImagery();
+    // Before the photographic renderer is attached there is nothing to list
+    // but the choice itself.
+    const src = (st.sources && st.sources.length) ? st.sources : [];
+    const fov = V.getFovDeg ? V.getFovDeg() : null;
+    const wide = fov && fov > 30;
+    const top = st.mode === 'best' ? src.filter(s => s.showing)[0] : null;
+    const opts = [{ value: 'best', label: 'Best' + (top ? ' \u00b7 ' + top.label : ''), disabled: false }]
+      .concat(src.map(s => ({
+        value: s.key,
+        label: s.label + (s.status === 'unknown' && !s.showing ? (wide ? ' (zoom in to check)' : '') : (SKY_SUFFIX[s.status] || '')),
+        disabled: s.status === 'unavailable' && st.mode !== s.key
+      })));
+    if (!src.length && st.mode !== 'best') opts.push({ value: st.mode, label: st.mode, disabled: false });
+    const same = sel.options.length === opts.length && opts.every((o, i) => sel.options[i].value === o.value);
+    if (same) {
+      opts.forEach((o, i) => {
+        if (sel.options[i].textContent !== o.label) sel.options[i].textContent = o.label;
+        sel.options[i].disabled = o.disabled;
+      });
+    } else if (document.activeElement !== sel) {
+      sel.innerHTML = opts.map(o => '<option value="' + _esc(o.value) + '"' + (o.disabled ? ' disabled' : '') + '>' + _esc(o.label) + '</option>').join('');
+    }
+    if (document.activeElement !== sel) sel.value = st.mode || 'best';
+    if (about) {
+      const chosen = st.mode === 'best' ? top : src.filter(s => s.key === st.mode)[0];
+      about.textContent = chosen ? chosen.about + '.' : '';
+    }
   }
 
   // ── Aerial by date (Esri World Imagery Wayback) ────────────────────────────

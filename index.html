@@ -820,7 +820,7 @@
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261107a"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
@@ -832,7 +832,7 @@
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261014c"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261107a"></script>
 <script src="js/lib/geosonify-sky-lookup.js?v=20261031c"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
@@ -856,8 +856,8 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261031a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261031a"></script>
-<script src="js/lib/faq-data.js?v=20261031a"></script>
-<script src="js/ui/faq-ui.js?v=20261025b"></script>
+<script src="js/lib/faq-data.js?v=20261107a"></script>
+<script src="js/ui/faq-ui.js?v=20261107a"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -3449,6 +3449,21 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
       }
 
+      // ── Sky imagery (?skyimg=) ───────────────────────────────────────
+      // Which pictures the sky shows: best (the default, never emitted), or one
+      // source alone over DSS2 -- jwst, hst, eso, ps1, dss. A viewing choice
+      // like ?basemap=, so it never touches a code; an unknown value is ignored
+      // (the sky shows Best) rather than aborting, since nothing can be placed
+      // wrongly by it. Set before the sky opens; the view keeps it.
+      {
+        const si = urlParams.get('skyimg');
+        if (si && typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.setImagery) {
+          if (!GeosonifySkyView.setImagery(si)) {
+            setTimeout(() => showToast('Unknown sky imagery \u201c' + si + '\u201d; showing the best available.'), 250);
+          }
+        }
+      }
+
       /*
         ── Sky interchange formats (?moc=, ?nuniq=, ?radec=, ?desig=) ──────────
         A URL is a CONVERSION, not just a share link: hand the app a MOC from a
@@ -3870,7 +3885,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (window.DISPLAY_MODE) {
           // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
           // reads them and they're not sensitive.
-          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'lattice', 'basemap', 'frame', 'epoch'];
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'lattice', 'basemap', 'frame', 'epoch', 'skyimg'];
           const kept = keep.filter(k => urlParams.has(k))
             .flatMap(k => (k === 'export' ? urlParams.getAll(k) : [urlParams.get(k)])
               .map(v => v === '' || v === null ? k : `${k}=${v}`))
@@ -4915,11 +4930,27 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (!f || f.sphere !== 'sky') return [];
         if (typeof GeosonifySkyUrl === 'undefined') return [];
         const out = GeosonifySkyUrl.serialize(f.key, f.epoch || null);
-        return Object.keys(out).map(k => k + '=' + encodeURIComponent(out[k]));
+        const params = Object.keys(out).map(k => k + '=' + encodeURIComponent(out[k]));
+        // The sky's imagery travels with the frame (?skyimg=), as Earth imagery
+        // does with ?basemap=. Best is the default and is never emitted, so
+        // links made on Best are byte-identical to before.
+        if (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.getImagery) {
+          const m = GeosonifySkyView.getImagery().mode;
+          if (m && m !== 'best') params.push('skyimg=' + encodeURIComponent(m));
+        }
+        return params;
       } catch (e) {
         return [];
       }
     }
+
+    // New sky imagery chosen: every link and the address bar say so.
+    window.addEventListener('geosonify:skyimagery', () => {
+      try {
+        if (lastSolution) updateCompactOutputs();
+        else if (typeof refreshEncryptedDisplayShare === 'function') refreshEncryptedDisplayShare();
+      } catch (e) { console.warn('[geosonify] could not refresh links for new sky imagery:', e); }
+    });
 
     function copyCompactOutput() {
       const output = document.getElementById('compactOutput').textContent;
