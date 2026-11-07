@@ -28,6 +28,13 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.14: the Aerial chip goes back to the Aerial you last chose. Tapping
+  Standard and then Aerial used to return to Latest, losing a dated edition or
+  a local layer (a 1712 map of Flanders, say); now the last Aerial-family
+  choice of this visit is restored, as long as it still covers the map's
+  centre (a local layer) -- otherwise Latest, as before. "Latest" in the list
+  still chooses Latest.
+
   v1.13: links in the FAQ answers and the credits use a teal light enough to
   read in dark mode (they were the page default blue, and dark teal on black).
   The Best-mode note names CDS when it is down.
@@ -85,7 +92,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.13';
+  const __FAQ_UI_VER__ = 'v1.14';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -759,6 +766,9 @@
   }
   // A custom source shown from a link this visit, with its label once known.
   let _linkCustom = null;     // { url, label }
+  // v1.14: the Aerial imagery last shown this visit ('aerial', 'aerial@date' or
+  // a local layer's URL), which the Aerial chip goes back to.
+  let _lastAerial = null;
 
   // The custom source the Custom chip stands for right now: the one showing
   // (if custom), else this visit's linked one, else the remembered one.
@@ -805,10 +815,20 @@
       const a = global.__GEOSONIFY_BASEMAP_ACTIVE;
       const k = _kindOf(a);
       want = _isAerialFamily(a) ? 'aerial' : k;
+      if (want === 'aerial') _lastAerial = a || 'aerial';   // what the Aerial chip returns to
     }
     chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
     _syncWaybackRow();
     _syncSkyRow();
+  }
+
+  function _aerialToRestore() {
+    const s = _lastAerial;
+    if (!s || _kindOf(s) !== 'custom') return s || 'aerial';
+    // A local layer only if it still covers the map's centre.
+    const C = global.GeosonifyImageryCatalogue, c = _wbCentre(), e = _catEntry(s);
+    if (!e || !C || !C.covers || !c) return 'aerial';
+    return C.covers(e, c.lat, c.lon) ? s : 'aerial';
   }
 
   function _resyncChips() {
@@ -917,6 +937,7 @@
         return;
       }
       let source = which;
+      if (which === 'aerial') source = _aerialToRestore();
       if (which === 'custom') {
         const cur = _currentCustom();
         if (!cur) { _resyncChips(); return; }
