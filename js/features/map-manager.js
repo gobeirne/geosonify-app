@@ -1,6 +1,14 @@
 /**
- * geosonify-map-manager.js v1.10
+ * geosonify-map-manager.js v1.11
  *
+ * v1.11 (2026-11-08): COMPARISON UNDER A SWIPE DIVIDER. setCompare(source,
+ *   { swipe: 'v50' | 'h40' }) shows a second imagery in its own pane above the
+ *   basemap and below the shapes, clipped to the left (top) of a draggable
+ *   divider, each side labelled; getCompare() and clearCompare(). Built by the
+ *   same code as setBasemap (options.target = 'compare'), so every kind of
+ *   source, and the enlarging of v1.10, works on either side. Comparison
+ *   requests have their own sequence (negative numbers), so neither side's
+ *   late answers can cancel or replace the other's.
  * v1.10 (2026-11-08): A MAP IS SHOWN WHEREVER ITS DATA EXISTS, enlarged if need
  *   be, rather than failing. Three parts:
  *   - Tiled imagery (XYZ templates and ArcGIS tile caches) is drawn by an
@@ -672,7 +680,7 @@
 
   async function _applyWms(w, attribution, options, seq) {
     const entry = await _catalogueEntry(w.raw);
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    if (_stale(seq)) return { ok: false, stale: true };
     const cw = (entry && entry.wms) || {};
     const code = cw.crs || 'EPSG:3857';
     const crs = code === 'EPSG:3857' ? L.CRS.EPSG3857 : L.Util.extend({}, L.CRS.EPSG3857, { code: code });
@@ -696,7 +704,7 @@
 
   async function _applyImageServer(is, attribution, options, seq) {
     const entry = await _catalogueEntry(is.root);
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    if (_stale(seq)) return { ok: false, stale: true };
     const tok = is.token ? '&token=' + encodeURIComponent(is.token) : '';
     const layer = _exportTileLayer((b, w, h) => is.root + '/exportImage?bbox=' + _bbox(b) +
       '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&format=jpgpng&f=image' + tok,
@@ -711,6 +719,9 @@
   // `watch` wires the layer's success/failure events: it receives
   // (onLoad, onFail) and must call them as the layer reports.
   function _installBasemap(newLayer, isImagery, isOSM, options, watch) {
+    // v1.11: a comparison layer goes beside the basemap, not in its place.
+    if (options && options.target === 'compare') { _installCompare(newLayer); return; }
+    _baseSource = (options && options._sourceUrl) || '';
     // Fallback: if the source never manages to load anything, revert to OSM
     // once. A source that has drawn at least once stays (gaps at the edge of
     // a regional cache are not a reason to throw the whole layer away).
@@ -767,6 +778,7 @@
     newLayer.addTo(map);
     if (_basemapLayer) map.removeLayer(_basemapLayer);
     _basemapLayer = newLayer;
+    _layoutCompare();                    // the basemap's label follows it
 
     // Adapt shape contrast colour to the basemap and recolour any live shape.
     _shapeColor = isImagery ? SHAPE_COLOR_IMAGERY : SHAPE_COLOR_DEFAULT;
@@ -778,6 +790,228 @@
     }
   }
 
+  // ---- Comparison: a second imagery under a swipe divider (v1.11) ---------
+  //
+  // setCompare(source, { swipe }) shows `source` (anything setBasemap accepts:
+  // 'aerial', 'aerial@YYYY-MM-DD', a catalogue layer's URL, 'osm', 'topo') in
+  // its own pane above the basemap and below every shape, clipped to one side
+  // of a divider: the LEFT of a vertical divider ('v<percent>'), the TOP of a
+  // horizontal one ('h<percent>'). The basemap shows on the other side. The
+  // divider's handle can be dragged; only it takes the pointer, so panning,
+  // zooming and placing points elsewhere are untouched. Each side is labelled.
+  // Without a swipe the source is remembered but nothing is drawn (the
+  // hold-to-flick control will use it). Releasing the handle fires
+  // 'geosonify:compare' on window so links can follow.
+  const COMPARE_PANE = 'gsCompare';
+  let _compare = null;          // { source, swipe: { o, p } | null, layer }
+  let _compareSeq = 0;
+  let _baseSource = '';         // what the basemap is showing (for its label)
+  let _cmpEls = null;           // { div, handle, labA, labB }
+  let _cmpBound = false;
+
+  function _parseSwipe(s) {
+    const m = /^([vh])(\d{1,3}(?:\.\d+)?)?$/i.exec(String(s == null ? '' : s).trim());
+    if (!m) return null;
+    let p = m[2] != null ? parseFloat(m[2]) : 50;
+    if (!(p >= 0)) p = 50;
+    return { o: m[1].toLowerCase(), p: Math.max(0, Math.min(100, p)) };
+  }
+  function _swipeString(sw) {
+    if (!sw) return null;
+    return sw.o + String(Math.round(sw.p / 5) * 5);
+  }
+
+  function _imageryLabel(source) {
+    const s = String(source || '').trim();
+    const k = s.toLowerCase();
+    if (!s || k === 'osm') return 'Standard map';
+    if (k === 'topo') return 'Topographic';
+    if (k === 'aerial') return 'Latest aerial';
+    const d = /^aerial@(\d{4}-\d{2}-\d{2})$/.exec(k);
+    if (d) return 'Aerial · ' + d[1];
+    try {
+      const C = global.GeosonifyImageryCatalogue;
+      const e = (C && C.isLoaded && C.isLoaded() && C.byUrl) ? C.byUrl(s) : null;
+      if (e) return String(e.l || '').replace(/\s*\(map\)\s*$/, '') + ' · ' + e.r;
+    } catch (err) {}
+    try { return new URL(s).host; } catch (err) { return 'Imagery'; }
+  }
+
+  function _compareCSS() {
+    if (document.getElementById('gs-compare-css')) return;
+    const st = document.createElement('style');
+    st.id = 'gs-compare-css';
+    st.textContent = [
+      '.gs-swipe{position:absolute;z-index:650;touch-action:none;-webkit-user-select:none;user-select:none;}',
+      '.gs-swipe.v{top:0;bottom:0;width:44px;margin-left:-22px;cursor:ew-resize;}',
+      '.gs-swipe.h{left:0;right:0;height:44px;margin-top:-22px;cursor:ns-resize;}',
+      '.gs-swipe .gs-line{position:absolute;background:#fff;box-shadow:0 0 3px rgba(0,0,0,.6);}',
+      '.gs-swipe.v .gs-line{top:0;bottom:0;left:20px;width:4px;}',
+      '.gs-swipe.h .gs-line{left:0;right:0;top:20px;height:4px;}',
+      '.gs-swipe .gs-knob{position:absolute;width:36px;height:36px;border-radius:50%;background:#fff;',
+      'box-shadow:0 1px 4px rgba(0,0,0,.5);color:#325756;font:600 16px/36px system-ui,sans-serif;text-align:center;}',
+      '.gs-swipe.v .gs-knob{left:4px;top:50%;margin-top:-18px;}',
+      '.gs-swipe.h .gs-knob{top:4px;left:50%;margin-left:-18px;}',
+      '.gs-swipe-label{position:absolute;z-index:649;max-width:42%;padding:3px 8px;border-radius:10px;',
+      'background:rgba(20,24,28,.72);color:#fff;font:500 12px/1.3 system-ui,sans-serif;white-space:nowrap;',
+      'overflow:hidden;text-overflow:ellipsis;pointer-events:none;}'
+    ].join('');
+    document.head.appendChild(st);
+  }
+
+  function _ensureComparePane() {
+    if (!map.getPane(COMPARE_PANE)) {
+      const p = map.createPane(COMPARE_PANE);
+      p.style.zIndex = 250;            // above tiles (200), below shapes (400)
+      p.style.pointerEvents = 'none';
+    }
+    return COMPARE_PANE;
+  }
+
+  function _ensureDivider() {
+    if (_cmpEls) return _cmpEls;
+    _compareCSS();
+    const c = map.getContainer();
+    const div = L.DomUtil.create('div', 'gs-swipe', c);
+    L.DomUtil.create('div', 'gs-line', div);
+    const knob = L.DomUtil.create('div', 'gs-knob', div);
+    const labA = L.DomUtil.create('div', 'gs-swipe-label', c);
+    const labB = L.DomUtil.create('div', 'gs-swipe-label', c);
+    div.setAttribute('role', 'slider');
+    div.setAttribute('aria-label', 'Comparison divider');
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    let dragging = false, hadDrag = true;
+    const at = (ev) => {
+      const r = c.getBoundingClientRect();
+      const pt = (ev.touches && ev.touches[0]) || ev;
+      if (!_compare || !_compare.swipe) return;
+      const sw = _compare.swipe;
+      sw.p = sw.o === 'v' ? (pt.clientX - r.left) / r.width * 100 : (pt.clientY - r.top) / r.height * 100;
+      sw.p = Math.max(0, Math.min(100, sw.p));
+      _layoutCompare();
+    };
+    const down = (ev) => {
+      dragging = true;
+      hadDrag = !!(map.dragging && map.dragging.enabled());
+      if (hadDrag) map.dragging.disable();
+      try { if (ev.pointerId != null) div.setPointerCapture(ev.pointerId); } catch (e) {}
+      L.DomEvent.preventDefault(ev); L.DomEvent.stopPropagation(ev);
+    };
+    const move = (ev) => { if (!dragging) return; at(ev); L.DomEvent.preventDefault(ev); L.DomEvent.stopPropagation(ev); };
+    const up = (ev) => {
+      if (!dragging) return;
+      dragging = false;
+      if (hadDrag && map.dragging) map.dragging.enable();
+      L.DomEvent.stopPropagation(ev);
+      try { global.dispatchEvent(new CustomEvent('geosonify:compare', { detail: getCompare() })); } catch (e) {}
+    };
+    div.addEventListener('pointerdown', down);
+    div.addEventListener('pointermove', move);
+    div.addEventListener('pointerup', up);
+    div.addEventListener('pointercancel', up);
+    knob.textContent = '\u21c6';
+    _cmpEls = { div, knob, labA, labB };
+    if (!_cmpBound) {
+      map.on('move zoom zoomend resize viewreset', _layoutCompare);
+      _cmpBound = true;
+    }
+    return _cmpEls;
+  }
+
+  function _removeDivider() {
+    if (!_cmpEls) return;
+    ['div', 'labA', 'labB'].forEach(k => { try { _cmpEls[k].remove(); } catch (e) {} });
+    _cmpEls = null;
+  }
+
+  function _layoutCompare() {
+    if (!map || !_compare || !_compare.swipe || !_cmpEls) return;
+    const pane = map.getPane(COMPARE_PANE);
+    const sw = _compare.swipe;
+    const size = map.getSize();
+    const nw = map.containerPointToLayerPoint([0, 0]);
+    const se = map.containerPointToLayerPoint(size);
+    const e = _cmpEls;
+    e.div.className = 'gs-swipe ' + sw.o;
+    e.div.setAttribute('aria-valuenow', String(Math.round(sw.p)));
+    e.labA.textContent = _imageryLabel(_compare.source);
+    e.labB.textContent = _imageryLabel(_baseSource);
+    if (sw.o === 'v') {
+      const x = size.x * sw.p / 100;
+      if (pane) pane.style.clip = 'rect(' + nw.y + 'px,' + (nw.x + x) + 'px,' + se.y + 'px,' + nw.x + 'px)';
+      e.div.style.left = x + 'px'; e.div.style.top = '';
+      // Labels sit low beside the divider, clear of the zoom buttons and the
+      // attribution; a side too narrow for its label hides it.
+      e.labA.style.cssText = 'bottom:28px;right:' + (size.x - x + 8) + 'px;left:auto;top:auto;';
+      e.labB.style.cssText = 'bottom:28px;left:' + (x + 8) + 'px;right:auto;top:auto;';
+      e.labA.style.display = x > 70 ? '' : 'none';
+      e.labB.style.display = size.x - x > 70 ? '' : 'none';
+    } else {
+      const y = size.y * sw.p / 100;
+      if (pane) pane.style.clip = 'rect(' + nw.y + 'px,' + se.x + 'px,' + (nw.y + y) + 'px,' + nw.x + 'px)';
+      e.div.style.top = y + 'px'; e.div.style.left = '';
+      e.labA.style.cssText = 'right:8px;bottom:' + (size.y - y + 8) + 'px;left:auto;top:auto;';
+      e.labB.style.cssText = 'right:8px;top:' + (y + 8) + 'px;left:auto;bottom:auto;';
+      e.labA.style.display = y > 40 ? '' : 'none';
+      e.labB.style.display = size.y - y > 60 ? '' : 'none';
+    }
+  }
+
+  function _installCompare(layer) {
+    if (!_compare) return;
+    layer.options.pane = _ensureComparePane();
+    const old = _compare.layer;
+    layer.addTo(map);
+    if (old && old !== layer) { try { map.removeLayer(old); } catch (e) {} }
+    _compare.layer = layer;
+    _layoutCompare();
+  }
+
+  /** Show `source` beside the basemap under a swipe divider. See above. */
+  function setCompare(source, opts) {
+    if (!map) return { ok: false, error: 'Map not ready.' };
+    const src = String(source || '').trim();
+    if (!src) { clearCompare(); return { ok: true }; }
+    const sw = _parseSwipe(opts && opts.swipe);
+    const same = _compare && _compare.source === src && _compare.layer;
+    if (!_compare) _compare = { source: src, swipe: sw, layer: null };
+    _compare.swipe = sw;
+    if (!sw) {
+      // Remembered, not drawn (for now).
+      if (_compare.layer) { try { map.removeLayer(_compare.layer); } catch (e) {} _compare.layer = null; }
+      _compare.source = src;
+      _removeDivider();
+      return { ok: true, stored: true };
+    }
+    _ensureDivider();
+    if (same) { _layoutCompare(); return { ok: true }; }
+    _compare.source = src;
+    const res = setBasemap(src, { target: 'compare' });
+    _layoutCompare();
+    return res;
+  }
+
+  function clearCompare() {
+    _compareSeq++;
+    if (_compare && _compare.layer) { try { map.removeLayer(_compare.layer); } catch (e) {} }
+    _compare = null;
+    _removeDivider();
+    const pane = map && map.getPane(COMPARE_PANE);
+    if (pane) pane.style.clip = '';
+  }
+
+  /** { source, swipe: 'v50' | 'h40' | null } or null. */
+  function getCompare() {
+    if (!_compare) return null;
+    return { source: _compare.source, swipe: _swipeString(_compare.swipe) };
+  }
+
+  // Late results of an older request are dropped. Basemap requests carry a
+  // positive sequence number, comparison requests a negative one.
+  function _stale(seq) { return seq < 0 ? (-seq !== _compareSeq) : (seq !== _basemapSeq); }
+
+
   function _tileWatch(layer) {
     return (onLoad, onFail, onStart) => {
       layer.on('tileload', onLoad);
@@ -788,7 +1022,7 @@
 
   async function _applyMapServer(ms, attribution, options, seq) {
     const fetched = await _fetchMapServerMeta(ms.root, ms.token);
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    if (_stale(seq)) return { ok: false, stale: true };
 
     let plan;
     if (fetched.unreadable) {
@@ -847,7 +1081,7 @@
     // Export mode: tiled /export requests (see ExportTiles), f=image so each
     // tile is a plain <img> (no JSON, no output directory, no CORS needed).
     const entry = await _catalogueEntry(ms.layer != null ? ms.root + '/' + ms.layer : ms.root);
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    if (_stale(seq)) return { ok: false, stale: true };
     const lyr = ms.layer != null ? '&layers=show:' + ms.layer : '';
     const layer = _exportTileLayer((b, w, h) => ms.root + '/export?bbox=' + _bbox(b) +
       '&bboxSR=3857&imageSR=3857&size=' + w + ',' + h + '&dpi=96&format=' + plan.format +
@@ -895,7 +1129,7 @@
   async function _applyWayback(date, options, seq) {
     const W = global.GeosonifyWayback;
     await W.load();
-    if (seq !== _basemapSeq) return { ok: false, stale: true };
+    if (_stale(seq)) return { ok: false, stale: true };
     const r = W.resolve(date);
     if (!r) return { ok: false, error: 'No dated World Imagery release is available.' };
     const tileUrl = W.tileUrl(r.release);
@@ -923,7 +1157,7 @@
   function setBasemap(source, options = {}) {
     if (!map) return { ok: false, error: 'Map not ready.' };
     options = Object.assign({}, options, { _sourceUrl: String(source || '').trim() });
-    const seq = ++_basemapSeq;
+    const seq = options.target === 'compare' ? -(++_compareSeq) : ++_basemapSeq;
     const attribution = options.attribution || '';
 
     let tileUrl, attrib, isImagery;
@@ -1783,6 +2017,10 @@
      * Swap the basemap (imagery). source = raw URL or 'osm'.
      */
     setBasemap: setBasemap,
+    // v1.11: comparison under a swipe divider.
+    setCompare: setCompare,
+    clearCompare: clearCompare,
+    getCompare: getCompare,
 
     /**
      * Internal, exposed for tests: decide tiles / export / error from a
@@ -1888,6 +2126,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.10 loaded');
+  console.log('[geosonify] map-manager v1.11 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

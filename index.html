@@ -797,7 +797,7 @@
 <!-- Features -->
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
 <script src="js/lib/geosonify-imagery-catalogue.js?v=20261108b"></script>
-<script src="js/features/map-manager.js?v=20261108b"></script>
+<script src="js/features/map-manager.js?v=20261108c"></script>
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
@@ -856,8 +856,8 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261031a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261031a"></script>
-<script src="js/lib/faq-data.js?v=20261107b"></script>
-<script src="js/ui/faq-ui.js?v=20261107e"></script>
+<script src="js/lib/faq-data.js?v=20261108c"></script>
+<script src="js/ui/faq-ui.js?v=20261108c"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -3885,7 +3885,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (window.DISPLAY_MODE) {
           // Keep display/area/context/zoom/fixzoom/gps/export; the viewer
           // reads them and they're not sensitive.
-          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'lattice', 'basemap', 'frame', 'epoch', 'skyimg'];
+          const keep = ['display', 'area', 'context', 'zoom', 'fixzoom', 'gps', 'export', 'lattice', 'basemap', 'frame', 'epoch', 'skyimg', 'cmp', 'swipe'];
           const kept = keep.filter(k => urlParams.has(k))
             .flatMap(k => (k === 'export' ? urlParams.getAll(k) : [urlParams.get(k)])
               .map(v => v === '' || v === null ? k : `${k}=${v}`))
@@ -4672,6 +4672,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       } else if (basemap === 'osm' && kind === 'custom' && !basemapIsDatedAerial(active)) {
         params.push('basemap=' + encodeURIComponent(active));
       }
+      // The comparison under a swipe divider travels with the imagery.
+      if (!isSkyFrameNow()) compareShareParams().forEach(p => params.push(p));
       return params;
     }
 
@@ -4883,10 +4885,30 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       try {
         if (isSkyFrameNow()) return [];
         const info = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.shareInfo) ? GeosonifyBasemap.shareInfo() : null;
-        if (!info || !info.source) return [];
-        return ['basemap=' + encodeURIComponent(info.source)];
+        if (!info) return [];
+        return (info.source ? ['basemap=' + encodeURIComponent(info.source)] : []).concat(compareShareParams());
       } catch (e) { return []; }
     }
+    /*
+      ?cmp=<imagery>&swipe=v50: a second imagery beside the first under a swipe
+      divider (MapManager.setCompare; read by faq-ui.js applyFromURL). Added
+      params only. Carried wherever basemap= is, on Earth only.
+    */
+    function compareShareParams() {
+      try {
+        if (isSkyFrameNow()) return [];
+        const c = (typeof MapManager !== 'undefined' && MapManager.getCompare) ? MapManager.getCompare() : null;
+        if (!c || !c.source) return [];
+        return ['cmp=' + encodeURIComponent(c.source)].concat(c.swipe ? ['swipe=' + c.swipe] : []);
+      } catch (e) { return []; }
+    }
+    // The divider moved (or a comparison came and went): links follow.
+    window.addEventListener('geosonify:compare', () => {
+      try {
+        if (lastSolution) updateCompactOutputs();
+        else if (typeof refreshEncryptedDisplayShare === 'function') refreshEncryptedDisplayShare();
+      } catch (e) { console.warn('[geosonify] could not refresh links for the comparison:', e); }
+    });
     function basemapQuerySuffix() {
       const b = basemapShareParams();
       return b.length ? '&' + b.join('&') : '';
@@ -11107,6 +11129,7 @@ function encodeRaw(sol) {
               (dp.exports && dp.exports.length ? dp.exports : (dp.export ? [dp.export] : []))
                 .forEach(v => dParams.push('export=' + v));
               if (window.__GEOSONIFY_BASEMAP_ACTIVE) dParams.push('basemap=' + encodeURIComponent(window.__GEOSONIFY_BASEMAP_ACTIVE));
+              if (typeof compareShareParams === 'function') compareShareParams().forEach(p => dParams.push(p));
               finalURL = shareURL + (shareURL.includes('?') ? '&' : '?') + dParams.join('&');
             }
             window.history.replaceState({}, '', finalURL);

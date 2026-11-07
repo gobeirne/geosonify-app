@@ -28,6 +28,15 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.15: COMPARISON LINKS. ?cmp=<imagery>&swipe=v50 (or h40) opens the map
+  with a second imagery beside the first under a swipe divider
+  (MapManager.setCompare). cmp takes Standard, Topographic, Aerial, a dated
+  Aerial or a layer of the curated catalogue (not a pasted address, whose
+  host would need the same warning as basemap=). swipe is a vertical (v) or
+  horizontal (h) divider and its position in percent; without it the
+  comparison is remembered but not drawn. shareInfo() reports both, so every
+  kind of link carries them (index.html).
+
   v1.14: the Aerial chip goes back to the Aerial you last chose. Tapping
   Standard and then Aerial used to return to Latest, losing a dated edition or
   a local layer (a 1712 map of Flanders, say); now the last Aerial-family
@@ -92,7 +101,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.14';
+  const __FAQ_UI_VER__ = 'v1.15';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -1423,6 +1432,7 @@
     try {
       params = new URLSearchParams(window.location.search);
     } catch (e) { return null; }
+    _applyCompareFromURL(params);
     const source = params.get('basemap');
     if (!source) return null;
     if (typeof MapManager === 'undefined' || !MapManager.setBasemap) return null;
@@ -1459,15 +1469,41 @@
     return source;
   }
 
+  /*
+    v1.15: ?cmp= and ?swipe=. The comparison imagery must be one the app
+    knows (a preset, a dated Aerial, or a catalogue layer); a pasted address
+    is refused here, with a note in the console.
+  */
+  function _applyCompareFromURL(params) {
+    const cmp = params.get('cmp');
+    if (!cmp || typeof MapManager === 'undefined' || !MapManager.setCompare) return;
+    const swipe = params.get('swipe');
+    const go = () => {
+      const k = _kindOf(cmp);
+      if (k === 'custom' && !_catEntry(cmp)) {
+        try { console.warn('[geosonify] cmp= ignored: only Standard, Topographic, Aerial, a dated Aerial or a catalogue layer can be compared from a link'); } catch (e) {}
+        return;
+      }
+      const r = MapManager.setCompare(cmp, { swipe: swipe });
+      if (r && r.ok === false) { try { console.warn('[geosonify] cmp= not shown: ' + r.error); } catch (e) {} }
+    };
+    const C = global.GeosonifyImageryCatalogue;
+    if (_kindOf(cmp) === 'custom' && C && !C.isLoaded()) C.load().then(go, go);
+    else go();
+  }
+
   /** For index.html: what a share link should say about the imagery, and why it might leak. */
   function shareInfo() {
     const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
     const kind = _kindOf(active);
+    let compare = null;
+    try { compare = (typeof MapManager !== 'undefined' && MapManager.getCompare) ? MapManager.getCompare() : null; } catch (e) {}
     return {
       source: kind === 'osm' ? null : active,
       kind: kind,
       host: kind === 'custom' ? _hostOf(active) : '',
-      secret: kind === 'custom' && _basemapHasSecret(active)
+      secret: kind === 'custom' && _basemapHasSecret(active),
+      compare: compare        // v1.15: { source, swipe } or null
     };
   }
 
