@@ -714,6 +714,25 @@
             <button class="btn btn-secondary" id="copyURLBtn">🔗 Share URL</button>
             <button class="btn btn-secondary" id="visitURLBtn">↗ Visit</button>
           </div>
+          <div class="btn-row" style="margin-top:6px;">
+            <button class="btn btn-secondary" id="shareQRBtn" aria-expanded="false">▦ Share as QR code</button>
+          </div>
+          <!-- The share link (point, path, polygon, display or encrypted) as a QR code. -->
+          <div id="shareQRPanel" style="display:none; margin-top:10px; padding:12px; border:1px solid var(--ios-separator); border-radius:10px; text-align:center;">
+            <div id="shareQRCanvasBox" style="display:flex; justify-content:center;"></div>
+            <p id="shareQRInfo" style="margin:8px 2px 0; font-size:12.5px; line-height:1.45; color:var(--ios-secondary-label, #8a8a8e); text-align:left;"></p>
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; flex-wrap:wrap;">
+              <label style="font-size:14px; display:flex; align-items:center; gap:6px;">Error correction
+                <select id="shareQREcc" style="font:inherit; padding:2px 4px;">
+                  <option value="L" selected>L (7%, most data)</option>
+                  <option value="M">M (15%)</option>
+                  <option value="Q">Q (25%)</option>
+                  <option value="H">H (30%)</option>
+                </select>
+              </label>
+              <button class="btn btn-secondary" id="shareQRDownload" style="flex:none; width:auto; padding:6px 12px;">⬇ PNG</button>
+            </div>
+          </div>
 
         </div>
       </div>
@@ -856,7 +875,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261031a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261031a"></script>
-<script src="js/lib/faq-data.js?v=20261108f"></script>
+<script src="js/lib/faq-data.js?v=20261108g"></script>
 <script src="js/ui/faq-ui.js?v=20261108f"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -2787,6 +2806,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       document.getElementById('useDeltaCompression')?.addEventListener('change', userChangedEncoding);
       document.getElementById('copyOutputBtn').addEventListener('click', copyCompactOutput);
       document.getElementById('copyURLBtn').addEventListener('click', copyShareURL);
+      wireShareQR();
       document.getElementById('visitURLBtn').addEventListener('click', visitShareURL);
 
       // ---- PRECISION control (Auto / Human / Custom + live uncertainty line) --
@@ -5030,6 +5050,95 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       });
     }
 
+    // ── The share link as a QR code ───────────────────────────────────────
+    //
+    // Whatever "Share URL" would copy (a point, path, polygon, group, display
+    // link or encrypted link) drawn as a QR code by BarcodeLib's lazily loaded
+    // qrcode-generator, byte mode, the smallest version that fits. The note
+    // under it gives the size in bytes, the version and module count, and a
+    // print size at 0.5 mm a module; a link too long for any QR code says so,
+    // with what to do about it. Redrawn whenever the output changes while the
+    // panel is open.
+    const QR_CAPACITY = { L: 2953, M: 2331, Q: 1663, H: 1273 };   // bytes, version 40, byte mode
+    let _qrSeq = 0, _qrCanvas = null;
+
+    function wireShareQR() {
+      const btn = document.getElementById('shareQRBtn');
+      const panel = document.getElementById('shareQRPanel');
+      if (!btn || !panel) return;
+      btn.addEventListener('click', () => {
+        const open = panel.style.display === 'none';
+        panel.style.display = open ? '' : 'none';
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        if (open) refreshShareQR();
+      });
+      document.getElementById('shareQREcc').addEventListener('change', refreshShareQR);
+      document.getElementById('shareQRDownload').addEventListener('click', () => {
+        if (!_qrCanvas) return;
+        _qrCanvas.toBlob(b => {
+          if (!b) return;
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(b);
+          a.download = 'geosonify-qr.png';
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+        }, 'image/png');
+      });
+      // Share options (display link, encryption, cell, passphrase...) change
+      // the link: follow them while the panel is open.
+      const card = panel.closest('.card') || document;
+      card.addEventListener('change', (e) => { if (e.target && e.target.id !== 'shareQREcc') setTimeout(refreshShareQR, 50); });
+    }
+
+    async function refreshShareQR() {
+      const panel = document.getElementById('shareQRPanel');
+      if (!panel || panel.style.display === 'none') return;
+      const box = document.getElementById('shareQRCanvasBox');
+      const info = document.getElementById('shareQRInfo');
+      const seq = ++_qrSeq;
+      const url = lastSolution ? await buildShareURLReady() : null;
+      if (seq !== _qrSeq) return;
+      _qrCanvas = null;
+      if (!url) { box.innerHTML = ''; info.textContent = 'Nothing to encode yet: make a point or a shape first.'; return; }
+      try {
+        if (typeof BarcodeLib === 'undefined') throw new Error('no BarcodeLib');
+        await BarcodeLib.ensureQRGenLoaded();
+      } catch (e) { box.innerHTML = ''; info.textContent = 'The QR code generator could not be loaded.'; return; }
+      if (seq !== _qrSeq) return;
+      const ecc = document.getElementById('shareQREcc').value || 'L';
+      const bytes = new TextEncoder().encode(url).length;
+      let n;
+      try {
+        const qr = qrcode(0, ecc); qr.addData(url, 'Byte'); qr.make();
+        n = qr.getModuleCount();
+      } catch (e) {
+        box.innerHTML = '';
+        info.textContent = 'Too long for a QR code: this link is ' + bytes.toLocaleString() + ' bytes, and a QR code holds at most ' +
+          QR_CAPACITY[ecc].toLocaleString() + ' at error correction ' + ecc + (ecc !== 'L' ? ' (2,953 at L)' : '') +
+          '. Lower the precision or simplify the shape' +
+          (document.getElementById('shareDisplayMode')?.checked ? ', or leave out the display link\u2019s labels and options' : '') + '.';
+        return;
+      }
+      const version = (n - 17) / 4;
+      // Whole pixels per module, so the modules stay crisp.
+      const cell = Math.max(2, Math.floor(640 / (n + 8)));
+      const canvas = BarcodeLib.generateQRCanvas(url, { size: cell * (n + 8), eccLevel: ecc });
+      canvas.style.width = '100%';
+      canvas.style.maxWidth = '320px';
+      canvas.style.height = 'auto';
+      canvas.style.imageRendering = 'pixelated';
+      canvas.setAttribute('role', 'img');
+      canvas.setAttribute('aria-label', 'QR code of the share link');
+      box.innerHTML = '';
+      box.appendChild(canvas);
+      _qrCanvas = canvas;
+      const cm = ((n + 8) * 0.05).toFixed(1);
+      let note = bytes.toLocaleString() + ' bytes \u00b7 version ' + version + ' (' + n + '\u00d7' + n + ' modules) \u00b7 error correction ' + ecc +
+        '. Printed at 0.5 mm a module it is ' + cm + ' cm across.';
+      if (version > 25) note += ' A code this dense scans best from print, held steady, rather than from a screen.';
+      info.textContent = note;
+    }
+
     function visitShareURL() {
       if (!lastSolution) {
         alert('No shape to visit. Create a shape first.');
@@ -7164,6 +7273,7 @@ function encodeRaw(sol) {
         // Update browser URL with shareable link
         updateURLWithShape();
       }
+      refreshShareQR();
     }
     
     // =================== DELTA ENCODING FOR PATHS ===================

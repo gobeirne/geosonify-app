@@ -487,7 +487,8 @@
           {
             id: 'qr-datamatrix',
             q: 'Can Geosonify generate QR codes and Data Matrix symbols?',
-            a: `<p>Yes. Geosonify coordinates can be embedded into standard machine-readable formats including QR codes and Data Matrix symbols. This allows locations to be attached to physical objects - geological samples, museum artefacts, survey markers, field equipment, manufactured components - in a printed symbol only a few millimetres across.</p>`
+            a: `<p>Yes. Geosonify coordinates can be embedded into standard machine-readable formats including QR codes and Data Matrix symbols. This allows locations to be attached to physical objects - geological samples, museum artefacts, survey markers, field equipment, manufactured components - in a printed symbol only a few millimetres across.</p>
+<p>Any share link can also be shown as a QR code: a point, a path, a polygon, several shapes, a display link with labels, or an encrypted link. In the Output tab, tap <strong>Share as QR code</strong>. The note under the code gives its size, its QR version and how large to print it; scanning it opens the same link. A QR code holds at most 2,953 bytes, which is room for a polygon of several hundred points at metre precision, but small codes scan more easily: a few dozen points makes a code a phone reads at a glance from a field sheet or a poster.</p>`
           }
 
         ]
