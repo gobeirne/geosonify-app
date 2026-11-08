@@ -28,6 +28,10 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.17: ⇆ opens a horizontal divider when the map is taller than it is wide
+  (a phone held upright) and a vertical one otherwise; the divider's handle
+  turns it round (map-manager v1.13).
+
   v1.16: THE COMPARE BUTTON. A small ⇆ button under the map's zoom buttons,
   shown only while a dated Aerial edition or a historical layer is on the map
   (or a comparison is open), never on plain Latest, Standard, Topographic, the
@@ -109,7 +113,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.16';
+  const __FAQ_UI_VER__ = 'v1.17';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -894,7 +898,11 @@
           if (_compareOpen()) MapManager.clearCompare();
           else {
             const t = _compareTarget();
-            if (t) MapManager.setCompare(t, { swipe: 'v50' });
+            if (t) {
+              // The orientation that suits the map's shape.
+              const sz = MapManager.getMap().getSize();
+              MapManager.setCompare(t, { swipe: sz.y > sz.x ? 'h50' : 'v50' });
+            }
           }
           try { global.dispatchEvent(new CustomEvent('geosonify:compare', { detail: MapManager.getCompare() })); } catch (e) {}
           _syncCompareButton();

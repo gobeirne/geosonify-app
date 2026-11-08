@@ -1,6 +1,11 @@
 /**
- * geosonify-map-manager.js v1.12
+ * geosonify-map-manager.js v1.13
  *
+ * v1.13 (2026-11-08): tapping the divider's round handle turns the divider
+ *   between vertical and horizontal, keeping its position (30% across becomes
+ *   30% down); the handle shows ⇆ or ⇅. A touch that moves less than 6 px and
+ *   lasts under 300 ms is a tap; anything else drags, and a drag now starts
+ *   only once the pointer has moved, so a tap no longer nudges the divider.
  * v1.12 (2026-11-08): imageryLabel(source) is public (the compare button's
  *   title uses it).
  * v1.11 (2026-11-08): COMPARISON UNDER A SWIPE DIVIDER. setCompare(source,
@@ -883,7 +888,7 @@
     div.setAttribute('aria-label', 'Comparison divider');
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.disableScrollPropagation(div);
-    let dragging = false, hadDrag = true;
+    let dragging = false, hadDrag = true, moved = false, t0 = 0, x0 = 0, y0 = 0, onKnob = false;
     const at = (ev) => {
       const r = c.getBoundingClientRect();
       const pt = (ev.touches && ev.touches[0]) || ev;
@@ -894,18 +899,30 @@
       _layoutCompare();
     };
     const down = (ev) => {
-      dragging = true;
+      dragging = true; moved = false; t0 = Date.now();
+      x0 = ev.clientX; y0 = ev.clientY;
+      onKnob = !!(ev.target && ev.target.closest && ev.target.closest('.gs-knob'));
       hadDrag = !!(map.dragging && map.dragging.enabled());
       if (hadDrag) map.dragging.disable();
       try { if (ev.pointerId != null) div.setPointerCapture(ev.pointerId); } catch (e) {}
       L.DomEvent.preventDefault(ev); L.DomEvent.stopPropagation(ev);
     };
-    const move = (ev) => { if (!dragging) return; at(ev); L.DomEvent.preventDefault(ev); L.DomEvent.stopPropagation(ev); };
+    const move = (ev) => {
+      if (!dragging) return;
+      if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+      moved = true;
+      at(ev); L.DomEvent.preventDefault(ev); L.DomEvent.stopPropagation(ev);
+    };
     const up = (ev) => {
       if (!dragging) return;
       dragging = false;
       if (hadDrag && map.dragging) map.dragging.enable();
       L.DomEvent.stopPropagation(ev);
+      // A tap on the handle turns the divider round.
+      if (!moved && onKnob && Date.now() - t0 < 300 && _compare && _compare.swipe) {
+        _compare.swipe.o = _compare.swipe.o === 'v' ? 'h' : 'v';
+        _layoutCompare();
+      } else if (!moved) return;
       try { global.dispatchEvent(new CustomEvent('geosonify:compare', { detail: getCompare() })); } catch (e) {}
     };
     div.addEventListener('pointerdown', down);
@@ -936,6 +953,8 @@
     const se = map.containerPointToLayerPoint(size);
     const e = _cmpEls;
     e.div.className = 'gs-swipe ' + sw.o;
+    e.knob.textContent = sw.o === 'v' ? '\u21c6' : '\u21c5';
+    e.knob.title = sw.o === 'v' ? 'Tap to make the divider horizontal' : 'Tap to make the divider vertical';
     e.div.setAttribute('aria-valuenow', String(Math.round(sw.p)));
     e.labA.textContent = _imageryLabel(_compare.source);
     e.labB.textContent = _imageryLabel(_baseSource);
@@ -2129,6 +2148,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.12 loaded');
+  console.log('[geosonify] map-manager v1.13 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
