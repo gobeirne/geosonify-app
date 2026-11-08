@@ -28,6 +28,14 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.16: THE COMPARE BUTTON. A small ⇆ button under the map's zoom buttons,
+  shown only while a dated Aerial edition or a historical layer is on the map
+  (or a comparison is open), never on plain Latest, Standard, Topographic, the
+  sky or a display link. Tapping it opens the swipe divider with the Aerial
+  imagery shown before the current one on the left (Latest if there was
+  none); tapping again closes it. So: choose 1950, then 1965, tap ⇆ to swipe
+  between them. Links follow ('geosonify:compare').
+
   v1.15: COMPARISON LINKS. ?cmp=<imagery>&swipe=v50 (or h40) opens the map
   with a second imagery beside the first under a swipe divider
   (MapManager.setCompare). cmp takes Standard, Topographic, Aerial, a dated
@@ -101,7 +109,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.15';
+  const __FAQ_UI_VER__ = 'v1.16';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -778,6 +786,8 @@
   // v1.14: the Aerial imagery last shown this visit ('aerial', 'aerial@date' or
   // a local layer's URL), which the Aerial chip goes back to.
   let _lastAerial = null;
+  // v1.16: the Aerial imagery shown before _lastAerial (what ⇆ compares with).
+  let _prevAerial = null;
 
   // The custom source the Custom chip stands for right now: the one showing
   // (if custom), else this visit's linked one, else the remembered one.
@@ -824,11 +834,97 @@
       const a = global.__GEOSONIFY_BASEMAP_ACTIVE;
       const k = _kindOf(a);
       want = _isAerialFamily(a) ? 'aerial' : k;
-      if (want === 'aerial') _lastAerial = a || 'aerial';   // what the Aerial chip returns to
+      if (want === 'aerial') {
+        const now = a || 'aerial';
+        if (now !== _lastAerial) { if (_lastAerial) _prevAerial = _lastAerial; _lastAerial = now; }
+      }
     }
     chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
     _syncWaybackRow();
     _syncSkyRow();
+    _syncCompareButton();
+  }
+
+  // ── The compare button (v1.16) ─────────────────────────────────────────────
+  let _cmpCtl = null;
+  function _compareCSS() {
+    if (document.getElementById('gs-cmp-ctl-css')) return;
+    const st = document.createElement('style');
+    st.id = 'gs-cmp-ctl-css';
+    st.textContent =
+      '.gs-cmp-ctl a{font:600 18px/30px system-ui,sans-serif;text-align:center;text-decoration:none;color:#325756;}' +
+      '.gs-cmp-ctl a.on{background:#325756;color:#fff;}';
+    document.head.appendChild(st);
+  }
+  function _historicNow() {
+    const a = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    return _isAerialFamily(a) && _kindOf(a) !== 'aerial';
+  }
+  function _compareTarget() {
+    const a = global.__GEOSONIFY_BASEMAP_ACTIVE || 'aerial';
+    let p = _prevAerial;
+    // A local layer that does not reach the map's centre would show nothing.
+    if (p && _kindOf(p) === 'custom') {
+      const C = global.GeosonifyImageryCatalogue, c = _wbCentre(), e = _catEntry(p);
+      if (!e || !C || !C.covers || !c || !C.covers(e, c.lat, c.lon)) p = null;
+    }
+    if (p && p !== a) return p;
+    return a !== 'aerial' ? 'aerial' : null;
+  }
+  function _compareOpen() {
+    try { const c = MapManager.getCompare && MapManager.getCompare(); return !!(c && c.swipe); } catch (e) { return false; }
+  }
+  function _ensureCompareButton() {
+    if (_cmpCtl) return _cmpCtl;
+    if (typeof L === 'undefined' || typeof MapManager === 'undefined' || !MapManager.getMap || !MapManager.setCompare) return null;
+    const map = MapManager.getMap();
+    if (!map) return null;
+    _compareCSS();
+    const Ctl = L.Control.extend({
+      options: { position: 'topleft' },
+      onAdd: function () {
+        const box = L.DomUtil.create('div', 'leaflet-bar gs-cmp-ctl');
+        const a = L.DomUtil.create('a', '', box);
+        a.href = '#';
+        a.setAttribute('role', 'button');
+        a.textContent = '\u21c6';
+        L.DomEvent.disableClickPropagation(box);
+        L.DomEvent.on(a, 'click', (ev) => {
+          L.DomEvent.preventDefault(ev);
+          if (_compareOpen()) MapManager.clearCompare();
+          else {
+            const t = _compareTarget();
+            if (t) MapManager.setCompare(t, { swipe: 'v50' });
+          }
+          try { global.dispatchEvent(new CustomEvent('geosonify:compare', { detail: MapManager.getCompare() })); } catch (e) {}
+          _syncCompareButton();
+        });
+        return box;
+      }
+    });
+    _cmpCtl = new Ctl();
+    _cmpCtl.addTo(map);
+    global.addEventListener('geosonify:compare', _syncCompareButton);
+    return _cmpCtl;
+  }
+  function _syncCompareButton() {
+    const display = document.documentElement.classList.contains('display-mode');
+    const open = _compareOpen();
+    const want = !display && !skyIsOpen() && (open || (_historicNow() && !!_compareTarget()));
+    if (!want && !_cmpCtl) return;
+    const ctl = _ensureCompareButton();
+    if (!ctl || !ctl.getContainer()) return;
+    const box = ctl.getContainer();
+    box.style.display = want ? '' : 'none';
+    const a = box.querySelector('a');
+    a.classList.toggle('on', open);
+    a.setAttribute('aria-pressed', open ? 'true' : 'false');
+    let t = 'Compare';
+    try {
+      const tgt = open ? null : _compareTarget();
+      t = open ? 'Close the comparison' : 'Compare with ' + (MapManager.imageryLabel ? MapManager.imageryLabel(tgt) : tgt);
+    } catch (e) {}
+    a.title = t; a.setAttribute('aria-label', t);
   }
 
   function _aerialToRestore() {

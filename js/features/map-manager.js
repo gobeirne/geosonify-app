@@ -1,6 +1,8 @@
 /**
- * geosonify-map-manager.js v1.11
+ * geosonify-map-manager.js v1.12
  *
+ * v1.12 (2026-11-08): imageryLabel(source) is public (the compare button's
+ *   title uses it).
  * v1.11 (2026-11-08): COMPARISON UNDER A SWIPE DIVIDER. setCompare(source,
  *   { swipe: 'v50' | 'h40' }) shows a second imagery in its own pane above the
  *   basemap and below the shapes, clipped to the left (top) of a draggable
@@ -2021,6 +2023,7 @@
     setCompare: setCompare,
     clearCompare: clearCompare,
     getCompare: getCompare,
+    imageryLabel: _imageryLabel,
 
     /**
      * Internal, exposed for tests: decide tiles / export / error from a
@@ -2126,6 +2129,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.11 loaded');
+  console.log('[geosonify] map-manager v1.12 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
