@@ -28,6 +28,13 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.18: HOLD ⇆ TO FLICK. Holding the button for 350 ms shows the comparison
+  imagery over the whole map until it is let go (the earlier edition, or the
+  divider's other imagery if it is open); a tap still opens or closes the
+  divider. The imagery starts loading the moment the button is touched, so it
+  is ready when the hold is. The button is no longer a link (iOS offered to
+  open "#" on a long press), and it suppresses the touch callout.
+
   v1.17: ⇆ opens a horizontal divider when the map is taller than it is wide
   (a phone held upright) and a vertical one otherwise; the divider's handle
   turns it round (map-manager v1.13).
@@ -113,7 +120,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.17';
+  const __FAQ_UI_VER__ = 'v1.18';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -856,8 +863,10 @@
     const st = document.createElement('style');
     st.id = 'gs-cmp-ctl-css';
     st.textContent =
-      '.gs-cmp-ctl a{font:600 18px/30px system-ui,sans-serif;text-align:center;text-decoration:none;color:#325756;}' +
-      '.gs-cmp-ctl a.on{background:#325756;color:#fff;}';
+      '.gs-cmp-ctl a{font:600 18px/30px system-ui,sans-serif;text-align:center;text-decoration:none;color:#325756;' +
+      'cursor:pointer;-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;touch-action:none;}' +
+      '.gs-cmp-ctl a.on{background:#325756;color:#fff;}' +
+      '.gs-cmp-ctl a.held{background:#7CC4BC;color:#fff;}';
     document.head.appendChild(st);
   }
   function _historicNow() {
@@ -888,24 +897,63 @@
       options: { position: 'topleft' },
       onAdd: function () {
         const box = L.DomUtil.create('div', 'leaflet-bar gs-cmp-ctl');
+        // Not a link: iOS offers to open a link's address on a long press.
         const a = L.DomUtil.create('a', '', box);
-        a.href = '#';
         a.setAttribute('role', 'button');
+        a.tabIndex = 0;
         a.textContent = '\u21c6';
         L.DomEvent.disableClickPropagation(box);
-        L.DomEvent.on(a, 'click', (ev) => {
-          L.DomEvent.preventDefault(ev);
-          if (_compareOpen()) MapManager.clearCompare();
-          else {
-            const t = _compareTarget();
-            if (t) {
-              // The orientation that suits the map's shape.
-              const sz = MapManager.getMap().getSize();
-              MapManager.setCompare(t, { swipe: sz.y > sz.x ? 'h50' : 'v50' });
-            }
-          }
+        L.DomEvent.disableScrollPropagation(box);
+        const HOLD_MS = 350;
+        let timer = null, held = false, pressing = false, wasOpen = false;
+        const fire = () => {
           try { global.dispatchEvent(new CustomEvent('geosonify:compare', { detail: MapManager.getCompare() })); } catch (e) {}
           _syncCompareButton();
+        };
+        const tap = () => {
+          if (wasOpen) { MapManager.peekEnd(); MapManager.clearCompare(); }
+          else {
+            // The orientation that suits the map's shape.
+            const sz = MapManager.getMap().getSize();
+            MapManager.peekEnd({ open: sz.y > sz.x ? 'h50' : 'v50' });
+          }
+          fire();
+        };
+        a.addEventListener('pointerdown', (ev) => {
+          if (ev.button != null && ev.button !== 0) return;
+          ev.preventDefault();
+          wasOpen = _compareOpen();
+          const c = MapManager.getCompare();
+          const target = wasOpen ? (c && c.source) : _compareTarget();
+          if (!target) return;
+          pressing = true; held = false;
+          try { a.setPointerCapture(ev.pointerId); } catch (e) {}
+          MapManager.peekPrepare(target);
+          timer = setTimeout(() => { held = true; a.classList.add('held'); MapManager.peekShow(); }, HOLD_MS);
+        });
+        const release = (ev, cancelled) => {
+          if (!pressing) return;
+          pressing = false;
+          clearTimeout(timer); timer = null;
+          a.classList.remove('held');
+          if (held || cancelled) { MapManager.peekEnd(); _syncCompareButton(); }
+          else tap();
+        };
+        a.addEventListener('pointerup', (ev) => release(ev, false));
+        a.addEventListener('pointercancel', (ev) => release(ev, true));
+        a.addEventListener('contextmenu', (ev) => ev.preventDefault());
+        a.addEventListener('click', (ev) => ev.preventDefault());
+        a.addEventListener('keydown', (ev) => {
+          if (ev.key !== 'Enter' && ev.key !== ' ') return;
+          ev.preventDefault();
+          wasOpen = _compareOpen();
+          const t = wasOpen ? null : _compareTarget();
+          if (wasOpen) MapManager.clearCompare();
+          else if (t) {
+            const sz = MapManager.getMap().getSize();
+            MapManager.setCompare(t, { swipe: sz.y > sz.x ? 'h50' : 'v50' });
+          }
+          fire();
         });
         return box;
       }
@@ -930,7 +978,7 @@
     let t = 'Compare';
     try {
       const tgt = open ? null : _compareTarget();
-      t = open ? 'Close the comparison' : 'Compare with ' + (MapManager.imageryLabel ? MapManager.imageryLabel(tgt) : tgt);
+      t = open ? 'Close the comparison (hold to flick)' : 'Compare with ' + (MapManager.imageryLabel ? MapManager.imageryLabel(tgt) : tgt) + ' (hold to flick)';
     } catch (e) {}
     a.title = t; a.setAttribute('aria-label', t);
   }

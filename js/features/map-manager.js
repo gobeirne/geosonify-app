@@ -1,6 +1,13 @@
 /**
- * geosonify-map-manager.js v1.13
+ * geosonify-map-manager.js v1.14
  *
+ * v1.14 (2026-11-08): PEEK, for hold-to-flick. peekPrepare(source) starts
+ *   loading the comparison imagery out of sight (or, with the divider open,
+ *   changes nothing yet); peekShow() shows it over the whole map, divider
+ *   hidden, with its label; peekEnd() puts back what was there before, or
+ *   with { open: 'h50' } turns the prepared imagery into an open divider
+ *   without loading it again. While a peek is on, getCompare() reports the
+ *   state from before it, so links never record a peek.
  * v1.13 (2026-11-08): tapping the divider's round handle turns the divider
  *   between vertical and horizontal, keeping its position (30% across becomes
  *   30% down); the handle shows ⇆ or ⇅. A touch that moves less than 6 px and
@@ -952,6 +959,20 @@
     const nw = map.containerPointToLayerPoint([0, 0]);
     const se = map.containerPointToLayerPoint(size);
     const e = _cmpEls;
+    // v1.14: a peek being prepared changes nothing on screen (an open divider
+    // stays as it is; otherwise the layer loads with nothing of it showing);
+    // a peek shown covers the whole map, divider hidden, with its label.
+    if (_compare.peek === 'show' || (_compare.peek === 'pending' && !(_peek && _peek.wasOpen))) {
+      const show = _compare.peek === 'show';
+      if (pane) pane.style.clip = show ? '' : 'rect(0px,0px,0px,0px)';
+      e.div.style.display = 'none';
+      e.labB.style.display = 'none';
+      e.labA.textContent = _imageryLabel(_compare.source);
+      e.labA.style.cssText = 'left:50%;transform:translateX(-50%);bottom:28px;top:auto;right:auto;';
+      e.labA.style.display = show ? '' : 'none';
+      return;
+    }
+    e.div.style.display = '';
     e.div.className = 'gs-swipe ' + sw.o;
     e.knob.textContent = sw.o === 'v' ? '\u21c6' : '\u21c5';
     e.knob.title = sw.o === 'v' ? 'Tap to make the divider horizontal' : 'Tap to make the divider vertical';
@@ -1014,6 +1035,7 @@
   }
 
   function clearCompare() {
+    _peek = null;
     _compareSeq++;
     if (_compare && _compare.layer) { try { map.removeLayer(_compare.layer); } catch (e) {} }
     _compare = null;
@@ -1024,8 +1046,53 @@
 
   /** { source, swipe: 'v50' | 'h40' | null } or null. */
   function getCompare() {
+    if (_peek) return _peek.prev;
     if (!_compare) return null;
     return { source: _compare.source, swipe: _swipeString(_compare.swipe) };
+  }
+
+  // ---- Peek: hold-to-flick (v1.14) ----------------------------------------
+  let _peek = null;             // { prev: getCompare() before, wasOpen }
+
+  function peekPrepare(source) {
+    if (!map || !source) return false;
+    if (_peek) peekEnd();
+    const prev = getCompare();
+    const wasOpen = !!(prev && prev.swipe);
+    _peek = { prev: prev, wasOpen: wasOpen };
+    if (!wasOpen || !_compare || _compare.source !== source) {
+      // Load it now, out of sight, so it is ready when the hold is.
+      const keepSwipe = _compare && _compare.swipe;
+      setCompare(source, { swipe: keepSwipe ? _swipeString(keepSwipe) : 'v0' });
+    }
+    if (_compare) { _compare.peek = 'pending'; _layoutCompare(); }
+    return true;
+  }
+
+  function peekShow() {
+    if (!_peek || !_compare) return false;
+    _compare.peek = 'show';
+    _layoutCompare();
+    return true;
+  }
+
+  function peekEnd(opts) {
+    if (!_peek) return;
+    const p = _peek; _peek = null;
+    if (_compare) _compare.peek = false;
+    if (opts && opts.open && _compare) {          // the tap that opens a divider
+      _compare.swipe = _parseSwipe(opts.open);
+      _ensureDivider();
+      _layoutCompare();
+      return;
+    }
+    if (!p.prev) { clearCompare(); return; }
+    if (_compare && _compare.source === p.prev.source) {
+      _compare.swipe = _parseSwipe(p.prev.swipe);
+      if (_compare.swipe) _layoutCompare(); else setCompare(p.prev.source, { swipe: null });
+    } else {
+      setCompare(p.prev.source, { swipe: p.prev.swipe });
+    }
   }
 
   // Late results of an older request are dropped. Basemap requests carry a
@@ -2042,6 +2109,9 @@
     setCompare: setCompare,
     clearCompare: clearCompare,
     getCompare: getCompare,
+    peekPrepare: peekPrepare,
+    peekShow: peekShow,
+    peekEnd: peekEnd,
     imageryLabel: _imageryLabel,
 
     /**
@@ -2148,6 +2218,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.13 loaded');
+  console.log('[geosonify] map-manager v1.14 loaded');
 
 })(typeof window !== 'undefined' ? window : this);
