@@ -759,5 +759,29 @@ head('find-words-v1: the words a find gives Word Lab');
   ok('the rule is labelled', S.FIND_WORDS_RULE === 'find-words-v1');
 })();
 
+// ── thin-needle-v1: nearestBaggable's minTier and skip filters ──────────────
+(function () {
+  console.log('\nthin needle: nearestBaggable minTier / skip');
+  var lat = -43.5321, lon = 172.6362;
+  var rare = S.nearestBaggable(lat, lon, { maxTier: 12 });
+  var thin = S.nearestBaggable(lat, lon, { minTier: 12, maxTier: 14 });
+  ok('without the new options the result is unchanged',
+     S.nearestBaggable(lat, lon).name === rare.name);
+  ok('minTier 12 returns only a commonplace vertex', thin && thin.tierOrder > 12,
+     thin && thin.tierOrder);
+  var any = S.nearestCornerstone(lat, lon, 14);
+  ok('the commonplace pick is no further than the nearest vertex of that tier',
+     any.tierOrder <= 12 || any.name === thin.name, any.name + ' vs ' + thin.name);
+  var next = S.nearestBaggable(lat, lon, { minTier: 12, maxTier: 14,
+    skip: function (v) { return v.name === thin.name; } });
+  ok('skip passes over a vertex and returns the next', next && next.name !== thin.name &&
+     next.tierOrder > 12 && next.distanceM >= thin.distanceM);
+  // radiusM bounds the SAMPLING disc, not the result: a sample point resolves
+  // to its nearest vertex, which may lie outside the disc. Callers that need
+  // a hard cap (starpin.html findThin) compare distanceM themselves.
+  var small = S.nearestBaggable(lat, lon, { minTier: 12, maxTier: 14, radiusM: 1 });
+  ok('a tiny radius still honours the tier filter', small == null || small.tierOrder > 12);
+})();
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

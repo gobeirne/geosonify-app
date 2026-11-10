@@ -479,9 +479,16 @@ var GeosonifyStarpin = (function () {
   // Additive: reuses nearestCornerstone for classification, touches no frozen
   // path. The sampling walks a disc of points and dedupes the vertices they
   // resolve to, so it is robust to the exact face grid without doing face maths.
+  //
+  // Two optional filters, both additive (thin-needle-v1, Nov 2026):
+  //   minTier  exclusive lower bound: only vertices with tierOrder > minTier.
+  //            { minTier: 12, maxTier: 14 } is "the nearest commonplace corner".
+  //   skip     function (vertex) -> true to pass over it (e.g. already bagged).
   function nearestBaggable(lat, lon, opts) {
     opts = opts || {};
     var maxTier = opts.maxTier != null ? opts.maxTier : 12;
+    var minTier = opts.minTier != null ? opts.minTier : -Infinity;
+    var skip    = typeof opts.skip === 'function' ? opts.skip : null;
     var probe   = opts.probeOrder != null ? opts.probeOrder : 14;
     var cellM   = Math.sqrt(Math.PI / 3) / Math.pow(2, probe) * 6371008.8;
     var radiusM = opts.radiusM != null ? opts.radiusM : cellM * 8;
@@ -498,6 +505,8 @@ var GeosonifyStarpin = (function () {
         if (seen[v.name]) continue;
         seen[v.name] = 1;
         if (v.tierOrder > maxTier) continue;           // too common — skip
+        if (v.tierOrder <= minTier) continue;          // too rare for this query
+        if (skip && skip(v)) continue;
         v.distanceM = haversineM(lat, lon, v.lat, v.lon);   // from the QUERY point
         if (!best || v.distanceM < best.distanceM) best = v;
       }

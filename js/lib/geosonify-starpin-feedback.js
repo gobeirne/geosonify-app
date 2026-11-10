@@ -724,6 +724,10 @@ var GeosonifyStarpinFeedback = (function () {
     '.spf-here .spf-dial{opacity:.35}',
     '.spf-sub{font-size:.75rem;opacity:.7;font-family:"SF Mono",ui-monospace,monospace}',
     '.spf-here .spf-word{font-size:1.15rem}',
+    // the other needle's reading: its own colour at FULL opacity (a 55% green
+    // is ~2:1 on the light surface, unreadable outdoors), smaller and lighter.
+    '.spf-alt{margin-top:.2rem;text-align:center;font-size:.74rem;font-weight:500;line-height:1.3}',
+    '.spf-alt span{display:block}',
     '@keyframes spf-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}',
     '.spf-here .spf-halo{animation:spf-pulse 1.8s ease-in-out infinite;opacity:.22}',
     '.spf-banner{position:fixed;left:50%;top:22%;transform:translate(-50%,-8px);',
@@ -817,7 +821,9 @@ var GeosonifyStarpinFeedback = (function () {
 
     var word = doc.createElement('div'); word.className = 'spf-word';
     var sub  = doc.createElement('div'); sub.className  = 'spf-sub';
+    var alt  = doc.createElement('div'); alt.className  = 'spf-alt';
     wrap.appendChild(ring); wrap.appendChild(word); wrap.appendChild(sub);
+    wrap.appendChild(alt);
     container.appendChild(wrap);
 
     var wasHere = false;
@@ -837,12 +843,15 @@ var GeosonifyStarpinFeedback = (function () {
         var g = doc.createElementNS(NS, 'g');
         g.setAttribute('transform', 'rotate(' + t.bearingDeg.toFixed(1) + ' 50 50)');
         var p = doc.createElementNS(NS, 'path');
-        var scale = t.primary ? 1 : 0.72;
-        var tip = 50 - 26 * scale, base = 50 - 4 * scale, half = 8.5 * scale;
+        // A thin needle (thin-needle-v1) is full length and narrow, so it is
+        // told from a thick one by width alone, not by colour.
+        var scale = (t.primary || t.thin) ? 1 : 0.72;
+        var tip = 50 - 26 * scale, base = 50 - 4 * scale;
+        var half = (t.thin ? 3.4 : 8.5) * scale, notch = t.thin ? 2 : 5 * scale;
         p.setAttribute('d', 'M50 ' + tip + ' L' + (50 + half) + ' ' + base +
-                            ' L50 ' + (base - 5 * scale) + ' L' + (50 - half) + ' ' + base + ' Z');
+                            ' L50 ' + (base - notch) + ' L' + (50 - half) + ' ' + base + ' Z');
         p.setAttribute('fill', t.colour || 'currentColor');
-        p.setAttribute('opacity', t.primary ? '1' : '.55');
+        p.setAttribute('opacity', t.primary ? '1' : t.thin ? '.6' : '.55');
         // The active arrow sits on a tinted disc in its own colour, so without
         // an outline it can vanish into the very fill that marks it active.
         if (t.primary) {
@@ -857,16 +866,32 @@ var GeosonifyStarpinFeedback = (function () {
 
     // targets: [{ key, label, colour, result, bearingDeg, primary }]
     // heading: device heading in degrees, or null for a north-up map dial.
+    // A target may carry altLabel; every non-primary target that does gets a
+    // reading line under the main one ("\u25C7 180 m SW \u00B7 corner"), in its colour.
+    function fmtM(d) { return d < 1000 ? d.toFixed(0) + ' m' : (d / 1000).toFixed(2) + ' km'; }
+    function drawAlt(targets) {
+      while (alt.firstChild) alt.removeChild(alt.firstChild);
+      targets.forEach(function (t) {
+        if (t.primary || !t.altLabel || !t.result || t.result.distanceM == null) return;
+        var sp = doc.createElement('span');
+        sp.style.color = t.colour || 'inherit';
+        sp.textContent = (t.thin ? '\u25C7 ' : '\u25C6 ') + fmtM(t.result.distanceM) +
+          (t.compassText ? ' ' + t.compassText : '') + ' \u00B7 ' + t.altLabel;
+        alt.appendChild(sp);
+      });
+    }
     function update(targets, heading) {
       targets = [].concat(targets || []).filter(Boolean);
       if (!targets.length) {
         word.textContent = 'no fix yet'; sub.textContent = '';
+        drawAlt([]);
         drawArrows([], heading); return false;
       }
       if (!targets.some(function (t) { return t.primary; })) targets[0].primary = true;
       var main = targets.filter(function (t) { return t.primary; })[0];
       var r = main.result || {};
       drawArrows(targets, heading);
+      drawAlt(targets);
       if (r.distanceM == null) { word.textContent = 'no fix yet'; sub.textContent = ''; return false; }
 
       var d = r.distanceM, a = r.accuracyM, R = r.radiusM || 92.77;
@@ -1267,6 +1292,8 @@ var GeosonifyStarpinFeedback = (function () {
   // ── the moment ────────────────────────────────────────────────────────────
   //
   // opts: { kind: 'cornerstone'|'starpin', name, digits, kicker, doc,
+  //          small                    (a step, not a find: no confetti, no
+  //                                    sound, short dwell -- thin-needle-v1)
   //          order, degree            (cornerstone)
   //          mag                      (starpin) }
   function celebrate(opts) {
@@ -1277,7 +1304,7 @@ var GeosonifyStarpinFeedback = (function () {
     var tier = isStar ? starTier(opts.mag)
                       : tierOf(opts.order == null ? 14 : opts.order, opts.degree,
                                opts.crossOrder, opts.intrinsicOrder);
-    var quiet = reduced(doc);
+    var quiet = reduced(doc) || !!opts.small;   // small: a step, not a find
 
     // Continuous fanfare intensity, cornerstones only. Stars keep their own
     // brightness-driven treatment untouched (they are not lattice-rare).
@@ -1311,10 +1338,10 @@ var GeosonifyStarpinFeedback = (function () {
 
     if (!quiet) confetti(doc, isStar ? tier.particles : fan.particles,
                          isStar ? 1 : fan.spread);
-    playSound(soundOf(opts));
+    if (!opts.small) playSound(soundOf(opts));
     try {
       if (doc.defaultView.navigator.vibrate)
-        doc.defaultView.navigator.vibrate(
+        doc.defaultView.navigator.vibrate(opts.small ? [20] :
           exceptional ? [50, 40, 60, 40, 120] : intens > 0.5 ? [40, 60, 90] : [35]);
     } catch (e) {}
 
@@ -1323,7 +1350,7 @@ var GeosonifyStarpinFeedback = (function () {
       doc.defaultView.setTimeout(function () {
         if (b.parentNode) b.parentNode.removeChild(b);
       }, 400);
-    }, isStar ? 9200 : fan.dwellMs);
+    }, isStar ? 9200 : opts.small ? 2600 : fan.dwellMs);
 
     return tier;
   }

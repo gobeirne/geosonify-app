@@ -285,6 +285,11 @@ dl{margin:.7rem 0 0}
    a slim single line, a small disc, muted, and no chips clutter. The eye
    learns the hierarchy without being told. */
 .rec.common{padding:.5rem .8rem;align-items:center}
+.thin-target{margin-top:.9rem;padding-top:.7rem;border-top:1px dashed rgba(125,157,51,.55)}
+.thin-target:first-child{margin-top:0;padding-top:0;border-top:0;margin-bottom:.9rem;
+  padding-bottom:.7rem;border-bottom:1px dashed rgba(125,157,51,.55)}
+.thin-head{font-size:.72rem;font-weight:700;color:#5E7A22;margin-bottom:.35rem}
+.log-common-toggle{margin:.6rem 0 0}
 .rec.common .disc{width:26px;height:26px;border-radius:9px;font-size:.7rem}
 .rec.common .title{font-size:.75rem;color:var(--ink-2)}
 .rec.common .chips{display:none}
@@ -556,11 +561,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <div class="apps" data-apps="go"></div>
   <label class="tune" for="order">rarest worth showing &mdash; tier <b id="order-val">12.0</b>
     <input id="order" type="range" min="10" max="14" step="0.5" value="12"></label>
-  <p class="hint">The compass points to the nearest vertex no more common than
-     this tier. Tier is the mean of the two crossing orders, so a rare line
+  <p class="hint">The thick needle points to the nearest vertex no more common
+     than this tier. Tier is the mean of the two crossing orders, so a rare line
      crossing a common one (say order 10 &times; order 14) still counts as
      tier 12 &mdash; a real find on a walk. Lower the tier to hunt rarer
-     crossings further afield; raise it and commonplace vertices appear too.</p>
+     crossings further afield. The thin needle always points to the nearest
+     corner that counts towards a cell, preferring cells you have started.</p>
   <p class="hint" id="readout-src"></p>
   <style>
     /* The moment. Unhurried on purpose: nothing flashes, nothing bounces,
@@ -806,13 +812,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/ui/card-renderer.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
-<script src="js/lib/geosonify-starpin.js?v=20261025"></script>
+<script src="js/lib/geosonify-starpin.js?v=20261111"></script>
 <script src="js/lib/geosonify-starpin-next.js?v=20261102"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-feedback.js?v=20261017"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20261111"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261031c"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
@@ -919,6 +925,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
   var activeTab = 'corner', heading = null, nearestStar = null, lastStarFix = null;
   var lastTargets = [], headingRaf = 0;
+  // thin-needle-v1 (Nov 2026). The thick needle is the rarity hunt (slider
+  // floor); the thin one is the nearest corner that advances a cell. thinCs is
+  // that vertex (with distanceM, and forCell when it is a missing corner of a
+  // cell you have started), or null. thinPrimary is true while you are
+  // standing on the thin target and not the thick one: the dial, the readout
+  // and sound guidance then follow it until it is bagged or you walk off.
+  var thinCs = null, thinPrimary = false, thinKey = null;
+  var logShowCommon = false;   // the log's "show commonplace corners" toggle
   // The current drive-by target ({lat, lon, radiusM}) whose countdown row is on
   // screen, or null. Set when paintTabBody draws the row; read by a 1 Hz ticker
   // that updates JUST that row's text between GPS fixes, so the seconds tick
@@ -1001,7 +1015,18 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       targets.push({ key: 'corner', colour: '#7D9D33', primary: activeTab === 'corner',
         result: S.assessVisit(fix, { lat: lastCs.lat, lon: lastCs.lon }),
         bearingDeg: bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon),
-        compassText: compass(bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon)) });
+        compassText: compass(bearing(fix.lat, fix.lon, lastCs.lat, lastCs.lon)),
+        altLabel: 'tier ' + lastCs.tierOrder.toFixed(1) });
+    }
+    // The thin needle: same mode, same colour, narrower. Never while a cell or
+    // a "What next?" walk is being followed -- the thick needle is already the
+    // next stop then, and a second one would pull you off the route.
+    if (thinCs && !cellGoal && !nextGoal) {
+      targets.push({ key: 'corner', thin: true, colour: '#7D9D33', primary: false,
+        result: S.assessVisit(fix, { lat: thinCs.lat, lon: thinCs.lon }),
+        bearingDeg: bearing(fix.lat, fix.lon, thinCs.lat, thinCs.lon),
+        compassText: compass(bearing(fix.lat, fix.lon, thinCs.lat, thinCs.lon)),
+        altLabel: thinCs.forCell ? 'corner of a started cell' : 'corner' });
     }
     // The active mode decides the needle. Do NOT silently fall back to the
     // other mode's target when this one is missing — that made the toggle look
@@ -1009,7 +1034,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // kept pointing at the cornerstone). Show only the active mode's target;
     // if it isn't ready, the dial goes quiet and the tab body explains why.
     var active = targets.filter(function (t) { return t.key === activeTab; });
-    if (active.length) active[0].primary = true;
+    // Primary is the thick target, unless you are standing on the thin one and
+    // not on the thick one. Thin is listed first so it draws underneath.
+    var thick = active.filter(function (t) { return !t.thin; })[0] || null;
+    var thin  = active.filter(function (t) { return t.thin; })[0] || null;
+    active.forEach(function (t) { t.primary = false; });
+    var onThin  = thin  && thin.result.verdict  === 'well-supported';
+    var onThick = thick && thick.result.verdict === 'well-supported';
+    thinPrimary = !!(thin && (!thick || (onThin && !onThick)));
+    if (thinPrimary) thin.primary = true;
+    else if (thick) thick.primary = true;
+    active = (thin ? [thin] : []).concat(thick ? [thick] : []);
     lastTargets = active;                   // reused by onOrient for heading-only repaints
     prox.update(active, heading);
     paintTabBody();
@@ -1137,7 +1172,47 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (!csHave && !csOn) b.appendChild(el('p', 'hint',
         'To bag it, get inside its ring with a good fix: your distance plus the ' +
         'GPS uncertainty has to be under ' + Math.round(vc2.radiusM) + ' m.'));
+      // The thin needle's corner. Standing on it puts it first, so its bag
+      // button is the one in reach.
+      var thinBox = thinBlock();
+      if (thinBox) {
+        if (thinPrimary) b.insertBefore(thinBox, b.firstChild);
+        else b.appendChild(thinBox);
+      }
     }
+  }
+
+  // The thin needle's target in the cornerstone tab: where it is, which cell
+  // it advances, and a bag button only when the fix is on it. No closest-
+  // approach button -- a commonplace corner is not worth a near-miss record.
+  function thinBlock() {
+    if (!thinCs || !fix || cellGoal || nextGoal) return null;
+    var v = thinCs;
+    var box = el('div', 'thin-target');
+    box.appendChild(el('div', 'thin-head', '\u25C7 thin needle \u00B7 ' +
+      (v.forCell ? 'a corner of a cell you have started' : 'nearest corner for a cell')));
+    var vr = S.assessVisit(fix, { lat: v.lat, lon: v.lon });
+    var t = F.tierOf(v.tierOrder, v.degree);
+    var dl = el('dl');
+    detailRow(dl, 'name', v.name);
+    detailRow(dl, 'tier', v.tierOrder.toFixed(1) + ' \u00B7 ' + t.key);
+    detailRow(dl, 'direction', walk(vr.distanceM, bearing(fix.lat, fix.lon, v.lat, v.lon)));
+    cellRowsFor(dl, v);
+    detailRow(dl, 'visit', verdictText(vr.verdict),
+      vr.verdict === 'well-supported' ? 'ok' : vr.verdict === 'not-supported' ? 'bad' : null);
+    box.appendChild(dl);
+    if (vr.verdict === 'well-supported') {
+      var bb = el('button', null, v.tierOrder > 12 ? 'Bag this corner' : 'Bag this cornerstone');
+      bb.type = 'button';
+      bb.addEventListener('click', function () {
+        if (!thinCs || !fix) return;
+        bagCorner(thinCs, S.assessVisit(fix, { lat: thinCs.lat, lon: thinCs.lon }));
+      });
+      box.appendChild(bb);
+    } else {
+      box.appendChild(el('p', 'hint', 'Stand on it to bag it.'));
+    }
+    return box;
   }
 
   // \u2500\u2500 cells (cells-v1) in the Go tab \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
@@ -1322,6 +1397,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var maxTier = Math.max(6, Math.min(14, parseFloat($('order').value) || 12));
     // Following a "What next?" walk: the target is its next stop you do not
     // have yet, in the planned order.
+    if (cellGoal || (nextGoal && nextGoal.kind === 'corners')) { thinCs = null; thinKey = null; }
     if (nextGoal && nextGoal.kind === 'corners') {
       var stop = nextStop();
       if (stop) {
@@ -1361,8 +1437,56 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     try { lastCs = S.nearestBaggable(fix.lat, fix.lon, { maxTier: maxTier }); }
     catch (e) { lastCs = null; return; }
     if (!lastCs) return;              // nothing that rare nearby; leave prior target
+    findThin();
     map.setHighlight(lastCs.name);
     paintTargets();
+  }
+
+  // The thin needle's target: the nearest corner that moves a cell along.
+  // Candidates are the nearest commonplace corner you do not have (tier > 12)
+  // and every missing corner of a cell you have started; a started cell's
+  // corner wins unless the commonplace one is THIN_STARTED_PREF times closer.
+  // Cached on an ~11 m grid and the bag count: the search is tens of ms.
+  var THIN_STARTED_PREF = 1.5;
+  function findThin() {
+    if (!fix || cellGoal || nextGoal) { thinCs = null; thinKey = null; return; }
+    var key = fix.lat.toFixed(4) + ',' + fix.lon.toFixed(4) + '|' +
+              Object.keys(collected).length + '|' + (lastCs ? lastCs.name : '');
+    if (key === thinKey) {
+      if (thinCs) thinCs.distanceM = S.haversineM(fix.lat, fix.lon, thinCs.lat, thinCs.lon);
+      return;
+    }
+    thinKey = key;
+    var best = null;
+    if (cellState) cellState.partial.forEach(function (e) {
+      if (e.have < 1) return;
+      e.corners.forEach(function (k) {
+        if (k.have) return;
+        var d = S.haversineM(fix.lat, fix.lon, k.lat, k.lon);
+        var sc = d / THIN_STARTED_PREF;
+        if (!best || sc < best.score) best = { pt: k, d: d, score: sc, cell: e.cell };
+      });
+    });
+    // A commonplace corner can only win inside best.score, so sample no
+    // further than that (radiusM bounds the sampling, not the hit, hence the
+    // distance check below).
+    var opts = { minTier: 12, maxTier: 14,
+                 skip: function (v) { return !!collected[csName(v.name)]; } };
+    if (best) opts.radiusM = Math.max(1, best.score);
+    try {
+      var c = S.nearestBaggable(fix.lat, fix.lon, opts);
+      if (c && (!best || c.distanceM < best.score)) best = { v: c, d: c.distanceM };
+    } catch (e) {}
+    thinCs = null;
+    if (!best) return;
+    var v = best.v;
+    if (!v) {
+      try { v = S.nearestCornerstone(best.pt.lat, best.pt.lon, 14); } catch (e) { return; }
+      v.distanceM = best.d; v.forCell = best.cell;
+    }
+    if (lastCs && v.name === lastCs.name) return;      // one target, one needle
+    if (collected[csName(v.name)]) return;
+    thinCs = v;
   }
 
 
@@ -2771,8 +2895,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (common0) {
         box.appendChild(el('div', 'meta',
           'Commonplace \u2014 tier ' + v0.tierOrder.toFixed(1) +
-          '. The compass will not send you here for its own sake, but it is a ' +
-          'corner of order-13 and order-14 cells, and those count.'));
+          '. Not a find on its own, but it is a corner of order-13 and order-14 ' +
+          'cells, and those count. The thin needle points to corners like this.'));
       }
       if (v0 && fix && onIt && !already0) {
         var pinBag = el('button', null, common0 ? 'Bag this corner' : 'Bag this cornerstone');
@@ -4138,16 +4262,40 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // tierOrder, not intrinsicOrder: a rare line crossing a common one sits
     // between the two, and the celebration should reflect that.
     var common = v.tierOrder > 12;
-    F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder,
-                  degree: v.degree, digits: v.name.replace(/\D/g, ''),
-                  kicker: common ? 'corner bagged · counts towards cells' : undefined,
-                  blurb: common ? 'Too common to chase on its own, but it is a corner of ' +
-                                  'order-13 and order-14 cells. Bag all four corners of one.' : undefined });
     var fresh = (cellState ? cellState.complete : []).filter(function (c) { return !before[c.cell]; })
       .sort(function (a, b) { return a.order - b.order; });   // the bigger cell last, loudest
+    if (common) {
+      // A commonplace corner is a step, not a find: a small note, no confetti
+      // (it does not appear in the log on its own either). If it finished a
+      // cell, the cell IS the moment, so go straight to that.
+      if (!fresh.length) {
+        F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder,
+                      degree: v.degree, small: true,
+                      kicker: 'corner bagged',
+                      label: bestCellLine(v),
+                      blurb: 'Commonplace corners show in your log as cells, once all four are yours.' });
+      }
+    } else {
+      F.celebrate({ kind: 'cornerstone', name: v.name, order: v.tierOrder,
+                    degree: v.degree, digits: v.name.replace(/\D/g, '') });
+    }
+    var lead = (common && fresh.length) ? 300 : 1500;
     fresh.forEach(function (c, i) {
-      setTimeout(function () { celebrateCell(c); }, 1500 + i * 2600);
+      setTimeout(function () { celebrateCell(c); }, lead + i * 2600);
     });
+  }
+
+  // "3 of 4 on an order-14 cell": the best progress this corner gives.
+  function bestCellLine(v) {
+    var best = null;
+    try {
+      S.cellsAtVertex(v.lat, v.lon).forEach(function (c) {
+        var e = cellEntry(c.cell), n = e ? e.have : 0;
+        if (!best || n > best.n || (n === best.n && c.order > best.order))
+          best = { n: n, order: c.order };
+      });
+    } catch (e) {}
+    return best ? best.n + ' of 4 on an order-' + best.order + ' cell' : 'counts towards cells';
   }
 
   function celebrateCell(c) {
@@ -4166,10 +4314,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // Completed cells, then the ones you are closest to finishing. Derived, like
   // everything else here: delete a corner's record and its cells go back to
   // "nearly there".
-  function drawCells(box) {
+  function drawCells(box, nCommon) {
     if (!cellState) return;
     var done = cellState.complete;
-    var near = cellState.partial.filter(function (e) { return e.have >= 2; }).slice(0, 6);
+    // Started cells from one corner up: commonplace corners are not listed on
+    // their own any more, so a first corner must still leave a trace here.
+    var near = cellState.partial.filter(function (e) { return e.have >= 1; }).slice(0, 6);
     if (!done.length && !near.length) return;
     var sec = el('div', 'cells');
     sec.appendChild(el('h3', null, 'Cells'));
@@ -4219,11 +4369,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     var counts = S.CELL_ORDERS.map(function (o) {
       return (cellState.counts[o] || 0) + ' at order ' + o; }).join(' · ');
-    sec.appendChild(el('p', 'hint', done.length ? counts
-      : 'None finished yet. A cell is done when all four of its corners are bagged, each from its own visit.'));
+    var nc = nCommon ? nCommon + ' commonplace corner' + (nCommon === 1 ? '' : 's') : '';
+    sec.appendChild(el('p', 'hint', done.length
+      ? counts + (nc ? ' \u00B7 ' + nc + ' bagged towards cells' : '')
+      : 'None finished yet. A cell is done when all four of its corners are bagged, each from its own visit.' +
+        (nc ? ' So far: ' + nc + '.' : '')));
     done.forEach(function (e) { sec.appendChild(row(e)); });
     if (near.length) {
-      sec.appendChild(el('div', 'cells-sub', 'nearly there'));
+      sec.appendChild(el('div', 'cells-sub', 'started'));
       near.forEach(function (e) { sec.appendChild(row(e)); });
     }
     box.appendChild(sec);
@@ -4279,7 +4432,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       tally.appendChild(d);
     });
     box.appendChild(tally);
-    drawCells(box);
+    drawCells(box, Object.keys(corners).filter(function (k) { return corners[k] > 12; }).length);
 
     function scarcity(r) {
       if (r.target.cornerstone) {
@@ -4322,6 +4475,22 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       return groupMs(b) - groupMs(a);
     });
 
+    // Commonplace corners (tier > 12) are steps towards cells, not finds: they
+    // stay out of this list and show up through Cells. Classified once per
+    // group from the assessment's target point; if it cannot be derived the
+    // group counts as not common and stays visible rather than vanishing.
+    groups.forEach(function (gp) {
+      gp.isCommon = false;
+      if (!gp.rep.target.cornerstone) return;
+      try {
+        var rk0 = rank[gp.rep.record_id] || {};
+        var apt = (rk0.assessment && rk0.assessment.target) || S.cornerstonePoint(gp.rep.target.cornerstone);
+        if (apt) gp.isCommon = S.nearestCornerstone(apt.lat, apt.lon, 14).tierOrder > 12;
+      } catch (e) {}
+    });
+    var nHidden = groups.filter(function (gp) { return gp.isCommon; }).length;
+    if (!logShowCommon) groups = groups.filter(function (gp) { return !gp.isCommon; });
+
     var runUI = (R && mode !== 'rare') ? R.runUI(box, groups, replayDeps()) : null;
     groups.forEach(function (gp, i) {
       var r = gp.rep;
@@ -4358,13 +4527,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       // Commonplace cornerstones (tier > 12) render as a slim line. Tier comes
       // from the assessment's target point, classified once; if it cannot be
       // derived the row stays full-size rather than guessing it common.
-      var isCommon = false;
-      if (!isStar) {
-        try {
-          var apt = (rk.assessment && rk.assessment.target) || S.cornerstonePoint(r.target.cornerstone);
-          if (apt) isCommon = S.nearestCornerstone(apt.lat, apt.lon, 14).tierOrder > 12;
-        } catch (e) {}
-      }
+      var isCommon = !!gp.isCommon;
       var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : '') +
                              (isCommon ? ' common' : ''));
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
@@ -4524,6 +4687,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       if (runUI) runUI.place(slot, gp); else box.appendChild(slot);
     });
+    if (nHidden) {
+      var tg = el('button', 'close log-common-toggle', logShowCommon
+        ? 'Hide the ' + nHidden + ' commonplace corner' + (nHidden === 1 ? '' : 's')
+        : 'Show ' + nHidden + ' commonplace corner' + (nHidden === 1 ? '' : 's') +
+          ' (bagged for cells)');
+      tg.type = 'button';
+      tg.addEventListener('click', function () {
+        logShowCommon = !logShowCommon; $('lg-show').click();
+      });
+      box.appendChild(tg);
+    }
     box.appendChild(el('p', 'hint',
       'Verdicts and "your closest" are worked out fresh every time this is drawn, ' +
       'never stored. Dimmed cards are ones you later beat. Swipe a card left, ' +
