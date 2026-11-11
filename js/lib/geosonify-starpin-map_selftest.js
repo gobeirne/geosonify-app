@@ -314,6 +314,24 @@ head('7: patches (game design v2, phase 1)');
   ok('no progress draws nothing and does not throw', (function () {
     var e = M.patchModel(null); return e.lit.length === 0 && e.glow.length === 0; })());
 
+  // starlit-v1: the host marks complete entries; the model carries the flag
+  // and covers a starlit patch inside a starlit coarser one.
+  (function () {
+    var sp = JSON.parse(JSON.stringify(full));
+    var one14 = null;
+    sp.complete.forEach(function (e) {
+      e.starlit = e.order === 12 || e.order === 13 ? true : false;
+      if (e.order === 14 && !one14) { one14 = e.cell; e.starlit = true; }
+    });
+    var ms = M.patchModel(sp);
+    ok('starlit: the flag is carried onto lit patches',
+       ms.lit.filter(function (c) { return c.order === 12; })[0].starlit === true);
+    ok('starlit: a starlit small patch inside a starlit large one is not tinted twice',
+       ms.lit.filter(function (c) { return c.cell === one14; })[0].starCovered === true);
+    ok('starlit: unmarked progress is never starlit',
+       M.patchModel(full).lit.every(function (c) { return c.starlit === false; }));
+  })();
+
   // The log's cells are this same result narrowed to orders 13 and 14.
   var direct = S.cellProgress(all.filter(function (n) { return n !== dropped; })
                                 .map(function (n) { return rec(n); }));

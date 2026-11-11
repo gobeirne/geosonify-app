@@ -1,5 +1,5 @@
 /*
-  geosonify-starpin-next.js v0.1 — "What should I do next?"
+  geosonify-starpin-next.js v0.3 — "What should I do next?"
 
   Pure planning, no DOM. Given where you are, your patches and the starpins
   around you, it suggests up to three walks, each a different KIND of goal so
@@ -28,6 +28,15 @@
   These weights only RANK suggestions. They are not a score and are never
   shown or stored.
 
+  starlit-v1 (Nov 2026). The host may mark progress entries: a partial patch
+  with hasStar (a starpin you have collected lies inside it), a complete one
+  with starlit. Then:
+    finish   lighting a patch that holds a star of yours is worth STAR_W times
+             more, and the card says so ("— you have a star in it").
+    star     a starpin inside a complete patch that is not yet starlit is
+             worth more, and the card says how many patches it would starlight.
+  Without the marks everything behaves exactly as before.
+
   Browser: window.GeosonifyStarpinNext.  Node: require('./geosonify-starpin-next.js').
 */
 'use strict';
@@ -39,6 +48,8 @@ var GeosonifyStarpinNext = (function () {
   var SIZE_W = { 12: 4, 13: 2, 14: 1 };
   var STEP_W = { 1: 0.25, 2: 0.6, 3: 1.5, 4: 4 };
   var SIZE_WORD = { 12: 'large', 13: 'medium', 14: 'small' };
+  var STAR_W = 1.5;                // lighting a patch you already have a star in
+  var STARLIGHT_W = 1;             // per complete patch a new star would starlight
   var PAIR_POOL = 10;              // best single corners considered for pairs
   // A walk longer than the chosen time is offered only when nothing fits,
   // and never beyond OVER x that time. Without this cap, planning from a pin
@@ -58,18 +69,32 @@ var GeosonifyStarpinNext = (function () {
     return m;
   }
 
+  // Started patches that already hold a collected star (host-marked hasStar).
+  function starMap(progress) {
+    var m = {};
+    if (!progress) return m;
+    (progress.partial || []).forEach(function (e) { if (e.hasStar) m[e.cell] = 1; });
+    return m;
+  }
+
   // What collecting this vertex does, given the corners held so far.
-  function effectsAt(S, v, have) {
+  // `stars` (optional) is starMap(progress): an effect on such a patch is
+  // marked star, so lighting it also makes it starlit.
+  function effectsAt(S, v, have, stars) {
     var out = [];
     S.cellsAtVertex(v.lat, v.lon, ORDERS).forEach(function (c) {
       var from = have[c.cell] || 0;
       if (from >= 4) return;
-      out.push({ cell: c.cell, order: c.order, from: from, to: from + 1 });
+      var e = { cell: c.cell, order: c.order, from: from, to: from + 1 };
+      if (stars && stars[c.cell]) e.star = true;
+      out.push(e);
     });
     return out;
   }
   function valueOf(effects) {
-    return effects.reduce(function (s, e) { return s + SIZE_W[e.order] * STEP_W[e.to]; }, 0);
+    return effects.reduce(function (s, e) {
+      return s + SIZE_W[e.order] * STEP_W[e.to] * (e.star && e.to === 4 ? STAR_W : 1);
+    }, 0);
   }
 
   // "Lights a medium patch · a small patch to 3 of 4"
@@ -91,7 +116,10 @@ var GeosonifyStarpinNext = (function () {
       return started ? 'Adds a corner to ' + started + ' patch' + (started === 1 ? '' : 'es')
                      : 'Starts ' + effects.length + ' new patch' + (effects.length === 1 ? '' : 'es');
     }
-    return parts.join(', ');
+    // starlit-v1: say so when the patch this lights already holds a star.
+    var starLit = effects.filter(function (e) { return e.star && e.to === 4; }).length;
+    return parts.join(', ') +
+      (starLit ? ' \u2014 you have a star in ' + (starLit === 1 ? 'it' : 'them') : '');
   }
 
   function trip(kind, stops, fix, S, extra) {
@@ -108,7 +136,7 @@ var GeosonifyStarpinNext = (function () {
   // The corners worth finishing: every missing corner of a patch you have
   // started, scored against what you hold now.
   function finishCandidates(S, fix, progress, isCollected) {
-    var have = haveMap(progress), seen = {}, out = [];
+    var have = haveMap(progress), stars = starMap(progress), seen = {}, out = [];
     (progress && progress.partial || []).forEach(function (e) {
       if (ORDERS.indexOf(e.order) < 0) return;
       e.corners.forEach(function (c) {
@@ -121,7 +149,7 @@ var GeosonifyStarpinNext = (function () {
         var name = c.name;
         if (!name) { try { name = S.nearestCornerstone(c.lat, c.lon, 14).name; } catch (x) { return; } }
         if (isCollected(name)) return;
-        var eff = effectsAt(S, c, have);
+        var eff = effectsAt(S, c, have, stars);
         if (!eff.length) return;
         out.push({ name: name, lat: c.lat, lon: c.lon, effects: eff, value: valueOf(eff),
                    advances: eff.some(function (x) { return x.from >= 2; }) });
@@ -135,7 +163,7 @@ var GeosonifyStarpinNext = (function () {
   function pairValue(S, a, b, progress) {
     var have = haveMap(progress);
     a.effects.forEach(function (e) { have[e.cell] = e.to; });
-    var eb = effectsAt(S, b, have);
+    var eb = effectsAt(S, b, have, starMap(progress));
     return { effects: a.effects.concat(eb), value: a.value + valueOf(eb) };
   }
 
@@ -214,17 +242,36 @@ var GeosonifyStarpinNext = (function () {
     return t;
   }
 
+  // Complete patches not yet starlit, as path prefixes. Needs S.starCellPath.
+  function darkComplete(S, progress) {
+    if (!progress || typeof S.starCellPath !== 'function') return null;
+    var out = (progress.complete || []).filter(function (e) {
+      return ORDERS.indexOf(e.order) >= 0 && e.starlit === false; }).map(function (e) { return e.cell; });
+    return out.length ? out : null;
+  }
+
   // stars: [{ name, lat, lon, mag, ... }]; rarity(mag) -> 0..1.
-  function bestStar(S, fix, stars, starHave, rarity, budgetMin) {
-    var trips = [];
+  function bestStar(S, fix, stars, starHave, rarity, budgetMin, progress) {
+    var trips = [], dark = darkComplete(S, progress);
     (stars || []).forEach(function (st) {
       if (st.lat == null || st.lon == null || starHave(st)) return;
       var r = rarity ? rarity(st.mag) : 0.3;
+      var lights = 0;
+      if (dark) {
+        var p14 = null;
+        try { p14 = S.starCellPath(st.lat, st.lon, 14); } catch (e) {}
+        if (p14) dark.forEach(function (cell) { if (p14.indexOf(cell) === 0) lights++; });
+      }
       trips.push(trip('star', [{ name: st.name, lat: st.lat, lon: st.lon, star: st }], fix, S,
-                      { value: 1 + 3 * r, rarity: r, star: st }));
+                      { value: 1 + 3 * r + STARLIGHT_W * lights, rarity: r, star: st,
+                        starlights: lights }));
     });
     var t = choose(trips, budgetMin);
-    if (t) t.detail = t.star.mag != null ? 'G ' + Number(t.star.mag).toFixed(1) : 'brightness unknown';
+    if (t) {
+      t.detail = t.star.mag != null ? 'G ' + Number(t.star.mag).toFixed(1) : 'brightness unknown';
+      if (t.starlights) t.detail += ' \u00B7 starlights ' + t.starlights + ' patch' +
+                                    (t.starlights === 1 ? '' : 'es') + ' you have lit';
+    }
     return t;
   }
 
@@ -240,11 +287,11 @@ var GeosonifyStarpinNext = (function () {
       finishFar: !!(finish && finish.far),
       fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
       star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
-                                  opts.rarity, budget) : undefined
+                                  opts.rarity, budget, opts.progress) : undefined
     };
   }
 
-  return { VERSION: '0.2', RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, DETOUR: DETOUR,
+  return { VERSION: '0.3', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, DETOUR: DETOUR,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };
 })();

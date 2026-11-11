@@ -84,16 +84,17 @@
             q: 'What are the teal patches?',
             a: `<p>Every cornerstone is a corner of a patch of the grid. Collect all four corners of a patch and it lights up: it turns <strong>teal</strong> on your map.</p>
 <p>Patches come in three sizes, about 400 metres, 800 metres and 1.6 kilometres across, and the map outlines the size that suits how far you are zoomed in. A patch you have started glows: it gets a bright edge, a ring on each corner still to collect, and a badge such as <strong>3 of 4 · medium</strong> saying how many of its corners you have. The brighter the glow, the closer it is to lighting.</p>
-<p>Neighbouring patches share corners, so each one you light makes the next cheaper. When every small patch inside a bigger one is lit, the bigger one turns a deeper teal. Patches are worked out from your log, so walks you made before this feature existed count too.</p>`
+<p>Neighbouring patches share corners, so each one you light makes the next cheaper. When every small patch inside a bigger one is lit, the bigger one turns a deeper teal. Patches are worked out from your log, so walks you made before this feature existed count too.</p>
+<p>A lit patch with a starpin you have collected inside it is <strong>starlit</strong>: it takes a warm gold tint and a gold line down its edge. It does not matter which came first. Light a patch and collect a star in it months later, or the other way round, and it becomes starlit either way. A star inside a small patch is also inside the medium and large patches around it, so it can starlight all three. Your log counts starlit cells as part of your cells, and marks each one with a gold star.</p>`
           },
           {
             id: 'what-next',
             q: 'What does “What should I do next?” suggest?',
             a: `<p>On the <strong>Go</strong> tab, choose how long you have, 15, 30 or 60 minutes, and Starpin suggests up to three walks, each a different kind:</p>
 <ul>
-<li><strong>Finish something:</strong> the corner, or pair of corners, that does most for patches you have already started. Lighting a patch counts most, then taking one to 3 of 4.</li>
+<li><strong>Finish something:</strong> the corner, or pair of corners, that does most for patches you have already started. Lighting a patch counts most, then taking one to 3 of 4. A patch that already holds a starpin you have collected counts for more, because lighting it makes it starlit.</li>
 <li><strong>New ground:</strong> the nearest corner where you have not started any small patch yet.</li>
-<li><strong>A starpin:</strong> one you have not collected, with brighter, rarer stars preferred.</li>
+<li><strong>A starpin:</strong> one you have not collected, with brighter, rarer stars preferred, and stars inside patches you have lit preferred again, because collecting one makes those patches starlit.</li>
 </ul>
 <p>Press <strong>Take me there</strong> and the compass guides you to it. A pair is guided one corner at a time.</p>
 <p>Times include the walk back to where you started, at an easy 4 km/h, with 30% added because streets are never straight. They are still worked out as the crow flies, so a river or a motorway between you and a corner can make the real walk longer. As ever, the arrow shows direction, not a safe or legal route.</p>`

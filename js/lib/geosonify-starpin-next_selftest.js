@@ -91,5 +91,45 @@ ok('at equal distance the brighter, rarer one wins', p3.star && p3.star.star.nam
 ok('with no star list the star card is left undefined (still looking)', plan.star === undefined);
 ok('with an empty star list there is no star card', N.plan({ S: S, fix: fix, progress: P, stars: [] }).star === null);
 
+console.log('\n9: starlit-v1');
+(function () {
+  var Ps = prog(held3);
+  var se = Ps.partial.filter(function (e) { return e.cell === small; })[0];
+  var before = N.finishCandidates(S, fix, Ps, have).filter(function (c) {
+    return S.haversineM(c.lat, c.lon, missing.lat, missing.lon) < 0.5; })[0];
+  se.hasStar = true;
+  var after = N.finishCandidates(S, fix, Ps, have).filter(function (c) {
+    return S.haversineM(c.lat, c.lon, missing.lat, missing.lon) < 0.5; })[0];
+  ok('lighting a patch that holds a star is worth more', after.value > before.value,
+     before.value + ' -> ' + after.value);
+  var pl = N.plan({ S: S, fix: fix, progress: Ps, isCollected: have, budgetMin: 30 });
+  ok('...and the card says so', pl.finish && /you have a star in it/.test(pl.finish.detail),
+     pl.finish && pl.finish.detail);
+  // a starpin inside a complete patch that is not starlit
+  var Pc = prog(names(small));
+  var done = Pc.complete.filter(function (e) { return e.cell === small; })[0];
+  ok('the test small patch is complete', !!done);
+  Pc.complete.forEach(function (e) { e.starlit = false; });
+  var cs = names(small).map(function (n) { return S.cornerstonePoint(n); });
+  var mid2 = { lat: cs.reduce(function (a, c) { return a + c.lat; }, 0) / 4,
+               lon: cs.reduce(function (a, c) { return a + c.lon; }, 0) / 4 };
+  var inside = { name: 'Gaia DR3 1', lat: mid2.lat, lon: mid2.lon, mag: 15 };
+  var outside = { name: 'Gaia DR3 2', lat: mid2.lat + 0.03, lon: mid2.lon, mag: 15 };
+  var pls = N.plan({ S: S, fix: { lat: mid2.lat + 0.015, lon: mid2.lon }, progress: Pc,
+                     isCollected: function () { return true; }, budgetMin: 120,
+                     stars: [outside, inside], starHave: function () { return false; },
+                     rarity: function () { return 0.3; } });
+  ok('a star that would starlight a lit patch is preferred', pls.star && pls.star.star === inside,
+     pls.star && pls.star.star.name);
+  ok('...and the card counts the patches', pls.star && /starlights \d+ patch/.test(pls.star.detail),
+     pls.star && pls.star.detail);
+  var Pu = prog(names(small));
+  var plu = N.plan({ S: S, fix: { lat: mid2.lat + 0.015, lon: mid2.lon }, progress: Pu,
+                     isCollected: function () { return true; }, budgetMin: 120,
+                     stars: [outside, inside], starHave: function () { return false; },
+                     rarity: function () { return 0.3; } });
+  ok('without host marks nothing changes', plu.star && !plu.star.starlights);
+})();
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

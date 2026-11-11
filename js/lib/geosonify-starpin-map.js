@@ -126,12 +126,14 @@ var GeosonifyStarpinMap = (function () {
                baggedRing: '#ffffff', you: '#CD8862', halo: '205,136,98',
                star: '#DCC949', starRing: '#4a3d08',
                under: 'rgba(255,255,255,.78)',
-               patch: '0,128,118', patchA: 0.38, brightA: 0.25 },
+               patch: '0,128,118', patchA: 0.38, brightA: 0.25,
+               starlit: '201,150,20', starlitA: 0.16 },
     imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
                baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.6)',
-               patch: '64,236,220', patchA: 0.42, brightA: 0.26 },
+               patch: '64,236,220', patchA: 0.42, brightA: 0.26,
+               starlit: '255,214,90', starlitA: 0.2 },
     // Over the night sky, with the streets drawn cool: the lattice goes warm
     // amber so the two never read as one, your finds stay green, and you are
     // the blue dot every map has taught people to look for.
@@ -139,7 +141,8 @@ var GeosonifyStarpinMap = (function () {
                baggedRing: '#10200a', you: '#4DA3FF', halo: '77,163,255',
                star: '#FFF6D0', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.55)',
-               patch: '64,236,220', patchA: 0.40, brightA: 0.25 }
+               patch: '64,236,220', patchA: 0.40, brightA: 0.25,
+               starlit: '255,214,90', starlitA: 0.18 }
   };
 
   var CSS = [
@@ -245,6 +248,12 @@ var GeosonifyStarpinMap = (function () {
   //   Glowing  2 or 3 of 4 corners collected               solid glowing edge, a ring
   //                                                        on each missing corner, and
   //                                                        an "N of 4" badge
+  //   Starlit  lit, and a starpin you have collected lies  a static warm-gold tint, and
+  //            inside it (starlit-v1, host-marked          a gold core in the lit edge.
+  //            e.starlit on progress.complete)             Not a separate state: it sits
+  //                                                        on lit and on bright. A patch
+  //                                                        that becomes starlit while the
+  //                                                        map is open flashes gold once.
   //
   // ONE SIZE IS OUTLINED AT A TIME, chosen by zoom: the finest order whose
   // cells are at least PATCH_OUTLINE_MIN_PX across. Fills are drawn at every
@@ -286,7 +295,7 @@ var GeosonifyStarpinMap = (function () {
       if (PATCH_ORDERS.indexOf(e.order) < 0) return;
       var c = parseCellPath(e.cell); if (!c) return;
       litKey[c.order + ':' + c.ipix] = 1;
-      out.lit.push({ cell: e.cell, order: c.order, ipix: c.ipix });
+      out.lit.push({ cell: e.cell, order: c.order, ipix: c.ipix, starlit: !!e.starlit });
     });
     function ancestor(c, keyed) {
       for (var a = c.order - 1; a >= coarsest; a--)
@@ -304,6 +313,10 @@ var GeosonifyStarpinMap = (function () {
       if (all) brightKey[c.order + ':' + c.ipix] = 1;
     });
     out.lit.forEach(function (c) { c.brightCovered = c.bright && ancestor(c, brightKey); });
+    // A starlit patch inside a starlit, lit coarser one is already tinted.
+    var starKey = {};
+    out.lit.forEach(function (c) { if (c.starlit) starKey[c.order + ':' + c.ipix] = 1; });
+    out.lit.forEach(function (c) { c.starCovered = c.starlit && ancestor(c, starKey); });
     (progress.partial || []).forEach(function (e) {
       if (PATCH_ORDERS.indexOf(e.order) < 0 || e.have < 2 || e.have > 3) return;
       var c = parseCellPath(e.cell); if (!c) return;
@@ -404,6 +417,16 @@ var GeosonifyStarpinMap = (function () {
 
     var fix = null, bagged = [], finds = [], highlight = null, cache = {};
     var patches = { lit: [], glow: [] }, ringCache = {};
+    // starlit-v1 flash: cell -> time it ends. Seeded by the first setPatches
+    // (the log as loaded), which never flashes, so opening the app does not
+    // set off every patch; only a patch that turns starlit after that does.
+    var starFlash = {}, starSeen = null, STAR_FLASH_MS = 1600, flashTimer = 0;
+    function flashLoop() {
+      redraw();
+      var now = Date.now(), live = Object.keys(starFlash).some(function (k) { return starFlash[k] > now; });
+      flashTimer = live ? setTimeout(flashLoop, 50) : 0;
+      if (!live) starFlash = {};
+    }
     function ringOf(c) {
       var k = c.order + ':' + c.ipix;
       if (!ringCache[k]) {
@@ -579,17 +602,29 @@ var GeosonifyStarpinMap = (function () {
         sc.pts.forEach(function (q, i) { if (i) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]); });
         g.closePath();
       }
-      function fillPatches(list, alpha) {
+      function fillPatches(list, alpha, rgb) {
         if (!list.length) return;
         g.beginPath();
         var any = false;
         list.forEach(function (c) { var sc = patchScreen(c); if (sc) { tracePatch(sc); any = true; } });
         if (!any) return;
-        g.fillStyle = 'rgba(' + pal.patch + ',' + alpha + ')';
+        g.fillStyle = 'rgba(' + (rgb || pal.patch) + ',' + alpha + ')';
         g.fill();
       }
       fillPatches(patches.lit.filter(function (c) { return !c.covered; }), pal.patchA);
       fillPatches(patches.lit.filter(function (c) { return c.bright && !c.brightCovered; }), pal.brightA);
+      // starlit-v1: a static warm tint over lit, and a brief gold flash for a
+      // patch that became starlit while the map was open.
+      (function () {
+        var sl = patches.lit.filter(function (c) { return c.starlit && !c.starCovered; });
+        if (!sl.length || !pal.starlit) return;
+        fillPatches(sl, pal.starlitA, pal.starlit);
+        var now = Date.now(), fl = patches.lit.filter(function (c) { return starFlash[c.cell] > now; });
+        if (fl.length) {
+          var k = (starFlash[fl[0].cell] - now) / STAR_FLASH_MS;           // 1 -> 0
+          fillPatches(fl, 0.5 * Math.sin(Math.PI * (1 - k)), pal.starlit);
+        }
+      })();
       // A lit patch also gets a crisp solid edge at the size outlined at this
       // zoom, so it reads as a finished shape and not as a tint on the streets.
       (function () {
@@ -601,6 +636,13 @@ var GeosonifyStarpinMap = (function () {
         if (!any) return;
         g.lineJoin = 'round';
         g.strokeStyle = 'rgba(' + pal.patch + ',0.9)'; g.lineWidth = 2; g.stroke();
+        // Starlit: a 1 px gold core down the middle of the teal edge.
+        var st = edged.filter(function (c) { return c.starlit; });
+        if (st.length && pal.starlit) {
+          g.beginPath();
+          st.forEach(function (c) { var sc = patchScreen(c); if (sc) tracePatch(sc); });
+          g.strokeStyle = 'rgba(' + pal.starlit + ',0.95)'; g.lineWidth = 1; g.stroke();
+        }
       })();
 
       layers.forEach(function (L) { strokeAll(L, pal.under, L.st.width + 1.8, L.st.alpha * 0.85); });
@@ -929,7 +971,19 @@ var GeosonifyStarpinMap = (function () {
       recentre: function () { if (fix) map.setView([fix.lat, fix.lon], map.getZoom()); },
       setBagged: function (n) { bagged = (n || []).slice(); redraw(); },
       // S.cellProgress(records, { orders: [12, 13, 14] }) -> lit and glowing patches.
-      setPatches: function (progress) { patches = patchModel(progress); redraw(); },
+      setPatches: function (progress) {
+        patches = patchModel(progress);
+        var now = {}, fresh = [];
+        patches.lit.forEach(function (c) { if (c.starlit) now[c.cell] = 1; });
+        if (starSeen) Object.keys(now).forEach(function (k) { if (!starSeen[k]) fresh.push(k); });
+        starSeen = now;
+        if (fresh.length) {
+          var end = Date.now() + STAR_FLASH_MS;
+          fresh.forEach(function (k) { starFlash[k] = end; });
+          if (!flashTimer) flashTimer = setTimeout(flashLoop, 0);
+        }
+        redraw();
+      },
       patches: function () { return { lit: patches.lit.slice(), glow: patches.glow.slice() }; },
       // [{ id, name, lat, lon, star? }] — bagged starpins, from the log.
       setFinds: function (list) { finds = (list || []).slice(); redraw(); },

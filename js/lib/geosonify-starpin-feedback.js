@@ -1330,6 +1330,18 @@ var GeosonifyStarpinFeedback = (function () {
     // ("too common to be worth a walk").
     line('spf-rare', opts.label || tier.label);
     line('spf-blurb', opts.blurb || tier.blurb);
+    // A second moment while the first is still up (a corner that completes a
+    // cell, a star that starlights one) stacks below it instead of printing
+    // over it. If there is no room left, the older banners make way.
+    var prev = typeof doc.querySelectorAll === 'function'
+      ? [].slice.call(doc.querySelectorAll('.spf-banner')).filter(function (x) {
+          return typeof x.getBoundingClientRect === 'function'; })
+      : [];
+    if (prev.length) {
+      var low = Math.max.apply(null, prev.map(function (x) { return x.getBoundingClientRect().bottom; }));
+      if (low + 12 < doc.defaultView.innerHeight * 0.62) b.style.top = (low + 12) + 'px';
+      else prev.forEach(function (x) { if (x.parentNode) x.parentNode.removeChild(x); });
+    }
     doc.body.appendChild(b);
     doc.defaultView.requestAnimationFrame(function () { b.classList.add('on'); });
 

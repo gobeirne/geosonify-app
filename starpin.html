@@ -259,6 +259,9 @@ dl{margin:.7rem 0 0}
 .tally .t-corner{border-color:var(--moss);background:color-mix(in srgb,var(--moss) 14%,var(--card))}
 .tally .t-best{border-color:var(--rust);background:color-mix(in srgb,var(--rust) 13%,var(--card))}
 .tally .t-cell{border-color:var(--bark-lit);background:color-mix(in srgb,var(--bark-lit) 14%,var(--card))}
+.tally .tally-starlit{display:block;font-style:normal;font-size:.62rem;font-weight:800;
+  color:var(--sun-deep);margin-top:.1rem}
+.cell-star{color:var(--sun-deep);font-size:.85rem;margin-left:-.35rem}
 @media (max-width:380px){.tally{gap:.35rem}.tally span{font-size:.55rem;letter-spacing:.04em}}
 /* cells-v1: completed order-13/14 cells, and the ones nearly there */
 .cells{margin:0 0 1rem}
@@ -812,15 +815,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/ui/card-renderer.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
-<script src="js/lib/geosonify-starpin.js?v=20261111"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261102"></script>
+<script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261111"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-feedback.js?v=20261111"></script>
+<script src="js/lib/geosonify-starpin-feedback.js?v=20261111b"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261031c"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261111"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -839,7 +842,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261031c"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261111"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1026,7 +1029,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         result: S.assessVisit(fix, { lat: thinCs.lat, lon: thinCs.lon }),
         bearingDeg: bearing(fix.lat, fix.lon, thinCs.lat, thinCs.lon),
         compassText: compass(bearing(fix.lat, fix.lon, thinCs.lat, thinCs.lon)),
-        altLabel: thinCs.forCell ? 'corner of a started cell' : 'corner' });
+        altLabel: thinCs.forStarCell ? 'corner of a cell with your star'
+                : thinCs.forCell ? 'corner of a started cell' : 'corner' });
     }
     // The active mode decides the needle. Do NOT silently fall back to the
     // other mode's target when this one is missing — that made the toggle look
@@ -1190,7 +1194,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var v = thinCs;
     var box = el('div', 'thin-target');
     box.appendChild(el('div', 'thin-head', '\u25C7 thin needle \u00B7 ' +
-      (v.forCell ? 'a corner of a cell you have started' : 'nearest corner for a cell')));
+      (v.forStarCell ? 'a corner of a cell with a star of yours in it'
+        : v.forCell ? 'a corner of a cell you have started' : 'nearest corner for a cell')));
     var vr = S.assessVisit(fix, { lat: v.lat, lon: v.lon });
     var t = F.tierOf(v.tierOrder, v.degree);
     var dl = el('dl');
@@ -1447,7 +1452,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // and every missing corner of a cell you have started; a started cell's
   // corner wins unless the commonplace one is THIN_STARTED_PREF times closer.
   // Cached on an ~11 m grid and the bag count: the search is tens of ms.
-  var THIN_STARTED_PREF = 1.5;
+  var THIN_STARTED_PREF = 1.5, THIN_STAR_PREF = 1.5;
   function findThin() {
     if (!fix || cellGoal || nextGoal) { thinCs = null; thinKey = null; return; }
     var key = fix.lat.toFixed(4) + ',' + fix.lon.toFixed(4) + '|' +
@@ -1463,8 +1468,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       e.corners.forEach(function (k) {
         if (k.have) return;
         var d = S.haversineM(fix.lat, fix.lon, k.lat, k.lon);
-        var sc = d / THIN_STARTED_PREF;
-        if (!best || sc < best.score) best = { pt: k, d: d, score: sc, cell: e.cell };
+        // starlit-v1: a started cell that already holds a collected star is
+        // preferred again, since finishing it also makes it starlit.
+        var sc = d / (THIN_STARTED_PREF * (e.hasStar ? THIN_STAR_PREF : 1));
+        if (!best || sc < best.score) best = { pt: k, d: d, score: sc, cell: e.cell, star: !!e.hasStar };
       });
     });
     // A commonplace corner can only win inside best.score, so sample no
@@ -1482,7 +1489,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var v = best.v;
     if (!v) {
       try { v = S.nearestCornerstone(best.pt.lat, best.pt.lon, 14); } catch (e) { return; }
-      v.distanceM = best.d; v.forCell = best.cell;
+      v.distanceM = best.d; v.forCell = best.cell; v.forStarCell = !!best.star;
     }
     if (lastCs && v.name === lastCs.name) return;      // one target, one needle
     if (collected[csName(v.name)]) return;
@@ -3971,6 +3978,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // filtered out, so the two can never disagree.
     try {
       var patchState = S.cellProgress(log.current(), { orders: [12, 13, 14] });
+      // starlit-v1: mark complete patches that hold a starpin you have
+      // collected, and started ones that already do. Derived every time, so a
+      // cell finished months before (or after) the star is starlit either way.
+      try {
+        var starIdx = S.starlitIndex(log.current());
+        patchState.complete.forEach(function (e) { e.starlit = starIdx.has(e.cell); });
+        patchState.partial.forEach(function (e) { e.hasStar = starIdx.has(e.cell); });
+      } catch (e2) { console.warn('[starpin] starlit:', e2); }
       patchAll = patchState;
       cellState = cellsAtOrders(patchState, S.CELL_ORDERS);
       if (flip.setPatches) flip.setPatches(patchState);
@@ -4114,7 +4129,34 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
   }
 
+  // starlit-v1: a star bagged inside cells you have already completed makes
+  // them starlit. bagStarNow has several exits, so the before/after diff
+  // wraps it rather than threading through each one.
+  function starlitCells() {
+    var m = {};
+    (cellState ? cellState.complete : []).forEach(function (e) { if (e.starlit) m[e.cell] = e; });
+    return m;
+  }
   function bagStar(sp, vr, supported) {
+    var before = starlitCells();
+    try { return bagStarNow(sp, vr, supported); }
+    finally {
+      setTimeout(function () {
+        var after = starlitCells();
+        var fresh = Object.keys(after).filter(function (k) { return !before[k]; })
+          .map(function (k) { return after[k]; })
+          .sort(function (a, b) { return a.order - b.order; });
+        if (!fresh.length) return;
+        F.celebrate({ kind: 'cornerstone', small: true, name: fresh[0].cell, order: 12,
+          kicker: '\u2605 starlit',
+          label: fresh.length === 1
+            ? 'this star lights your order-' + fresh[0].order + ' cell'
+            : 'this star lights ' + fresh.length + ' of your cells',
+          blurb: 'A cell you completed now holds a starpin you have collected.' });
+      }, 1500);
+    }
+  }
+  function bagStarNow(sp, vr, supported) {
     F.unlock();
     stopSoundGuide();
     var offeredThisBag = false;   // ensures ONE share offer per bag (culmination + visit)
@@ -4304,10 +4346,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // a whole cell is four visits' work, so it gets the party of an uncommon
     // vertex, and an order-13 cell one step more.
     F.celebrate({ kind: 'cornerstone', name: c.cell, order: c.order === 13 ? 11 : 12,
-                  kicker: 'all four corners · order-' + c.order + ' cell',
+                  kicker: 'all four corners · order-' + c.order + ' cell' +
+                          (c.starlit ? ' · \u2605 starlit' : ''),
                   label: 'one of ' + n.toLocaleString() + ' order-' + c.order + ' cells on Earth',
-                  blurb: 'Every corner of this cell is yours, each from its own visit. ' +
-                         'It is in your log under Cells.' });
+                  blurb: c.starlit
+                    ? 'Every corner is yours, and a starpin you have already collected lies ' +
+                      'inside it, so it is starlit. It is in your log under Cells.'
+                    : 'Every corner of this cell is yours, each from its own visit. ' +
+                      'It is in your log under Cells.' });
   }
 
   // ── Cells in the log (cells-v1) ─────────────────────────────────────────
@@ -4335,6 +4381,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     function row(e) {
       var r = el('div', 'cellrow' + (e.complete ? ' done' : ''));
       r.appendChild(el('span', 'cell-glyph', e.complete ? '■' : '□'));
+      // starlit-v1: gold star on a complete cell holding a collected starpin;
+      // on a started one it says the starlight is waiting for the corners.
+      if (e.complete ? e.starlit : e.hasStar) {
+        var sg = el('span', 'cell-star', '\u2605');
+        sg.title = e.complete ? 'starlit: a starpin you have collected is inside'
+                              : 'a starpin you have collected is inside: finish it to make it starlit';
+        if (!e.complete) sg.style.opacity = '.55';
+        r.appendChild(sg);
+      }
       var mid = el('span', 'cell-mid');
       mid.appendChild(el('b', null, 'order-' + e.order + ' cell'));
       mid.appendChild(el('span', 'cell-state', e.complete
@@ -4368,7 +4423,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       return r;
     }
     var counts = S.CELL_ORDERS.map(function (o) {
-      return (cellState.counts[o] || 0) + ' at order ' + o; }).join(' · ');
+      var ns = done.filter(function (e) { return e.order === o && e.starlit; }).length;
+      return (cellState.counts[o] || 0) + ' at order ' + o + (ns ? ' (\u2605 ' + ns + ')' : '');
+    }).join(' · ');
     var nc = nCommon ? nCommon + ' commonplace corner' + (nCommon === 1 ? '' : 's') : '';
     sec.appendChild(el('p', 'hint', done.length
       ? counts + (nc ? ' \u00B7 ' + nc + ' bagged towards cells' : '')
@@ -4422,6 +4479,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var tally = el('div', 'tally');
     var nCorners = Object.keys(corners).filter(function (k) { return corners[k] <= 12; }).length;
     var nCells = cellState ? cellState.complete.length : 0;
+    var nStarlit = cellState ? cellState.complete.filter(function (e) { return e.starlit; }).length : 0;
     [['t-star', Object.keys(stars).length, 'starpins'],
      ['t-corner', nCorners, 'cornerstones'],
      ['t-cell', nCells, nCells === 1 ? 'cell' : 'cells'],
@@ -4429,6 +4487,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var d = el('div', t[0]);
       d.appendChild(el('b', null, String(t[1])));
       d.appendChild(el('span', null, t[2]));
+      // starlit-v1: a subset of cells, never a count of its own.
+      if (t[0] === 't-cell' && nStarlit) {
+        var st = el('i', 'tally-starlit', '\u2605 ' + nStarlit + ' starlit');
+        st.title = 'cells with a starpin you have collected inside them';
+        d.appendChild(st);
+      }
       tally.appendChild(d);
     });
     box.appendChild(tally);

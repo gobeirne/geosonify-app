@@ -783,5 +783,42 @@ head('find-words-v1: the words a find gives Word Lab');
   ok('a tiny radius still honours the tier filter', small == null || small.tierOrder > 12);
 })();
 
+// ── starlit-v1 ─────────────────────────────────────────────────────────────
+(function () {
+  console.log('\nstarlit-v1: collected stars light the cells they lie in');
+  function star(id, ra, dec, dLatUnits, t) {
+    var a = S.starpinAddress(ra, dec);
+    return { schema: 'starpin.record/1', record_id: 's' + id + ':' + (dLatUnits || 0), kind: 'visit',
+      target: { starpin: 'starpin:gdr3:' + id, lat_1e7: a.lat_1e7, lon_1e7: a.lon_1e7 },
+      event: { time_ms: t || 1786160642206 },
+      fix: { lat_1e7: a.lat_1e7 + (dLatUnits || 0), lon_1e7: a.lon_1e7,
+             accuracy_m: 5, source: 'web-geolocation' } };
+  }
+  var on = star('1001', '172.6380000', '-43.5312000');
+  var a = S.starpinAddress('172.6380000', '-43.5312000');
+  var p14 = S.starCellPath(a.lat, a.lon, 14);
+  ok('a star resolves to an order-14 cell path', /^f\d{1,2}\.[0-3]{14}$/.test(p14), p14);
+  ok('the order-12 and order-13 paths are prefixes of the order-14 one',
+     S.starCellPath(a.lat, a.lon, 12) === p14.slice(0, p14.length - 2) &&
+     S.starCellPath(a.lat, a.lon, 13) === p14.slice(0, p14.length - 1));
+  var idx = S.starlitIndex([on]);
+  ok('a collected star lights its cell at every order',
+     idx.has(p14) && idx.has(p14.slice(0, -1)) && idx.has(p14.slice(0, -2)));
+  ok('the rule is labelled', idx.rule === 'starlit-v1' && S.STARLIT_RULE === 'starlit-v1');
+  var sib = p14.slice(0, -1) + ((+p14.slice(-1) + 1) % 4);
+  ok('a sibling cell is not lit by it', !idx.has(sib), sib);
+  var far = star('1001', '172.6380000', '-43.5312000', 300000);       // ~3.3 km off: no collect
+  ok('a record that does not collect lights nothing', S.starlitIndex([far]).stars === 0);
+  ok('one star, several records, counts once',
+     S.starlitIndex([on, star('1001', '172.6380000', '-43.5312000', 10)]).stars === 1);
+  var noAddr = JSON.parse(JSON.stringify(on)); delete noAddr.target.lat_1e7;
+  ok('a record without a ground address is skipped', S.starlitIndex([noAddr]).stars === 0);
+  ok('starsIn names the star', idx.starsIn(p14)[0] === 'starpin:gdr3:1001');
+  // the knife edge: lon exactly 90 in the northern cap must land near the star
+  var kp = S.starCellPath(60, 90, 14), ku = S.starCellPath(60, 90.0001, 14);   // raw nestIndex gives f0.333… here
+  ok('a star on a knife-edge meridian indexes beside its neighbour, not at the pole',
+     kp.slice(0, 8) === ku.slice(0, 8), kp + ' vs ' + ku);
+})();
+
 console.log('\n' + pass + ' passed, ' + fail + ' failed');
 process.exit(fail ? 1 : 0);

@@ -855,6 +855,62 @@ var GeosonifyStarpin = (function () {
              corners: list.length };
   }
 
+  // ── starlit-v1: stars that light complete cells ──────────────────────────
+  //
+  // A complete cell (or a lit patch on the map) is STARLIT when at least one
+  // starpin you have collected lies inside it. Derived, like cells-v1, so it
+  // is order-independent and retroactive: complete the cell first and bag the
+  // star months later, or the other way round, and the cell is starlit either
+  // way. Nothing is stored and there is no log event for it.
+  //
+  //   which stars   starpin records that collect (collect-v1: well-supported
+  //                 or compatible), one per star (targetKey).
+  //   where         the record's own ground address (lat_1e7, lon_1e7), so no
+  //                 catalogue lookup. Records without one are skipped.
+  //   containment   the star's order-14 cell path; a cell contains the star
+  //                 iff its path is a prefix of that path. Exactly one cell at
+  //                 each order holds any point, so boundaries are unambiguous.
+  //
+  // geosonify-healpix.js's nestIndex has a knife edge on longitudes exactly
+  // 0, 90, 180 and 270 in the northern cap (see nearestCornerstone). A star on
+  // one is nudged 1e-9 degrees east (0.1 mm) before it is indexed.
+  var STARLIT_RULE = 'starlit-v1';
+  var STARLIT_ORDER = 14;
+
+  function starCellPath(lat, lon, order) {
+    var H = hp();
+    order = order || STARLIT_ORDER;
+    if (lat > 0 && lon % 90 === 0) lon += 1e-9;
+    return pathStr(H, H.nestIndex(lat, lon, order), order);
+  }
+
+  // records -> { rule, stars, has(cellPath), starsIn(cellPath) }
+  function starlitIndex(records) {
+    var byPrefix = {}, seen = {}, n = 0;
+    (records || []).forEach(function (r) {
+      if (!r || !r.target || !r.target.starpin) return;
+      var t = r.target;
+      if (t.lat_1e7 == null || t.lon_1e7 == null) return;
+      var id = targetKey(t);
+      if (seen[id]) return;
+      if (!collects(r)) return;
+      var path;
+      try { path = starCellPath(t.lat_1e7 / UNIT, t.lon_1e7 / UNIT); } catch (e) { return; }
+      var m = /^(f\d{1,2})\.([0-3]+)$/.exec(path);
+      if (!m) return;
+      seen[id] = 1; n++;
+      for (var k = 1; k <= m[2].length; k++) {
+        var key = m[1] + '.' + m[2].slice(0, k);
+        (byPrefix[key] = byPrefix[key] || []).push(id);
+      }
+    });
+    return {
+      rule: STARLIT_RULE, stars: n,
+      has: function (cell) { return !!byPrefix[String(cell).trim()]; },
+      starsIn: function (cell) { return (byPrefix[String(cell).trim()] || []).slice(); }
+    };
+  }
+
   // ── find-words-v1: the words a find gives Word Lab ───────────────────────
   //
   // Every find (starpin or cornerstone) yields the 4-word HEALPix address of
@@ -938,6 +994,7 @@ var GeosonifyStarpin = (function () {
     COLLECT_RULE: COLLECT_RULE, collects: collects,
     CELL_ORDERS: CELL_ORDERS, CELL_RULE: CELL_RULE,
     cellsAtVertex: cellsAtVertex, cellProgress: cellProgress,
+    STARLIT_RULE: STARLIT_RULE, starCellPath: starCellPath, starlitIndex: starlitIndex,
     FIND_WORDS_RULE: FIND_WORDS_RULE, findWords: findWords
   };
 })();
