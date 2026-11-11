@@ -842,6 +842,7 @@ var GeosonifyStarpinFeedback = (function () {
         if (t.bearingDeg == null) return;
         var g = doc.createElementNS(NS, 'g');
         g.setAttribute('transform', 'rotate(' + t.bearingDeg.toFixed(1) + ' 50 50)');
+        if (t.thin) { drawThin(g, t); arrows.appendChild(g); return; }
         var p = doc.createElementNS(NS, 'path');
         // A thin needle (thin-needle-v1) is full length and narrow, so it is
         // told from a thick one by width alone, not by colour.
@@ -862,6 +863,40 @@ var GeosonifyStarpinFeedback = (function () {
         g.appendChild(p);
         arrows.appendChild(g);
       });
+    }
+
+    // The thin needle (thin-needle-v1). First drawn as a narrow, translucent
+    // copy of the thick arrow in the same green: on the green proximity disc
+    // it all but vanished (field test, 12 Nov 2026). Now it is a long shaft
+    // with a hollow diamond head -- the readout's own glyph -- reaching out
+    // past the disc into the pale rim, so its tip is always on pale ground.
+    // A light under-stroke and a dark over-stroke keep it legible on both the
+    // disc and the rim, in light and dark themes alike.
+    function drawThin(g, t) {
+      var shaft = 'M50 44 L50 21', head = 'M50 11 L53.2 16.5 L50 22 L46.8 16.5 Z';
+      [['rgba(255,255,255,.8)', 3.4], [t.primary ? '#1f2a0b' : '#3C5117', 1.5]].forEach(function (st) {
+        var a = doc.createElementNS(NS, 'path');
+        a.setAttribute('d', shaft + ' ' + head);
+        a.setAttribute('fill', 'none');
+        a.setAttribute('stroke', st[0]);
+        a.setAttribute('stroke-width', String(st[1]));
+        a.setAttribute('stroke-linejoin', 'round');
+        a.setAttribute('stroke-linecap', 'round');
+        g.appendChild(a);
+      });
+      var f = doc.createElementNS(NS, 'path');
+      f.setAttribute('d', head);
+      f.setAttribute('fill', t.colour || 'currentColor');
+      f.setAttribute('opacity', t.primary ? '1' : '.85');
+      g.appendChild(f);
+      // the outline again on top, so the fill does not eat its inner half
+      var o = doc.createElementNS(NS, 'path');
+      o.setAttribute('d', head);
+      o.setAttribute('fill', 'none');
+      o.setAttribute('stroke', t.primary ? '#1f2a0b' : '#3C5117');
+      o.setAttribute('stroke-width', '1.5');
+      o.setAttribute('stroke-linejoin', 'round');
+      g.appendChild(o);
     }
 
     // targets: [{ key, label, colour, result, bearingDeg, primary }]
