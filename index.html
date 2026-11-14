@@ -2075,8 +2075,13 @@
             if (m.text) text = m.text;
           }
         } else {
-          const areaM2 = _viewerComputeArea();
-          if (areaM2 != null && areaM2 > 0) text = _viewerFormatArea(areaM2);
+          // Closed shapes show their area, open paths their length (a route
+          // has no area), and a mix of both shows both.
+          const m = _viewerMeasure();
+          const bits = [];
+          if (m.areaM2 > 0) bits.push(_viewerFormatArea(m.areaM2));
+          if (m.lengthM > 0) bits.push(_viewerFormatLength(m.lengthM));
+          if (bits.length) text = bits.join(' · ');
         }
         if (text) {
           const arow = document.createElement('div');
@@ -2158,6 +2163,42 @@
         total += _ringAreaM2(ring);
       }
       return total;
+    }
+
+    // Area of the closed parts and length of the open ones. Lengths follow each
+    // segment as drawn (geodesic, or rhumb where marked): the edge is densified
+    // to within 1 m and the pieces summed as geodesics.
+    function _viewerMeasure() {
+      const cell = _viewerCell();
+      if (cell) return { areaM2: cell.areaM2, lengthM: 0 };
+      if (!lastSolution) return { areaM2: 0, lengthM: 0 };
+      const sol = lastSolution;
+      if (sol.type === 'rect' || sol.type === 'circle' || sol.type === 'graticule') {
+        return { areaM2: _viewerComputeArea() || 0, lengthM: 0 };
+      }
+      const ll = p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lon];
+      const groups = (sol.groups && sol.groups.length > 1)
+        ? sol.groups.map(g => g.map(ll)) : [(sol.points || []).map(ll)];
+      const flat = sol.segmentModes || null;
+      const geod = (typeof geodesic !== 'undefined') ? geodesic.Geodesic.WGS84 : null;
+      let areaM2 = 0, lengthM = 0, off = 0;
+      for (const g of groups) {
+        const modes = flat ? flat.slice(off, off + g.length) : null;
+        off += g.length;
+        if (g.length < 2) continue;
+        const closed = g.length > 3 && isClosedPolygon(g);
+        if (closed) { areaM2 += _ringAreaM2(g); continue; }
+        let seq = g;
+        if (geod && typeof GeosonifyGeoJSON !== 'undefined') seq = GeosonifyGeoJSON._densify(geod, g, modes, false, 1);
+        for (let i = 1; i < seq.length; i++) lengthM += geodesicDistance(seq[i - 1], seq[i]);
+      }
+      return { areaM2, lengthM };
+    }
+
+    function _viewerFormatLength(m) {
+      const mi = m / 1609.344;
+      if (m >= 1000) return `${(m / 1000).toFixed(2)} km · ${mi.toFixed(2)} mi`;
+      return `${Math.round(m).toLocaleString()} m · ${Math.round(m / 0.3048).toLocaleString()} ft`;
     }
 
     function _ringAreaM2(ring) {
@@ -5310,6 +5351,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       }
     }
 
+    // True while the person is adding or dragging pins on the map: the redraw
+    // then keeps their view instead of zooming out to fit the whole shape.
+    let _keepMapView = false;
+    function processInputKeepingView() {
+      _keepMapView = true;
+      try { processInput(); } finally { _keepMapView = false; }
+    }
+
     function updatePinsFromMarkers() {
       const txt = markers.map(m => {
         const { lat, lng } = m.getLatLng();
@@ -5319,14 +5368,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       
       const mode = document.querySelector('input[name="shapeMode"]:checked').value;
       if (mode === 'pathpoly') {
-        if (markers.length >= 2) processInput();
+        if (markers.length >= 2) processInputKeepingView();
       } else if (mode === 'points') {
         // Don't auto-process points — wait for explicit "Create Points" click
         // (no connecting lines to update live)
       } else if (mode === 'rect') {
-        if (markers.length >= 3) processInput();
+        if (markers.length >= 3) processInputKeepingView();
       } else {
-        if (markers.length === 3 || markers.length === 4) processInput();
+        if (markers.length === 3 || markers.length === 4) processInputKeepingView();
       }
     }
 
@@ -5349,7 +5398,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       shapeLayer = L.polygon(points, { color: 'orange', weight: 2 }).addTo(map);
 
       const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      if (!_keepMapView) map.fitBounds(bounds, { padding: [50, 50] });
       
       if (addDraggable) {
         addDraggableCentroid(centroid);
@@ -5632,7 +5681,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       shapeLayer = L.featureGroup(pointLayers).addTo(map);
       
       const bounds = smartBounds(displayCoords);
-      if (bounds) map.fitBounds(bounds, { padding: [60, 60] });
+      if (bounds && !_keepMapView) map.fitBounds(bounds, { padding: [60, 60] });
       
       const smartLon = smartCentroidLon(coords);
       const effectiveCentroid = [centroid[0], smartLon];
@@ -5944,7 +5993,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
 
       // Use smart bounds for fitBounds — handles antimeridian correctly
       const bounds = smartBounds(coords);
-      if (bounds) map.fitBounds(bounds, { padding: [50, 50] });
+      if (bounds && !_keepMapView) map.fitBounds(bounds, { padding: [50, 50] });
       // (The centroid marker is added below; a follow pass runs after it.)
       setTimeout(followCentreCopy, 0);
       
@@ -6063,7 +6112,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // groups on opposite sides of the dateline get pushed to different world copies)
       if (allCoords.length > 0) {
         const bounds = smartBounds(allCoords);
-        if (bounds) map.fitBounds(bounds, { padding: [50, 50] });
+        if (bounds && !_keepMapView) map.fitBounds(bounds, { padding: [50, 50] });
       }
       
       // Place centroid using smart longitude
@@ -6511,7 +6560,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       shapeLayer = L.polygon(densified, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
       
       const bounds = L.latLngBounds(corners);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      if (!_keepMapView) map.fitBounds(bounds, { padding: [50, 50] });
       
       if (addDraggable) {
         addDraggableCentroid(centroid);
@@ -6529,7 +6578,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       shapeLayer = L.polygon(points, { color: _areaColor(), fillOpacity: 0.3 }).addTo(map);
       
       const bounds = L.latLngBounds(points);
-      map.fitBounds(bounds, { padding: [50, 50] });
+      if (!_keepMapView) map.fitBounds(bounds, { padding: [50, 50] });
       
       if (addDraggable) {
         addDraggableCentroid(centroid);
