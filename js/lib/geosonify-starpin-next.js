@@ -1,5 +1,5 @@
 /*
-  geosonify-starpin-next.js v0.4 — "What should I do next?"
+  geosonify-starpin-next.js v0.5 — "What should I do next?"
 
   Pure planning, no DOM. Given where you are, your patches and the starpins
   around you, it suggests up to three walks, each a different KIND of goal so
@@ -23,6 +23,16 @@
   argument. New ground is searched out to the distance the time allows, up to
   FRESH_MAX_M; past FRESH_FINE_M the sampling rings spread out in proportion,
   so a 60-minute ride costs about what a long walk did.
+
+  ON THE WAY SOMEWHERE (v0.5, Nov 2026). plan({ end: { lat, lon } }) plans
+  one-way trips: from where you are, through the stops, to the end (home, or
+  wherever you are going). The time you have is then EXTRA time: how much
+  longer than going straight there you are willing to take. Every trip gets
+  extraMin (= minutes for a round trip, so nothing changes without an end),
+  and choose() fits and ranks by it, so a corner right on the way costs
+  almost nothing and wins. Started patches are filtered to the ellipse
+  d(you, c) + d(c, end) <= straight + allowance instead of a circle, and new
+  ground is searched in that ellipse in order of detour.
 
   The value of a corner comes from the patches it touches. Every patch
   (orders 12, 13, 14) with that corner gains one corner; the gain is weighted
@@ -56,6 +66,13 @@ var GeosonifyStarpinNext = (function () {
   // The speed of the plan in progress. plan() sets it and puts it back; every
   // helper below is synchronous, so nothing else can see it in between.
   var speedKmh = WALK_KMH;
+  // The end of the plan in progress ({ lat, lon }) or null for a round trip,
+  // and the straight trip's metres and minutes. Set and restored by plan().
+  var endPt = null, baseM = 0, baseMin = 0;
+  function detourM(S, fix, p) {
+    return S.haversineM(fix.lat, fix.lon, p.lat, p.lon) +
+           S.haversineM(p.lat, p.lon, endPt.lat, endPt.lon) - baseM;
+  }
   var ORDERS = [12, 13, 14];
   var SIZE_W = { 12: 4, 13: 2, 14: 1 };
   var STEP_W = { 1: 0.25, 2: 0.6, 3: 1.5, 4: 4 };
@@ -137,11 +154,14 @@ var GeosonifyStarpinNext = (function () {
   function trip(kind, stops, fix, S, extra) {
     var m = 0, at = fix;
     stops.forEach(function (s) { m += S.haversineM(at.lat, at.lon, s.lat, s.lon); at = s; });
-    m += S.haversineM(at.lat, at.lon, fix.lat, fix.lon);
-    var t = { kind: kind, rule: RULE, stops: stops, metres: m, minutes: minutesFor(m),
+    var back = endPt || fix;
+    m += S.haversineM(at.lat, at.lon, back.lat, back.lon);
+    var mins = minutesFor(m);
+    var t = { kind: kind, rule: RULE, stops: stops, metres: m, minutes: mins,
+              extraMin: endPt ? Math.max(0, mins - baseMin) : mins, oneWay: !!endPt,
               outM: S.haversineM(fix.lat, fix.lon, stops[0].lat, stops[0].lon) };
     for (var k in extra) t[k] = extra[k];
-    t.perMin = t.value / Math.max(1, t.minutes);
+    t.perMin = t.value / Math.max(1, t.extraMin);
     return t;
   }
 
@@ -187,7 +207,9 @@ var GeosonifyStarpinNext = (function () {
     // the rest are someone else's day out. { far: true } says there WERE
     // patches to finish, just none here, so the card can say so.
     var reach = metresFor(OVER * budgetMin) / 2;
-    cands = cands.filter(function (c) { return S.haversineM(fix.lat, fix.lon, c.lat, c.lon) <= reach; });
+    cands = cands.filter(function (c) {
+      return endPt ? detourM(S, fix, c) <= 2 * reach
+                   : S.haversineM(fix.lat, fix.lon, c.lat, c.lon) <= reach; });
     if (!cands.length) return { far: true };
     var trips = cands.map(function (c) {
       return trip('finish', [c], fix, S, { value: c.value, effects: c.effects });
@@ -205,13 +227,13 @@ var GeosonifyStarpinNext = (function () {
   // Best per minute within the budget; failing that, the shortest, flagged.
   function choose(trips, budgetMin) {
     if (!trips.length) return null;
-    var fit = trips.filter(function (t) { return t.minutes <= budgetMin; });
+    var fit = trips.filter(function (t) { return t.extraMin <= budgetMin; });
     var pick;
     if (fit.length) {
-      pick = fit.sort(function (x, y) { return (y.perMin - x.perMin) || (x.minutes - y.minutes); })[0];
+      pick = fit.sort(function (x, y) { return (y.perMin - x.perMin) || (x.extraMin - y.extraMin); })[0];
     } else {
-      pick = trips.sort(function (x, y) { return x.minutes - y.minutes; })[0];
-      if (pick.minutes > OVER * budgetMin) return null;
+      pick = trips.sort(function (x, y) { return x.extraMin - y.extraMin; })[0];
+      if (pick.extraMin > OVER * budgetMin) return null;
       pick.overBudget = true;
     }
     pick.detail = pick.detail || describe(pick.effects || []);
@@ -224,6 +246,7 @@ var GeosonifyStarpinNext = (function () {
   // "new ground" would never be offered.) Rings outward, like
   // S.nearestBaggable, and stops one ring past the first hit.
   function bestFresh(S, fix, progress, isCollected, budgetMin) {
+    if (endPt) return bestFreshOnTheWay(S, fix, progress, isCollected, budgetMin);
     var have = haveMap(progress);
     var cellM = Math.sqrt(Math.PI / 3) / Math.pow(2, 14) * 6371008.8;
     var maxR = Math.min(metresFor(budgetMin) / 2, FRESH_MAX_M), fine = cellM / 3, step = fine;
@@ -250,7 +273,48 @@ var GeosonifyStarpinNext = (function () {
     if (!best) return null;
     var t = trip('fresh', [{ name: best.v.name, lat: best.v.lat, lon: best.v.lon, effects: best.eff }],
                  fix, S, { value: valueOf(best.eff), effects: best.eff });
-    if (t.minutes > budgetMin) t.overBudget = true;
+    if (t.extraMin > budgetMin) t.overBudget = true;
+    t.detail = describe(best.eff);
+    return t;
+  }
+
+  // New ground on the way: grid points inside the ellipse you can reach with
+  // the extra time, tried in order of detour, stopping once nothing nearer
+  // the straight line can beat the best found. Flat local metres around you
+  // are plenty at these distances. At most FRESH_MAX_POINTS samples.
+  var FRESH_MAX_POINTS = 12000;
+  function bestFreshOnTheWay(S, fix, progress, isCollected, budgetMin) {
+    var have = haveMap(progress);
+    var cellM = Math.sqrt(Math.PI / 3) / Math.pow(2, 14) * 6371008.8;
+    var allow = Math.min(metresFor(budgetMin), 2 * FRESH_MAX_M);
+    var ky = 111320, kx = 111320 * Math.cos(fix.lat * Math.PI / 180);
+    var ex = (endPt.lon - fix.lon) * kx, ey = (endPt.lat - fix.lat) * ky;
+    var D = Math.hypot(ex, ey), a = (D + allow) / 2;
+    var cx = ex / 2, cy = ey / 2, step = cellM / 3;
+    if (Math.pow(2 * a / step, 2) > FRESH_MAX_POINTS) step = 2 * a / Math.sqrt(FRESH_MAX_POINTS);
+    var pts = [];
+    for (var x = cx - a; x <= cx + a; x += step) for (var y = cy - a; y <= cy + a; y += step) {
+      var sum = Math.hypot(x, y) + Math.hypot(x - ex, y - ey);
+      if (sum <= D + allow) pts.push({ x: x, y: y, det: sum - D });
+    }
+    pts.sort(function (p, q) { return p.det - q.det; });
+    var seen = {}, best = null;
+    for (var i = 0; i < pts.length; i++) {
+      if (best && pts[i].det > best.det + 2 * cellM) break;
+      var v;
+      try { v = S.nearestCornerstone(fix.lat + pts[i].y / ky, fix.lon + pts[i].x / kx, 14); } catch (e) { continue; }
+      if (!v || seen[v.name]) continue;
+      seen[v.name] = 1;
+      if (isCollected(v.name)) continue;
+      var eff = effectsAt(S, v, have);
+      if (!eff.length || eff.some(function (q) { return q.order === 14 && q.from > 0; })) continue;
+      var det = detourM(S, fix, v);
+      if (!best || det < best.det) best = { v: v, eff: eff, det: det };
+    }
+    if (!best) return null;
+    var t = trip('fresh', [{ name: best.v.name, lat: best.v.lat, lon: best.v.lon, effects: best.eff }],
+                 fix, S, { value: valueOf(best.eff), effects: best.eff });
+    if (t.extraMin > budgetMin) t.overBudget = true;
     t.detail = describe(best.eff);
     return t;
   }
@@ -289,26 +353,32 @@ var GeosonifyStarpinNext = (function () {
   }
 
   // opts: { S, fix, progress, isCollected(name), stars, starHave(star),
-  //         rarity(mag), budgetMin, kmh }
+  //         rarity(mag), budgetMin, kmh, end }
   function plan(opts) {
     var kmh = opts.kmh > 0 ? +opts.kmh : WALK_KMH, prev = speedKmh;
+    var prevEnd = endPt, prevBaseM = baseM, prevBaseMin = baseMin;
     speedKmh = kmh;
+    var e = opts.end;
+    endPt = (e && e.lat != null && e.lon != null) ? { lat: +e.lat, lon: +e.lon } : null;
+    baseM = endPt ? opts.S.haversineM(opts.fix.lat, opts.fix.lon, endPt.lat, endPt.lon) : 0;
+    baseMin = minutesFor(baseM);
     try {
       var S = opts.S, fix = opts.fix, budget = opts.budgetMin || 30;
       var isCollected = opts.isCollected || function () { return false; };
       var finish = bestFinish(S, fix, opts.progress, isCollected, budget);
       return {
         rule: RULE, budgetMin: budget, kmh: kmh,
+        end: endPt ? { lat: endPt.lat, lon: endPt.lon } : null, straightM: baseM, straightMin: baseMin,
         finish: finish && finish.far ? null : finish,
         finishFar: !!(finish && finish.far),
         fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
         star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
                                     opts.rarity, budget, opts.progress) : undefined
       };
-    } finally { speedKmh = prev; }
+    } finally { speedKmh = prev; endPt = prevEnd; baseM = prevBaseM; baseMin = prevBaseMin; }
   }
 
-  return { VERSION: '0.4', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
+  return { VERSION: '0.5', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
            DETOUR: DETOUR, FRESH_FINE_M: FRESH_FINE_M, FRESH_MAX_M: FRESH_MAX_M,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };

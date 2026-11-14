@@ -83,6 +83,35 @@ ok('a corner out of reach on foot in 30 min is in reach by bike',
    N.plan({ S: S, fix: farFix, progress: P, isCollected: have, budgetMin: 30 }).finishFar === true &&
    !N.plan({ S: S, fix: farFix, progress: P, isCollected: have, budgetMin: 30, kmh: 12 }).finishFar);
 
+console.log('\n2b: on the way somewhere (v0.5)');
+ok('round trips: extraMin is the whole time', plan.finish && plan.finish.extraMin === plan.finish.minutes && !plan.finish.oneWay);
+// Put the end on the far side of the missing corner, straight on: the corner
+// is right on the way, so the detour is (nearly) nothing.
+var endOn = { lat: missing.lat - (fix.lat - missing.lat), lon: missing.lon };
+var wayP = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 5, end: endOn });
+ok('a plan with an end says so', wayP.end && Math.abs(wayP.straightM - S.haversineM(fix.lat, fix.lon, endOn.lat, endOn.lon)) < 1e-6);
+ok('a corner on the straight line is offered within 5 extra minutes',
+   wayP.finish && wayP.finish.oneWay && wayP.finish.extraMin < 1 && !wayP.finish.overBudget,
+   wayP.finish && wayP.finish.extraMin.toFixed(2));
+ok('...and the trip ends at the end, not back here', wayP.finish &&
+   Math.abs(wayP.finish.metres - (S.haversineM(fix.lat, fix.lon, missing.lat, missing.lon) +
+            S.haversineM(missing.lat, missing.lon, endOn.lat, endOn.lon))) < 0.5);
+// The same corner with the end behind you: a big detour, out of a 5-min allowance.
+var endBack = { lat: fix.lat + 0.02, lon: fix.lon };
+var backP = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 5, end: endBack });
+ok('the same corner, behind you on the way home, costs extra time',
+   !backP.finish || backP.finish.extraMin > wayP.finish.extraMin, backP.finish && backP.finish.extraMin.toFixed(1));
+var t0 = Date.now();
+var commute = N.plan({ S: S, fix: { lat: -43.53, lon: 172.62 }, end: { lat: -43.56, lon: 172.70 },
+                       budgetMin: 15, kmh: 12, isCollected: function () { return true; } });
+var ms = Date.now() - t0;
+ok('new ground on the way, nothing found anywhere: still quick (' + ms + ' ms)', ms < 3000 && commute.fresh === null);
+var commute2 = N.plan({ S: S, fix: { lat: -43.53, lon: 172.62 }, end: { lat: -43.56, lon: 172.70 },
+                        budgetMin: 15, kmh: 12, progress: P, isCollected: have });
+ok('new ground on the way is offered, within the allowance', commute2.fresh && commute2.fresh.oneWay &&
+   commute2.fresh.extraMin <= 15, commute2.fresh && commute2.fresh.extraMin.toFixed(1));
+ok('the planner forgets the end afterwards', N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 30 }).end === null);
+
 console.log('\n3: new ground');
 ok('fresh: a corner is offered', !!plan.fresh);
 var fr = plan.fresh.stops[0];

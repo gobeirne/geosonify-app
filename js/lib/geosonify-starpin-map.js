@@ -699,7 +699,7 @@ var GeosonifyStarpinMap = (function () {
         if (patches.glow.some(function (c) { return c.order === o && !c.shadowed && patchScreen(c); }))
           primaryOrder = o;
       });
-      var badges = [];
+      var badges = [], heldXY = [];
       glowOrders.forEach(function (gOrder) {
         var k = gOrder === primaryOrder ? 1 : 0.55;
         [2, 3].forEach(function (have) {
@@ -721,17 +721,34 @@ var GeosonifyStarpinMap = (function () {
           g.strokeStyle = col; g.lineWidth = (strong ? 3 : 2.2) * k; g.stroke();
           g.restore();
 
+          // Got and still-to-get must never be confused at a glance, on any
+          // background: a corner still to collect is an EMPTY ring (dark
+          // centre, glowing rim); a corner you have is a SOLID disc in the
+          // patch colour with a tick. Filled = have, hollow = want. The small
+          // bagged dot is not drawn over a solid disc (heldXY, below).
           shown.forEach(function (o) {
+            var rs = (k === 1 ? 1 : 0.8);
             o.c.missing.forEach(function (m) {
-              var q = pt(m.lat, m.lon), r = (strong ? 10 : 8) * (k === 1 ? 1 : 0.8);
+              var q = pt(m.lat, m.lon), r = (strong ? 10 : 8) * rs;
               g.beginPath(); g.arc(q[0], q[1], r, 0, 6.2832);
               g.fillStyle = pal.under; g.fill();
               g.save();
               g.shadowColor = col; g.shadowBlur = (strong ? 12 : 8) * k;
-              g.strokeStyle = col; g.lineWidth = (strong ? 3.2 : 2.6) * (k === 1 ? 1 : 0.8); g.stroke();
+              g.strokeStyle = col; g.lineWidth = (strong ? 3.2 : 2.6) * rs; g.stroke();
               g.restore();
-              g.beginPath(); g.arc(q[0], q[1], strong ? 3.2 : 2.6, 0, 6.2832);
-              g.fillStyle = col; g.fill();
+            });
+            o.c.held.forEach(function (h) {
+              var q = pt(h.lat, h.lon), r = (strong ? 9 : 7.5) * rs;
+              g.beginPath(); g.arc(q[0], q[1], r, 0, 6.2832);
+              g.fillStyle = 'rgba(' + pal.patch + ',1)'; g.fill();
+              g.strokeStyle = pal.under; g.lineWidth = 2; g.stroke();
+              g.beginPath();
+              g.moveTo(q[0] - r * 0.45, q[1] + r * 0.02);
+              g.lineTo(q[0] - r * 0.1, q[1] + r * 0.38);
+              g.lineTo(q[0] + r * 0.48, q[1] - r * 0.38);
+              g.strokeStyle = pal.under; g.lineWidth = Math.max(2, r * 0.28);
+              g.lineCap = 'round'; g.lineJoin = 'round'; g.stroke();
+              heldXY.push(q);
             });
             // The badge goes in the middle of the part of the patch you can
             // SEE, so a patch that runs off screen is still labelled, and its
@@ -849,9 +866,13 @@ var GeosonifyStarpinMap = (function () {
         var xy = pt(p.lat, p.lon);
         if (xy[0] < -40 || xy[0] > size.x + 40 || xy[1] < -40 || xy[1] > size.y + 40) return;
         var r = dotRadius(p.order);
-        g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
-        g.fillStyle = pal.bagged; g.fill();
-        g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
+        var onDisc = (heldXY || []).some(function (q) {
+          return Math.abs(q[0] - xy[0]) < 2 && Math.abs(q[1] - xy[1]) < 2; });
+        if (!onDisc) {                         // a solid "have" disc already marks it
+          g.beginPath(); g.arc(xy[0], xy[1], r, 0, 6.2832);
+          g.fillStyle = pal.bagged; g.fill();
+          g.lineWidth = 2; g.strokeStyle = pal.baggedRing; g.stroke();
+        }
         if (selected && selected.kind === 'cornerstone' && selected.id === name) {
           var pr = r + 6 + Math.sin(phase * 6.2832) * 5;
           g.beginPath(); g.arc(xy[0], xy[1], pr, 0, 6.2832);
