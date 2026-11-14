@@ -516,6 +516,13 @@
           },
 
           {
+            id: 'display-my-location',
+            q: 'Can a display link show where I am?',
+            a: `<p>Yes. Every display link of a place on Earth has the standard location button under its zoom buttons. Tap it and your position appears as a blue dot, with a lighter circle showing how accurate the fix is, and the map follows you as you move, which makes a shared route usable for finding your way. Drag the map to look elsewhere and it stops following; tap the button again to come back to yourself, and tap it once more to turn your location off.</p>
+<p>Your browser asks for permission the first time. Your position is used only to draw the dot on your own screen: it is not sent anywhere and never becomes part of the link. Adding <code>&amp;gps</code> to a display link shows the dot as soon as it opens, without moving the map.</p>`
+          },
+
+          {
             id: 'labels-colours',
             q: 'Can I name points and colour the sides of a shape?',
             a: `<p>Yes. A link can carry a <strong>label</strong> for any point of a shape, and a <strong>colour</strong>, <strong>width</strong> or <strong>dash</strong> for any point or side - the names of the stars in a constellation, say, with the two Pointers drawn in yellow. Labels and colours ride beside the code, never inside it, so they never change where a code points, and a link without them means exactly what it always did.</p>

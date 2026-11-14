@@ -135,6 +135,14 @@
     .geosonify-viewer-tag a { color: #1a6ebd; text-decoration: none; }
     .geosonify-viewer-tag a:hover { text-decoration: underline; }
     .geosonify-viewer-area { color: #333; font-weight: 600; }
+    /* Display links: "show my location" button (under the zoom buttons) */
+    .geosonify-locate a { display: flex; align-items: center; justify-content: center;
+      width: 30px; height: 30px; color: #555; background: #fff; cursor: pointer; }
+    .geosonify-locate a[data-state="off"] .geosonify-locate-core { opacity: 0; }
+    .geosonify-locate a[data-state="on"], .geosonify-locate a[data-state="follow"] { color: #1a73e8; }
+    .geosonify-locate a[data-state="on"] .geosonify-locate-core { opacity: 0; }
+    .geosonify-locate a[data-state="wait"] { color: #1a73e8; animation: geosonify-locate-pulse 1s ease-in-out infinite; }
+    @keyframes geosonify-locate-pulse { 50% { opacity: 0.35; } }
     /* In a Sky display link the tag sits top right, clear of the sky's own
        zoom buttons (top left) and readouts (bottom). */
     .geosonify-viewer-tag.geosonify-viewer-tag--sky {
@@ -880,7 +888,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
-<script src="js/lib/faq-data.js?v=20261115c"></script>
+<script src="js/lib/faq-data.js?v=20261115e"></script>
 <script src="js/ui/faq-ui.js?v=20261108f"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -2048,7 +2056,7 @@
 
       buildViewerTag();
 
-      if (opts.gps) _viewerStartGpsDot();
+      _viewerAddLocateControl(!!opts.gps);   // the locate button; &gps starts it on load
     }
 
     // The viewer's tag: measurements, export button, back-link. Rebuilt when
@@ -2259,18 +2267,100 @@
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     }
 
-    function _viewerStartGpsDot() {
-      if (!navigator.geolocation) return;
-      let dot = null, ring = null;
+    /*
+      "Show my location" in Earth display links (Nov 2026): the standard locate
+      button, under the zoom buttons. Tap it: a blue dot with its accuracy
+      circle, and the map follows you. Drag the map and it stops following
+      (the button turns to an outline; tap to recentre). Tap while following
+      to switch it off. &gps starts the dot on load without moving the map,
+      as it always did. The position only draws the dot: nothing is sent
+      anywhere or written into the link.
+    */
+    const _LOCATE_SVG = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">' +
+      '<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/>' +
+      '<circle class="geosonify-locate-core" cx="12" cy="12" r="3" fill="currentColor"/>' +
+      '<path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+    function _viewerAddLocateControl(autoStart) {
       const m = (typeof map !== 'undefined' && map) || (typeof MapManager !== 'undefined' && MapManager.getMap && MapManager.getMap());
-      if (!m) return;
-      navigator.geolocation.watchPosition(pos => {
-        const ll = [pos.coords.latitude, pos.coords.longitude];
-        if (!dot) {
-          ring = L.circleMarker(ll, { radius: 10, color: '#1a73e8', weight: 2, fillColor: '#1a73e8', fillOpacity: 0.15, interactive: false }).addTo(m);
-          dot = L.circleMarker(ll, { radius: 5, color: '#fff', weight: 2, fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(m);
-        } else { dot.setLatLng(ll); ring.setLatLng(ll); }
-      }, err => { console.log('[geosonify] viewer GPS:', err.message); }, { enableHighAccuracy: true, maximumAge: 5000 });
+      if (!m || !navigator.geolocation) return;
+      try { if (isSkyFrameNow()) return; } catch (e) {}
+      let watchId = null, dot = null, acc = null, last = null, following = false, btn = null, warned = false;
+
+      function setState(s) {
+        btn.dataset.state = s;
+        btn.setAttribute('aria-pressed', s === 'off' ? 'false' : 'true');
+        const t = { off: 'Show my location', wait: 'Finding your location…',
+                    follow: 'Following your location (tap to turn off)', on: 'Centre on my location' }[s];
+        btn.title = t; btn.setAttribute('aria-label', t);
+      }
+      function centre() {
+        if (!last) return;
+        const z = m.getZoom();
+        m.setView(last, z < 15 ? 16 : z, { animate: true });
+      }
+      function stop() {
+        if (watchId != null) navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+        if (dot) { m.removeLayer(dot); m.removeLayer(acc); dot = acc = null; }
+        last = null; following = false; warned = false;
+        setState('off');
+      }
+      function start(follow) {
+        following = follow;
+        setState('wait');
+        watchId = navigator.geolocation.watchPosition(pos => {
+          const first = !dot;
+          last = L.latLng(pos.coords.latitude, pos.coords.longitude);
+          const r = Math.max(0, pos.coords.accuracy || 0);
+          if (first) {
+            acc = L.circle(last, { radius: r, color: '#1a73e8', weight: 1, opacity: 0.45,
+              fillColor: '#1a73e8', fillOpacity: 0.12, interactive: false }).addTo(m);
+            dot = L.circleMarker(last, { radius: 7, color: '#fff', weight: 2.5,
+              fillColor: '#1a73e8', fillOpacity: 1, interactive: false }).addTo(m);
+          } else {
+            dot.setLatLng(last); acc.setLatLng(last); acc.setRadius(r);
+          }
+          if (following) { if (first) centre(); else m.panTo(last, { animate: true }); }
+          setState(following ? 'follow' : 'on');
+        }, err => {
+          const say = (msg) => { if (typeof showToast === 'function') showToast(msg, 'error'); else alert(msg); };
+          if (err.code === 1) {                      // permission refused: give up
+            stop();
+            say('Location is blocked for this site: allow it in your browser or phone settings');
+            return;
+          }
+          // A missed fix (no signal for a moment, a timeout) is normal on the
+          // move: keep watching and keep the last dot. Say so once if there is
+          // no fix at all yet.
+          if (!dot && !warned) { warned = true; say('Still looking for your location…'); }
+        }, { enableHighAccuracy: true, maximumAge: 5000 });
+      }
+
+      const Locate = L.Control.extend({
+        options: { position: 'topleft' },
+        onAdd() {
+          const wrap = L.DomUtil.create('div', 'leaflet-bar geosonify-locate');
+          btn = L.DomUtil.create('a', '', wrap);
+          btn.href = '#';
+          btn.setAttribute('role', 'button');
+          btn.innerHTML = _LOCATE_SVG;
+          L.DomEvent.disableClickPropagation(wrap);
+          L.DomEvent.on(btn, 'click', e => {
+            L.DomEvent.preventDefault(e);
+            const s = btn.dataset.state;
+            if (s === 'off') start(true);
+            else if (s === 'on') { following = true; centre(); setState('follow'); }
+            else if (s === 'follow') stop();
+          });
+          return wrap;
+        }
+      });
+      new Locate().addTo(m);
+      setState('off');
+      // A drag means the person wants to look elsewhere: stop following.
+      m.on('dragstart', () => { if (following) { following = false; if (dot) setState('on'); } });
+      if (autoStart) start(false);
     }
 
     // Tab switching logic
