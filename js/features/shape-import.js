@@ -310,6 +310,15 @@ const ShapeImport = (function () {
    * Uses the Wikidata SPARQL endpoint to find the linked OSM relation.
    * Falls back to direct Wikidata geometry if available.
    */
+  /*
+    Provenance of the last successful fetch, for exports (GeoJSON 'source'
+    and licence). Set by each fetcher on success; read once by the importer.
+  */
+  let _lastSource = null;
+  const OSM_LICENCE = '© OpenStreetMap contributors, ODbL 1.0 (https://www.openstreetmap.org/copyright)';
+  function setSource(s) { _lastSource = s; }
+  function takeLastSource() { const s = _lastSource; _lastSource = null; return s; }
+
   async function fetchWikidataGeometry(qid) {
     // Normalise: accept 'Q123' or '123'
     qid = qid.toUpperCase().trim();
@@ -368,11 +377,9 @@ const ShapeImport = (function () {
         const way = elements.find(e => e.type === 'way');
         const target = relation || way;
         if (target) {
-          if (target.type === 'relation') {
-            return await fetchOSMRelation(target.id);
-          } else {
-            return await fetchOSMWay(target.id);
-          }
+          const got = target.type === 'relation' ? await fetchOSMRelation(target.id) : await fetchOSMWay(target.id);
+          if (_lastSource) _lastSource.source = 'Wikidata ' + qid + ' → ' + _lastSource.source;
+          return got;
         }
       }
     } catch (e) {
@@ -410,6 +417,8 @@ const ShapeImport = (function () {
       const pts = extractLargestRing(result.geojson);
       if (pts.length > 0) {
         const groups = extractAllRings(result.geojson);
+        setSource({ source: 'OpenStreetMap ' + (result.osm_type || 'feature') + ' ' + (result.osm_id || '') +
+          ' via Nominatim search "' + placeName + '"', licence: OSM_LICENCE });
         return { coords: pts, name: result.display_name, type: result.type, groups };
       }
     }
@@ -528,6 +537,7 @@ const ShapeImport = (function () {
     // Also extract separate groups for multi-polygon support
     const groups = overpassRelationToGroups(el);
 
+    setSource({ source: 'OpenStreetMap relation ' + relationId + ' via Overpass API', licence: OSM_LICENCE });
     return { coords, name, type: el.tags && el.tags.type, groups };
   }
 
@@ -554,6 +564,7 @@ const ShapeImport = (function () {
     const name = (el.tags && (el.tags.name || el.tags['name:en'])) || `Way ${wayId}`;
     const coords = (el.geometry || []).map(n => ({ lat: n.lat, lon: n.lon }));
 
+    setSource({ source: 'OpenStreetMap way ' + wayId + ' via Overpass API', licence: OSM_LICENCE });
     return { coords, name };
   }
 
@@ -816,6 +827,7 @@ const ShapeImport = (function () {
       if (f) name = f.properties.name;
     }
 
+    setSource({ source: url });
     return { coords: pts, name, groups };
   }
 
@@ -846,6 +858,7 @@ const ShapeImport = (function () {
     const pts = parseKML(text);
     if (pts.length === 0) throw new Error('No usable geometry found in KML');
     const name = url.split('/').pop().split('?')[0] || 'KML';
+    setSource({ source: url });
     return { coords: pts, name };
   }
 
@@ -867,12 +880,14 @@ const ShapeImport = (function () {
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const text = await res.text();
     // Return raw text so the caller can use the existing parseGPX pipeline
+    setSource({ source: url });
     return { gpxText: text, name: url.split('/').pop().split('?')[0] || 'GPX' };
   }
 
   // ── Public API ────────────────────────────────────────────
 
   return {
+    takeLastSource: takeLastSource,
     // Core utilities
     toGpxCoordArray: toGpxCoordArray,
     suggestEpsilon: suggestEpsilon,
