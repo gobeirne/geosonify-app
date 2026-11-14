@@ -147,6 +147,18 @@ try {
 ok('fix, bagged, highlight and stars all draw', !lastErr && arcs > 0,
    lastErr ? lastErr.message : arcs + ' arcs');
 
+head('4b: a followed walk\'s goal draws, and clears');
+arcs = 0; lastErr = null;
+try {
+  map.setGoal({ lat: -43.5547, lon: 172.6538 });
+  map.redraw();
+} catch (e) { lastErr = e; }
+ok('goal (dashed line and target mark) draws', !lastErr && arcs > 0,
+   lastErr ? lastErr.message : arcs + ' arcs');
+ok('goal() reports it', map.goal() && map.goal().lat === -43.5547);
+map.setGoal(null);
+ok('setGoal(null) clears it', map.goal() === null);
+
 head('5: tapping — regression: markers stopped being selectable');
 (function () {
   var picked = null;

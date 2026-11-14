@@ -823,7 +823,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261111"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261114"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -1050,8 +1050,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     else if (thick) thick.primary = true;
     active = (thin ? [thin] : []).concat(thick ? [thick] : []);
     lastTargets = active;                   // reused by onOrient for heading-only repaints
+    syncMapGoal();
     prox.update(active, heading);
     paintTabBody();
+  }
+
+  // While a walk or a cell is being followed, the map marks the point the
+  // thick needle is aiming at, with a dashed line from you to it, so the
+  // compass and the map always agree about where you are going. Wandering
+  // (nothing followed) leaves the map as it was.
+  function syncMapGoal() {
+    if (!map || !map.setGoal) return;
+    var g = null;
+    if (nextGoal && nextGoal.kind === 'star') g = nearestStar ? nearestStar.star : null;
+    else if ((nextGoal && nextGoal.kind === 'corners') || cellGoal) g = lastCs;
+    map.setGoal(g ? { lat: g.lat, lon: g.lon } : null);
   }
 
   // The tab body owns EVERYTHING about the chosen target — the rows, the
@@ -1739,8 +1752,35 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       cornerstone();
     }
     paintNextFollow();
-    var c = $('cs-prox');
-    if (c && c.scrollIntoView) c.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showFollowBoth();
+  }
+
+  // Compass and map at once: the sheet drops to half height with the compass
+  // at the top of it, and the map above is framed on you and the target (or
+  // just the target, without a fix), clear of the sheet and the basemap
+  // buttons. Done once, when the walk starts; after that the map is yours to
+  // pan, and the dashed line keeps pointing at each stop in turn.
+  function showFollowBoth() {
+    if (flip.face && flip.face() === 'sky') flip.toEarth();
+    sheetTo('half');
+    var c = $('cs-prox'), sec = c && c.closest ? c.closest('section') : null;
+    if (sec) sheetBody.scrollTo({ behavior: 'smooth', top: Math.max(0, sheetBody.scrollTop +
+      sec.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top - 4) });
+    var g = map.goal ? map.goal() : null;
+    if (!g && nextGoal) {                 // no fix yet, so no needle: frame the stop itself
+      g = nextGoal.kind === 'star' ? nextGoal.star : (nextStop() || null);
+      if (g) map.setGoal({ lat: g.lat, lon: g.lon });
+    }
+    if (!g || !map.leaflet || typeof L === 'undefined') return;
+    var below = sheetMetrics().half + 24;
+    try {
+      if (fix) {
+        map.leaflet.fitBounds(L.latLngBounds([[fix.lat, fix.lon], [g.lat, g.lon]]),
+          { paddingTopLeft: [40, 90], paddingBottomRight: [40, below], maxZoom: 17 });
+      } else {
+        map.leaflet.setView([g.lat, g.lon], Math.max(map.leaflet.getZoom(), 16));
+      }
+    } catch (e) { console.warn('[starpin] framing the walk:', e); }
   }
 
   function paintNextFollow() {
@@ -1755,7 +1795,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var d = el('div', 'next-follow');
     d.appendChild(el('span', null, txt));
     var b = el('button', null, 'stop'); b.type = 'button';
-    b.addEventListener('click', function () { nextGoal = null; paintNextFollow(); cornerstone(); paintTargets(); });
+    b.addEventListener('click', function () { nextGoal = null; paintNextFollow(); syncMapGoal(); cornerstone(); paintTargets(); });
     d.appendChild(b);
     box.appendChild(d);
   }

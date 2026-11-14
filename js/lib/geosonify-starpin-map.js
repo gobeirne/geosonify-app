@@ -416,6 +416,10 @@ var GeosonifyStarpinMap = (function () {
     root.appendChild(orderTag);
 
     var fix = null, bagged = [], finds = [], highlight = null, cache = {};
+    // The point a followed walk is heading for ({ lat, lon }), so the map
+    // shows what the compass is pointing at: a dashed line from you to it,
+    // and a target mark when it is not a cornerstone already highlighted.
+    var goal = null;
     var patches = { lit: [], glow: [] }, ringCache = {};
     // starlit-v1 flash: cell -> time it ends. Seeded by the first setPatches
     // (the log as loaded), which never flashes, so opening the app does not
@@ -856,6 +860,28 @@ var GeosonifyStarpinMap = (function () {
                     data: { name: name, lat: p.lat, lon: p.lon, order: p.order } });
       });
 
+      if (goal) {
+        var gq = pt(goal.lat, goal.lon);
+        if (fix) {
+          var gf = pt(fix.lat, fix.lon);
+          g.save();
+          g.setLineDash([7, 6]); g.lineCap = 'round';
+          g.strokeStyle = pal.highlight; g.lineWidth = 2; g.globalAlpha = 0.8;
+          g.beginPath(); g.moveTo(gf[0], gf[1]); g.lineTo(gq[0], gq[1]); g.stroke();
+          g.restore();
+        }
+        var gh = highlight ? resolve(highlight) : null;
+        var sameAsHighlight = gh && Math.abs(gh.lat - goal.lat) < 1e-7 && Math.abs(gh.lon - goal.lon) < 1e-7;
+        if (!sameAsHighlight) {
+          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
+          g.beginPath(); g.arc(gq[0], gq[1], 14, 0, 6.2832); g.stroke();
+          g.beginPath();
+          g.moveTo(gq[0] - 7, gq[1]); g.lineTo(gq[0] + 7, gq[1]);
+          g.moveTo(gq[0], gq[1] - 7); g.lineTo(gq[0], gq[1] + 7);
+          g.stroke();
+        }
+      }
+
       if (highlight) {
         var hp = resolve(highlight);
         if (hp) {
@@ -1022,6 +1048,15 @@ var GeosonifyStarpinMap = (function () {
         var b = map.getBounds(); return map.distance(b.getNorthWest(), b.getNorthEast());
       },
       setHighlight: function (n) { highlight = n || null; redraw(); },
+      // { lat, lon } or null. Redraws only when it changes, since it is set
+      // on every GPS fix while a walk is followed.
+      setGoal: function (p) {
+        var nxt = (p && p.lat != null && p.lon != null) ? { lat: +p.lat, lon: +p.lon } : null;
+        if (!nxt && !goal) return;
+        if (nxt && goal && nxt.lat === goal.lat && nxt.lon === goal.lon) return;
+        goal = nxt; redraw();
+      },
+      goal: function () { return goal ? { lat: goal.lat, lon: goal.lon } : null; },
       setBasemap: applyBasemap,
       setPalette: function (name) { paletteOverride = PALETTE[name] ? name : null; redraw(); },
       basemap: function () { return key; },
