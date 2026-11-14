@@ -127,13 +127,15 @@ var GeosonifyStarpinMap = (function () {
                star: '#DCC949', starRing: '#4a3d08',
                under: 'rgba(255,255,255,.78)',
                patch: '0,128,118', patchA: 0.38, brightA: 0.25,
-               starlit: '201,150,20', starlitA: 0.16 },
+               starlit: '201,150,20', starlitA: 0.16,
+               goal: '#B3261E', goalCase: 'rgba(255,255,255,.9)' },
     imagery: { grid: '#DCC949', highlight: '#CD8862', bagged: '#CED38C',
                baggedRing: '#1d2410', you: '#CED38C', halo: '206,211,140',
                star: '#ffffff', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.6)',
                patch: '64,236,220', patchA: 0.42, brightA: 0.26,
-               starlit: '255,214,90', starlitA: 0.2 },
+               starlit: '255,214,90', starlitA: 0.2,
+               goal: '#FFFFFF', goalCase: 'rgba(0,0,0,.7)' },
     // Over the night sky, with the streets drawn cool: the lattice goes warm
     // amber so the two never read as one, your finds stay green, and you are
     // the blue dot every map has taught people to look for.
@@ -142,7 +144,8 @@ var GeosonifyStarpinMap = (function () {
                star: '#FFF6D0', starRing: '#1b1b1b',
                under: 'rgba(0,0,0,.55)',
                patch: '64,236,220', patchA: 0.40, brightA: 0.25,
-               starlit: '255,214,90', starlitA: 0.18 }
+               starlit: '255,214,90', starlitA: 0.18,
+               goal: '#FFFFFF', goalCase: 'rgba(0,0,0,.7)' }
   };
 
   var CSS = [
@@ -417,8 +420,8 @@ var GeosonifyStarpinMap = (function () {
 
     var fix = null, bagged = [], finds = [], highlight = null, cache = {};
     // The point a followed walk is heading for ({ lat, lon }), so the map
-    // shows what the compass is pointing at: a dashed line from you to it,
-    // and a target mark when it is not a cornerstone already highlighted.
+    // shows what the compass is pointing at: a dashed line from you to it and
+    // a target mark, both drawn above everything but you and the pin.
     var goal = null;
     var patches = { lit: [], glow: [] }, ringCache = {};
     // starlit-v1 flash: cell -> time it ends. Seeded by the first setPatches
@@ -860,28 +863,6 @@ var GeosonifyStarpinMap = (function () {
                     data: { name: name, lat: p.lat, lon: p.lon, order: p.order } });
       });
 
-      if (goal) {
-        var gq = pt(goal.lat, goal.lon);
-        if (fix) {
-          var gf = pt(fix.lat, fix.lon);
-          g.save();
-          g.setLineDash([7, 6]); g.lineCap = 'round';
-          g.strokeStyle = pal.highlight; g.lineWidth = 2; g.globalAlpha = 0.8;
-          g.beginPath(); g.moveTo(gf[0], gf[1]); g.lineTo(gq[0], gq[1]); g.stroke();
-          g.restore();
-        }
-        var gh = highlight ? resolve(highlight) : null;
-        var sameAsHighlight = gh && Math.abs(gh.lat - goal.lat) < 1e-7 && Math.abs(gh.lon - goal.lon) < 1e-7;
-        if (!sameAsHighlight) {
-          g.strokeStyle = pal.highlight; g.lineWidth = 2.5;
-          g.beginPath(); g.arc(gq[0], gq[1], 14, 0, 6.2832); g.stroke();
-          g.beginPath();
-          g.moveTo(gq[0] - 7, gq[1]); g.lineTo(gq[0] + 7, gq[1]);
-          g.moveTo(gq[0], gq[1] - 7); g.lineTo(gq[0], gq[1] + 7);
-          g.stroke();
-        }
-      }
-
       if (highlight) {
         var hp = resolve(highlight);
         if (hp) {
@@ -893,6 +874,41 @@ var GeosonifyStarpinMap = (function () {
           g.moveTo(h[0], h[1] - 6); g.lineTo(h[0], h[1] + 6);
           g.stroke();
         }
+      }
+
+      // The followed walk's goal, drawn after the lattice, the patches and the
+      // highlight so it is never lost under them. From a cornerstone the line
+      // to the next one often runs right along a HEALPix line, so it is wider
+      // than any grid line (4 px on a 8 px casing, against the grid's 3 on 6)
+      // and dashed, in a colour the grid never uses: white over imagery and
+      // the night sky, deep red on the light maps.
+      if (goal) {
+        var gq = pt(goal.lat, goal.lon);
+        var gCol = pal.goal || pal.highlight, gCase = pal.goalCase || pal.under;
+        g.save();
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        if (fix) {
+          var gf = pt(fix.lat, fix.lon);
+          g.setLineDash([]);
+          g.strokeStyle = gCase; g.lineWidth = 8;
+          g.beginPath(); g.moveTo(gf[0], gf[1]); g.lineTo(gq[0], gq[1]); g.stroke();
+          g.setLineDash([12, 8]);
+          g.strokeStyle = gCol; g.lineWidth = 4;
+          g.beginPath(); g.moveTo(gf[0], gf[1]); g.lineTo(gq[0], gq[1]); g.stroke();
+          g.setLineDash([]);
+        }
+        // The target mark, always: a ring and cross over a cased ring, so it
+        // reads over the cornerstone highlight as well as over a starpin.
+        g.strokeStyle = gCase; g.lineWidth = 7;
+        g.beginPath(); g.arc(gq[0], gq[1], 15, 0, 6.2832); g.stroke();
+        g.strokeStyle = gCol; g.lineWidth = 3.5;
+        g.beginPath(); g.arc(gq[0], gq[1], 15, 0, 6.2832); g.stroke();
+        g.lineWidth = 2.5;
+        g.beginPath();
+        g.moveTo(gq[0] - 8, gq[1]); g.lineTo(gq[0] + 8, gq[1]);
+        g.moveTo(gq[0], gq[1] - 8); g.lineTo(gq[0], gq[1] + 8);
+        g.stroke();
+        g.restore();
       }
 
       // You, with your real uncertainty drawn to scale rather than a dot that lies.

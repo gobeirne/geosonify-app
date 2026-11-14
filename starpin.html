@@ -179,6 +179,7 @@ dl{margin:.7rem 0 0}
 #route-dlg input[type=checkbox]{width:1.35rem;height:1.35rem;flex:0 0 auto;margin:0;padding:0;
   border:0;border-radius:0;box-shadow:none;background:none;accent-color:#2fbfae}
 #route-dlg .btnrow{margin:.45rem 0 0}
+#route-dlg .next-chips{margin:.1rem 0 .8rem}
 #route-dlg small{display:block;margin-top:.6rem;font-size:.74rem;color:var(--ink-2)}
 .next-follow{border:2px solid #2fbfae;border-radius:16px;padding:.6rem .8rem;margin:.6rem 0 0;
   font-size:.84rem;font-weight:700;display:flex;gap:.6rem;align-items:center;justify-content:space-between}
@@ -475,6 +476,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 
 <section data-tab="go" id="next-panel">
   <h2>what next?</h2>
+  <div class="next-chips" id="next-mode" role="group" aria-label="how you are getting there">
+    <button type="button" data-mode="walk" aria-pressed="true">on foot</button>
+    <button type="button" data-mode="bike" aria-pressed="false">by bike</button>
+  </div>
   <div class="next-chips" role="group" aria-label="time you have">
     <button type="button" data-min="15" aria-pressed="false">15 min</button>
     <button type="button" data-min="30" aria-pressed="true">30 min</button>
@@ -485,20 +490,26 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <div id="next-follow"></div>
   <div id="next-cards"></div>
   <p class="hint" id="next-hint">With a pin dropped on the Place tab, suggestions start from the pin
-     instead of from you. Times are there and back from that starting point, at an easy
-     4&nbsp;km/h, with 30% added because streets are never straight. They are
-     still as the crow flies: a river or a motorway can make a walk longer.</p>
+     instead of from you. Times are there and back from that starting point, <span id="next-speed">walking at an easy
+     4&nbsp;km/h</span>, with 30% added because streets are never straight. They are
+     still as the crow flies: a river or a motorway can make the trip longer.</p>
+  <p class="hint" id="next-bike-hint" hidden>Ride with your eyes on the road. Check the compass or map
+     when you have stopped, then bag the corner on foot.</p>
   <dialog id="route-dlg" aria-labelledby="route-dlg-h">
     <h3 id="route-dlg-h" tabindex="-1" autofocus>Open this walk in maps</h3>
     <p id="route-dlg-what"></p>
+    <div class="next-chips" id="route-dlg-mode" role="group" aria-label="directions for">
+      <button type="button" data-mode="walk" aria-pressed="true">walking</button>
+      <button type="button" data-mode="bike" aria-pressed="false">cycling</button>
+    </div>
     <label><input type="checkbox" id="route-dlg-back" checked> <span id="route-dlg-backlbl">Back to where I started</span></label>
     <div class="btnrow">
       <button type="button" id="route-dlg-google">Google Maps</button>
       <button type="button" id="route-dlg-apple">Apple Maps</button>
     </div>
     <div class="btnrow"><button type="button" id="route-dlg-close">Cancel</button></div>
-    <small>Walking directions, with the stops in this order; your maps app can reorder them.
-      Apple Maps needs iOS 18.4 or later for routes with stops.</small>
+    <small>Directions with the stops in this order; your maps app can reorder them.
+      Apple Maps needs iOS 18.4 or later for routes with stops or by bike.</small>
   </dialog>
 </section>
 
@@ -816,14 +827,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261111"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261114"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261114"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261114b"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -842,7 +853,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261111"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261114"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1517,6 +1528,19 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // 30%, there and back, until walking-network distance arrives.
   var NX = (typeof GeosonifyStarpinNext !== 'undefined') ? GeosonifyStarpinNext : null;
   var nextBudget = 30, nextPlan = null, nextStars = null, nextStarsAt = null, nextShown = false;
+  // On foot or by bike: the speed every suggestion is timed at, and the
+  // default for directions in a maps app. Remembered on this device.
+  var nextMode = 'walk';
+  try { if (localStorage.getItem('starpin.travel') === 'bike') nextMode = 'bike'; } catch (e) {}
+  function nextKmh() { return NX ? (nextMode === 'bike' ? NX.BIKE_KMH : NX.WALK_KMH) || 4 : 4; }
+  function paintNextMode() {
+    Array.prototype.forEach.call(document.querySelectorAll('#next-mode button'), function (x) {
+      x.setAttribute('aria-pressed', x.getAttribute('data-mode') === nextMode ? 'true' : 'false'); });
+    var sp = $('next-speed');
+    if (sp) sp.innerHTML = nextMode === 'bike'
+      ? 'riding at a relaxed ' + nextKmh() + '&nbsp;km/h' : 'walking at an easy ' + nextKmh() + '&nbsp;km/h';
+    var bh = $('next-bike-hint'); if (bh) bh.hidden = nextMode !== 'bike';
+  }
   // true when the last star lookup failed or timed out: the catalogue could
   // not be reached, which is not the same as "no starpins here".
   var nextStarsDown = false, NEXT_STARS_TIMEOUT_MS = 50000;
@@ -1576,10 +1600,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function nextFetchStars(done) {
     var o = nextOrigin();
     if (!SN || !SN.lookupRemote || !o) { nextStars = []; done(); return; }
-    if (nextStars && !nextStarsDown && nextStarsAt &&
+    var kmh = nextKmh();
+    if (nextStars && !nextStarsDown && nextStarsAt && nextStarsAt.kmh >= kmh &&
         S.haversineM(o.lat, o.lon, nextStarsAt.lat, nextStarsAt.lon) < 250) { done(); return; }
-    var at = { lat: o.lat, lon: o.lon };
-    var radiusArcmin = Math.max(0.3, NX.metresFor(60) / 2 / S.M_PER_ARCSEC / 60);
+    var at = { lat: o.lat, lon: o.lon, kmh: kmh };
+    var radiusArcmin = Math.max(0.3, NX.metresFor(60, kmh) / 2 / S.M_PER_ARCSEC / 60);
     nextStars = null; nextStarsDown = false; done();
     // lookupRemote tries the last source that worked, then Strasbourg and
     // GAVO together, then the VizieR mirrors, 12 s each. This is a backstop
@@ -1607,7 +1632,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (!NX || !o) { paintNextCards(); return; }
     try {
       nextPlan = NX.plan({
-        S: S, fix: o, progress: patchAll, budgetMin: nextBudget,
+        S: S, fix: o, progress: patchAll, budgetMin: nextBudget, kmh: nextKmh(),
         isCollected: function (n) { return !!collected[csName(n)]; },
         stars: nextStars || undefined,
         starHave: function (st) { return !!starsHave[sourceIdOf(st.name)]; },
@@ -1696,7 +1721,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // stop. At most two stops here, inside Google's mobile-browser limit of 3.
   // Coordinates go in as plain "lat,lon" (digits, '-', '.', ','), as in
   // both services' own examples; only Google's '|' separator is encoded.
-  var routeTrip = null;
+  var routeTrip = null, routeMode = 'walk';
+  function paintRouteMode() {
+    Array.prototype.forEach.call(document.querySelectorAll('#route-dlg-mode button'), function (x) {
+      x.setAttribute('aria-pressed', x.getAttribute('data-mode') === routeMode ? 'true' : 'false'); });
+  }
   function routeLL(p) { return p.lat.toFixed(7) + ',' + p.lon.toFixed(7); }
   function routeStops(back) {
     var pts = routeTrip.t.stops.map(function (s) { return { lat: s.lat, lon: s.lon }; });
@@ -1708,7 +1737,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function routeFromPin() { return routeTrip.from && routeTrip.from.pin ? routeTrip.from : null; }
   function googleRoute(back) {
     var r = routeStops(back), o = routeFromPin();
-    return 'https://www.google.com/maps/dir/?api=1&travelmode=walking' +
+    return 'https://www.google.com/maps/dir/?api=1&travelmode=' + (routeMode === 'bike' ? 'bicycling' : 'walking') +
       (o ? '&origin=' + routeLL(o) : '') +
       (r.via.length ? '&waypoints=' + r.via.map(routeLL).join('%7C') : '') +
       '&destination=' + routeLL(r.to);
@@ -1717,11 +1746,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var r = routeStops(back), o = routeFromPin();
     return 'https://maps.apple.com/directions?' + (o ? 'source=' + routeLL(o) + '&' : '') +
       r.via.map(function (p) { return 'waypoint=' + routeLL(p) + '&'; }).join('') +
-      'destination=' + routeLL(r.to) + '&mode=walking';
+      'destination=' + routeLL(r.to) + '&mode=' + (routeMode === 'bike' ? 'cycling' : 'walking');
   }
   function routeDialog(t, title, from) {
     var d = $('route-dlg');
     routeTrip = { t: t, from: from };
+    routeMode = nextMode; paintRouteMode();          // the travel setting is the default
     var n = t.stops.length;
     $('route-dlg-what').textContent = title + ' \u2014 ' + n + ' stop' + (n === 1 ? '' : 's') + '.';
     $('route-dlg-back').checked = true;
@@ -1736,6 +1766,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('route-dlg-apple').addEventListener('click', function () {
     if (!routeTrip) return;
     window.open(appleRoute($('route-dlg-back').checked), '_blank', 'noopener'); routeClose();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('#route-dlg-mode button'), function (b) {
+    b.addEventListener('click', function () {
+      routeMode = b.getAttribute('data-mode') === 'bike' ? 'bike' : 'walk'; paintRouteMode(); });
   });
   $('route-dlg-close').addEventListener('click', routeClose);
   $('route-dlg').addEventListener('click', function (e) { if (e.target === this) routeClose(); });
@@ -1809,14 +1843,23 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (nextShown) nextReplan();
   }
 
-  Array.prototype.forEach.call(document.querySelectorAll('.next-chips button'), function (b) {
+  Array.prototype.forEach.call(document.querySelectorAll('.next-chips button[data-min]'), function (b) {
     b.addEventListener('click', function () {
       nextBudget = +b.getAttribute('data-min');
-      Array.prototype.forEach.call(document.querySelectorAll('.next-chips button'), function (x) {
+      Array.prototype.forEach.call(document.querySelectorAll('.next-chips button[data-min]'), function (x) {
         x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
       if (nextShown) nextReplan();
     });
   });
+  Array.prototype.forEach.call(document.querySelectorAll('#next-mode button'), function (b) {
+    b.addEventListener('click', function () {
+      nextMode = b.getAttribute('data-mode') === 'bike' ? 'bike' : 'walk';
+      try { localStorage.setItem('starpin.travel', nextMode); } catch (e) {}
+      paintNextMode();
+      if (nextShown) nextFetchStars(nextReplan);   // a bike reaches further: may need more stars
+    });
+  });
+  paintNextMode();
   $('next-go').addEventListener('click', function () {
     if (!NX) return;
     nextShown = true;

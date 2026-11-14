@@ -90,14 +90,14 @@
           {
             id: 'what-next',
             q: 'What does “What should I do next?” suggest?',
-            a: `<p>On the <strong>Go</strong> tab, choose how long you have, 15, 30 or 60 minutes, and Starpin suggests up to three walks, each a different kind:</p>
+            a: `<p>On the <strong>Go</strong> tab, choose whether you are on foot or on a bike and how long you have, 15, 30 or 60 minutes, and Starpin suggests up to three outings, each a different kind:</p>
 <ul>
 <li><strong>Finish something:</strong> the corner, or pair of corners, that does most for patches you have already started. Lighting a patch counts most, then taking one to 3 of 4. A patch that already holds a starpin you have collected counts for more, because lighting it makes it starlit.</li>
 <li><strong>New ground:</strong> the nearest corner where you have not started any small patch yet.</li>
 <li><strong>A starpin:</strong> one you have not collected, with brighter, rarer stars preferred, and stars inside patches you have lit preferred again, because collecting one makes those patches starlit.</li>
 </ul>
-<p>Press <strong>Take me there</strong> and the compass guides you to it. A pair is guided one corner at a time.</p>
-<p>Times include the walk back to where you started, at an easy 4 km/h, with 30% added because streets are never straight. They are still worked out as the crow flies, so a river or a motorway between you and a corner can make the real walk longer. As ever, the arrow shows direction, not a safe or legal route.</p>`
+<p>Press <strong>Take me there</strong> and the compass guides you to it, while the map above shows where it is, with a dashed line from you to it. A pair is guided one corner at a time. <strong>Route in maps</strong> opens the whole trip in Google Maps or Apple Maps, with walking or cycling directions.</p>
+<p>Times include the trip back to where you started, at an easy 4 km/h on foot or a relaxed 12 km/h by bike, with 30% added because streets are never straight. They are still worked out as the crow flies, so a river or a motorway between you and a corner can make the real trip longer. On a bike, check the compass or map only when you have stopped. As ever, the arrow shows direction, not a safe or legal route.</p>`
           },
           {
             id: 'blurry-sky',

@@ -1,5 +1,5 @@
 /*
-  geosonify-starpin-next.js v0.3 — "What should I do next?"
+  geosonify-starpin-next.js v0.4 — "What should I do next?"
 
   Pure planning, no DOM. Given where you are, your patches and the starpins
   around you, it suggests up to three walks, each a different KIND of goal so
@@ -15,6 +15,14 @@
   the next step; until then every leg is multiplied by DETOUR and walked at
   WALK_KMH, both conservative, and every time includes the walk back to
   where you started. A 30-minute suggestion is a 30-minute outing.
+
+  ON FOOT OR BY BIKE (v0.4, Nov 2026). plan({ kmh }) sets the speed: WALK_KMH
+  (4) by default, BIKE_KMH (12) for a bike, a conservative figure for casual
+  riding with stops (an e-bike averages nearer 20). DETOUR stays 1.3 for
+  both. minutesFor and metresFor take the speed as an optional second
+  argument. New ground is searched out to the distance the time allows, up to
+  FRESH_MAX_M; past FRESH_FINE_M the sampling rings spread out in proportion,
+  so a 60-minute ride costs about what a long walk did.
 
   The value of a corner comes from the patches it touches. Every patch
   (orders 12, 13, 14) with that corner gains one corner; the gain is weighted
@@ -43,7 +51,11 @@
 
 var GeosonifyStarpinNext = (function () {
   var RULE = 'what-next-v0';
-  var WALK_KMH = 4, DETOUR = 1.3;
+  var WALK_KMH = 4, BIKE_KMH = 12, DETOUR = 1.3;
+  var FRESH_FINE_M = 2500, FRESH_MAX_M = 6000;
+  // The speed of the plan in progress. plan() sets it and puts it back; every
+  // helper below is synchronous, so nothing else can see it in between.
+  var speedKmh = WALK_KMH;
   var ORDERS = [12, 13, 14];
   var SIZE_W = { 12: 4, 13: 2, 14: 1 };
   var STEP_W = { 1: 0.25, 2: 0.6, 3: 1.5, 4: 4 };
@@ -57,8 +69,8 @@ var GeosonifyStarpinNext = (function () {
   // min": the nearest patch you had started, back home.
   var OVER = 2;
 
-  function minutesFor(metres) { return metres * DETOUR / (WALK_KMH * 1000 / 60); }
-  function metresFor(minutes) { return minutes * (WALK_KMH * 1000 / 60) / DETOUR; }
+  function minutesFor(metres, kmh) { return metres * DETOUR / ((kmh || speedKmh) * 1000 / 60); }
+  function metresFor(minutes, kmh) { return minutes * ((kmh || speedKmh) * 1000 / 60) / DETOUR; }
 
   // cell path -> corners held, from S.cellProgress at orders 12-14.
   function haveMap(progress) {
@@ -214,9 +226,10 @@ var GeosonifyStarpinNext = (function () {
   function bestFresh(S, fix, progress, isCollected, budgetMin) {
     var have = haveMap(progress);
     var cellM = Math.sqrt(Math.PI / 3) / Math.pow(2, 14) * 6371008.8;
-    var maxR = Math.min(metresFor(budgetMin) / 2, 2500), step = cellM / 3;
+    var maxR = Math.min(metresFor(budgetMin) / 2, FRESH_MAX_M), fine = cellM / 3, step = fine;
     var seen = {}, best = null;
     for (var r = 0; r <= maxR; r += step) {
+      step = fine * Math.max(1, r / FRESH_FINE_M);
       var n = Math.max(1, Math.ceil(2 * Math.PI * r / step));
       for (var i = 0; i < n; i++) {
         var th = 2 * Math.PI * i / n;
@@ -276,22 +289,27 @@ var GeosonifyStarpinNext = (function () {
   }
 
   // opts: { S, fix, progress, isCollected(name), stars, starHave(star),
-  //         rarity(mag), budgetMin }
+  //         rarity(mag), budgetMin, kmh }
   function plan(opts) {
-    var S = opts.S, fix = opts.fix, budget = opts.budgetMin || 30;
-    var isCollected = opts.isCollected || function () { return false; };
-    var finish = bestFinish(S, fix, opts.progress, isCollected, budget);
-    return {
-      rule: RULE, budgetMin: budget,
-      finish: finish && finish.far ? null : finish,
-      finishFar: !!(finish && finish.far),
-      fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
-      star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
-                                  opts.rarity, budget, opts.progress) : undefined
-    };
+    var kmh = opts.kmh > 0 ? +opts.kmh : WALK_KMH, prev = speedKmh;
+    speedKmh = kmh;
+    try {
+      var S = opts.S, fix = opts.fix, budget = opts.budgetMin || 30;
+      var isCollected = opts.isCollected || function () { return false; };
+      var finish = bestFinish(S, fix, opts.progress, isCollected, budget);
+      return {
+        rule: RULE, budgetMin: budget, kmh: kmh,
+        finish: finish && finish.far ? null : finish,
+        finishFar: !!(finish && finish.far),
+        fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
+        star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
+                                    opts.rarity, budget, opts.progress) : undefined
+      };
+    } finally { speedKmh = prev; }
   }
 
-  return { VERSION: '0.3', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, DETOUR: DETOUR,
+  return { VERSION: '0.4', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
+           DETOUR: DETOUR, FRESH_FINE_M: FRESH_FINE_M, FRESH_MAX_M: FRESH_MAX_M,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };
 })();

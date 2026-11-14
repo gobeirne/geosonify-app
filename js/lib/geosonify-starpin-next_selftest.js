@@ -23,6 +23,11 @@ function setOf(list) { var m = {}; list.forEach(function (n) { m[S.canonicaliseC
 console.log('\n1: time');
 ok('4 km/h with a 1.3 detour: 1 km of crow-flies is 19.5 min', Math.abs(N.minutesFor(1000) - 19.5) < 1e-9);
 ok('metresFor inverts minutesFor', Math.abs(N.metresFor(N.minutesFor(1234)) - 1234) < 1e-6);
+ok('12 km/h by bike: 1 km of crow-flies is 6.5 min', Math.abs(N.minutesFor(1000, N.BIKE_KMH) - 6.5) < 1e-9);
+ok('metresFor inverts minutesFor by bike too',
+   Math.abs(N.metresFor(N.minutesFor(1234, 12), 12) - 1234) < 1e-6);
+ok('the default speed is still walking after a bike plan',
+   (N.plan({ S: S, fix: { lat: -43.53, lon: 172.62 }, budgetMin: 15, kmh: 12 }), Math.abs(N.minutesFor(1000) - 19.5) < 1e-9));
 
 console.log('\n2: finishing');
 var med = 'f9.1112021011333', medC = names(med);
@@ -68,6 +73,15 @@ var paris = N.plan({ S: S, fix: { lat: 48.8584, lon: 2.2945 }, progress: P2, isC
 ok('from a pin on the other side of the world, home patches are never suggested',
    paris.finish === null && paris.finishFar === true);
 ok('...and new ground there is still offered', paris.fresh && paris.fresh.minutes < 60);
+
+var bikeP = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 30, kmh: N.BIKE_KMH });
+ok('a bike plan reports its speed', bikeP.kmh === 12 && plan.kmh === 4);
+ok('the same finish is a third of the time by bike', bikeP.finish && plan.finish &&
+   Math.abs(bikeP.finish.minutes * 3 - plan.finish.minutes) < 1e-6);
+var farFix = { lat: missing.lat + 0.03, lon: missing.lon };          // ~3.3 km away
+ok('a corner out of reach on foot in 30 min is in reach by bike',
+   N.plan({ S: S, fix: farFix, progress: P, isCollected: have, budgetMin: 30 }).finishFar === true &&
+   !N.plan({ S: S, fix: farFix, progress: P, isCollected: have, budgetMin: 30, kmh: 12 }).finishFar);
 
 console.log('\n3: new ground');
 ok('fresh: a corner is offered', !!plan.fresh);
