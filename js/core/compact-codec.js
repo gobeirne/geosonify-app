@@ -155,7 +155,8 @@
       i += 2;
     }
     let spillCount = 0;
-    while (str[i] === '.') { spillCount++; i++; }
+    // Padding is '.', or '~' in links an older encoder wrote (B14).
+    while (str[i] === '.' || str[i] === '~') { spillCount++; i++; }
     const digits = 2 + spillCount;
     const numStr = str.slice(i, i + digits);
     if (numStr.length < digits) throw new Error('Truncated Base36 length field');
@@ -311,9 +312,9 @@
   function encodeBase36Circle(sol) {
     const r = Math.round(sol.radius);
     let count = Math.max(0, r | 0);
-    let digits = 2;
+    let digits = 3;                              // '.'-padded, never 2 bare digits (B14)
     while (count >= Math.pow(36, digits) && digits < 5) digits++;
-    const spill = '.'.repeat(Math.max(0, digits - 2));
+    const spill = '.'.repeat(digits - 2);
     const num = count.toString(36).toUpperCase().padStart(digits, '0');
     return `${sol.centroid[0].toFixed(6)},${sol.centroid[1].toFixed(6)}~${spill}${num}`;
   }
@@ -323,7 +324,7 @@
    */
   function encodeBase64Circle(sol) {
     const r = Math.round(sol.radius);
-    if (r > 1023) return 'ERR: radius exceeds 1023m';
+    if (r > 1023) return encodeBase36Circle(sol);   // (B14)
     const code = B64[r >> 4] + B64[r & 15];
     return `${sol.centroid[0].toFixed(6)},${sol.centroid[1].toFixed(6)}~${code}`;
   }
@@ -434,7 +435,7 @@
         if (count < Math.pow(36, 2)) return padBase36(toBase36(count), 2);
         let digits = 3;
         while (count >= Math.pow(36, digits) && digits < 5) digits++;
-        return '~'.repeat(digits - 2) + padBase36(toBase36(count), digits);
+        return '.'.repeat(digits - 2) + padBase36(toBase36(count), digits);   // '.', not '~' (B14)
       }
 
       const Lfield = encodeMetersFixed(Lm);
@@ -474,7 +475,7 @@
     const a = Math.round(sol.thetaDeg) % 360;
     const L = Math.round(sol.L);
     const S = Math.round(sol.S);
-    if (L > 1023 || S > 1023) return 'ERR: lengths exceed 1023m';
+    if (L > 1023 || S > 1023) return encodeBase36Rect(sol, {});   // (B14)
     const packed = (a << 20) | (L << 10) | S;
     const code = b64urlEncodeBits(packed, 29);
     return `${sol.centroid[0].toFixed(6)},${sol.centroid[1].toFixed(6)}~${code}`;
@@ -559,11 +560,11 @@
    */
   function tryDecodeBase64Graticule(payload) {
     if (payload.length !== 7) throw new Error('Base64 graticule must be 7 chars');
-    const val = b64urlDecodeToInt(payload);
-    const shiftPad = (6 - (41 % 6)) % 6;
-    const raw = val >> shiftPad;
-    const nsMeters = raw & 0x1FFFFFF; // 25 bits
-    const lonUnits = (raw >> 25) & 0xFFFF; // 16 bits
+    let raw = 0n;                                // 42 bits: BigInt, not 32-bit ops (B14)
+    for (const ch of payload) raw = (raw << 6n) | BigInt(B64.indexOf(ch));
+    raw >>= BigInt((6 - (41 % 6)) % 6);
+    const nsMeters = Number(raw & 0x1FFFFFFn); // 25 bits
+    const lonUnits = Number((raw >> 25n) & 0xFFFFn); // 16 bits
     const lonSpanDeg = lonUnits / 100;
     return { type: 'graticule', lonSpanDeg, nsMeters };
   }

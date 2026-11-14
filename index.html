@@ -807,7 +807,7 @@
   <script src="js/core/app-state.js?v=20260622"></script>
   <script src="js/core/lazy-load.js?v=20260109"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
-  <script src="js/core/compact-codec.js?v=20260109"></script>
+  <script src="js/core/compact-codec.js?v=20261115d"></script>
   <script src="js/core/delta-gear.js?v=20261014c"></script>
   
 <!-- Services -->
@@ -6907,16 +6907,16 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function encodeBase36Circle(sol) {
       const r = Math.round(sol.radius);
       let count = Math.max(0, r | 0);
-      let digits = 2;
+      let digits = 3;                              // '.'-padded, never 2 bare digits (B14)
       while (count >= 36**digits && digits < 5) digits++;
-      const spill = '.'.repeat(Math.max(0, digits - 2));
+      const spill = '.'.repeat(digits - 2);
       const num = count.toString(36).toUpperCase().padStart(digits, '0');
       return `${sol.centroid[0].toFixed(6)},${sol.centroid[1].toFixed(6)}~${spill}${num}`;
     }
 
     function encodeBase64Circle(sol) {
       const r = Math.round(sol.radius);
-      if (r > 1023) return 'ERR: radius exceeds 1023m';
+      if (r > 1023) return encodeBase36Circle(sol);   // too big for 2 characters (B14)
       const code = B64[r >> 4] + B64[r & 15];
       return `${sol.centroid[0].toFixed(6)},${sol.centroid[1].toFixed(6)}~${code}`;
     }
@@ -7037,13 +7037,16 @@ function encodeRaw(sol) {
 
     function tryDecodeBase64Graticule(payload) {
       if (payload.length !== 7) throw new Error('Base64 graticule must be 7 chars');
-      const val = b64urlDecodeToInt(payload);
+      // 42 bits: read with BigInt (32-bit integer operations lost the top bits, B14)
+      let big = 0n;
+      for (const ch of payload) big = (big << 6n) | BigInt(B64.indexOf(ch));
+      const val = big;
       // Unpack: lonUnits (16 bits) | nsMeters (25 bits)
       // But we need to handle the padding properly
       const shiftPad = (6 - (41 % 6)) % 6; // = 1
-      const raw = val >> shiftPad;
-      const nsMeters = raw & 0x1FFFFFF; // 25 bits
-      const lonUnits = (raw >> 25) & 0xFFFF; // 16 bits
+      const raw = val >> BigInt(shiftPad);
+      const nsMeters = Number(raw & 0x1FFFFFFn); // 25 bits
+      const lonUnits = Number((raw >> 25n) & 0xFFFFn); // 16 bits
       const lonSpanDeg = lonUnits / 100;
       return { type: 'graticule', lonSpanDeg, nsMeters };
     }
@@ -8159,9 +8162,12 @@ function encodeRaw(sol) {
       if (sol.type === 'circle') {
         const r = Math.round(sol.radius);
         let count = Math.max(0, r | 0);
-        let digits = 2;
+        // Always the '.'-padded form with at least 3 digits (".0DW" = 500 m):
+        // it cannot be mistaken for a Base64url circle, a raw radius or a
+        // graticule, and every earlier app version reads it (B14).
+        let digits = 3;
         while (count >= 36**digits && digits < 5) digits++;
-        const spill = '~'.repeat(Math.max(0, digits - 2));
+        const spill = '.'.repeat(digits - 2);
         const num = count.toString(36).toUpperCase().padStart(digits, '0');
         return `${spill}${num}`;
       }
@@ -8179,7 +8185,7 @@ function encodeRaw(sol) {
           if (count < 36**2) return count.toString(36).toUpperCase().padStart(2, '0');
           let digits = 3;
           while (count >= 36**digits && digits < 5) digits++;
-          return '~'.repeat(digits - 2) + count.toString(36).toUpperCase().padStart(digits, '0');
+          return '.'.repeat(digits - 2) + count.toString(36).toUpperCase().padStart(digits, '0');   // '.', not '~' (B14)
         }
         return `${A}${encodeMetersFixed(Lm)}${encodeMetersFixed(Sm)}`;
       }
@@ -8191,15 +8197,14 @@ function encodeRaw(sol) {
     function encodeBase64urlPayload(sol) {
       if (sol.type === 'circle') {
         const r = Math.round(sol.radius);
-        if (r > 1023) return 'ERR: radius exceeds 1023m';
+        if (r > 1023) return encodeBase36Payload(sol);   // too big for 2 characters: Base36 form (B14)
         const code = B64[r >> 4] + B64[r & 15];
         return code;
       }
       if (sol.type === 'graticule') {
         const lonUnits = Math.round(sol.lonSpanDeg * 100);
         const nsMeters = Math.round(sol.nsMeters);
-        if (lonUnits > 36000) return 'ERR: lon span exceeds 360°';
-        if (nsMeters > 33554431) return 'ERR: NS distance exceeds ~33554km';
+        if (lonUnits > 36000 || nsMeters > 33554431) return encodeRawPayload(sol);   // out of range: raw form (B14)
         const packed = (BigInt(lonUnits) << 25n) | BigInt(nsMeters);
         return b64urlEncodeBigBits(packed, 41);
       }
@@ -8210,7 +8215,7 @@ function encodeRaw(sol) {
       const a = Math.round(sol.thetaDeg) % 360;
       const L = Math.round(sol.L);
       const S = Math.round(sol.S);
-      if (L > 1023 || S > 1023) return 'ERR: lengths exceed 1023m';
+      if (L > 1023 || S > 1023) return encodeBase36Payload(sol);   // out of range: Base36 form (B14)
       const packed = (a << 20) | (L << 10) | S;
       return b64urlEncodeBits(packed, 29);
     }
@@ -9565,15 +9570,42 @@ function encodeRaw(sol) {
         return;
       }
 
+      /*
+        CIRCLE SUFFIXES (B14, decision D7, 15 Nov 2026), decided before any
+        checksum strip because their length is exact:
+          2 characters, second A–P   Base64url circle: radius = (i0 << 4) | i1.
+                                     A 2-character Base36 circle can read the
+                                     same way; the Base64url reading wins (D7).
+          2 Base36 characters with a letter (otherwise)   Base36 circle.
+                                     All digits stays a raw radius ("50" = 50 m).
+          '.' or '~' × p, then p + 2 Base36 digits        Base36 circle.
+          after '~~' (looks like a graticule): '~' × t, then t + 3 Base36
+                                     digits — an older Base36 circle written
+                                     with '~' padding; no graticule has this form.
+      */
+      let decoded;
+      if (!isGraticule) {
+        let m;
+        if (/^[A-Za-z0-9_-][A-P]$/.test(payload)) {
+          decoded = { type: 'circle', radius: (B64.indexOf(payload[0]) << 4) | B64.indexOf(payload[1]) };
+        } else if (/^[0-9A-Z]{2}$/.test(payload) && /[A-Z]/.test(payload)) {
+          decoded = { type: 'circle', radius: parseInt(payload, 36) };
+        } else if ((m = payload.match(/^([.~]+)([0-9A-Z]+)$/)) && m[2].length === 2 + m[1].length) {
+          decoded = { type: 'circle', radius: parseInt(m[2], 36) };
+        }
+      } else {
+        const m = payload.match(/^(~*)([0-9A-Z]+)$/);
+        if (m && m[2].length === 3 + m[1].length) decoded = { type: 'circle', radius: parseInt(m[2], 36) };
+      }
       // Try to strip checksum
-      if (payload.length > 3) {
+      if (!decoded && payload.length > 3) {
         const guess = payload.slice(0, -1);
         if (checksumChar(guess) === payload.slice(-1)) payload = guess;
       }
-
-      let decoded;
       try {
-        if (isGraticule) {
+        if (decoded) {
+          // decided above
+        } else if (isGraticule) {
           // Try angular graticule first (e.g. "7deg_4deg", "20'_15'", "20min_15min")
           const angularDec = tryDecodeAngularGraticule(payload);
           if (angularDec) {

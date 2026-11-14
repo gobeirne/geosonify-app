@@ -1,6 +1,6 @@
-# Geosonify core profile v1 — Part A: points and paths in the Base64 grid
+# Geosonify core profile v1 — points, paths and shapes in the Base64 grid
 
-Status: draft, 15 November 2026. Describes the behaviour of the live code at commit ebf27e3 plus the B13 decoder fix delivered with this document. Part B (shape suffixes, HEALPix `hphex`/`hp64`, annotations `lbl=`/`sty=`, the legacy gear form, `~~~` group vectors, and an independent reference decoder in `spec/`) follows.
+Status: draft, 15 November 2026. Describes the live code with the B13 (segment modes) and B14 (shape suffixes) fixes. Reference decoder: `spec/core-profile-v1-reference.js` (`node spec/core-profile-v1-reference.js --selftest`), which loads no app code. Not yet specified: see §8.
 
 The `?enc=` carrier is already specified, byte for byte, in FROZEN-AES-URL-V1.md; the core profile adopts it unchanged. Obfuscation, grid passphrases, BIP39 words and the other grids are outside the core profile.
 
@@ -48,7 +48,7 @@ The payload form is decided by the first payload part p (after removing a global
 
 1. **Fixed width**: p begins with one hexadecimal digit w and `=`. Join all payload parts and drop the `w=`. Read the rest as consecutive deltas: normally w characters each; a delta written `*k…` is an escape of length k (one decimal digit) instead. Each delta replaces the last (its length) characters of the **first** code.
 2. **Gear**: p begins with `d` followed by a hexadecimal digit and contains no `=`. Each payload part is a segment `d…d` (K letters `d`), then K hexadecimal digits giving a width N > 0, then a run of deltas N characters each. Each delta replaces the last N characters of the **previous** vertex's code. A segment with N = 0 or an unreadable N is skipped.
-3. **Legacy gear** (decode only; never written now): p begins with a hexadecimal digit n with 0 < n < L, contains no `=`, and the rest of p has a length that is a positive multiple of n. Specified in Part B.
+3. **Legacy gear** (decode only; never written now): p begins with a hexadecimal digit n with 0 < n < L, contains no `=`, and the rest of p has a length that is a positive multiple of n. It is read like the gear form, each payload part being either a `d` segment, or a legacy segment (one hexadecimal digit n, then deltas n characters each), or — when it is neither — a single delta. In this form every delta, including a single one, replaces the end of the **previous** code.
 4. **Variable**: anything else. Each payload part is one delta, optionally prefixed with `R`; the delta replaces the last (its length) characters of the **first** code.
 
 ### 3.1 Segment modes
@@ -64,7 +64,47 @@ The encoder uses the variable form whenever a path mixes geodesic and rhumb segm
 
 A path whose last vertex is within 1 m of its first is a polygon (a closed ring); otherwise it is a line. A value may carry several groups separated by `~~~`; each group after the first is a self-contained path (its own first code and payload). Each group is a polygon, a line or (one vertex) a point on its own. Holes are not yet representable: every ring is an outer ring.
 
-## 4. Test vectors (generated from the live code, Base64, 8 levels)
+## 4. Shape suffixes
+
+A circle or rectangle is written as the centre's code, `~`, then a payload; a graticule as the centre's code, `~~`, then a payload (`b64=CODE~PAYLOAD`, `b64=CODE~~PAYLOAD`; no `d` flag). The centre is the decoded code (§2). Emoji payloads are outside the core profile.
+
+### 4.1 Circles (decided first, by exact length; decision D7)
+
+Radius r in metres, a geodesic circle round the centre. In order:
+
+1. Two characters, the second `A`–`P`: Base64url, r = (index₁ × 16) + index₂ (r ≤ 1023). A two-character Base36 circle can match this pattern too; such a payload is read as Base64url.
+2. Two Base36 characters `0-9A-Z` including a letter: Base36, r = the number in base 36. (Two digits only are a raw radius: rule 4.)
+3. p padding characters (`.`, or `~` in older links) then p + 2 Base36 digits: Base36, r = those digits in base 36. **This is the form written now** (`.0DW` = 500 m, `.3UW` = 5,000 m): it matches no other rule and every earlier app version reads it.
+4. Raw: digits, optionally followed by `m` (`500m`).
+5. After `~~` (a graticule marker): t × `~` then t + 3 Base36 digits is a circle written by an older encoder with `~` padding (`~~3UW` = 5,000 m). No graticule has this form.
+
+### 4.2 Length fields (Base36 forms)
+
+A length field is: optionally `!` and one resolution character giving the unit (`2` 1 mm, `1` 1 cm, `0` 10 cm, `7` 1 m, `4` 10 m, `5` 100 m, `6` 1 km; default 1 m), then p padding characters (`.`, or `~` in older links), then p + 2 Base36 digits. The value is the number times the unit.
+
+### 4.3 Checksum
+
+A payload may end in one checksum character: the sum of the character codes of the rest of the payload, mod 36, as a digit of `0-9A-Z`. When the last character of a payload longer than 3 characters equals the checksum of the others, it is removed. Circles (§4.1) are decided before this step.
+
+### 4.4 Rectangles
+
+Centre, rotation θ in whole degrees, and side lengths L and S in metres:
+
+- Raw: `θdeg_L_S` with units on the lengths (`30deg_500m_200m`; `deg` and `m` may be omitted).
+- Base64url: 5 characters = 30 bits; drop the last (padding) bit; then θ = bits 28–20, L = bits 19–10, S = bits 9–0 (L, S ≤ 1023 m).
+- Base36: θ as 2 Base36 digits, then L and S as length fields (§4.2) (`0UDW5K` = 30°, 500 m, 200 m; `0U!45K5K` = 30°, 2,000 m, 200 m). One extra trailing character is a checksum.
+
+### 4.5 Graticules
+
+Centre, longitude span in degrees, and north–south extent in metres:
+
+- Raw: `Xdeg_Y` with a unit on Y (`1.5deg_100km`).
+- Base64url: 7 characters = 42 bits; drop the last (padding) bit; longitude span = bits 40–25 in units of 0.01°, extent = bits 24–0 in metres. Implementations must use 64-bit or arbitrary-precision integers.
+- Base36: two length fields (§4.2): the longitude span in units of 0.001°, then the extent in metres.
+
+The encoder never writes a value its chosen form cannot hold: a circle over 1023 m or a rectangle side over 1023 m in Base64url is written in Base36, and an out-of-range graticule raw.
+
+## 5. Test vectors (generated from the live code, Base64, 8 levels)
 
 | # | Case | Link value | Payload form | Vertices | Type |
 |---|---|---|---|---|---|
@@ -78,8 +118,16 @@ Vector 2 decodes to: -43.522505164, 172.581106424; -43.522998691, 172.584990263;
 Vector 3 decodes to: -43.499996066, 172.600010633; -43.400003314, 172.799996138; -43.299999833, 172.600010633; -43.199996352, 172.799996138 — segment modes GRGG
 Vector 4 decodes to: 52.499998212, 13.299990892; 52.519996762, 13.450001478; 52.450001836, 13.499997854; 52.499998212, 13.299990892 — segment modes RRRR
 
-Decoded values are cell centres, given to 9 decimal places. A decoder written from this document alone reproduced all four (to 5 × 10⁻¹⁰°, the rounding of this table) before it was published.
+Decoded values are cell centres, given to 9 decimal places. A decoder written from this document alone reproduced all four (to 5 × 10⁻¹⁰°, the rounding of this table) before it was published. The reference decoder carries these and 15 more: a legacy gear path (checked against the app's own `DeltaGear`), two `~~~` groups, every circle form including the older ones and the D7 tie (`~1I` reads as Base64url, 856 m), Base36 and Base64url rectangles, and Base64url and raw graticules.
 
-## 5. Compatibility policy
+## 6. Compatibility policy
 
-A link that decodes today decodes to the same vertices forever. New behaviour is a new flag, parameter or payload form that older decoders either ignore or refuse; it never changes the meaning of an existing link. The one exception made so far is B13, which corrected the decoder to match what the encoder had always written; it moves no vertex, only which segment of a mixed path is drawn as a rhumb line.
+A link that decodes today decodes to the same vertices forever. New behaviour is a new flag, parameter or payload form that older decoders either ignore or refuse; it never changes the meaning of an existing link. The one exception made so far is B13, which corrected the decoder to match what the encoder had always written; it moves no vertex, only which segment of a mixed path is drawn as a rhumb line. B14 (15 November 2026) made shape suffixes that were refused or misread decode as their encoder meant; the only links whose reading was decided rather than recovered are two-character circles valid in both Base36 and Base64url, which keep the Base64url reading they always had (D7).
+
+## 7. HEALPix codes
+
+`hphex` and `hp64` codes serialize a HEALPix NESTED index (Górski et al. 2005); the serialization, the face character, the packing and the `@k` order suffix are specified in FROZEN-HEALPIX-PASS-V1.md §2. Their flags are `d` and `r` as in §1; `j` and `o` (obfuscation) are outside the core profile. A HEALPix path uses the payload forms of §3 over the code's characters, decoded at the order of its first code.
+
+## 8. Not yet specified
+
+Annotations (`lbl=`, `sty=`); the rotation convention of θ for rectangles; angular graticules (`7deg_4deg`, `20'_15'`); HEALPix vectors in the reference decoder.
