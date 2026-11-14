@@ -2779,6 +2779,14 @@
     if (!thumb || !list || !coord) return;
 
     if (redacted) { thumb.innerHTML = ''; return; }
+    // The lookup sends the position to VizieR and hips2fits, so none while
+    // outside lookups are off (window.GeosonifyPrivacy in index.html).
+    const _priv = (typeof window !== 'undefined') ? window.GeosonifyPrivacy : null;
+    if (_priv && _priv.lookupsOff && _priv.lookupsOff()) {
+      thumb.innerHTML = '';
+      list.innerHTML = '<div class="skyneighbours-note">Star lookup is off: this place is private, so it is not sent to the star catalogues.</div>';
+      return;
+    }
 
     const N = (typeof GeosonifySkyNeighbour !== 'undefined')
       ? GeosonifySkyNeighbour

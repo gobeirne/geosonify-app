@@ -528,6 +528,10 @@
           for (var j in opts.aladinOptions) options[j] = opts.aladinOptions[j];
         }
 
+        // Aladin Lite reports each start to CDS with the page's address (its
+        // 'log' option, on by default), and the address can hold the place.
+        // Off whenever the caller forbids sending the position (privacy).
+        if (typeof opts.coverageAllowed === 'function' && !opts.coverageAllowed()) options.log = false;
         aladin = A.aladin(inner, options);
 
         /*

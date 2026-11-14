@@ -195,6 +195,15 @@
     try { o = cr.isObfuscated ? !!cr.isObfuscated() : false; } catch (e) {}
     return !!(p || o);
   }
+  // Outside lookups (the position sent to CDS): off under the display rule
+  // above, and also whenever index.html's GeosonifyPrivacy says so (Hard
+  // encrypt URL on, or the page opened from an encrypted link). Redaction
+  // stays on _privacyOn alone: an encrypted link's receiver sees the place.
+  function _lookupsOff() {
+    if (_privacyOn()) return true;
+    var P = global.GeosonifyPrivacy;
+    try { return !!(P && P.lookupsOff && P.lookupsOff()); } catch (e) { return false; }
+  }
 
   function isAvailable() {
     return !!(_Sky() && _Overlay() && _RendererLib() && _HP());
@@ -1340,7 +1349,7 @@
       ra: centre[0], dec: centre[1], fovDeg: fov,
       background: '#0b0f19', src: opts.aladinSrc, imagery: imageryMode,
       // No coverage lookup (a position sent to CDS) while privacy is on.
-      coverageAllowed: function () { return !_privacyOn(); }
+      coverageAllowed: function () { return !_lookupsOff(); }
     });
     // The candidate's own DOM, so it can be kept invisible until it is placed.
     var wrapBefore = Array.prototype.slice.call(els.canvasWrap.children);
@@ -1735,6 +1744,7 @@
     isUserZoomed: function () { return userZoomed; },
     isFramedOnShape: function () { return framedOnShape; },
     isPrivacyOn: _privacyOn,
+    isLookupOff: _lookupsOff,
     measuredAsp: measuredAsp,
     redraw: draw,
     setOrder: function (k) { order = Math.max(MIN_ORDER, Math.min(MAX_ORDER, k)); draw(); },

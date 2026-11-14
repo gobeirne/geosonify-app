@@ -103,6 +103,8 @@
   const geoCache = new Map();
   async function reverseGeocode(lat, lon) {
     if (isSky()) return null;
+    // No place names while the position is private (window.GeosonifyPrivacy).
+    try { if (global.GeosonifyPrivacy?.lookupsOff?.()) return null; } catch (e) {}
     const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
     if (geoCache.has(key)) return geoCache.get(key);
     try {

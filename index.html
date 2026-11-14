@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <!-- Other sites get only the origin as referrer, never the page address (which can hold a place). -->
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#325756" />
@@ -839,7 +841,7 @@
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261107d"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261115a"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
@@ -851,8 +853,8 @@
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
 <script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261107a"></script>
-<script src="js/lib/geosonify-sky-lookup.js?v=20261031c"></script>
+<script src="js/lib/geosonify-sky-view.js?v=20261115a"></script>
+<script src="js/lib/geosonify-sky-lookup.js?v=20261115a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
@@ -869,13 +871,13 @@
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261101"></script>
+<script src="js/ui/card-renderer.js?v=20261115a"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
-<script src="js/lib/geosonify-bip39-entry.js?v=20261031a"></script>
-<script src="js/lib/geosonify-hpwords-entry.js?v=20261031a"></script>
-<script src="js/lib/faq-data.js?v=20261108g"></script>
+<script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
+<script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
+<script src="js/lib/faq-data.js?v=20261115a"></script>
 <script src="js/ui/faq-ui.js?v=20261108f"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -963,6 +965,33 @@
     // URL encryption state
     let encryptURL = false;
     let encryptPassphrase = ''; // Separate from the grid-shuffle passphrase
+
+    /*
+      ── Outside lookups and privacy (Nov 2026) ───────────────────────────
+      Some features ask an outside service about the position itself: place
+      names (Nominatim), sky coverage and Aladin Lite's start-up log (CDS),
+      object and star lookups (SIMBAD, VizieR, hips2fits). None of them may run
+      while the position is meant to be private:
+        - a grid passphrase or obfuscation is on (the original rule);
+        - Hard encrypt URL is on (the creator is making a private link);
+        - the page was opened from an encrypted link (?enc=), for the rest of
+          the visit. Cleared only if the receiver cancels without decrypting.
+      Map and sky imagery tiles still load: a map cannot be drawn without them,
+      so tile servers learn roughly where the map is. This rule only stops the
+      lookups. Display redaction (cards that hide the true position under a
+      passphrase or obfuscation) is a separate rule and is unchanged: the
+      receiver of an encrypted link sees the place.
+      Modules read it through window.GeosonifyPrivacy.lookupsOff().
+    */
+    let _openedFromEncryptedLink = false;
+    window.GeosonifyPrivacy = {
+      lookupsOff() {
+        let crPass = '';
+        try { crPass = (typeof CardRenderer !== 'undefined' && CardRenderer.getPassphrase) ? (CardRenderer.getPassphrase() || '') : ''; } catch (e) {}
+        return !!(passphrase || crPass || obfuscated || encryptURL || _openedFromEncryptedLink);
+      },
+      openedFromEncryptedLink() { return _openedFromEncryptedLink; }
+    };
     
     // =================== AES-256-GCM URL ENCRYPTION (format v1) ===================
     // Encrypts the entire query string so nothing is visible without the passphrase.
@@ -1264,8 +1293,9 @@
     }
 
     // Place names make the question answerable at a glance, but asking for
-    // them sends both positions to OpenStreetMap's Nominatim, so not while a
-    // passphrase or obfuscation is on: then the question shows coordinates only.
+    // them sends both positions to OpenStreetMap's Nominatim, so not while
+    // outside lookups are off (window.GeosonifyPrivacy): then the question shows
+    // coordinates only.
     function reverseName(ll) {
       const url = 'https://nominatim.openstreetmap.org/reverse?' + new URLSearchParams({
         lat: ll[0].toFixed(4), lon: ll[1].toFixed(4), format: 'json', zoom: '10'
@@ -1296,7 +1326,7 @@
         overlay.querySelectorAll('button').forEach(b => { b.onclick = () => done(b.getAttribute('data-g')); });
         overlay.onclick = e => { if (e.target === overlay) done(null); };
 
-        if (!passphrase && !obfuscated) {
+        if (!window.GeosonifyPrivacy.lookupsOff()) {
           const names = overlay.querySelectorAll('.tc-name');
           // One request, then the other a little later (Nominatim asks for <= 1 per second).
           reverseName(alphaLL).then(n => { if (n && names[0].isConnected) names[0].textContent = n; });
@@ -3144,6 +3174,53 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       };
     }
     
+    // =================== PIPELINE ENCRYPTION PASSPHRASE PROMPT ===================
+    // &enc_pass on an import-pipeline link asks for an encrypted result. The
+    // passphrase is always typed here, never read from the link: a value on
+    // enc_pass (enc_pass=…) is ignored. Resolves to the passphrase, or null if
+    // the person cancels.
+    function askPipelineEncryptPassphrase(hadValue) {
+      return new Promise(resolve => {
+        document.querySelectorAll('.pipeline-enc-prompt').forEach(el => el.remove());
+        const overlay = document.createElement('div');
+        overlay.className = 'pipeline-enc-prompt';
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px;';
+        const dialog = document.createElement('div');
+        dialog.setAttribute('role', 'dialog');
+        dialog.setAttribute('aria-label', 'Encryption passphrase for this link');
+        dialog.style.cssText = 'background:var(--ios-card, #fff);color:var(--ios-text, #000);border-radius:16px;padding:24px;max-width:90vw;width:360px;text-align:center;';
+        dialog.innerHTML = `
+          <div style="font-size:40px;margin-bottom:8px;">🔒</div>
+          <h3 style="margin:0 0 8px;font-size:18px;">Encrypt the result</h3>
+          <p style="font-size:14px;color:var(--ios-gray, #8E8E93);margin:0 0 12px;line-height:1.4;">This link asks for an encrypted link as its result. Enter the passphrase to encrypt it with; whoever opens the result will need it.</p>
+          ${hadValue ? '<p style="font-size:12px;color:#B45309;margin:0 0 12px;line-height:1.4;">The link included a passphrase. It has not been used: passphrases should not travel in links.</p>' : ''}
+          <input type="text" id="pipelineEncInput" placeholder="Encryption passphrase" autocomplete="off" autocapitalize="off" spellcheck="false"
+            style="width:100%;padding:12px;font-size:16px;border:1px solid var(--ios-separator, #ccc);border-radius:8px;box-sizing:border-box;margin-bottom:8px;background:var(--ios-bg, #fff);color:var(--ios-text, #000);">
+          <div id="pipelineEncError" style="color:#FF3B30;font-size:13px;margin-bottom:8px;display:none;">Enter a passphrase, or cancel.</div>
+          <button id="pipelineEncGo" type="button" style="width:100%;padding:12px;border-radius:8px;border:none;background:var(--primary, #325756);color:#fff;font-size:16px;cursor:pointer;margin-bottom:8px;">Encrypt</button>
+          <button id="pipelineEncCancel" type="button" style="width:100%;padding:10px;border-radius:8px;border:1px solid var(--ios-separator, #ccc);background:transparent;color:var(--ios-text, #000);font-size:14px;cursor:pointer;">Cancel</button>
+        `;
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+        const input = dialog.querySelector('#pipelineEncInput');
+        const err = dialog.querySelector('#pipelineEncError');
+        input.focus();
+        function go() {
+          const v = input.value.trim();
+          if (!v) { err.style.display = 'block'; input.focus(); return; }
+          overlay.remove();
+          resolve(v);
+        }
+        function cancel() { overlay.remove(); resolve(null); }
+        dialog.querySelector('#pipelineEncGo').onclick = go;
+        dialog.querySelector('#pipelineEncCancel').onclick = cancel;
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') go();
+          if (e.key === 'Escape') cancel();
+        });
+      });
+    }
+
     // =================== ENCRYPTED URL DECODE PROMPT ===================
     function showEncryptedDecodePrompt(encBlob) {
       // Remove any existing prompts
@@ -3264,6 +3341,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       });
       dialog.querySelector('#encCancelBtn').onclick = () => {
         overlay.remove();
+        // Nothing was decrypted: the visit is no longer an encrypted link's.
+        _openedFromEncryptedLink = false;
         // Navigate to the base page
         window.history.replaceState({}, '', window.location.pathname);
       };
@@ -3572,6 +3651,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // Check for ?enc= (encrypted URL)
       const encParam = urlParams.get('enc');
       if (encParam) {
+        // No outside lookups for the rest of the visit (window.GeosonifyPrivacy).
+        _openedFromEncryptedLink = true;
         showEncryptedDecodePrompt(encParam);
         return;
       }
@@ -3843,7 +3924,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // ?wikidata=Q123, ?place=Budapest, ?osmrelation=54391,
       // ?geojson=https://..., ?kml=https://..., ?gpx=https://...
       // Pipeline params: &auto=1|2, &epsilon=0.001, &grid=a, &iters=auto|N,
-      //   &pass=secret, &obf=1, &enc_pass=secret, &result=r|s|c
+      //   &pass=secret, &obf=1, &enc_pass (asks for the passphrase; a value is
+      //   ignored), &result=r|s|c
       const shapeImportParams = {
         wikidata:    urlParams.get('wikidata'),
         place:       urlParams.get('place'),
@@ -3887,7 +3969,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           iters:    urlParams.get('iters') || null,          // 'auto' = best for source precision, or a number
           pass:     urlParams.get('pass') || null,           // grid passphrase
           obf:      urlParams.get('obf') === '1',            // obfuscation
-          enc_pass: urlParams.get('enc_pass') || null,       // hard encryption passphrase
+          enc_pass: urlParams.has('enc_pass'),               // hard encryption: ask for the passphrase
+          encPassInLink: !!urlParams.get('enc_pass'),        // a passphrase was in the link (ignored)
           result:   urlParams.get('result') || 'r',          // r=redirect, s=stay, c=copy
           seedFormat: _seedFormat                            // Part 2: explicit address seed format (or null)
         };
@@ -11088,6 +11171,16 @@ function encodeRaw(sol) {
     }
     
     function executePipeline(p) {
+      // &enc_pass: ask for the encryption passphrase first, never from the link.
+      // Cancelling still imports the shape but makes no link from it.
+      if (p.enc_pass && !p._encPass) {
+        askPipelineEncryptPassphrase(p.encPassInLink).then(pass => {
+          if (pass) p._encPass = pass;
+          else { p.enc_pass = false; p._encCancelled = true; }
+          executePipeline(p);
+        });
+        return;
+      }
       // Step 1: Apply epsilon and import
       if (p.epsilon !== null && p.epsilon !== undefined) {
         if (p.epsilon === 0) {
@@ -11177,14 +11270,15 @@ function encodeRaw(sol) {
         // Set hard encryption
         if (p.enc_pass) {
           encryptURL = true;
-          encryptPassphrase = p.enc_pass;
+          encryptPassphrase = p._encPass;
           const encToggle = document.getElementById('encryptURL');
           if (encToggle) encToggle.checked = true;
           document.getElementById('encryptWarning').style.display = 'block';
         }
         
-        // Regenerate outputs with new settings
-        _suppressURLUpdate = false;
+        // Regenerate outputs with new settings. If encryption was asked for and
+        // cancelled, keep the plain link out of the address bar (and history).
+        _suppressURLUpdate = !!p._encCancelled;
         updateCompactOutputs();
         switchToTab('output');
         
@@ -11266,6 +11360,9 @@ function encodeRaw(sol) {
               showToast('Encryption timed out', 'error');
             }
           }, 100);
+        } else if (p._encCancelled) {
+          // Encryption was asked for and cancelled: no unencrypted link in its place.
+          showToast('Not encrypted: no passphrase given, so no link was made');
         } else {
           // Non-encrypted: output is ready synchronously after updateCompactOutputs
           setTimeout(handlePipelineResult, 150);

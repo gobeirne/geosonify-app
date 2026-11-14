@@ -81,7 +81,13 @@
     return global.GeosonifySky || null;
   }
   function skyOpen() { var sv = SV(); return !!(sv && sv.isOpen && sv.isOpen()); }
-  function privacyOn() { var sv = SV(); return !!(sv && sv.isPrivacyOn && sv.isPrivacyOn()); }
+  // Lookups follow the outside-lookup rule (also off after an encrypted link),
+  // falling back to the display rule on a page without it.
+  function privacyOn() {
+    var sv = SV(); if (!sv) return false;
+    if (sv.isLookupOff) return !!sv.isLookupOff();
+    return !!(sv.isPrivacyOn && sv.isPrivacyOn());
+  }
   function toast(msg, kind) { if (global.showToast) { try { global.showToast(msg, kind); } catch (e) {} } }
 
   // ── names ────────────────────────────────────────────────────────────────
@@ -354,7 +360,7 @@
     if (!skyOpen()) return Promise.resolve(null);
     if (privacyOn()) {
       show('<div class="t">Object lookup is off</div>' +
-           '<div class="s">Privacy mode is active, so the sky position (your location) is not sent anywhere.</div>');
+           '<div class="s">This place is private (a passphrase, obfuscation or an encrypted link), so the sky position is not sent anywhere.</div>');
       return Promise.resolve(null);
     }
     if (typeof fetch !== 'function') return Promise.resolve(null);

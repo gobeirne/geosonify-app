@@ -720,9 +720,9 @@ sty=s&lt;i&gt;[-j]:&lt;colour&gt;[,w&lt;n&gt;][,dash]   sides i to j</pre>
   <li><strong><code>epsilon</code></strong> - the simplification tolerance. A larger value drops more points for a coarser, shorter code; <code>epsilon=0</code> keeps every point. Omit it and Geosonify picks a sensible default scaled to the size of the region.</li>
   <li><strong><code>pass</code></strong> - a grid passphrase, applying passphrase mode to the encoded shape.</li>
   <li><strong><code>obf=1</code></strong> - turns on obfuscation.</li>
-  <li><strong><code>enc_pass</code></strong> - a hard-encryption passphrase; the output becomes an encrypted <code>?enc=</code> URL instead of a plain code.</li>
+  <li><strong><code>enc_pass</code></strong> - asks for hard encryption: Geosonify prompts for the passphrase, and the output becomes an encrypted <code>?enc=</code> URL instead of a plain code. A passphrase written into the link (<code>enc_pass=…</code>) is ignored, so the encryption passphrase never travels in a link.</li>
 </ul>
-<p>One safety consideration: because a pipeline link can carry a passphrase, Geosonify strips these parameters out of the browser's address bar and history the instant it reads them, so secrets in a one-time link don't linger in your history. The passphrase still travels in the link you were given, so share such links over a trusted channel.</p>
+<p>One safety consideration: because a pipeline link can carry a grid passphrase (<code>pass</code>), Geosonify strips these parameters out of the browser's address bar and history the instant it reads them, so secrets in a one-time link don't linger in your history. The grid passphrase still travels in the link you were given, so share such links over a trusted channel. The encryption passphrase is never read from a link: <code>enc_pass</code> always asks for it.</p>
 
 <h4>What it does behind the scenes</h4>
 <p>The importer also handles the largest meaningful ring in a multipolygon, merges fragmented ways into continuous paths, sorts ambiguous matches, and scales simplification to the size of the region. And because every stage is expressible as a URL parameter, the whole "name in, shape code out" pipeline fits in a single shareable link.</p>
@@ -742,7 +742,7 @@ sty=s&lt;i&gt;[-j]:&lt;colour&gt;[,w&lt;n&gt;][,dash]   sides i to j</pre>
   <tr><td><code>epsilon</code></td><td>number (0 = all points)</td><td>Simplification tolerance</td></tr>
   <tr><td><code>pass</code></td><td>passphrase</td><td>Passphrase mode</td></tr>
   <tr><td><code>obf</code></td><td>1</td><td>Obfuscation</td></tr>
-  <tr><td><code>enc_pass</code></td><td>passphrase</td><td>Hard AES encryption (<code>?enc=</code> output)</td></tr>
+  <tr><td><code>enc_pass</code></td><td>no value</td><td>Hard AES encryption (<code>?enc=</code> output); asks for the passphrase</td></tr>
 </table>
 </div>
 </details>`
@@ -1017,6 +1017,15 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
 <p>The encrypted text is the link's whole query: the code, and with it the frame of a sky link (<code>frame=icrs&amp;epoch=J2000</code>) and any labels and colours (<code>lbl=</code>, <code>sty=</code>). None of them is repeated outside the blob, so an encrypted link does not reveal that it points at the sky, or what its points are called. A display link's own options (<code>display</code>, <code>area</code>, <code>export=</code>, <code>lattice=</code>, <code>zoom=</code>, <code>bare</code>) go inside too, so an encrypted display link looks like any other encrypted link: nothing outside <code>?enc=</code> says it is a display link, or of the sky. The person opening it enters the passphrase first, and the page then becomes the display view. (Encrypted display links made before October 2026 kept those options outside the blob; they still open as they always did.)</p>
 </div>
 </details>`
+          },
+
+          {
+            id: 'what-is-sent',
+            q: 'What does Geosonify send to other servers?',
+            a: `<p>Geosonify runs in your browser. There is no Geosonify server, account or analytics: geosonify.org is a set of static files on GitHub Pages, which receives each page request, including the link's query string. For an encrypted link that is only the ciphertext.</p>
+<p>To draw a map, the browser fetches imagery tiles from the map services you choose (OpenStreetMap, Esri and others; in the sky, survey tiles from CDS in Strasbourg and its mirrors). Tile servers therefore learn roughly which area is on screen, as with any web map. That cannot be avoided while a map is shown.</p>
+<p>A few features ask an outside service about the position itself: place names (OpenStreetMap's Nominatim), which sky surveys cover the view and Aladin Lite's start-up log (CDS), what object is at a tapped point (SIMBAD), and the nearest catalogued stars (VizieR). These lookups are switched off whenever the position is meant to be private: while a grid passphrase or obfuscation is on, while Hard encrypt URL is on, and for the rest of the visit after an encrypted link is opened. Only the tiles still load. Searches you type yourself, such as a place name, a Wikidata ID or a file's address, go to the service that answers them.</p>
+<p>Requests to other sites carry only geosonify.org as the referrer, never the page's address. One limitation: once an encrypted link is decrypted, the address bar shows the decrypted link, so the place is in that browser's history, and reloading the page shows it without asking for the passphrase again.</p>`
           }
 
         ]

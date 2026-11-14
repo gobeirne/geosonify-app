@@ -201,6 +201,8 @@
 
   async function reverseGeocodeAddress(lat, lon) {
     if (isSkyFrame()) return null;                 // never geocode a sky position
+    // No address hints while the position is private (window.GeosonifyPrivacy).
+    try { if (typeof window !== 'undefined' && window.GeosonifyPrivacy && window.GeosonifyPrivacy.lookupsOff()) return null; } catch (e) {}
     const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
     if (nominatimCache.has(key)) return nominatimCache.get(key);
 
