@@ -8954,7 +8954,7 @@ function encodeRaw(sol) {
               coords.push(coord);
               if (isRhumb) {
                 if (!coords._segmentModes) coords._segmentModes = [];
-                coords._segmentModes[coords.length - 1] = 'R';
+                coords._segmentModes[coords.length - 2] = 'R';   // R on a delta = the segment ARRIVING at it (as encoded)
               }
             }
           }
@@ -8974,7 +8974,7 @@ function encodeRaw(sol) {
           coords.push(coord);
           if (_exp.rhumb[i]) {
             if (!coords._segmentModes) coords._segmentModes = [];
-            coords._segmentModes[coords.length - 1] = 'R';
+            coords._segmentModes[coords.length - 2] = 'R';   // R on a delta = the segment ARRIVING at it (as encoded)
           }
         }
       }
@@ -9218,7 +9218,9 @@ function encodeRaw(sol) {
                   const coord = decodeRawCode(_exp.raw[i]);
                   if (coord) {
                     coords.push(coord);
-                    if (_exp.rhumb[i]) _segModes[coords.length - 1] = 'R';
+                    // R on a delta marks the segment ARRIVING at that vertex, which is how
+                    // encodeDeltaPath writes it (segmentModes[i] → delta for point i+1).
+                    if (_exp.rhumb[i]) _segModes[coords.length - 2] = 'R';
                   } else {
                     console.warn('[geosonify] Failed to decode delta \u2192 fullRaw:', _exp.raw[i]);
                   }
