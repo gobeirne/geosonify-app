@@ -557,6 +557,7 @@
           <div class="btn-row">
             <button class="btn btn-secondary" id="exportGpxBtn">📍 Export GPX</button>
             <button class="btn btn-secondary" id="exportKmlBtn">🌍 Export KML</button>
+            <button class="btn btn-secondary" id="exportGeoJsonBtn" title="RFC 7946 GeoJSON: geodesic and rhumb edges densified to within 1 m, split at 180°">🗺️ Export GeoJSON</button>
           </div>
           <!-- Sky only: the shape in astronomers' formats (geosonify-sky-export.js) -->
           <div class="btn-row" id="skyExportRow" style="display:none;">
@@ -674,6 +675,7 @@
               <div class="display-radio-row" style="display:flex; gap:14px; flex-wrap:wrap; font-size:14px;">
                 <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="gpx"> GPX</label>
                 <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="kml"> KML</label>
+                <label class="display-earth-only" style="display:flex; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="geojson"> GeoJSON</label>
                 <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="csv"> CSV</label>
                 <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="reg"> DS9</label>
                 <label class="display-sky-only" style="display:none; align-items:center; gap:5px; cursor:pointer;"><input type="checkbox" name="displayExport" value="moc"> Target-cell MOC</label>
@@ -822,6 +824,7 @@
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20260226"></script>
+<script src="js/features/geojson-export.js?v=20261115b"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
 <script src="js/pocket-mode.js"></script>
 
@@ -877,7 +880,7 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
-<script src="js/lib/faq-data.js?v=20261115a"></script>
+<script src="js/lib/faq-data.js?v=20261115b"></script>
 <script src="js/ui/faq-ui.js?v=20261108f"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -2087,7 +2090,7 @@
       const row = document.createElement('div');
       row.className = 'geosonify-viewer-row';
 
-      // export= values: gpx | kml (Earth), csv | reg | moc (added for the sky;
+      // export= values: gpx | kml | geojson (Earth), csv | reg | moc (added for the sky;
       // an older app shows no button for a value it does not know).
       // export= may repeat: one button per format, in the link's order. Earth
       // formats only on Earth and sky formats only in the sky, so a link
@@ -2099,6 +2102,8 @@
         let label = null, run = null;
         if ((fmt === 'gpx' || fmt === 'kml') && !inSky) {
           label = fmt.toUpperCase(); run = () => _viewerExport(fmt);
+        } else if (fmt === 'geojson' && !inSky) {
+          label = 'GeoJSON'; run = downloadGeoJSON;
         } else if (inSky && Object.prototype.hasOwnProperty.call(skyFormats, fmt)) {
           label = skyFormats[fmt].label; run = () => downloadSkyExport(fmt);
         }
@@ -2422,7 +2427,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // ?display (or &display) renders a bare, embed-friendly map of the
       // shape in the URL: no chrome, no GPS prompt, shape fixed (pan/zoom
       // ok, not draggable). Opt-in extras: &gps (live dot), &area (land
-      // area for closed shapes), &export=gpx|kml (download button),
+      // area for closed shapes), &export=gpx|kml|geojson (download button),
       // &zoom=N (absolute zoom, centred on shape), &context=N (auto-fit with
       // N× breathing room), &fixzoom (lock zoom interactions).
       readDisplayOptions(window.location.search);
@@ -12146,6 +12151,84 @@ function encodeRaw(sol) {
       downloadFile(gpx, filename, 'application/gpx+xml');
     });
     
+    // ── GeoJSON export (RFC 7946) ────────────────────────────────────────
+    // The shape as parts for js/features/geojson-export.js, which densifies
+    // geodesic and rhumb edges to within 1 m (GeoJSON edges are straight in
+    // lon/lat), splits at 180° and closes pole-enclosing rings. Earth only.
+    function geojsonExportParts() {
+      const cell = (typeof _viewerCell === 'function') ? _viewerCell() : null;
+      if (cell && cell.ring && cell.ring.length > 2) return [{ kind: 'polygon', coords: cell.ring, linear: true }];
+      const sol = lastSolution;
+      if (!sol) return null;
+      const ll = p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lon];
+      if (sol.type === 'point') return sol.centroid ? [{ kind: 'point', coords: [ll(sol.centroid)] }] : null;
+      if (sol.type === 'points') return [{ kind: 'point', coords: sol.points.map(ll) }];
+      if (sol.type === 'circle') return [{ kind: 'circle', center: ll(sol.centroid), radius: sol.radius }];
+      if (sol.type === 'rect' || sol.type === 'graticule') {
+        const d = getExportablePoints();
+        if (!d || d.points.length < 3) return null;
+        const ring = d.points.slice();
+        if (!isClosedPolygon(ring)) ring.push(ring[0]);
+        // A graticule's sides are parallels and meridians: straight in lon/lat.
+        return [{ kind: 'polygon', coords: ring, linear: sol.type === 'graticule' }];
+      }
+      const groups = (sol.groups && sol.groups.length > 1)
+        ? sol.groups.map(g => g.map(ll)) : [(sol.points || []).map(ll)];
+      const flat = sol.segmentModes || null;     // one mode per vertex, flattened across groups
+      let off = 0;
+      return groups.map(g => {
+        const modes = flat ? flat.slice(off, off + g.length) : null;
+        off += g.length;
+        if (g.length === 1) return { kind: 'point', coords: g };
+        let closed = isClosedPolygon(g);
+        if (!closed && groups.length === 1 && sol.type === 'polygon' && g.length > 2) {
+          g = g.concat([g[0]]);                  // close it; the closing edge keeps its mode
+          closed = true;
+        }
+        return { kind: closed ? 'polygon' : 'line', coords: g, modes };
+      }).filter(p => p.coords.length);
+    }
+
+    function geojsonExportProps(name) {
+      const props = { name, source: 'Geosonify (geosonify.org)', created: new Date().toISOString() };
+      try {
+        const k = cardState.active, gd = CARD_GRIDS[k], it = cardState.iterations[k];
+        if (gd) {
+          props.grid = gd.name || k;
+          props.levels = it;
+          if (typeof CardRenderer !== 'undefined' && CardRenderer.getPrecisionText) {
+            props.precision = CardRenderer.getPrecisionText(k, it);
+            props.precision_note = 'cell size of the active card when exported; each vertex is within about half a cell of the place it encodes';
+          }
+        }
+      } catch (e) {}
+      if (window.location.search.length > 1 && !/[?&]enc=/.test(window.location.search)) {
+        props.geosonify_link = window.location.origin + window.location.pathname + window.location.search;
+      }
+      return props;
+    }
+
+    function downloadGeoJSON() {
+      if (typeof isSkyFrameNow === 'function' && isSkyFrameNow()) {
+        showToast('GeoJSON is for places on Earth: use the sky exports for the sky');
+        return;
+      }
+      if (typeof GeosonifyGeoJSON === 'undefined' || typeof geodesic === 'undefined') {
+        showToast('GeoJSON export is not available', 'error');
+        return;
+      }
+      const parts = geojsonExportParts();
+      if (!parts || !parts.length) { alert('No shape to export. Create a shape first.'); return; }
+      const d = getExportablePoints();
+      const name = (d && d.name) || 'Geosonify Shape';
+      const fc = GeosonifyGeoJSON.build(parts, {
+        geod: geodesic.Geodesic.WGS84, toleranceM: 1, properties: geojsonExportProps(name)
+      });
+      downloadFile(JSON.stringify(fc), name.toLowerCase().replace(/\s+/g, '_') + '.geojson', 'application/geo+json');
+    }
+
+    document.getElementById('exportGeoJsonBtn').addEventListener('click', downloadGeoJSON);
+
     document.getElementById('exportKmlBtn').addEventListener('click', function() {
       const data = getExportablePoints();
       if (!data || data.points.length === 0) {
