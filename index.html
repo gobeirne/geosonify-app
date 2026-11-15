@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <!-- Other sites get only the origin as referrer, never the page address (which can hold a place). -->
   <meta name="referrer" content="strict-origin-when-cross-origin" />
+  <!-- Integrity for Aladin Lite, which the sky loads with import() (an import
+       cannot carry an integrity attribute). Both copies are the same npm file. -->
+  <script type="importmap">{"integrity": {
+    "https://cdn.jsdelivr.net/npm/aladin-lite@3.9.0-beta/dist/aladin.js": "sha384-Qkw8zZoN/Jys9UAqVJCidJP+DySn/h1EUb9p/Xq6swXjW3rkMIlSiVh2act/rDcU",
+    "https://unpkg.com/aladin-lite@3.9.0-beta/dist/aladin.js": "sha384-Qkw8zZoN/Jys9UAqVJCidJP+DySn/h1EUb9p/Xq6swXjW3rkMIlSiVh2act/rDcU"
+  }}</script>
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#325756" />
@@ -813,7 +819,7 @@
   
   <!-- Core modules -->
   <script src="js/core/app-state.js?v=20260622"></script>
-  <script src="js/core/lazy-load.js?v=20260109"></script>
+  <script src="js/core/lazy-load.js?v=20261115f"></script>
   <script src="js/core/geo-math.js?v=20260109"></script>
   <script src="js/core/compact-codec.js?v=20261115d"></script>
   <script src="js/core/delta-gear.js?v=20261014c"></script>
@@ -852,7 +858,7 @@
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261115a"></script>
+<script src="js/lib/geosonify-sky-aladin.js?v=20261115f"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
@@ -882,7 +888,7 @@
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261115a"></script>
+<script src="js/ui/card-renderer.js?v=20261115f"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -4358,7 +4364,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             if (_cellLink) GeosonifyCell.prepareDecode(config.grid, centroidCode, cardState);
 
             // Decode the centroid coordinate
-            const result = decodeCardCode(config.grid, centroidCode, config.obf);
+            // A bare HEALPix code (no @k) decodes at the order its length implies,
+            // as paths already do, not at the receiver's card setting (B17).
+            let _decodeCode = centroidCode;
+            const _hpDef = CARD_GRIDS[config.grid];
+            if (!config.obf && _hpDef && _hpDef.healpix && !/@\d{1,2}$/.test(centroidCode)) {
+              const _k = healpixPathOrder(config.grid, centroidCode);
+              if (_k) _decodeCode = centroidCode + '@' + _k;
+            }
+            const result = decodeCardCode(config.grid, _decodeCode, config.obf);
             if (result) {
               // Suppress URL replacement until user makes a deliberate change
               _suppressURLUpdate = true;
@@ -5916,8 +5930,18 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       const steps = Math.ceil(distM / (maxSegmentKm * 1000));
       for (let j = 1; j < steps; j++) {
         const t = j / steps;
-        // Linear interpolation in lat/lon space = rhumb line
-        const lat = p1[0] + t * dlat;
+        // A rhumb line is straight on Mercator: interpolate the isometric
+        // latitude ψ (and longitude), not latitude itself (B10). Ellipsoidal ψ,
+        // as in the GeoJSON export; spherical if that module is missing.
+        const G = (typeof GeosonifyGeoJSON !== 'undefined') ? GeosonifyGeoJSON : null;
+        let lat;
+        if (Math.abs(dlat) < 1e-12) lat = p1[0];
+        else if (G) lat = G._latOfPsi(G._psiOf(p1[0]) + t * (G._psiOf(p2[0]) - G._psiOf(p1[0])));
+        else {
+          const psi = a => Math.log(Math.tan(Math.PI / 4 + a * Math.PI / 360));
+          const y = psi(p1[0]) + t * (psi(p2[0]) - psi(p1[0]));
+          lat = (2 * Math.atan(Math.exp(y)) - Math.PI / 2) * 180 / Math.PI;
+        }
         const lon = p1[1] + t * dlon;
         result.push([lat, lon]);
       }

@@ -166,7 +166,7 @@
   // Convenience methods for common heavy dependencies
   
   LazyLoad.opencv = async function() {
-    await this.script('https://docs.opencv.org/4.x/opencv.js', {
+    await this.script('https://docs.opencv.org/4.10.0/opencv.js', {   // pinned, not the moving 4.x (B12)
       global: 'cv',
       timeout: 60000  // OpenCV is large, give it more time
     });

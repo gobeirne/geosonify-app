@@ -145,7 +145,10 @@
   var VERSION = 'v0.9';
   var SVGNS = 'http://www.w3.org/2000/svg';
 
-  var CDN_URL = 'https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js';
+  // The second copy is the same pinned npm file from unpkg (it was the CDS
+  // "latest" build, which could change under us: B12, 15 Nov 2026). Both
+  // are checked against the integrity hash in index.html's import map.
+  var CDN_URL = 'https://unpkg.com/aladin-lite@3.9.0-beta/dist/aladin.js';
   /*
     MIRRORS, for when Strasbourg is down (it was, for days, after a security
     incident in late October 2026). Both lists are tried in order and the
@@ -370,8 +373,8 @@
     try {
       if (typeof document !== 'undefined' && document.baseURI) url = new URL(url, document.baseURI).href;
     } catch (e) {}
-    // The page's own src if it gave one, then the pinned npm copy, then the
-    // CDS "latest" build. Each gets LIB_TIMEOUT_MS: a dynamic import cannot
+    // The page's own src if it gave one, then the pinned npm copy on
+    // jsDelivr, then the same file on unpkg. Each gets LIB_TIMEOUT_MS: a dynamic import cannot
     // be cancelled, but it can be stopped from holding everything up.
     var tries = (src ? [url] : []).concat(LIB_FALLBACKS, [CDN_URL])
       .filter(function (u, i, a) { return a.indexOf(u) === i; });

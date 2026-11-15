@@ -6636,7 +6636,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         // Load script if needed
         if (!document.querySelector('script[src*="opencv"]')) {
           const cvScript = document.createElement('script');
-          cvScript.src = 'https://docs.opencv.org/4.x/opencv.js';
+          cvScript.src = 'https://docs.opencv.org/4.10.0/opencv.js';   // pinned, not the moving 4.x (B12)
           cvScript.async = true;
           document.head.appendChild(cvScript);
         }
