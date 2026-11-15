@@ -216,7 +216,13 @@
       grid: typeof hexByteArray !== 'undefined' ? hexByteArray : null,
       defaultIterations: 8,
       minIterations: 3,   // 6 hex chars
-      maxIterations: 12,  // 24 hex chars — QR V1 byte-mode limit
+      // Cap raised from 12 to 14 (Nov 2026). The QR (versions 1-40) and Data
+      // Matrix (up to 144x144) grow to fit any length; the limit is now the
+      // encoder, which works in floating point: 16^15 subdivisions exceed a
+      // double's integer range and level 15 onwards come out as "undefined".
+      // 14 levels = 28 hex characters, cells under a nanometre. Going deeper
+      // needs an exact (BigInt) encoder for the 16x16 grids, as HEALPix has.
+      maxIterations: 14,
       display: 'qrhex',
       isEmoji: false
     },
@@ -225,7 +231,7 @@
       grid: typeof hexByteArray !== 'undefined' ? hexByteArray : null,
       defaultIterations: 12,
       minIterations: 3,   // 6 hex chars / 3 raw bytes
-      maxIterations: 17,  // 34 hex chars / 17 raw bytes — QR V1-L byte cap
+      maxIterations: 14,  // was 17, which produced broken codes beyond 14 (B21); see qrhex
       display: 'qrbin',
       isEmoji: false
     },
@@ -238,14 +244,15 @@
       minIterations: 3,
       display: 'qrurl',
       isEmoji: false,
-      dynamicIterations: true // flag for adaptive max iteration logic
+      maxIterations: 14,      // see qrhex: was the smallest QR's fit (13 here)
+      dynamicIterations: true // default: the most that fits the smallest QR for this URL
     },
     datamatrix: {
       name: 'Data Matrix',
       grid: typeof hexByteArray !== 'undefined' ? hexByteArray : null,
       defaultIterations: 8,
       minIterations: 3,   // 6 hex chars / 3 bytes — fits 10×10 ECC 200
-      maxIterations: 12,  // 24 hex chars / 12 bytes — fits 16×16 ECC 200
+      maxIterations: 14,  // see qrhex: the symbol grows to fit; the encoder stops at 14
       display: 'datamatrix',
       isEmoji: false
     }
@@ -308,7 +315,7 @@
     // adds the device-language list in front of it. The legacy 45×45 BIP39 cards
     // stay available (and decodable forever) via "+ Add Mode", but are not shown
     // by default.
-    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'hpbip39english', 'hphex'],
+    visible: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrurl', 'hpbip39english', 'hphex'],   // QR URL replaces QR Hex: a QR is expected to open a link (Nov 2026)
     order: ['alphanumeric', 'chromacoord', 'emoji', 'music', 'datamatrix', 'qrhex', 'qrbin', 'qrurl',
       'hpbip39english', 'hpbip39spanish', 'hpbip39french', 'hpbip39italian', 'hpbip39portuguese',
       'hpbip39czech', 'hpbip39german', 'hpbip39japanese', 'hpbip39korean',
@@ -1991,8 +1998,7 @@
       cMin = GISGrids.SCHEMES[gd.gis].minIterations; cMax = GISGrids.SCHEMES[gd.gis].maxIterations;
     } else {
       cMin = gd.minIterations || 1;
-      cMax = gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : (gd.maxIterations || cMin))
-                                  : (gd.maxIterations || cMin);
+      cMax = gd.maxIterations || cMin;   // QR URL too: no cap beyond its maxIterations
     }
     const clamp = (n) => Math.max(cMin, Math.min(cMax, n));
 
@@ -2110,7 +2116,7 @@
               || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].minIterations) || 1;
     let max = (gd.healpix && typeof HealpixGrids !== 'undefined' && HealpixGrids.SCHEMES[gd.healpix] && HealpixGrids.SCHEMES[gd.healpix].maxIterations)
             || (gd.gis && typeof GISGrids !== 'undefined' && GISGrids.SCHEMES[gd.gis] && GISGrids.SCHEMES[gd.gis].maxIterations)
-            || (gd.dynamicIterations ? (typeof getQRUrlIterations === 'function' ? getQRUrlIterations() : gd.maxIterations) : gd.maxIterations)
+            || gd.maxIterations
             || min;
     return Math.max(min, Math.min(max, n));
   }
@@ -3327,8 +3333,10 @@
       const dynMax = getQRUrlIterations();
       const userIter = cardState.iterations[gridKey];
       const min = gridDef.minIterations || 3;
-      if (userIter !== undefined && userIter < dynMax) {
-        return Math.max(min, userIter);
+      // The person's choice wins, finer or coarser (no cap beyond maxIterations);
+      // without one, the most that fits the smallest QR for this URL.
+      if (userIter !== undefined) {
+        return Math.max(min, Math.min(gridDef.maxIterations || 14, userIter));
       }
       return dynMax;
     }
@@ -3532,9 +3540,7 @@
     // current iteration setting. The card setting governs what the user
     // GENERATES; a one-off scan shouldn't override it (and isn't changed here).
     const minIter = gridDef.minIterations || 3;
-    const maxIter = gridDef.dynamicIterations
-      ? getQRUrlIterations()
-      : (gridDef.maxIterations || 12);
+    const maxIter = gridDef.maxIterations || 12;
 
     let scannedIterations = hex.length / 2;
 
@@ -4202,7 +4208,7 @@
             ${(isFixed || getPrecisionMode() !== 'custom') ? '' : `
               <div class="precision-controls">
                 <button class="precision-btn minus-btn" ${iterations <= (gridDef.minIterations || 1) ? 'disabled' : ''}>−</button>
-                <button class="precision-btn plus-btn" ${iterations >= (gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations) ? 'disabled' : ''}>+</button>
+                <button class="precision-btn plus-btn" ${iterations >= (gridDef.maxIterations) ? 'disabled' : ''}>+</button>
               </div>
             `}
           </div>
@@ -4689,7 +4695,7 @@
         card.querySelector('.plus-btn')?.addEventListener('click', () => {
           const step = gridDef.iterStep || 1;
           const newIter = (cardState.iterations[gridKey] || gridDef.defaultIterations) + step;
-          const max = gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations;
+          const max = gridDef.maxIterations;
           cardState.iterations[gridKey] = max ? Math.min(max, newIter) : newIter;
           saveCardState();
           // Persist iterations for custom grids

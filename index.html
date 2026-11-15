@@ -206,21 +206,24 @@
   #gsLanding button { font: inherit; border: 0; border-radius: 10px; padding: 11px 8px; cursor: pointer;
     background: var(--gl-btn); color: var(--gl-fg); }
   #gsLanding button.gl-pri { background: var(--gl-pri); color: #fff; grid-column: 1 / -1; font-weight: 600; }
+  #gsLanding .gl-pri small { display: block; font-weight: 400; font-size: 12.5px; opacity: 0.9; margin-top: 3px; line-height: 1.35; }
+  #gsLanding .gl-words { font-size: 16px; font-weight: 600; margin-top: 8px; word-break: break-word; }
   #gsLanding button:disabled { opacity: 0.5; cursor: default; }
   #gsLanding .gl-note { font-size: 12px; color: var(--gl-sub); margin-top: 8px; min-height: 1em; }
 </style>
 <div id="gsLanding" role="dialog" aria-label="Place from Wikipedia">
   <div class="gl-card">
-    <div class="gl-kicker">Place from Wikipedia</div>
+    <div class="gl-kicker" id="glKicker">Place from Wikipedia</div>
     <div class="gl-dec" id="glDec"></div>
     <div class="gl-dms" id="glDms"></div>
     <div class="gl-acts">
-      <button type="button" class="gl-pri" id="glExplore">Explore in Geosonify</button>
+      <button type="button" class="gl-pri" id="glExplore"><span id="glExploreT">Explore in Geosonify</span><small id="glExploreS"></small></button>
       <button type="button" id="glHear" disabled>🔊 Hear it</button>
       <button type="button" id="glShare" disabled>Share a link</button>
-      <button type="button" id="glCopy">Copy coordinates</button>
-      <button type="button" id="glMaps">Open in maps</button>
+      <button type="button" id="glWords" disabled>Words</button>
+      <button type="button" id="glSky" disabled>✨ Its patch of sky</button>
     </div>
+    <div class="gl-words" id="glWordsOut" hidden></div>
     <div class="gl-note" id="glNote" aria-live="polite"></div>
   </div>
 </div>
@@ -232,49 +235,106 @@
   var lat = +m[1], lon = +m[2];
   if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) return;
   window.__geohackLanding = true;            // the app skips its old jump to the Output tab
+
+  /*
+    The sheet speaks the visitor's language when it has it (from the browser's
+    language list), else English. HEALPix words come in the visitor's language
+    where a word list exists (the 11 Geosonify supports); te reo Māori has
+    the sheet but English words. Translations need checking by native speakers.
+  */
+  var T = {
+    en: { k: 'Place from Wikipedia', ex: 'Explore in Geosonify', exs: 'Encode this place as text, words in many languages, emoji, music, GIS and QR codes; draw shapes; or share it privately with a passphrase.', hear: '🔊 Hear it', stop: '⏹ Stop', share: 'Share a link', words: 'Words in English', sky: '✨ Its patch of sky', copied: 'Link copied', wcopied: 'Words copied', wait: 'One moment…' },
+    mi: { k: 'He wāhi nō Wikipedia', ex: 'Tūhurahia i Geosonify', exs: 'Whakawaeheretia tēnei wāhi hei kupu, hei kupu i ngā reo maha, hei emoji, hei puoro, hei waehere GIS, QR hoki; tuhia he āhua; tohaina matatapu rānei ki te kupuhipa.', hear: '🔊 Whakarongo', stop: '⏹ Kāti', share: 'Tohaina he hono', words: 'He kupu (reo Pākehā)', sky: '✨ Tōna wāhi o te rangi', copied: 'Kua tāruatia te hono', wcopied: 'Kua tāruatia ngā kupu', wait: 'Taihoa…' },
+    es: { k: 'Lugar desde Wikipedia', ex: 'Explorar en Geosonify', exs: 'Codifica este lugar como texto, palabras en muchos idiomas, emoji, música, códigos SIG y QR; dibuja formas o compártelo en privado con una contraseña.', hear: '🔊 Escuchar', stop: '⏹ Parar', share: 'Compartir un enlace', words: 'Palabras en español', sky: '✨ Su trozo de cielo', copied: 'Enlace copiado', wcopied: 'Palabras copiadas', wait: 'Un momento…' },
+    fr: { k: 'Lieu depuis Wikipédia', ex: 'Explorer dans Geosonify', exs: 'Encodez ce lieu en texte, en mots dans de nombreuses langues, en emoji, en musique, en codes SIG et QR ; dessinez des formes ou partagez-le en privé avec une phrase secrète.', hear: '🔊 Écouter', stop: '⏹ Arrêter', share: 'Partager un lien', words: 'Mots en français', sky: '✨ Son coin de ciel', copied: 'Lien copié', wcopied: 'Mots copiés', wait: 'Un instant…' },
+    de: { k: 'Ort aus Wikipedia', ex: 'In Geosonify erkunden', exs: 'Diesen Ort als Text, als Wörter in vielen Sprachen, als Emoji, Musik, GIS- und QR-Codes kodieren, Formen zeichnen oder privat mit einer Passphrase teilen.', hear: '🔊 Anhören', stop: '⏹ Stopp', share: 'Link teilen', words: 'Wörter auf Deutsch', sky: '✨ Sein Stück Himmel', copied: 'Link kopiert', wcopied: 'Wörter kopiert', wait: 'Einen Moment…' },
+    it: { k: 'Luogo da Wikipedia', ex: 'Esplora in Geosonify', exs: 'Codifica questo luogo come testo, parole in molte lingue, emoji, musica, codici GIS e QR; disegna forme o condividilo in privato con una passphrase.', hear: '🔊 Ascolta', stop: '⏹ Ferma', share: 'Condividi un link', words: 'Parole in italiano', sky: '✨ Il suo pezzo di cielo', copied: 'Link copiato', wcopied: 'Parole copiate', wait: 'Un momento…' },
+    pt: { k: 'Lugar da Wikipédia', ex: 'Explorar no Geosonify', exs: 'Codifique este lugar como texto, palavras em muitas línguas, emoji, música, códigos SIG e QR; desenhe formas ou partilhe-o em privado com uma frase-passe.', hear: '🔊 Ouvir', stop: '⏹ Parar', share: 'Partilhar uma ligação', words: 'Palavras em português', sky: '✨ O seu pedaço de céu', copied: 'Ligação copiada', wcopied: 'Palavras copiadas', wait: 'Um momento…' },
+    cs: { k: 'Místo z Wikipedie', ex: 'Prozkoumat v Geosonify', exs: 'Zakódujte toto místo jako text, slova v mnoha jazycích, emoji, hudbu, kódy GIS a QR; kreslete tvary nebo ho sdílejte soukromě s heslem.', hear: '🔊 Poslechnout', stop: '⏹ Zastavit', share: 'Sdílet odkaz', words: 'Slova česky', sky: '✨ Jeho kousek oblohy', copied: 'Odkaz zkopírován', wcopied: 'Slova zkopírována', wait: 'Okamžik…' },
+    ja: { k: 'ウィキペディアの場所', ex: 'Geosonifyで見る', exs: 'この場所を文字、多言語の単語、絵文字、音楽、GISやQRコードに変換。図形を描いたり、パスフレーズで非公開に共有したりできます。', hear: '🔊 聴く', stop: '⏹ 停止', share: 'リンクを共有', words: '日本語の単語', sky: '✨ この場所の空', copied: 'リンクをコピーしました', wcopied: '単語をコピーしました', wait: '少々お待ちください…' },
+    ko: { k: '위키백과의 장소', ex: 'Geosonify에서 보기', exs: '이 장소를 텍스트, 여러 언어의 단어, 이모지, 음악, GIS 및 QR 코드로 인코딩하고, 도형을 그리거나 암호문으로 비공개 공유하세요.', hear: '🔊 듣기', stop: '⏹ 정지', share: '링크 공유', words: '한국어 단어', sky: '✨ 이곳의 하늘', copied: '링크를 복사했습니다', wcopied: '단어를 복사했습니다', wait: '잠시만요…' },
+    'zh-Hans': { k: '来自维基百科的地点', ex: '在 Geosonify 中探索', exs: '将此地点编码为文字、多种语言的词语、表情符号、音乐、GIS 和二维码；绘制形状，或用密码短语私密分享。', hear: '🔊 聆听', stop: '⏹ 停止', share: '分享链接', words: '中文词语', sky: '✨ 它的那片天空', copied: '链接已复制', wcopied: '词语已复制', wait: '请稍候…' },
+    'zh-Hant': { k: '來自維基百科的地點', ex: '在 Geosonify 中探索', exs: '將此地點編碼為文字、多種語言的詞語、表情符號、音樂、GIS 和 QR 碼；繪製形狀，或用密碼短語私密分享。', hear: '🔊 聆聽', stop: '⏹ 停止', share: '分享連結', words: '中文詞語', sky: '✨ 它的那片天空', copied: '連結已複製', wcopied: '詞語已複製', wait: '請稍候…' }
+  };
+  var WORDLIST = { en: 'english', es: 'spanish', fr: 'french', de: 'german', it: 'italian', pt: 'portuguese', cs: 'czech', ja: 'japanese', ko: 'korean', 'zh-Hans': 'chinese_simplified', 'zh-Hant': 'chinese_traditional', mi: 'english' };
+  var lang = 'en';
+  (navigator.languages || [navigator.language || 'en']).some(function (l) {
+    l = String(l);
+    var base = l.split('-')[0].toLowerCase();
+    if (base === 'zh') { lang = /Hant|TW|HK|MO/i.test(l) ? 'zh-Hant' : 'zh-Hans'; return true; }
+    if (T[base]) { lang = base; return true; }
+    return false;
+  });
+  var t = T[lang];
+  document.documentElement.setAttribute('data-landing-lang', lang);
+
   function dms(v, pos, neg) {
     var h = v < 0 ? neg : pos; v = Math.abs(v);
     var d = Math.floor(v), mf = (v - d) * 60, mi = Math.floor(mf), s = (mf - mi) * 60;
     if (+s.toFixed(1) >= 60) { s = 0; mi += 1; } if (mi >= 60) { mi = 0; d += 1; }
     return d + '°' + mi + '′' + s.toFixed(1) + '″' + h;
   }
-  var el = document.getElementById('gsLanding');
-  var note = document.getElementById('glNote');
-  document.getElementById('glDec').textContent =
+  function $(id) { return document.getElementById(id); }
+  var el = $('gsLanding'), note = $('glNote');
+  el.setAttribute('lang', lang);
+  $('glKicker').textContent = t.k;
+  $('glExploreT').textContent = t.ex;
+  $('glExploreS').textContent = t.exs;
+  $('glHear').textContent = t.hear;
+  $('glShare').textContent = t.share;
+  $('glWords').textContent = t.words;
+  $('glSky').textContent = t.sky;
+  $('glDec').textContent =
     Math.abs(lat).toFixed(6) + '° ' + (lat < 0 ? 'S' : 'N') + ', ' + Math.abs(lon).toFixed(6) + '° ' + (lon < 0 ? 'W' : 'E');
-  document.getElementById('glDms').textContent = dms(lat, 'N', 'S') + ' ' + dms(lon, 'E', 'W');
+  $('glDms').textContent = dms(lat, 'N', 'S') + ' ' + dms(lon, 'E', 'W');
   el.classList.add('on');
-  function say(t) { note.textContent = t; }
+
+  function say(x) { note.textContent = x; }
   function copy(text, done) {
     var ok = function () { say(done); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, function () { say(text); });
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, function () {});
     else say(text);
   }
-  document.getElementById('glExplore').onclick = function () { el.classList.remove('on'); };
-  document.getElementById('glCopy').onclick = function () { copy(lat + ', ' + lon, 'Coordinates copied'); };
-  document.getElementById('glMaps').onclick = function () {
-    window.open('https://www.openstreetmap.org/?mlat=' + lat + '&mlon=' + lon + '#map=17/' + lat + '/' + lon, '_blank', 'noopener');
-  };
-  // The app's own pieces, once they are there.
-  var hear = document.getElementById('glHear'), share = document.getElementById('glShare');
+  $('glExplore').onclick = function () { el.classList.remove('on'); };
+
+  var hear = $('glHear'), share = $('glShare'), words = $('glWords'), sky = $('glSky');
   hear.onclick = function () {
     var b = document.querySelector('.audio-speaker-btn');
-    if (b) { b.click(); setTimeout(function () { hear.textContent = /🔊|🔉|🔈/.test(b.innerHTML) ? '⏹ Stop' : '🔊 Hear it'; }, 300); }
+    if (b) { b.click(); setTimeout(function () { hear.textContent = /🔊|🔉|🔈/.test(b.innerHTML) ? t.stop : t.hear; }, 300); }
   };
   share.onclick = function () {
     var get = (typeof buildShareURLReady === 'function') ? buildShareURLReady() : Promise.resolve(null);
     Promise.resolve(get).then(function (url) {
-      if (!url) { say('The link is not ready yet'); return; }
-      if (navigator.share) navigator.share({ title: 'A place, as a Geosonify link', url: url }).catch(function () {});
-      else copy(url, 'Link copied');
+      if (!url) { say(t.wait); return; }
+      if (navigator.share) navigator.share({ title: 'Geosonify', url: url }).catch(function () {});
+      else copy(url, t.copied);
     });
+  };
+  // HEALPix words: four words (about 4 m), in the visitor's language.
+  words.onclick = function () {
+    try {
+      var w = HealpixWords.encode(lat, lon, 4, WORDLIST[lang]);
+      if (!w) return;
+      var out = $('glWordsOut'); out.textContent = w; out.hidden = false;
+      copy(w, t.wcopied);
+    } catch (e) {}
+  };
+  // The patch of sky with the same coordinates (Dec = latitude, RA = longitude),
+  // drawn with its stars: the same HEALPix cell on the celestial sphere.
+  sky.onclick = function () {
+    try {
+      el.classList.remove('on');
+      GeosonifySkyView.open({ dec: lat, ra: (lon + 360) % 360 });
+    } catch (e) {}
   };
   var tries = 0;
   (function ready() {
     var appUp = typeof buildShareURL === 'function' && typeof lastSolution !== 'undefined' && lastSolution;
     if (appUp) share.disabled = false;
     if (document.querySelector('.audio-speaker-btn')) hear.disabled = false;
-    if ((share.disabled || hear.disabled) && ++tries < 120) setTimeout(ready, 250);
+    if (typeof HealpixWords !== 'undefined' && HealpixWords.encode) words.disabled = false;
+    if (typeof GeosonifySkyView !== 'undefined' && GeosonifySkyView.open) sky.disabled = false;
+    if ((share.disabled || hear.disabled || words.disabled || sky.disabled) && ++tries < 120) setTimeout(ready, 250);
   })();
 })();
 </script>
@@ -1100,7 +1160,7 @@
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261115j"></script>
+<script src="js/ui/card-renderer.js?v=20261115l"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
