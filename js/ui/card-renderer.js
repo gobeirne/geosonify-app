@@ -6639,7 +6639,10 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         // Load script if needed
         if (!document.querySelector('script[src*="opencv"]')) {
           const cvScript = document.createElement('script');
-          cvScript.src = 'https://docs.opencv.org/4.10.0/opencv.js';   // pinned, not the moving 4.x (B12)
+          // Back on 4.x (15 Nov 2026): the pinned 4.10.0 build never became ready on
+          // Greg's iPhone (still loading after a minute), while 4.x always had.
+          // Pin again only to a version tested on an iPhone (B12, reopened).
+          cvScript.src = 'https://docs.opencv.org/4.x/opencv.js';
           cvScript.async = true;
           document.head.appendChild(cvScript);
         }
