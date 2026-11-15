@@ -760,6 +760,20 @@
     if (busy) return Promise.resolve(false);
     if (sv.isOpen()) return Promise.resolve(true);
 
+    /*
+      The sky viewer loads on first use (index.html's stand-in, Nov 2026). The
+      flip needs the real viewer (its renderer and host) from its first frame,
+      so wait for it, with the button held, then flip as usual. Before this
+      wait, the flip ran against the stand-in and the sky opened hidden.
+    */
+    if (sv.isLoaded && !sv.isLoaded()) {
+      setBusy(true);
+      return Promise.resolve(sv.load()).then(function (view) {
+        setBusy(false);
+        return view ? toSky(o) : false;
+      }, function () { setBusy(false); return false; });
+    }
+
     var animate = !o.instant && canAnimate();
     if (!F) {                                  // no maths: the old way in
       return Promise.resolve(!!sv.open());
@@ -1075,6 +1089,8 @@
 
   // Warm the street tiles while a finger or pointer is on its way to the button.
   function prefetch() {
+    // A finger on the Sky button: start loading the sky viewer now.
+    try { var sv0 = SV(); if (sv0 && sv0.isLoaded && !sv0.isLoaded() && sv0.load) sv0.load(); } catch (e) {}
     var m = lmap(), F = SF();
     if (!m || !F || !VT() || busy) return;
     try {

@@ -895,17 +895,17 @@
     var slow = setTimeout(function () {
       try { if (typeof showToast === 'function') showToast('Opening the sky…'); } catch (e) {}
     }, 400);
-    loading = PACK.reduce(function (p, src) {
-      return p.then(function () {
-        return new Promise(function (resolve, reject) {
-          var el = document.createElement('script');
-          el.src = src;
-          el.onload = resolve;
-          el.onerror = function () { reject(new Error('could not load ' + src)); };
-          document.head.appendChild(el);
-        });
+    // All eight download at once; async = false keeps them running in this order.
+    loading = Promise.all(PACK.map(function (src) {
+      return new Promise(function (resolve, reject) {
+        var el = document.createElement('script');
+        el.src = src;
+        el.async = false;
+        el.onload = resolve;
+        el.onerror = function () { reject(new Error('could not load ' + src)); };
+        document.head.appendChild(el);
       });
-    }, Promise.resolve()).then(function () {
+    })).then(function () {
       clearTimeout(slow);
       if (window.GeosonifySkyView && window.GeosonifySkyView !== stub) real = window.GeosonifySkyView;
       if (!real) throw new Error('the sky viewer did not load');
@@ -991,7 +991,7 @@
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261025a"></script>
-<script src="js/lib/geosonify-sky-flip.js?v=20261023a"></script>
+<script src="js/lib/geosonify-sky-flip.js?v=20261115k"></script>
 <script src="js/lib/geosonify-annotations.js?v=20261014c"></script>
 <!-- ?wander=: the Sun, Moon and planets as paths. Astronomy Engine loads only when one is asked for. -->
 <script src="js/lib/geosonify-wanderers.js?v=20261024a"></script>
