@@ -6647,18 +6647,35 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
         // ALWAYS poll — covers Safari/iOS where onOpenCvReady may not fire,
         // and cases where the script tag existed but cv loaded while we weren't listening.
         // Checks both cv.Mat (WASM ready) and handles cv-as-Promise (module builds).
+        /*
+          OpenCV is about 10 MB. The poll used to give up after 30 s, so a first
+          download on a phone (or after its URL changed, as when it was pinned
+          to 4.10.0) could finish after the poll had stopped, leaving the
+          scanner on "Loading perspective engine..." for good. Now it keeps
+          polling while the scanner is open (up to 3 minutes) and says how
+          long it has been waiting. In OpenCV 4.10 `cv` is a thenable whose
+          functions appear once the WebAssembly is ready, so cv.Mat is the test.
+        */
+        var cvPollStart = Date.now();
         var cvPoll = setInterval(function() {
-          if (cvReady) { clearInterval(cvPoll); return; } // already detected via callback
+          if (cvReady || !modal.isConnected) { clearInterval(cvPoll); return; }
           try {
             if (typeof cv !== 'undefined' && cv && typeof cv.Mat === 'function') {
               cvReady = true;
               clearInterval(cvPoll);
               console.log('[ChromaScan] OpenCV detected (poll)');
               if (scanning) status.textContent = 'Scanning — or tap the code to decode';
+              return;
             }
           } catch(e) { /* cv may be a Promise that throws on property access */ }
+          var waited = (Date.now() - cvPollStart) / 1000;
+          if (waited > 180) {
+            clearInterval(cvPoll);
+            if (scanning) status.textContent = 'The perspective engine did not load. Check your connection, then close and reopen the scanner.';
+          } else if (waited > 6 && scanning) {
+            status.textContent = 'Loading perspective engine (about 10 MB, first time only)… ' + Math.round(waited) + ' s';
+          }
         }, 300);
-        setTimeout(function() { clearInterval(cvPoll); }, 30000); // give up after 30s
       }
       
       // === Exposure/WB lock for iPhone stability ===
