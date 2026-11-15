@@ -6571,6 +6571,9 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
   }
 
   function showChromaScanModal(mode) {
+    // The scanner library loads on demand (WP1.3); frames before it arrives
+    // simply retry, as they already do while OpenCV loads.
+    try { if (window.geosonifyLoadScanner) window.geosonifyLoadScanner().catch(() => {}); } catch (e) {}
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:2000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;';
     

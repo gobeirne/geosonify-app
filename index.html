@@ -811,7 +811,24 @@
   <script src="js/lib/geosonify-rgb111-lib_v2_5.js?v=20260627c"></script>
   <script src="js/lib/geosonify-barcode-lib_v1_0.js?v=20260627"></script>
   <script src="js/lib/geosonify-fullscreen_v1_25.js?v=20260111"></script>
-  <script src="js/lib/geosonify-scanner-lib_v1_0.js?v=20260703b"></script>
+  <!-- The colour-code scanner library (23 KB) loads when a scanner opens (WP1.3). -->
+  <script>
+    window.geosonifyLoadScanner = (function () {
+      let p = null;
+      return function () {
+        if (window.RGB111Scanner) return Promise.resolve(window.RGB111Scanner);
+        if (p) return p;
+        p = new Promise((resolve, reject) => {
+          const s = document.createElement('script');
+          s.src = 'js/lib/geosonify-scanner-lib_v1_0.js?v=20260703b';
+          s.onload = () => resolve(window.RGB111Scanner);
+          s.onerror = () => { p = null; reject(new Error('scanner library could not be loaded')); };
+          document.head.appendChild(s);
+        });
+        return p;
+      };
+    })();
+  </script>
   <script src="js/lib/geosonify-scales-v1.js?v=20260725"></script>
   <script src="js/lib/geosonify-scale-suggest.js?v=20261009g"></script>
   <script src="js/lib/geosonify-vexflow-lib_v2_0.js?v=20261115g"></script>
@@ -846,7 +863,7 @@
 <!-- UIs (after their services) -->
 <script src="js/ui/audio-ui.js?v=20261009e"></script>
 <script src="js/ui/piano-roll.js?v=202603173"></script>
-<script src="js/ui/scanner-ui.js?v=20260109"></script>
+<script src="js/ui/scanner-ui.js?v=20261115h"></script>
 <script src="js/lib/gis-grids.js?v=20260622"></script>
 <script src="js/lib/geosonify-healpix.js?v=20261101"></script>
 <!-- HEALPix words (healpix-bip39-v1, BETA): official 2048-word BIP39 lists + codec. Must load before card-renderer. -->
@@ -889,7 +906,7 @@
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261115f"></script>
+<script src="js/ui/card-renderer.js?v=20261115h"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>

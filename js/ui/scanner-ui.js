@@ -211,6 +211,17 @@
     
     // Check scanner library is loaded
     if (typeof RGB111Scanner === 'undefined') {
+      // Still arriving (it loads on demand): wait for it, then carry on.
+      if (window.geosonifyLoadScanner) {
+        statusEl.textContent = 'Loading the scanner…';
+        window.geosonifyLoadScanner().then(function () {
+          processClick(imageData, loadedImage, clickX, clickY, mainCanvas, correctedCanvas, statusEl, callback);
+        }, function () {
+          statusEl.textContent = 'Scanner library not loaded';
+          statusEl.style.color = '#f44';
+        });
+        return;
+      }
       statusEl.textContent = 'Scanner library not loaded';
       statusEl.style.color = '#f44';
       return;
@@ -328,6 +339,9 @@
   // ============== PHOTO SCANNER ==============
 
   function showPhotoScanner() {
+    // The scanner library loads on demand (WP1.3): start it now, while the
+    // person picks a photo.
+    try { if (window.geosonifyLoadScanner) window.geosonifyLoadScanner().catch(function () {}); } catch (e) {}
     closeModal();
     
     currentModal = createModal();
