@@ -55,6 +55,33 @@
     return typeof Vex !== 'undefined' && Vex.Flow;
   }
 
+  /*
+    VexFlow itself (300 KB compressed) is no longer in index.html's <head>: it
+    is fetched the first time a stave is drawn (WP1.3, Nov 2026), with the
+    same pinned URL and integrity hash. Draws asked for before it arrives are
+    remembered (the latest per element) and made as soon as it loads.
+  */
+  var VEXFLOW_SRC = 'https://unpkg.com/vexflow@4.2.3/build/cjs/vexflow.js';
+  var VEXFLOW_SRI = 'sha384-HcSKHU8C+2rx18IlCMSlVWuygC4W9XRY8ebpaoE3Tg1iJO0g64QCxO2vO5HXIokW';
+  var _vfLoading = null, _vfPending = [], _vfObserver = null;
+  function ensureVexFlow() {
+    if (hasVexFlow()) return Promise.resolve(true);
+    if (_vfLoading) return _vfLoading;
+    _vfLoading = new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.src = VEXFLOW_SRC; s.integrity = VEXFLOW_SRI; s.crossOrigin = 'anonymous'; s.async = true;
+      s.onload = function () { resolve(hasVexFlow()); };
+      s.onerror = function () { _vfLoading = null; resolve(false); };
+      document.head.appendChild(s);
+    });
+    _vfLoading.then(function (ok) {
+      if (!ok) return;
+      var todo = _vfPending; _vfPending = [];
+      todo.forEach(function (p) { if (p.element.isConnected) renderToElement(p.element, p.notes, p.options); });
+    });
+    return _vfLoading;
+  }
+
   function tokenizeMusicalCode(code) {
     if (!code || typeof code !== 'string') return [];
     code = code.replace(/,\s*$/, '');
@@ -172,7 +199,27 @@
 
   function renderToElement(element, notes, options) {
     if (!hasVexFlow()) {
-      console.error('[vexflow-lib] VexFlow not loaded');
+      // Fetch it, and draw this stave when it arrives.
+      if (typeof element === 'string') element = document.getElementById(element);
+      if (element) {
+        _vfPending = _vfPending.filter(function (p) { return p.element !== element; });
+        _vfPending.push({ element: element, notes: notes, options: options });
+      }
+      // Fetch only once a stave is actually on screen: the music card is far
+      // down the home screen, so most visits never need VexFlow at all.
+      if (element && typeof IntersectionObserver !== 'undefined') {
+        if (!_vfObserver) {
+          _vfObserver = new IntersectionObserver(function (entries) {
+            if (entries.some(function (e) { return e.isIntersecting; })) {
+              _vfObserver.disconnect(); _vfObserver = null;
+              ensureVexFlow();
+            }
+          }, { rootMargin: '200px' });
+        }
+        _vfObserver.observe(element);
+      } else {
+        ensureVexFlow();
+      }
       return null;
     }
     options = options || {};

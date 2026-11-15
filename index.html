@@ -24,7 +24,8 @@
   
   <!-- External dependencies for cards -->
   <script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.2/build/sha3.min.js" integrity="sha384-DaFxWWzLJu50I3CJgg5Y815YKGG53ztYzoBn0+rCqY28arlEklVZ9BmZxHnV3lhf" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/vexflow@4.2.3/build/cjs/vexflow.js" integrity="sha384-HcSKHU8C+2rx18IlCMSlVWuygC4W9XRY8ebpaoE3Tg1iJO0g64QCxO2vO5HXIokW" crossorigin="anonymous"></script>
+  <!-- VexFlow (300 KB) loads on demand, the first time a music card draws:
+       js/lib/geosonify-vexflow-lib_v2_0.js (WP1.3). -->
 <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="shortcut icon" href="/favicon.ico" />
@@ -813,7 +814,7 @@
   <script src="js/lib/geosonify-scanner-lib_v1_0.js?v=20260703b"></script>
   <script src="js/lib/geosonify-scales-v1.js?v=20260725"></script>
   <script src="js/lib/geosonify-scale-suggest.js?v=20261009g"></script>
-  <script src="js/lib/geosonify-vexflow-lib_v2_0.js?v=20260725"></script>
+  <script src="js/lib/geosonify-vexflow-lib_v2_0.js?v=20261115g"></script>
   <script src="js/lib/geosonify-url-codec_v1_1.js?v=20260109"></script>
   <script src="js/lib/geosonify-custom-grid-v1_1.js?v=20260214"></script>
   
@@ -894,8 +895,9 @@
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
-<script src="js/lib/faq-data.js?v=20261115e"></script>
-<script src="js/ui/faq-ui.js?v=20261108f"></script>
+<!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261115e';</script>
+<script src="js/ui/faq-ui.js?v=20261115g"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -2377,6 +2379,8 @@
       document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
       document.querySelector(`[data-tab="${tabId}"]`).classList.add('active');
+      // The FAQ/Examples text is loaded the first time its tab opens (WP1.3).
+      if (tabId === 'examples' && typeof GeosonifyFAQ !== 'undefined' && GeosonifyFAQ.load) GeosonifyFAQ.load();
       document.getElementById('tab-' + tabId).classList.add('active');
       
       // Hide map on Examples tab

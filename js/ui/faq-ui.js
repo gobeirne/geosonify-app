@@ -1661,33 +1661,78 @@
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
+  /*
+    The FAQ and Examples text (js/lib/faq-data.js, 70 KB compressed) is not
+    loaded with the page: index.html names it in window.GEOSONIFY_FAQ_SRC and it
+    is fetched the first time the tab opens, or an answer is opened from
+    elsewhere (WP1.3, Nov 2026). A page that loads the data itself (a
+    translation, a test) has GEOSONIFY_FAQ already and renders at once.
+  */
+  let _rootId = null, _dataPromise = null, _rendered = false;
+  function loadData() {
+    if (global.GEOSONIFY_FAQ) return Promise.resolve(global.GEOSONIFY_FAQ);
+    if (_dataPromise) return _dataPromise;
+    const src = global.GEOSONIFY_FAQ_SRC || 'js/lib/faq-data.js';
+    _dataPromise = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.async = true;
+      s.onload = () => resolve(global.GEOSONIFY_FAQ);
+      s.onerror = () => { _dataPromise = null; reject(new Error('FAQ text could not be loaded')); };
+      document.head.appendChild(s);
+    });
+    return _dataPromise;
+  }
+  function renderNow() {
+    const rootEl = document.getElementById(_rootId || 'faq-root');
+    if (!rootEl || _rendered || !global.GEOSONIFY_FAQ) return;
+    _rendered = true;
+    const mount = document.getElementById(IMAGERY_MOUNT_ID);
+    renderFAQ(rootEl, global.GEOSONIFY_FAQ);
+    if (!(mount && mount.querySelector('#basemapPresets'))) wireChips(rootEl);   // the mount was wired in init
+    wirePaste(rootEl);
+    watchFrame();
+  }
+  // Load the text (once) and draw the FAQ. Resolves when it is on the page.
+  function load() {
+    return loadData().then(renderNow).catch(err => {
+      const rootEl = document.getElementById(_rootId || 'faq-root');
+      if (rootEl && !_rendered) rootEl.innerHTML = '<p class="faq-loading">The FAQ could not be loaded. Check your connection and open this tab again.</p>';
+      console.warn('[faq-ui]', err && err.message);
+    });
+  }
+
   function init(rootId) {
     injectCSS();
-    const rootEl = document.getElementById(rootId || 'faq-root');
+    _rootId = rootId || 'faq-root';
+    const rootEl = document.getElementById(_rootId);
     if (!rootEl) {
       console.warn('[faq-ui] Root element not found:', rootId);
       return;
     }
-    const data = global.GEOSONIFY_FAQ;
     // Main-screen imagery card first, so renderFAQ knows not to add its own.
+    // It needs no FAQ text, so it is drawn straight away.
     const mount = document.getElementById(IMAGERY_MOUNT_ID);
-    if (mount && !mount.querySelector('#basemapPresets')) mount.innerHTML = imageryChipsHTML();
-    renderFAQ(rootEl, data);
-    wireChips(mount && mount.querySelector('#basemapPresets') ? mount : rootEl);
-    wirePaste(rootEl);
-    watchFrame();
+    if (mount && !mount.querySelector('#basemapPresets')) {
+      mount.innerHTML = imageryChipsHTML();
+      wireChips(mount);
+    }
+    if (global.GEOSONIFY_FAQ) renderNow();
+    else rootEl.innerHTML = '<p class="faq-loading">Loading…</p>';
   }
 
   global.GeosonifyFAQ = {
     init,
+    load,
     version: __FAQ_UI_VER__,
     // For other code that wants to send the reader to one side (e.g. a future
     // "see an example" link from an answer).
     // Open one answer from elsewhere in the app (switches to the FAQ tab).
-    openItem: openFaqItem,
+    openItem: function (id) { return load().then(() => openFaqItem(id)); },
     showSubtab: function (which, rootId) {
-      const rootEl = document.getElementById(rootId || 'faq-root');
-      if (rootEl) showSubtab(rootEl, which);
+      return load().then(() => {
+        const rootEl = document.getElementById(rootId || 'faq-root');
+        if (rootEl) showSubtab(rootEl, which);
+      });
     }
   };
   global.GeosonifyBasemap = { applyFromURL: applyFromURL, shareInfo: shareInfo, kindOf: _kindOf };
