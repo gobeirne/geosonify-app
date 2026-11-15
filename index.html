@@ -871,25 +871,121 @@
 <script src="js/lib/geosonify-hpwords.js?v=20261009a"></script>
 <script src="js/lib/geosonify-sky.js?v=20260730"></script>
 <script src="js/lib/geosonify-sky-url.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-panel.js?v=20260730"></script>
+<!--
+  SKY VIEW ON DEMAND (WP1.3, Nov 2026). The sky viewer and the modules that only
+  work inside it (panel, renderer, shapes, Aladin adapter, zoom, view, lookup,
+  tracks: about 82 KB compressed) load the first time the sky is opened: by a
+  sky link, the Earth/Sky button, an Examples link, anything that calls
+  GeosonifySkyView.open(). Until then a stand-in answers under the same name:
+  questions get the answers a closed sky gives (isOpen() false, imagery not
+  live); listeners, imagery and order settings are kept and handed over;
+  actions (open, goTo, shapes, framing) are queued, start the load, and are
+  replayed in order once the real view is there. Afterwards the stand-in passes
+  every call straight to the real view, so modules that kept a reference to it
+  keep working. Earth-side sky code (links, frames, cards, the star catalogue,
+  the HEALPix lattice, the Earth/Sky button, Starpin maths) still loads with
+  the page.
+-->
+<script>
+(function () {
+  var PACK = ["js/lib/geosonify-sky-panel.js?v=20260730", "js/lib/geosonify-sky-renderer.js?v=20260731", "js/lib/geosonify-sky-shapes.js?v=20260731", "js/lib/geosonify-sky-aladin.js?v=20261115f", "js/lib/geosonify-sky-zoom.js?v=20260801", "js/lib/geosonify-sky-view.js?v=20261115a", "js/lib/geosonify-sky-lookup.js?v=20261115a", "js/lib/geosonify-sky-track.js?v=20260801"];
+  var real = null, loading = null, queue = [];
+  function load() {
+    if (loading) return loading;
+    var slow = setTimeout(function () {
+      try { if (typeof showToast === 'function') showToast('Opening the sky…'); } catch (e) {}
+    }, 400);
+    loading = PACK.reduce(function (p, src) {
+      return p.then(function () {
+        return new Promise(function (resolve, reject) {
+          var el = document.createElement('script');
+          el.src = src;
+          el.onload = resolve;
+          el.onerror = function () { reject(new Error('could not load ' + src)); };
+          document.head.appendChild(el);
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      clearTimeout(slow);
+      if (window.GeosonifySkyView && window.GeosonifySkyView !== stub) real = window.GeosonifySkyView;
+      if (!real) throw new Error('the sky viewer did not load');
+      var q = queue; queue = [];
+      q.forEach(function (c) { try { real[c.name].apply(real, c.args); } catch (e) { console.warn('[sky] replay', c.name, e); } });
+      return real;
+    }).catch(function (e) {
+      clearTimeout(slow); loading = null;
+      console.warn('[sky]', e && e.message);
+      try { if (typeof showToast === 'function') showToast('The sky could not be loaded: check your connection', 'error'); } catch (e2) {}
+    });
+    return loading;
+  }
+  function fwd(name, args) { return real[name].apply(real, args); }
+  // Kept and handed over, without loading anything.
+  function passive(name) {
+    return function () { if (real) return fwd(name, arguments); queue.push({ name: name, args: [].slice.call(arguments) }); return name === 'on' ? function () {} : undefined; };
+  }
+  // Start the load; replayed in order once it is there.
+  function active(name, ret) {
+    return function () { if (real) return fwd(name, arguments); queue.push({ name: name, args: [].slice.call(arguments) }); load(); return ret; };
+  }
+  // Questions: a closed sky's answers until the viewer is there.
+  function answer(name, value) {
+    return function () { return real ? fwd(name, arguments) : (typeof value === 'function' ? value() : value); };
+  }
+  var latest = null, ORDER = 16, LEVELS = 6;
+  var stub = {
+    VERSION: 'stand-in',
+    isLoaded: function () { return !!real; },
+    load: load,
+    isAvailable: answer('isAvailable', true),
+    isOpen: answer('isOpen', false),
+    isReadOnly: answer('isReadOnly', false),
+    getRenderer: answer('getRenderer', null),
+    getImagery: answer('getImagery', function () { return { mode: 'best', sources: [], credits: [], live: false }; }),
+    getHost: answer('getHost', null),
+    getCanvasWrap: answer('getCanvasWrap', null),
+    getShapeLayer: answer('getShapeLayer', null),
+    isUserZoomed: answer('isUserZoomed', false),
+    isFramedOnShape: answer('isFramedOnShape', false),
+    isPrivacyOn: answer('isPrivacyOn', false),
+    isLookupOff: answer('isLookupOff', function () { try { return !!(window.GeosonifyPrivacy && GeosonifyPrivacy.lookupsOff()); } catch (e) { return false; } }),
+    measuredAsp: answer('measuredAsp', null),
+    getOrder: answer('getOrder', function () { return ORDER; }),                 // sky-view's defaults
+    getAncestryLevels: answer('getAncestryLevels', function () { return LEVELS; }),
+    getProvenance: answer('getProvenance', null),
+    on: passive('on'),
+    setImagery: passive('setImagery'),
+    setOrder: function (k) { if (real) return fwd('setOrder', arguments); ORDER = k; queue.push({ name: 'setOrder', args: [].slice.call(arguments) }); },
+    setAncestryLevels: function (n) { if (real) return fwd('setAncestryLevels', arguments); LEVELS = n; queue.push({ name: 'setAncestryLevels', args: [].slice.call(arguments) }); },
+    // Only the newest position matters while the sky is closed.
+    pushCoordinate: function () {
+      if (real) return fwd('pushCoordinate', arguments);
+      var args = [].slice.call(arguments);
+      if (latest) latest.args = args; else { latest = { name: 'pushCoordinate', args: args }; queue.push(latest); }
+    },
+    redraw: function () { if (real) return fwd('redraw', arguments); },          // nothing drawn yet
+    close: function () { if (real) return fwd('close', arguments); queue = queue.filter(function (c) { return c.name !== 'open'; }); },
+    requestClose: function () { if (real) return fwd('requestClose', arguments); },
+    open: active('open', true),
+    goTo: active('goTo', undefined),
+    addShape: active('addShape', undefined),
+    clearShapes: active('clearShapes', undefined),
+    frameOn: active('frameOn', false)
+  };
+  window.GeosonifySkyView = stub;
+})();
+</script>
 <script src="js/lib/geosonify-sky-overlay.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-shapes.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-figures.js?v=20260731"></script>
-<script src="js/lib/geosonify-sky-aladin.js?v=20261115f"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-units.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-cards.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-frames.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-card-defs.js?v=20260801"></script>
-<script src="js/lib/geosonify-sky-zoom.js?v=20260801"></script>
 <script src="js/lib/geosonify-sky-url-formats.js?v=20261013b"></script>
 <script src="js/lib/geosonify-sky-carry.js?v=20261014c"></script>
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101" defer></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-track.js?v=20260801" defer></script>
-<script src="js/lib/geosonify-sky-view.js?v=20261115a"></script>
-<script src="js/lib/geosonify-sky-lookup.js?v=20261115a"></script>
 <!-- Sky mode: Starpin's street tiles, maths and HEALPix lattice ramp, reused as they are. -->
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20261010a"></script>
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
