@@ -1,6 +1,6 @@
-# Geosonify core profile v1 — points, paths and shapes in the Base64 grid
+# Geosonify core profile v1 — points, paths, shapes and annotations
 
-Status: draft, 15 November 2026. Describes the live code with the B13 (segment modes) and B14 (shape suffixes) fixes. Reference decoder: `spec/core-profile-v1-reference.js` (`node spec/core-profile-v1-reference.js --selftest`), which loads no app code. Not yet specified: see §8.
+Status: draft, 15 November 2026. Describes the live code with the B13 (segment modes) and B14 (shape suffixes) fixes. Reference decoder: `spec/core-profile-v1-reference.js` (`node spec/core-profile-v1-reference.js --selftest`), which loads no app code. Everything in this document is covered by the reference decoder's vectors.
 
 The `?enc=` carrier is already specified, byte for byte, in FROZEN-AES-URL-V1.md; the core profile adopts it unchanged. Obfuscation, grid passphrases, BIP39 words and the other grids are outside the core profile.
 
@@ -88,7 +88,7 @@ A payload may end in one checksum character: the sum of the character codes of t
 
 ### 4.4 Rectangles
 
-Centre, rotation θ in whole degrees, and side lengths L and S in metres:
+Centre, rotation θ in whole degrees, and side lengths L and S in metres. θ is the bearing of side L, clockwise from north. With east/north offsets in metres u = (sin θ, cos θ) along L and v = (cos θ, −sin θ) along S, the corners are the points ±(L/2)u ± (S/2)v, each placed by a geodesic from the centre at bearing atan2(east, north) and distance √(east² + north²). Encodings:
 
 - Raw: `θdeg_L_S` with units on the lengths (`30deg_500m_200m`; `deg` and `m` may be omitted).
 - Base64url: 5 characters = 30 bits; drop the last (padding) bit; then θ = bits 28–20, L = bits 19–10, S = bits 9–0 (L, S ≤ 1023 m).
@@ -98,6 +98,7 @@ Centre, rotation θ in whole degrees, and side lengths L and S in metres:
 
 Centre, longitude span in degrees, and north–south extent in metres:
 
+- Angular: both fields are angles, each `Ndeg`, `N'` or `Nmin` (`7deg_4deg`, `20'_15'`): a longitude span and a latitude span, both in degrees. Tried before the metric form.
 - Raw: `Xdeg_Y` with a unit on Y (`1.5deg_100km`).
 - Base64url: 7 characters = 42 bits; drop the last (padding) bit; longitude span = bits 40–25 in units of 0.01°, extent = bits 24–0 in metres. Implementations must use 64-bit or arbitrary-precision integers.
 - Base36: two length fields (§4.2): the longitude span in units of 0.001°, then the extent in metres.
@@ -126,8 +127,19 @@ A link that decodes today decodes to the same vertices forever. New behaviour is
 
 ## 7. HEALPix codes
 
-`hphex` and `hp64` codes serialize a HEALPix NESTED index (Górski et al. 2005); the serialization, the face character, the packing and the `@k` order suffix are specified in FROZEN-HEALPIX-PASS-V1.md §2. Their flags are `d` and `r` as in §1; `j` and `o` (obfuscation) are outside the core profile. A HEALPix path uses the payload forms of §3 over the code's characters, decoded at the order of its first code.
+`hphex` and `hp64` codes serialize a HEALPix NESTED pixel (Górski et al. 2005), as specified in FROZEN-HEALPIX-PASS-V1.md §2: the first character is the base pixel (face) `0`–`9`, `A`, `B`; then each `hphex` character carries 2 quaternary digits and each `hp64` character 3 (Base64url, case-sensitive), most significant first. An optional `@k` suffix gives the order k; without it the order is the most the length allows (2 or 3 per character), and the digits are cut to k. Within a face, each quaternary digit d contributes bit d & 1 to x and bit d >> 1 to y. The decoded point is the pixel centre, computed with the standard HEALPix formulae (the reference decoder's `healpixCentre`). Flags are `d` and `r` as in §1; `j` and `o` (obfuscation) are outside the core profile. A HEALPix path uses the payload forms of §3 over the code's characters, every vertex at the order of the first code.
 
-## 8. Not yet specified
+Encoders should always write `@k` on single codes: the app decodes a bare point code at an order taken from the receiver's settings (B17), so only `@k` codes decode identically everywhere.
 
-Annotations (`lbl=`, `sty=`); the rotation convention of θ for rectangles; angular graticules (`7deg_4deg`, `20'_15'`); HEALPix vectors in the reference decoder.
+## 8. Annotations
+
+Two repeatable parameters, outside the code, so they never move a point:
+
+- `lbl=<i>:<text>` labels vertex i.
+- `sty=p<i>[-j]:<colour>[,w<n>][,dash]` styles vertices i to j; `sty=s<i>[-j]:…` styles sides i to j (side i joins vertices i and i + 1).
+
+Indices count from 0 across the whole value, straight through `~~~` groups, in decode order. A colour is one palette letter (`r` ef4444, `o` f97316, `y` facc15, `g` 22c55e, `c` 06b6d4, `b` 3b82f6, `v` 8b5cf6, `m` d946ef, `p` f9a8d4, `n` 9ca3af, `k` 111827, `w` f9fafb) or six hex digits without `#`; `w<n>` is a width of 0.5–12 px; `dash` makes the line dashed. Label text is plain text (never markup), cut to 60 characters after removing control, bidirectional-override and zero-width characters. Values are percent-encoded (`+ # & %` and spaces always escaped). A malformed entry is ignored on its own. Limits: 500 labels and 500 style entries; a range spans at most 5,000 indices.
+
+## 9. Outside the core profile
+
+Obfuscation, grid passphrases, BIP39 and HEALPix words, emoji payloads, the other grids, and display options (`display`, `area`, `zoom`, `basemap` and the rest), which change how a link is shown, never what it encodes.
