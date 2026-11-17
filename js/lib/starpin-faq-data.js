@@ -83,14 +83,15 @@
             id: 'patches',
             q: 'What are the teal patches?',
             a: `<p>Every cornerstone is a corner of a patch of the grid. Collect all four corners of a patch and it lights up: it turns <strong>teal</strong> on your map.</p>
-<p>Patches come in three sizes, about 400 metres, 800 metres and 1.6 kilometres across, and the map outlines the size that suits how far you are zoomed in. A patch you have started glows: it gets a bright edge, an empty ring on each corner still to collect, a solid disc with a tick on each corner you have, and a badge such as <strong>3 of 4 · medium</strong> saying how many of its corners you have. Where a started patch sits inside another, only the badge of the one nearer lighting is shown. The brighter the glow, the closer it is to lighting.</p>
+<p>Patches come in three sizes, about 400 metres, 800 metres and 1.6 kilometres across, and the map outlines the size that suits how far you are zoomed in. A patch you have started glows: it gets a bright edge, an empty ring on each corner still to collect, a solid disc with a tick on each corner you have, and a badge such as <strong>3 of 4 · medium</strong> saying how many of its corners you have. Where a started patch sits inside another, only the badge of the one nearer lighting is shown. If the shading makes the streets hard to read, the diamond button beside Ground and Sky turns it off; the edges, corner markers and badges stay. The brighter the glow, the closer it is to lighting.</p>
 <p>Neighbouring patches share corners, so each one you light makes the next cheaper. When every small patch inside a bigger one is lit, the bigger one turns a deeper teal. Patches are worked out from your log, so walks you made before this feature existed count too.</p>
 <p>A lit patch with a starpin you have collected inside it is <strong>starlit</strong>: it takes a warm gold tint and a gold glow round its edge. It does not matter which came first. Light a patch and collect a star in it months later, or the other way round, and it becomes starlit either way. A star inside a small patch is also inside the medium and large patches around it, so it can starlight all three. Your log counts starlit cells as part of your cells, and marks each one with a gold star.</p>`
           },
           {
             id: 'what-next',
             q: 'What does “What should I do next?” suggest?',
-            a: `<p>On the <strong>Go</strong> tab, choose whether you are on foot or on a bike and how long you have, 15, 30 or 60 minutes, and Starpin suggests up to three outings, each a different kind:</p>
+            a: `<p>On the <strong>Go</strong> tab, choose whether you are on foot or on a bike and how long you have, 15, 30 or 60 minutes, and Starpin suggests a whole route plus up to three single outings.</p>
+<p>The route, at the top, fills the time you have with as many corners and starpins as fit, in an order that does not double back. Its stops are numbered on the map; tap one to skip it, and the route is rebuilt without it. Following it, the compass switches between cornerstone and starpin as each stop comes up, and the dashed line goes to the stop you are on. The single outings below it are each a different kind:</p>
 <ul>
 <li><strong>Finish something:</strong> the corner, or pair of corners, that does most for patches you have already started. Lighting a patch counts most, then taking one to 3 of 4. A patch that already holds a starpin you have collected counts for more, because lighting it makes it starlit.</li>
 <li><strong>New ground:</strong> the nearest corner where you have not started any small patch yet.</li>
@@ -140,6 +141,11 @@
             q: 'How do I log a visit?',
             a: `<p>Tap <strong>Use my location</strong> so Starpin can determine where you are, then bag the target.</p>
 <p>If you are close enough (within about 93 metres of a starpin or cornerstone), Starpin records a visit. If not, you can save your closest approach instead. The record is made from the location fix on your device, so you do not need an internet connection at the moment you arrive.</p>`
+          },
+          {
+            id: 'log-split',
+            q: 'Why did my log change into four tiles?',
+            a: `<p>For your first 25 finds the log is one list, a card for each. After that a single list gets long, so the <strong>Log</strong> tab becomes a summary: your counts of starpins, cornerstones, cells and rare finds, and your five most recent finds. Tap a count to open everything of that kind. Starpins and cornerstones are listed one line each; tap one to open it. Cells shows lit cells, starlit first, then every cell you have started, nearest to lighting first, with <strong>guide me</strong> beside each, and any large patches you have lit, which are not counted as cells. Your phone's back gesture returns to the summary.</p>`
           },
           {
             id: 'culmination',
@@ -265,6 +271,7 @@
 <ul>
 <li><strong>OpenFreeMap</strong> for the streets, coasts, and borders, and <strong>OpenStreetMap</strong> or <strong>Esri</strong> for ground imagery.</li>
 <li><strong>CDS Strasbourg</strong> for the sky photographs and the star catalogue.</li>
+<li><strong>OpenStreetMap's Overpass</strong> service, when you tap a starpin's ring on the sky view, to see whether a mapped street or path reaches it.</li>
 <li><strong>OpenStreetMap's Nominatim</strong> for the place name on a find's card. Starpin asks once, the first time you open that card, and keeps the answer on your device.</li>
 </ul>
 <p>None of these receives your log. Each receives the area it is asked about. When the map is centred on you, that area is roughly where you are. Like any website, they also see your internet address.</p>

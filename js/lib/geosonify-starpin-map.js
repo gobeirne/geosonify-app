@@ -450,10 +450,23 @@ var GeosonifyStarpinMap = (function () {
     // [{lat, lon}], starlit } or null. It pulses for OPP_PULSE_MS after it
     // first appears or moves, then holds still (no redraw loop on a bike).
     var opp = null, oppSince = 0, OPP_PULSE_MS = 6000;
+    // Patch fills (lit, bright, starlit, and the glowing patches' tint) can
+    // be switched off: inside a lit area they tint the whole screen and the
+    // streets and the target get hard to read. Edges, glows, corner markers
+    // and badges always draw.
+    var shading = true;
+    // The whole route: { stops: [{lat, lon, kind}], following, end } or null.
+    // Thin, faint legs through numbered stops; the dashed goal line still
+    // owns the current leg when following. A tap on a stop calls onRouteStop.
+    var route = null, onRouteStop = null;
     var onOpportunity = opts.onOpportunity || null;
     var onSelect = opts.onSelect || null;
     var onMove = opts.onMove || null;
 
+    function distM(la1, lo1, la2, lo2) {
+      var r = Math.PI / 180, a = Math.sin((la2 - la1) * r / 2), b = Math.sin((lo2 - lo1) * r / 2);
+      return 2 * 6371008.8 * Math.asin(Math.sqrt(a * a + Math.cos(la1 * r) * Math.cos(la2 * r) * b * b));
+    }
     function resolve(name) {
       if (cache[name] !== undefined) return cache[name];
       var p = null;
@@ -623,6 +636,7 @@ var GeosonifyStarpinMap = (function () {
         g.fillStyle = 'rgba(' + (rgb || pal.patch) + ',' + alpha + ')';
         g.fill();
       }
+      if (shading) {
       fillPatches(patches.lit.filter(function (c) { return !c.covered; }), pal.patchA);
       fillPatches(patches.lit.filter(function (c) { return c.bright && !c.brightCovered; }), pal.brightA);
       // starlit-v1: a static warm tint over lit, and a brief gold flash for a
@@ -637,6 +651,7 @@ var GeosonifyStarpinMap = (function () {
           fillPatches(fl, 0.5 * Math.sin(Math.PI * (1 - k)), pal.starlit);
         }
       })();
+      }
       // A lit patch also gets a crisp solid edge at the size outlined at this
       // zoom, so it reads as a finished shape and not as a tint on the streets.
       (function () {
@@ -737,7 +752,7 @@ var GeosonifyStarpinMap = (function () {
           if (!shown.length) return;
           var strong = have === 3;
           var col = 'rgba(' + pal.patch + ',' + (k === 1 ? 1 : 0.7) + ')';
-          g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.12 : 0.07) * k + ')'; g.fill();
+          if (shading) { g.fillStyle = 'rgba(' + pal.patch + ',' + (strong ? 0.12 : 0.07) * k + ')'; g.fill(); }
           g.lineJoin = 'round';
           g.strokeStyle = pal.under; g.lineWidth = (strong ? 6 : 5) * k; g.stroke();
           g.save();
@@ -968,6 +983,43 @@ var GeosonifyStarpinMap = (function () {
         }
       }
 
+      if (route && route.stops.length) {
+        var rCol = pal.goal || pal.highlight, rCase = pal.goalCase || pal.under;
+        var rp = route.stops.map(function (q) { return pt(q.lat, q.lon); });
+        var path = [];
+        if (!route.following && fix) path.push(pt(fix.lat, fix.lon));
+        rp.forEach(function (q) { path.push(q); });
+        if (route.end) path.push(pt(route.end.lat, route.end.lon));
+        else if (fix && !route.following) path.push(pt(fix.lat, fix.lon));
+        g.save();
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        // Following: the path starts at the current stop, since the dashed
+        // goal line already runs from you to it. Previewing: from you.
+        var from = 0;
+        if (path.length > 1) {
+          g.beginPath();
+          path.forEach(function (q, i) { if (i === from) g.moveTo(q[0], q[1]); else if (i > from) g.lineTo(q[0], q[1]); });
+          g.setLineDash([]); g.strokeStyle = rCase; g.lineWidth = 4.5; g.globalAlpha = 0.55; g.stroke();
+          g.setLineDash([6, 6]); g.strokeStyle = rCol; g.lineWidth = 2; g.globalAlpha = 0.75; g.stroke();
+          g.setLineDash([]); g.globalAlpha = 1;
+        }
+        rp.forEach(function (q, i) {
+          if (q[0] < -30 || q[0] > size.x + 30 || q[1] < -30 || q[1] > size.y + 30) return;
+          var star = route.stops[i].kind === 'star';
+          var col = star && pal.starlit ? 'rgb(' + pal.starlit + ')' : rCol;
+          g.beginPath(); g.arc(q[0], q[1], 11, 0, 6.2832);
+          g.fillStyle = rCase; g.fill();
+          g.strokeStyle = col; g.lineWidth = 2; g.stroke();
+          if (typeof g.fillText === 'function') {
+            g.font = '700 11px -apple-system, system-ui, sans-serif';
+            g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
+            g.fillText(String(i + 1), q[0], q[1] + 0.5);
+          }
+          hits.push({ x: q[0], y: q[1], r: 18, kind: 'route', data: { i: i } });
+        });
+        g.restore();
+      }
+
       // The followed walk's goal, drawn after the lattice, the patches and the
       // highlight so it is never lost under them. From a cornerstone the line
       // to the next one often runs right along a HEALPix line, so it is wider
@@ -1000,6 +1052,36 @@ var GeosonifyStarpinMap = (function () {
         g.moveTo(gq[0] - 8, gq[1]); g.lineTo(gq[0] + 8, gq[1]);
         g.moveTo(gq[0], gq[1] - 8); g.lineTo(gq[0], gq[1] + 8);
         g.stroke();
+        // Off screen: a chip on the edge where the line leaves, with the
+        // distance, so the target is never just a line running off the map.
+        var EDGE = 34;
+        var offX = gq[0] < EDGE || gq[0] > size.x - EDGE, offY = gq[1] < EDGE || gq[1] > size.y - EDGE;
+        if (offX || offY) {
+          var o0 = fix ? pt(fix.lat, fix.lon) : [size.x / 2, size.y / 2];
+          if (o0[0] < EDGE || o0[0] > size.x - EDGE || o0[1] < EDGE || o0[1] > size.y - EDGE)
+            o0 = [size.x / 2, size.y / 2];
+          var dx = gq[0] - o0[0], dy = gq[1] - o0[1], tt = 1;
+          if (dx > 0) tt = Math.min(tt, (size.x - EDGE - o0[0]) / dx);
+          if (dx < 0) tt = Math.min(tt, (EDGE - o0[0]) / dx);
+          if (dy > 0) tt = Math.min(tt, (size.y - EDGE - o0[1]) / dy);
+          if (dy < 0) tt = Math.min(tt, (EDGE - o0[1]) / dy);
+          var ex = o0[0] + dx * tt, ey = o0[1] + dy * tt, ang = Math.atan2(dy, dx);
+          var dM = fix ? distM(fix.lat, fix.lon, goal.lat, goal.lon) : null;
+          var lab = dM == null ? '' : dM < 1000 ? Math.round(dM / 10) * 10 + ' m' : (dM / 1000).toFixed(1) + ' km';
+          g.beginPath(); g.arc(ex, ey, 22, 0, 6.2832);
+          g.fillStyle = gCase; g.fill();
+          g.strokeStyle = gCol; g.lineWidth = 2.5; g.stroke();
+          g.beginPath();                                   // arrowhead, pointing on to the target
+          g.moveTo(ex + Math.cos(ang) * 30, ey + Math.sin(ang) * 30);
+          g.lineTo(ex + Math.cos(ang + 0.5) * 21, ey + Math.sin(ang + 0.5) * 21);
+          g.lineTo(ex + Math.cos(ang - 0.5) * 21, ey + Math.sin(ang - 0.5) * 21);
+          g.closePath(); g.fillStyle = gCol; g.fill();
+          if (lab && typeof g.fillText === 'function') {
+            g.font = '700 11px -apple-system, system-ui, sans-serif';
+            g.fillStyle = gCol; g.textAlign = 'center'; g.textBaseline = 'middle';
+            g.fillText(lab, ex, ey + 0.5);
+          }
+        }
         g.restore();
       }
 
@@ -1071,6 +1153,10 @@ var GeosonifyStarpinMap = (function () {
       });
       if (best && best.kind === 'next') {
         if (onOpportunity) onOpportunity();
+        return;
+      }
+      if (best && best.kind === 'route') {
+        if (onRouteStop) onRouteStop(best.data.i);
         return;
       }
       if (best) {
@@ -1182,6 +1268,17 @@ var GeosonifyStarpinMap = (function () {
       opportunity: function () { return opp; },
       // What a tap on the marker does (set after mount, so wrappers such as
       // the flip need not pass it through).
+      setRoute: function (r) {
+        route = r && r.stops && r.stops.length ? {
+          stops: r.stops.map(function (q) { return { lat: +q.lat, lon: +q.lon, kind: q.kind || 'corner' }; }),
+          following: !!r.following,
+          end: r.end && r.end.lat != null ? { lat: +r.end.lat, lon: +r.end.lon } : null } : null;
+        redraw();
+      },
+      route: function () { return route; },
+      setOnRouteStop: function (fn) { onRouteStop = typeof fn === 'function' ? fn : null; },
+      setShading: function (on) { on = on !== false; if (on === shading) return; shading = on; redraw(); },
+      shading: function () { return shading; },
       setOnOpportunity: function (fn) { onOpportunity = typeof fn === 'function' ? fn : null; },
       setBasemap: applyBasemap,
       setPalette: function (name) { paletteOverride = PALETTE[name] ? name : null; redraw(); },

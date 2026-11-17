@@ -332,6 +332,10 @@ var GeosonifyStarpinFlip = (function () {
   var ICON_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
     'stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v6"/>' +
     '<circle cx="12" cy="7.6" r=".6" fill="currentColor"/></svg>';
+  // Patch shading: a hatched square. Pressed (light) = shading shown.
+  var ICON_SHADE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+    'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 21 12 12 21 3 12Z"/>' +
+    '<path d="M9.2 5.8l9 9M6.6 8.6l8.8 8.8M5.2 12.4l6.4 6.4" stroke-width="1.5"/></svg>';
   function reachIcon() {
     return '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7.5" ' +
       'fill="none" stroke="#F2DE5C" stroke-width="2"/></svg>';
@@ -381,7 +385,10 @@ var GeosonifyStarpinFlip = (function () {
         '</div>' +
         '<button class="spf-round spf-lookup" type="button" aria-label="Look up: turn the map over to see the sky as it is overhead">' + ICON_FLIP + '</button>' +
         '<button class="spf-flip" type="button">' + ICON_FLIP + '<span></span></button>' +
-        '<button class="spf-round spf-info" type="button" aria-label="About this view">' + ICON_INFO + '</button>' +
+        // Was an "about this view" button; the shading toggle earns the space.
+        // On a lit area the fill tints everything, and at street zoom it made
+        // the target and the streets hard to read on the first field tests.
+        '<button class="spf-round spf-shade" type="button" aria-label="Shade lit and started patches" aria-pressed="true">' + ICON_SHADE + '</button>' +
       '</div>';
     // The sky sits UNDER the map: with the ground tiles faded out, the map's own
     // lattice, dots and pins are drawn straight over the stars.
@@ -390,7 +397,7 @@ var GeosonifyStarpinFlip = (function () {
     function q(sel) { return ui.querySelector(sel); }
     var flipBtn = q('.spf-flip'), flipLabel = q('.spf-flip span'), surveyBtn = q('.spf-survey'),
         statusEl = q('.spf-status'), hintEl = q('.spf-hint'), sheet = q('.spf-sheet'),
-        creditEl = q('.spf-credit'), locBtn = q('.spf-locate'), infoBtn = q('.spf-info'),
+        creditEl = q('.spf-credit'), locBtn = q('.spf-locate'), shadeBtn = q('.spf-shade'),
         scaleBarEl = q('.spf-scale .bar'), u1 = q('.spf-scale .u1'), u2 = q('.spf-scale .u2'),
         segBtns = ui.querySelectorAll('.spf-seg button'), lookBtn = q('.spf-lookup');
 
@@ -1293,7 +1300,21 @@ var GeosonifyStarpinFlip = (function () {
       }, function () { status('Location was not shared.', 4000); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 });
     });
-    infoBtn.addEventListener('click', function () { if (sheet.hidden || sheet.dataset.kind !== 'about') showAbout(); else closeSheet(); });
+    // Patch shading on or off, remembered on this device. Edges, corner
+    // markers and badges always stay; only the fills go.
+    var shadeOn = true;
+    try { if (store && store.getItem('starpin.flip.shading') === '0') shadeOn = false; } catch (e) {}
+    function applyShade() {
+      shadeBtn.setAttribute('aria-pressed', shadeOn ? 'true' : 'false');
+      shadeBtn.setAttribute('aria-label', shadeOn ? 'Patch shading on: tap to hide it' : 'Patch shading off: tap to show it');
+      if (earth.setShading) earth.setShading(shadeOn);
+    }
+    shadeBtn.addEventListener('click', function () {
+      shadeOn = !shadeOn;
+      try { if (store) store.setItem('starpin.flip.shading', shadeOn ? '1' : '0'); } catch (e) {}
+      applyShade();
+    });
+    applyShade();
 
     // Taps on the sky pick the nearest starpin. Listening on the layer, with a
     // movement threshold, so Aladin's own dragging is left alone.
@@ -1361,27 +1382,6 @@ var GeosonifyStarpinFlip = (function () {
               : { lat_1e7: Math.round(s.lat * 1e7), lon_1e7: Math.round(s.lon * 1e7) };
         return S.findWords(t);
       } catch (e) { return null; }
-    }
-    function showAbout() {
-      var sv3 = survey();
-      sheet.innerHTML = '<div class="spf-about"><h3>One place, two faces</h3>' +
-        '<p>The sky and the ground are drawn at one scale: 1\u2033 of sky is ' +
-        M_PER_ARCSEC.toFixed(2) + ' m of ground, at every latitude. Declination is latitude and right ' +
-        'ascension is longitude, so these streets sit under exactly these stars.</p>' +
-        '<p>On the sky the streets are seen from below, the way you would see a map painted on glass ' +
-        'overhead, so east is on the left.</p>' +
-        '<p>Each ring is a starpin\u2019s ' + VISIT_R_ARCSEC + '\u2033 (' + Math.round(VISIT_R_ARCSEC * M_PER_ARCSEC) +
-        ' m) circle. Tap one to see whether a mapped street or path reaches it. That comes from ' +
-        'OpenStreetMap and is a hint, not a rule.</p>' +
-        '<p>Sky surveys run out of detail close in. When the ground is closer than ' + sv3.label +
-        ' can show, the sky pulls back, and looking down puts you back where you were.</p>' +
-        '<p>What this view sends: the area you are looking at goes to OpenStreetMap\u2019s Overpass server ' +
-        'for streets and to CDS Strasbourg for stars and sky images.</p>' +
-        '<p style="opacity:.75;font-size:.78rem">Streets \u00A9 OpenStreetMap contributors (ODbL). ' +
-        'Sky: Aladin Lite, CDS Strasbourg; ' + esc(sv3.credit) + '.</p>' +
-        '<div class="row"><button type="button" class="quiet" data-a="close">Close</button></div></div>';
-      sheet.dataset.kind = 'about'; sheet.hidden = false;
-      sheet.querySelector('[data-a=close]').onclick = closeSheet;
     }
 
     // ── public setters ──

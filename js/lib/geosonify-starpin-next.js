@@ -1,5 +1,5 @@
 /*
-  geosonify-starpin-next.js v0.6 — "What should I do next?"
+  geosonify-starpin-next.js v0.7 — "What should I do next?"
 
   Pure planning, no DOM. Given where you are, your patches and the starpins
   around you, it suggests up to three walks, each a different KIND of goal so
@@ -47,6 +47,24 @@
   The corridor search and the finish candidates drop anything behind you
   before it is scored.
 
+  A WHOLE ROUTE (v0.7, Nov 2026). plan() also returns route: as many stops
+  as fit the time, corners and starpins mixed, so the map can show where the
+  outing goes and not just its first stop. It is the orienteering problem
+  (most value along a path within a time limit), and at this size (a pool of
+  ROUTE_POOL candidates, at most ROUTE_MAX stops) cheapest insertion is plenty:
+    1. Pool: the best finish candidates, the new-ground corner, and the best
+       starpins, each by value per minute on its own.
+    2. Repeatedly insert the candidate, at the position in the route, with
+       the best added value per added minute, while the whole trip stays
+       within the time (extra time, one way) and never goes backwards. A
+       corner's value is counted after the corners already in the route, so
+       two corners of one patch add up to lighting it.
+    3. Untangle: 2-opt reversals while they shorten the trip (and keep it
+       forward, one way).
+  A route of one stop is no better than the cards, so route is null unless it
+  has at least two. opts.skip(stop) leaves stops out (a stop skipped on the
+  map). Values are recounted in the final order for the description.
+
   The value of a corner comes from the patches it touches. Every patch
   (orders 12, 13, 14) with that corner gains one corner; the gain is weighted
   by size and by how close the patch is to lighting:
@@ -93,6 +111,7 @@ var GeosonifyStarpinNext = (function () {
   var SIZE_WORD = { 12: 'large', 13: 'medium', 14: 'small' };
   var STAR_W = 1.5;                // lighting a patch you already have a star in
   var STARLIGHT_W = 1;             // per complete patch a new star would starlight
+  var ROUTE_POOL = 36, ROUTE_MAX = 8;
   var PAIR_POOL = 10;              // best single corners considered for pairs
   // A walk longer than the chosen time is offered only when nothing fits,
   // and never beyond OVER x that time. Without this cap, planning from a pin
@@ -379,8 +398,127 @@ var GeosonifyStarpinNext = (function () {
     return t;
   }
 
+  function routeMetres(S, fix, stops) {
+    var m = 0, at = fix;
+    stops.forEach(function (s) { m += S.haversineM(at.lat, at.lon, s.lat, s.lon); at = s; });
+    var back = endPt || fix;
+    return m + S.haversineM(at.lat, at.lon, back.lat, back.lon);
+  }
+  function routeBackM(S, stops) {
+    if (!endPt) return 0;
+    var togo = baseM, b = 0;
+    stops.forEach(function (s) {
+      var d = S.haversineM(s.lat, s.lon, endPt.lat, endPt.lon);
+      if (d > togo) b += d - togo;
+      togo = d;
+    });
+    return b;
+  }
+  // Corner values counted in order, after the corners before them.
+  function routeValues(S, stops, progress) {
+    var have = haveMap(progress), stars = starMap(progress), total = 0, effects = [];
+    stops.forEach(function (st) {
+      if (st.kind === 'star') { st.value = st.starValue; total += st.value; return; }
+      var eff = effectsAt(S, st, have, stars);
+      eff.forEach(function (e) { have[e.cell] = e.to; });
+      st.effects = eff; st.value = valueOf(eff); total += st.value;
+      effects = effects.concat(eff);
+    });
+    return { value: total, effects: effects };
+  }
+  function bestRoute(S, fix, progress, isCollected, budgetMin, opts) {
+    var skip = opts.skip || function () { return false; };
+    var reach = metresFor(OVER * budgetMin) / 2, slack = forwardSlackM();
+    function near(c) {
+      return endPt ? detourM(S, fix, c) <= 2 * reach &&
+                     S.haversineM(c.lat, c.lon, endPt.lat, endPt.lon) <= baseM + slack
+                   : S.haversineM(fix.lat, fix.lon, c.lat, c.lon) <= reach;
+    }
+    function costMin(c) {
+      return Math.max(0.5, minutesFor(endPt ? detourM(S, fix, c) : 2 * S.haversineM(fix.lat, fix.lon, c.lat, c.lon)));
+    }
+    var pool = [];
+    finishCandidates(S, fix, progress, isCollected).forEach(function (c) {
+      if (!near(c)) return;
+      var st = { kind: 'corner', name: c.name, lat: c.lat, lon: c.lon };
+      if (skip(st)) return;
+      pool.push({ st: st, score: c.value / costMin(c) });
+    });
+    var fr = opts.fresh;
+    if (fr && fr.stops && fr.stops[0]) {
+      var fs = { kind: 'corner', name: fr.stops[0].name, lat: fr.stops[0].lat, lon: fr.stops[0].lon };
+      if (!skip(fs) && !pool.some(function (p) { return p.st.name === fs.name; }))
+        pool.push({ st: fs, score: fr.value / costMin(fs) });
+    }
+    var dark = darkComplete(S, progress);
+    (opts.stars || []).forEach(function (sv) {
+      if (sv.lat == null || sv.lon == null || (opts.starHave && opts.starHave(sv))) return;
+      if (!near(sv)) return;
+      var r = opts.rarity ? opts.rarity(sv.mag) : 0.3, lights = 0;
+      if (dark) {
+        var p14 = null;
+        try { p14 = S.starCellPath(sv.lat, sv.lon, 14); } catch (e) {}
+        if (p14) dark.forEach(function (cell) { if (p14.indexOf(cell) === 0) lights++; });
+      }
+      var st = { kind: 'star', name: sv.name, lat: sv.lat, lon: sv.lon, star: sv,
+                 starValue: 1 + 3 * r + STARLIGHT_W * lights, rarity: r, starlights: lights };
+      if (skip(st)) return;
+      pool.push({ st: st, score: st.starValue / costMin(st) });
+    });
+    pool.sort(function (a, b) { return b.score - a.score; });
+    pool = pool.slice(0, ROUTE_POOL).map(function (p) { return p.st; });
+    if (pool.length < 2) return null;
+
+    function fits(stops) {
+      var mins = minutesFor(routeMetres(S, fix, stops));
+      var extra = endPt ? mins - baseMin : mins;
+      return extra <= budgetMin && routeBackM(S, stops) <= slack;
+    }
+    var route = [], used = {};
+    var cur = { value: 0, minutes: minutesFor(routeMetres(S, fix, [])) };
+    while (route.length < ROUTE_MAX) {
+      var best = null;
+      for (var i = 0; i < pool.length; i++) {
+        if (used[i]) continue;
+        for (var pos = 0; pos <= route.length; pos++) {
+          var cand = route.slice(0, pos).concat([pool[i]], route.slice(pos));
+          if (!fits(cand)) continue;
+          var val = routeValues(S, cand, progress).value;
+          var dv = val - cur.value;
+          if (dv <= 0.01) continue;
+          var dm = Math.max(0.5, minutesFor(routeMetres(S, fix, cand)) - cur.minutes);
+          var ratio = dv / dm;
+          if (!best || ratio > best.ratio) best = { ratio: ratio, i: i, stops: cand, value: val };
+        }
+      }
+      if (!best) break;
+      used[best.i] = 1; route = best.stops;
+      cur = { value: best.value, minutes: minutesFor(routeMetres(S, fix, route)) };
+    }
+    // Untangle.
+    var improved = true, guard = 0;
+    while (improved && guard++ < 50) {
+      improved = false;
+      for (var a = 0; a < route.length - 1; a++) for (var b = a + 1; b < route.length; b++) {
+        var alt = route.slice(0, a).concat(route.slice(a, b + 1).reverse(), route.slice(b + 1));
+        if (routeMetres(S, fix, alt) + 0.5 < routeMetres(S, fix, route) && fits(alt)) { route = alt; improved = true; }
+      }
+    }
+    if (route.length < 2) return null;
+    var rv = routeValues(S, route, progress);
+    var t = trip('route', route, fix, S, { value: rv.value, effects: rv.effects });
+    var nStar = route.filter(function (s) { return s.kind === 'star'; }).length, nCorner = route.length - nStar;
+    var bits = [];
+    if (nCorner) bits.push(nCorner + ' corner' + (nCorner === 1 ? '' : 's'));
+    if (nStar) bits.push(nStar + ' starpin' + (nStar === 1 ? '' : 's'));
+    t.corners = nCorner; t.stars = nStar;
+    t.headline = bits.join(' and ');
+    t.detail = rv.effects.length ? describe(rv.effects) : '';
+    return t;
+  }
+
   // opts: { S, fix, progress, isCollected(name), stars, starHave(star),
-  //         rarity(mag), budgetMin, kmh, end, finishOnly }
+  //         rarity(mag), budgetMin, kmh, end, finishOnly, skip(stop) }
   function plan(opts) {
     var kmh = opts.kmh > 0 ? +opts.kmh : WALK_KMH, prev = speedKmh;
     var prevEnd = endPt, prevBaseM = baseM, prevBaseMin = baseMin;
@@ -392,22 +530,29 @@ var GeosonifyStarpinNext = (function () {
     try {
       var S = opts.S, fix = opts.fix, budget = opts.budgetMin || 30;
       var isCollected = opts.isCollected || function () { return false; };
-      var finish = bestFinish(S, fix, opts.progress, isCollected, budget);
-      return {
+      var finish = bestFinish(S, fix, opts.progress, isCollected, budget), fresh, out;
+      out = {
         rule: RULE, budgetMin: budget, kmh: kmh,
         end: endPt ? { lat: endPt.lat, lon: endPt.lon } : null, straightM: baseM, straightMin: baseMin,
         finish: finish && finish.far ? null : finish,
         finishFar: !!(finish && finish.far),
         // finishOnly: the map's always-on "next" marker needs only this, and
         // the new-ground search is the expensive part.
-        fresh: opts.finishOnly ? undefined : bestFresh(S, fix, opts.progress, isCollected, budget),
+        fresh: (fresh = opts.finishOnly ? undefined : bestFresh(S, fix, opts.progress, isCollected, budget)),
         star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
                                     opts.rarity, budget, opts.progress) : undefined
       };
+      // The whole route: not for the always-on marker (finishOnly), and not
+      // until the star lookup has answered (stars undefined = still looking),
+      // so a route is never shown and then reshuffled by late stars.
+      out.route = (opts.finishOnly || opts.stars === undefined) ? undefined
+        : bestRoute(S, fix, opts.progress, isCollected, budget,
+                    { fresh: fresh, stars: opts.stars, starHave: opts.starHave, rarity: opts.rarity, skip: opts.skip });
+      return out;
     } finally { speedKmh = prev; endPt = prevEnd; baseM = prevBaseM; baseMin = prevBaseMin; }
   }
 
-  return { VERSION: '0.6', STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
+  return { VERSION: '0.7', ROUTE_MAX: ROUTE_MAX, STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
            DETOUR: DETOUR, FRESH_FINE_M: FRESH_FINE_M, FRESH_MAX_M: FRESH_MAX_M,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };

@@ -262,6 +262,18 @@ dl{margin:.7rem 0 0}
 .tally .t-corner{border-color:var(--moss);background:color-mix(in srgb,var(--moss) 14%,var(--card))}
 .tally .t-best{border-color:var(--rust);background:color-mix(in srgb,var(--rust) 13%,var(--card))}
 .tally .t-cell{border-color:var(--bark-lit);background:color-mix(in srgb,var(--bark-lit) 14%,var(--card))}
+.tally.split div{cursor:pointer;position:relative}
+.tally.split div::after{content:"\203A";position:absolute;right:.5rem;top:.35rem;font-weight:800;opacity:.45}
+.tally.split div:active{transform:scale(.97)}
+.lg-head{display:flex;align-items:center;gap:.6rem;margin:0 0 .8rem}
+.lg-head button{width:auto;flex:none;padding:.4rem .8rem}
+.lg-head h3{margin:0;font-size:1.05rem}
+.lg-recent{font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;font-weight:800;
+  color:var(--ink-2);margin:.2rem 0 .5rem}
+/* Mini-logs list each find on one line; a tap opens the full card in place. */
+.lg-compact .rec:not(.open) .visits,.lg-compact .rec:not(.open) .acts{display:none}
+.lg-compact .rec:not(.open) .chips .chip:nth-child(n+3){display:none}
+.lg-compact .rec{cursor:pointer}
 .tally .tally-starlit{display:block;font-style:normal;font-size:.62rem;font-weight:800;
   color:var(--sun-deep);margin-top:.1rem}
 .cell-star{color:var(--sun-deep);font-size:.85rem;margin-left:-.35rem}
@@ -846,20 +858,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261117"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261117b"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261117b"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261117d"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261117"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20261101"></script>
 
@@ -872,7 +884,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261117b"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261117d"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -901,6 +913,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // pin and the follow box offers more on the way. Kept apart from nextGoal
   // so the compass and the thin needle carry on as when wandering.
   var nextHeading = null;
+  // A stop is done when collected: a corner by name, a starpin by source id.
+  function stopDone(st) {
+    return st.kind === 'star' ? !!starsHave[sourceIdOf(st.name)] : !!collected[csName(st.name)];
+  }
+  // Stops skipped on the map (tap a numbered stop): left out of plans and
+  // walks for the rest of this visit. Keyed by position.
+  var nextSkip = {};
+  function stopKey(st) { return (+st.lat).toFixed(6) + ',' + (+st.lon).toFixed(6); }
   function nextWalkDone() {
     if (nextGoal && nextGoal.end) nextHeading = nextGoal.end;
     nextGoal = null;
@@ -985,11 +1005,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // so the answer cannot lag behind your feet.
   function nearestStarpin() {
     if (!fix) return null;
-    if (nextGoal && nextGoal.kind === 'star') {
-      var gs = nextGoal.star;
-      if (!starsHave[sourceIdOf(gs.name)])
-        return { star: gs, distanceM: S.haversineM(fix.lat, fix.lon, gs.lat, gs.lon) };
-      nextWalkDone(); paintNextFollow();            // collected: the walk is done
+    if (nextGoal) {
+      var gst = nextStop();
+      if (gst && gst.kind === 'star')
+        return { star: gst.star, distanceM: S.haversineM(fix.lat, fix.lon, gst.lat, gst.lon) };
+      if (!gst) { nextWalkDone(); paintNextFollow(); }  // all collected: the walk is done
     }
     var best = null;
     map.stars().forEach(function (st) {
@@ -1115,6 +1135,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function syncOpportunity(force) {
     if (!map || !map.setOpportunity || !NX) return;
     if (nextGoal || cellGoal || nextHeading) { map.setOpportunity(null); return; }
+    if (nextShown && nextPlan && nextPlan.route && currentTab === 'go') { map.setOpportunity(null); return; }   // the route has it
     var o = nextOrigin();
     if (!o) { map.setOpportunity(null); return; }
     if (!force && oppAt && S.haversineM(o.lat, o.lon, oppAt.lat, oppAt.lon) < OPP_REPLAN_M) return;
@@ -1530,9 +1551,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var maxTier = Math.max(6, Math.min(14, parseFloat($('order').value) || 12));
     // Following a "What next?" walk: the target is its next stop you do not
     // have yet, in the planned order.
-    if (cellGoal || (nextGoal && nextGoal.kind === 'corners')) { thinCs = null; thinKey = null; }
-    if (nextGoal && nextGoal.kind === 'corners') {
+    if (cellGoal || nextGoal) { thinCs = null; thinKey = null; }
+    if (nextGoal) {
       var stop = nextStop();
+      if (stop && stop.kind === 'star') stop = null;      // the starpin tab has it
+      else if (!stop) { nextWalkDone(); paintNextFollow(); }
       if (stop) {
         try {
           lastCs = S.nearestCornerstone(stop.lat, stop.lon, 14);
@@ -1542,7 +1565,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
           return;
         } catch (e) {}
       }
-      nextWalkDone(); paintNextFollow();
     }
     // Guided round a cell: the target is the nearest corner of it you do not
     // have yet, whatever its tier — the rarity floor is for wandering, and a
@@ -1724,9 +1746,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var nextStarsDown = false, NEXT_STARS_TIMEOUT_MS = 50000;
 
   function nextStop() {
-    if (!nextGoal || nextGoal.kind !== 'corners') return null;
+    if (!nextGoal) return null;
     for (var i = 0; i < nextGoal.stops.length; i++)
-      if (!collected[csName(nextGoal.stops[i].name)]) return nextGoal.stops[i];
+      if (!stopDone(nextGoal.stops[i])) return nextGoal.stops[i];
     return null;
   }
   /*
@@ -1821,6 +1843,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     try {
       nextPlan = NX.plan({
         S: S, fix: o, progress: patchAll, budgetMin: nextBudget, kmh: nextKmh(), end: end,
+        skip: function (st) { return !!nextSkip[stopKey(st)]; },
         isCollected: function (n) { return !!collected[csName(n)]; },
         stars: nextStars || undefined,
         starHave: function (st) { return !!starsHave[sourceIdOf(st.name)]; },
@@ -1828,7 +1851,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       nextPlan.from = o;                                   // where the trip starts (and ends, if round)
       nextPlan.to = end;                                   // where a one-way trip ends
-      setTimeout(function () { syncOpportunity(true); }, 0);
+      setTimeout(function () { syncOpportunity(true); syncRoute(); }, 0);
     } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
     paintNextCards();
   }
@@ -1839,6 +1862,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (!nextOrigin()) { box.appendChild(el('p', 'hint', 'Finding where you are\u2026')); return; }
     if (!nextPlan) { box.appendChild(el('p', 'hint', 'Nothing to suggest yet.')); return; }
     var p = nextPlan;
+    if (p.route) card('route', p.route, p.to ? 'On the way, ' + nextBudget + ' minutes extra' : 'Your ' + nextBudget + ' minutes',
+                      'patch route', p.route.headline + (p.route.detail ? ': ' + p.route.detail.charAt(0).toLowerCase() + p.route.detail.slice(1) : ''), null);
     card('finish', p.finish, 'Finish something', 'patch',
          p.finish ? p.finish.detail : null,
          p.finishFar ? 'Nothing you have started is within reach in this time. Try a longer walk, or new ground below.'
@@ -1865,7 +1890,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       if (!t) { c.appendChild(el('p', 'hint', empty)); box.appendChild(c); return; }
       c.appendChild(el('div', 'nh', headline));
       var stops = t.stops.length;
-      var meta = (kind === 'star' ? '' : stops + ' corner' + (stops === 1 ? '' : 's') + ' \u00b7 ');
+      var meta = kind === 'route' ? stops + ' stops \u00b7 '
+               : (kind === 'star' ? '' : stops + ' corner' + (stops === 1 ? '' : 's') + ' \u00b7 ');
       if (t.oneWay && p.to) {
         var ex = Math.round(t.extraMin);
         meta += nextKm(t.metres) + ' to ' + p.to.label + ' \u00b7 about ' + Math.max(1, Math.round(t.minutes)) +
@@ -1878,7 +1904,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       c.appendChild(el('div', 'nm' + (t.overBudget ? ' over' : ''), meta));
       // Each stop's four HEALPix words (find-words-v1), the same words the
       // find will give Word Lab, so a walk can be read out or shared.
+      if (kind === 'route') c.appendChild(el('div', 'nw', 'The numbered stops are on the map. Tap one to skip it.'));
       t.stops.forEach(function (s, i) {
+        if (kind === 'route') return;                   // eight lines of words would bury the card
         var w = null;
         try {
           w = S.findWords ? S.findWords(kind === 'star'
@@ -1933,8 +1961,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // From a pin, the route must start at the pin, not wherever the phone is:
   // Google's origin and Apple's source (both documented parameters).
   function routeFromPin() { return routeTrip.from && routeTrip.from.pin ? routeTrip.from : null; }
+  // Google Maps in a phone browser takes at most 3 waypoints: a longer
+  // route opens as its first stops, ending at the 4th, and the dialog says so.
+  var GOOGLE_MAX_VIA = 3;
   function googleRoute(back) {
     var r = routeStops(back), o = routeFromPin();
+    if (r.via.length > GOOGLE_MAX_VIA) r = { via: r.via.slice(0, GOOGLE_MAX_VIA), to: r.via[GOOGLE_MAX_VIA] };
     return 'https://www.google.com/maps/dir/?api=1&travelmode=' + (routeMode === 'bike' ? 'bicycling' : 'walking') +
       (o ? '&origin=' + routeLL(o) : '') +
       (r.via.length ? '&waypoints=' + r.via.map(routeLL).join('%7C') : '') +
@@ -1952,7 +1984,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     routeMode = nextMode; paintRouteMode();          // the travel setting is the default
     var n = t.stops.length;
     $('route-dlg-what').textContent = title + ' \u2014 ' + n + ' stop' + (n === 1 ? '' : 's') +
-      (to ? ', then ' + to.label : '') + '.';
+      (to ? ', then ' + to.label : '') + '.' +
+      (n + 1 > GOOGLE_MAX_VIA + 1 ? ' Google Maps on a phone takes only the first ' + (GOOGLE_MAX_VIA + 1) +
+        ' stops; Apple Maps takes them all.' : '');
     $('route-dlg-back').checked = true;
     $('route-dlg-back').closest('label').style.display = to ? 'none' : '';  // CSS sets display:flex
     $('route-dlg-backlbl').textContent = from && from.pin ? 'Back to the pin' : 'Back to where I started';
@@ -1978,18 +2012,62 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     cellGoal = null; nextHeading = null;
     var e0 = endOverride !== undefined ? endOverride : (nextPlan && nextPlan.to);
     var end = e0 ? { lat: e0.lat, lon: e0.lon, label: e0.label } : null;
-    if (kind === 'star') {
-      nextGoal = { kind: 'star', star: t.star, title: title, end: end };
-      $('tab-star').click();
-    } else {
-      nextGoal = { kind: 'corners', title: title, end: end, stops: t.stops.map(function (s) {
-        return { name: s.name, lat: s.lat, lon: s.lon }; }) };
-      $('tab-corner').click();
-      cornerstone();
-    }
+    nextGoal = { kind: kind === 'route' ? 'route' : 'walk', title: title, end: end,
+      stops: t.stops.map(function (s) {
+        var isStar = kind === 'star' || s.kind === 'star';
+        return { kind: isStar ? 'star' : 'corner', name: s.name, lat: s.lat, lon: s.lon,
+                 star: isStar ? (s.star || t.star) : null };
+      }).filter(function (s) { return !nextSkip[stopKey(s)]; }) };
+    followStopTab();
     paintNextFollow();
+    syncRoute();
     syncOpportunity(true);
     showFollowBoth();
+  }
+
+  // The compass mode follows the walk's current stop: the starpin tab for a
+  // star, the cornerstone tab for a corner.
+  function followStopTab() {
+    var st = nextStop();
+    if (!st) return;
+    if (st.kind === 'star') { if (activeTab !== 'star') $('tab-star').click(); }
+    else { if (activeTab !== 'corner') $('tab-corner').click(); cornerstone(); }
+  }
+
+  /*
+    THE WHOLE ROUTE ON THE MAP. While the What-next cards are open, the
+    route card's stops are previewed (thin, numbered); while a walk of more
+    than one stop is followed, the stops still to come are drawn the same
+    way and the dashed line goes to the current one. Tap a numbered stop to
+    skip it.
+  */
+  function syncRoute() {
+    if (!map || !map.setRoute) return;
+    var stops = null, end = null;
+    if (nextGoal && nextGoal.stops.length > 1) {
+      stops = nextGoal.stops.filter(function (st) { return !stopDone(st); });
+      end = nextGoal.end;
+    } else if (!nextGoal && nextShown && nextPlan && nextPlan.route && currentTab === 'go') {
+      stops = nextPlan.route.stops; end = nextPlan.to;
+    }
+    if (!stops || !stops.length) { map.setRoute(null); return; }
+    map.setRoute({ stops: stops.map(function (st) { return { lat: st.lat, lon: st.lon, kind: st.kind }; }),
+                   following: !!nextGoal, end: end ? { lat: end.lat, lon: end.lon } : null });
+  }
+  function skipRouteStop(i) {
+    var list = nextGoal ? nextGoal.stops.filter(function (st) { return !stopDone(st); })
+                        : (nextPlan && nextPlan.route ? nextPlan.route.stops : []);
+    var st = list[i]; if (!st) return;
+    var what = st.kind === 'star' ? 'this starpin' : 'this corner';
+    if (!confirm('Skip stop ' + (i + 1) + ' (' + what + ')? It stays out of suggestions until you reload.')) return;
+    nextSkip[stopKey(st)] = 1;
+    if (nextGoal) {
+      nextGoal.stops = nextGoal.stops.filter(function (x) { return !nextSkip[stopKey(x)]; });
+      if (!nextStop()) nextWalkDone();
+      followStopTab(); paintNextFollow(); paintTargets();
+    }
+    if (nextShown) nextReplan();
+    syncRoute(); syncOpportunity(true);
   }
 
   // Compass and map at once: the sheet drops to half height with the compass
@@ -2005,7 +2083,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       sec.getBoundingClientRect().top - sheetBody.getBoundingClientRect().top - 4) });
     var g = map.goal ? map.goal() : null;
     if (!g && nextGoal) {                 // no fix yet, so no needle: frame the stop itself
-      g = nextGoal.kind === 'star' ? nextGoal.star : (nextStop() || null);
+      g = nextStop() || null;
       if (g) map.setGoal({ lat: g.lat, lon: g.lon });
     }
     // NB: no Leaflet L here. In this closure L is the Starpin log module
@@ -2046,14 +2124,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     if (!nextGoal) return;
     var txt = 'Following: ' + nextGoal.title;
-    if (nextGoal.kind === 'corners' && nextGoal.stops.length > 1) {
-      var got = nextGoal.stops.filter(function (s) { return collected[csName(s.name)]; }).length;
-      txt += ' \u00b7 corner ' + Math.min(got + 1, nextGoal.stops.length) + ' of ' + nextGoal.stops.length;
+    if (nextGoal.stops.length > 1) {
+      var got = nextGoal.stops.filter(stopDone).length, cur = nextStop();
+      txt += ' \u00b7 stop ' + Math.min(got + 1, nextGoal.stops.length) + ' of ' + nextGoal.stops.length +
+        (cur ? ', a ' + (cur.kind === 'star' ? 'starpin' : 'corner') : '');
     }
     var d = el('div', 'next-follow');
     d.appendChild(el('span', null, txt));
     var b = el('button', null, 'stop'); b.type = 'button';
-    b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); syncOpportunity(true); cornerstone(); paintTargets(); });
+    b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); syncRoute(); syncOpportunity(true); cornerstone(); paintTargets(); });
     d.appendChild(b);
     box.appendChild(d);
   }
@@ -2061,8 +2140,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // After every log change: a walk whose stops are all collected is done, and
   // open suggestions are re-planned against what you now hold.
   function nextAfterLog() {
-    if (nextGoal && nextGoal.kind === 'corners' && !nextStop()) nextWalkDone();
-    if (nextGoal && nextGoal.kind === 'star' && starsHave[sourceIdOf(nextGoal.star.name)]) nextWalkDone();
+    if (nextGoal && !nextStop()) nextWalkDone();
+    else if (nextGoal) followStopTab();                  // the next stop may be the other kind
+    syncRoute();
     paintNextFollow();
     if (nextShown) nextReplan();
     syncOpportunity(true);
@@ -3075,6 +3155,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   });
   var map = flip.earth;
   if (map.setOnOpportunity) map.setOnOpportunity(function () { startOpportunity(); });
+  if (map.setOnRouteStop) map.setOnRouteStop(function (i) { skipRouteStop(i); });
   window.starpinFlip = flip;     // for the console
 
   function showRamp() {
@@ -3828,6 +3909,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // Leaflet caches container size, so a map revealed by a tab switch has to
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
+    if (typeof syncRoute === 'function') { syncRoute(); syncOpportunity(true); }   // route preview is the Go tab's
     if (name === 'log') { $('lg-show').click(); refreshFillButton(); refreshShareAllButton(); }
     if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) { refreshGroupList(); renderActivity(); } } catch (_) {} }
     // Restore after layout settles (the Log rebuilds its panel synchronously
@@ -4707,12 +4789,19 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // Completed cells, then the ones you are closest to finishing. Derived, like
   // everything else here: delete a corner's record and its cells go back to
   // "nearly there".
-  function drawCells(box, nCommon) {
+  function drawCells(box, nCommon, full) {
     if (!cellState) return;
     var done = cellState.complete;
     // Started cells from one corner up: commonplace corners are not listed on
     // their own any more, so a first corner must still leave a trace here.
-    var near = cellState.partial.filter(function (e) { return e.have >= 1; }).slice(0, 6);
+    // The Cells mini-log lists them all, nearest lighting first; the one-list
+    // log keeps the first six.
+    var near = cellState.partial.filter(function (e) { return e.have >= 1; });
+    var onlyOne = 0;
+    if (full) {                       // one corner is just a corner: counted, not listed
+      onlyOne = near.filter(function (e) { return e.have === 1; }).length;
+      near = near.filter(function (e) { return e.have >= 2; }).sort(function (a, b) { return b.have - a.have; });
+    } else near = near.slice(0, 6);
     if (!done.length && !near.length) return;
     var sec = el('div', 'cells');
     sec.appendChild(el('h3', null, 'Cells'));
@@ -4750,7 +4839,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       go.addEventListener('click', function () {
         var c = centreOf(e);
         showMap();
-        map.leaflet.setView([c.lat, c.lon], e.order === 13 ? 15 : 16);
+        map.leaflet.setView([c.lat, c.lon], e.order === 12 ? 14 : e.order === 13 ? 15 : 16);
       });
       acts.appendChild(go);
       if (!e.complete) {
@@ -4778,14 +4867,57 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       ? counts + (nc ? ' \u00B7 ' + nc + ' bagged towards cells' : '')
       : 'None finished yet. A cell is done when all four of its corners are bagged, each from its own visit.' +
         (nc ? ' So far: ' + nc + '.' : '')));
-    done.forEach(function (e) { sec.appendChild(row(e)); });
+    if (full) {
+      var lit = done.filter(function (e) { return e.starlit; }).concat(done.filter(function (e) { return !e.starlit; }));
+      if (lit.some(function (e) { return e.starlit; })) sec.appendChild(el('div', 'cells-sub', 'starlit first'));
+      lit.forEach(function (e) { sec.appendChild(row(e)); });
+    } else done.forEach(function (e) { sec.appendChild(row(e)); });
     if (near.length) {
-      sec.appendChild(el('div', 'cells-sub', 'started'));
+      sec.appendChild(el('div', 'cells-sub', full ? 'started, nearest lighting first' : 'started'));
       near.forEach(function (e) { sec.appendChild(row(e)); });
+    }
+    if (onlyOne) sec.appendChild(el('p', 'hint', 'And ' + onlyOne + ' more with one corner so far.'));
+    // Large patches (order 12) are drawn on the map but are not cells: listed
+    // here, apart, and kept out of the count so the number keeps its meaning.
+    if (full && patchAll) {
+      var large = patchAll.complete.filter(function (e) { return e.order === 12; });
+      if (large.length) {
+        sec.appendChild(el('div', 'cells-sub', 'large patches lit (not counted as cells)'));
+        large.forEach(function (e) { sec.appendChild(row(e)); });
+      }
     }
     box.appendChild(sec);
   }
 
+  /*
+    ONE LOG, THEN FOUR. Until LOG_SPLIT_AT finds, the log is one list, as it
+    always was: early on every find deserves its card. After that the tab is a
+    summary: the four tiles (each opens its own mini-log), your last
+    LOG_RECENT finds as full cards, and the file buttons. The mini-logs are
+    starpins, cornerstones (commonplace corners behind a switch), cells (lit,
+    starlit, then every started cell nearest lighting first, and large
+    patches apart), and rare finds as full cards. The view rides in the URL
+    hash (#log-stars, #log-corners, #log-cells, #log-rare) through
+    history.pushState, so the phone's back gesture returns to the summary.
+  */
+  var LOG_SPLIT_AT = 25, LOG_RECENT = 5, LOG_VIEWS = { stars: 'Starpins', corners: 'Cornerstones', cells: 'Cells', rare: 'Rare finds' };
+  function logView() {
+    var m = /^#log-(stars|corners|cells|rare)$/.exec(location.hash || '');
+    return m ? m[1] : 'summary';
+  }
+  function openLogView(v) {
+    try { history.pushState({ starpinLog: v }, '', '#log-' + v); } catch (e) { location.hash = '#log-' + v; }
+    $('lg-show').click();
+    sheetBody.scrollTo({ top: 0 });
+  }
+  function closeLogView() {
+    if (history.state && history.state.starpinLog) history.back();
+    else { try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { location.hash = ''; }
+           $('lg-show').click(); }
+  }
+  window.addEventListener('popstate', function () {
+    if (currentTab === 'log') { $('lg-show').click(); sheetBody.scrollTo({ top: 0 }); }
+  });
   $('lg-show').addEventListener('click', function () {
     var box = $('lg-panel'); box.textContent = ''; box.hidden = false;
     if (R) R.stop();
@@ -4842,8 +4974,38 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       }
       tally.appendChild(d);
     });
-    box.appendChild(tally);
-    drawCells(box, Object.keys(corners).filter(function (k) { return corners[k] > 12; }).length);
+    var nCommonCorners = Object.keys(corners).filter(function (k) { return corners[k] > 12; }).length;
+    var totalFinds = Object.keys(stars).length + nCorners;
+    var split = totalFinds >= LOG_SPLIT_AT;
+    var view = split ? logView() : 'all';
+    box.classList.remove('lg-compact');
+    var sortRow = $('lg-sort').parentNode;
+    sortRow.hidden = view === 'summary' || view === 'cells';
+    if (view === 'all' || view === 'summary') {
+      box.appendChild(tally);
+      if (split) {
+        tally.classList.add('split');
+        ['stars', 'corners', 'cells', 'rare'].forEach(function (v, i) {
+          var tile = tally.children[i];
+          tile.setAttribute('role', 'button'); tile.tabIndex = 0;
+          tile.setAttribute('aria-label', 'Open ' + LOG_VIEWS[v]);
+          tile.addEventListener('click', function () { openLogView(v); });
+          tile.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openLogView(v); } });
+        });
+      }
+    } else {
+      var head = el('div', 'lg-head');
+      var back = el('button', null, '\u2039 Records'); back.type = 'button';
+      back.addEventListener('click', closeLogView);
+      head.appendChild(back);
+      head.appendChild(el('h3', null, LOG_VIEWS[view]));
+      box.appendChild(head);
+    }
+    if (view === 'all') drawCells(box, nCommonCorners);
+    if (view === 'cells') {
+      drawCells(box, nCommonCorners, true);
+      return;
+    }
 
     function scarcity(r) {
       if (r.target.cornerstone) {
@@ -4899,10 +5061,27 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         if (apt) gp.isCommon = S.nearestCornerstone(apt.lat, apt.lon, 14).tierOrder > 12;
       } catch (e) {}
     });
-    var nHidden = groups.filter(function (gp) { return gp.isCommon; }).length;
-    if (!logShowCommon) groups = groups.filter(function (gp) { return !gp.isCommon; });
+    if (view === 'stars') groups = groups.filter(function (gp) { return !gp.rep.target.cornerstone; });
+    if (view === 'corners') groups = groups.filter(function (gp) { return !!gp.rep.target.cornerstone; });
+    if (view === 'rare') groups = groups.filter(function (gp) {
+      var t = gp.rep.target;
+      return t.cornerstone ? (corners[csName(t.cornerstone)] != null && corners[csName(t.cornerstone)] <= 11)
+                           : (t.mag_g != null && t.mag_g < 10);
+    });
+    var nHidden = (view === 'all' || view === 'corners') ? groups.filter(function (gp) { return gp.isCommon; }).length : 0;
+    if (!logShowCommon || view === 'summary' || view === 'stars' || view === 'rare')
+      groups = groups.filter(function (gp) { return !gp.isCommon; });
+    if (view === 'summary') {
+      groups = groups.slice().sort(function (a, b) { return groupMs(b) - groupMs(a); }).slice(0, LOG_RECENT);
+      box.appendChild(el('div', 'lg-recent', 'Recent finds'));
+    }
+    var compact = view === 'stars' || view === 'corners';
+    box.classList.toggle('lg-compact', compact);
+    if (!groups.length && view !== 'summary' && view !== 'all')
+      box.appendChild(el('p', 'hint', view === 'rare' ? 'No rare finds yet: a starpin brighter than G 10, or a cornerstone of tier 11 or rarer.'
+                                                      : 'Nothing here yet.'));
 
-    var runUI = (R && mode !== 'rare') ? R.runUI(box, groups, replayDeps()) : null;
+    var runUI = (R && mode !== 'rare' && view !== 'summary') ? R.runUI(box, groups, replayDeps()) : null;
     groups.forEach(function (gp, i) {
       var r = gp.rep;
       var rk = rank[r.record_id] || {};
@@ -4941,6 +5120,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var isCommon = !!gp.isCommon;
       var d = el('div', 'rec' + (rk.best === false && !isCulm ? ' dim' : '') +
                              (isCommon ? ' common' : ''));
+      if (compact) d.addEventListener('click', function (e) {
+        if (e.target.closest && e.target.closest('button, a')) return;
+        d.classList.toggle('open');
+      });
       d.style.animation = 'rise .3s cubic-bezier(.2,.9,.25,1) both';
       d.style.animationDelay = Math.min(i, 8) * 0.035 + 's';
 
@@ -5109,7 +5292,12 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       box.appendChild(tg);
     }
+    if (view === 'summary') {
+      box.appendChild(el('p', 'hint', 'Tap a tile for all of them: starpins, cornerstones, cells, rare finds.'));
+      return;
+    }
     box.appendChild(el('p', 'hint',
+      (compact ? 'Tap a find to open it. ' : '') +
       'Verdicts and "your closest" are worked out fresh every time this is drawn, ' +
       'never stored. Dimmed cards are ones you later beat. Swipe a card left, ' +
       'slowly, to delete it.'));

@@ -171,6 +171,33 @@ map.setOpportunity(null);
 ok('setOpportunity(null) clears it', map.opportunity() === null);
 ok('setOnOpportunity is there for the host', typeof map.setOnOpportunity === 'function');
 
+head('4d: shading off, and a goal off the screen');
+lastErr = null; texts = 0;
+try {
+  map.setShading(false); map.redraw();
+  map.setFix(-43.552932, 172.652115, 6);
+  map.setGoal({ lat: -43.40, lon: 172.652115 });       // ~17 km north: off screen
+  map.redraw();
+} catch (e) { lastErr = e; }
+ok('shading switches off and the map still draws', !lastErr && map.shading() === false, lastErr && lastErr.message);
+ok('an off-screen goal gets an edge chip with its distance', !lastErr && texts > 0, String(texts));
+map.setGoal(null); map.setShading(true);
+ok('shading switches back on', map.shading() === true);
+
+head('4e: the whole route');
+lastErr = null; texts = 0;
+try {
+  map.setFix(-43.552932, 172.652115, 6);
+  map.setRoute({ stops: [{ lat: -43.5535, lon: 172.6530, kind: 'corner' },
+                         { lat: -43.5540, lon: 172.6510, kind: 'star' }], following: false });
+  map.redraw();
+} catch (e) { lastErr = e; }
+ok('a route previews with numbered stops', !lastErr && texts >= 2, lastErr ? lastErr.message : String(texts));
+ok('route() reports it', map.route() && map.route().stops.length === 2 && map.route().stops[1].kind === 'star');
+ok('setOnRouteStop is there for the host', typeof map.setOnRouteStop === 'function');
+map.setRoute(null);
+ok('setRoute(null) clears it', map.route() === null);
+
 head('5: tapping — regression: markers stopped being selectable');
 (function () {
   var picked = null;

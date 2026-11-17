@@ -130,6 +130,30 @@ ok('new ground on the way is offered, within the allowance', commute2.fresh && c
    commute2.fresh.extraMin <= 15, commute2.fresh && commute2.fresh.extraMin.toFixed(1));
 ok('the planner forgets the end afterwards', N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 30 }).end === null);
 
+console.log('\n2d: a whole route (v0.7)');
+var someStars = [0, 1, 2, 3].map(function (i) {
+  return { name: 'Gaia DR3 99990' + i, lat: fix.lat + 0.002 * (i - 1.5), lon: fix.lon + 0.003, mag: 13 };
+});
+var rp = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 60, kmh: 12,
+                  stars: someStars, starHave: function () { return false; }, rarity: function () { return 0.4; } });
+ok('no route until the star lookup has answered', N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 60 }).route === undefined);
+ok('a route has at least two stops, at most ROUTE_MAX', rp.route && rp.route.stops.length >= 2 && rp.route.stops.length <= N.ROUTE_MAX,
+   rp.route && rp.route.stops.length);
+ok('...fits the time', rp.route && rp.route.minutes <= 60 + 1e-9, rp.route && rp.route.minutes.toFixed(1));
+ok('...and every stop is a corner or a starpin', rp.route && rp.route.stops.every(function (st) {
+  return st.kind === 'corner' ? !!st.name : st.kind === 'star' && !!st.star; }));
+ok('...never a corner you have', rp.route && rp.route.stops.every(function (st) { return st.kind !== 'corner' || !have(st.name); }));
+var firstStop = rp.route && rp.route.stops[0];
+var rs = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 60, kmh: 12, stars: someStars,
+                  starHave: function () { return false; }, rarity: function () { return 0.4; },
+                  skip: function (st) { return firstStop && st.lat === firstStop.lat && st.lon === firstStop.lon; } });
+ok('a skipped stop stays out of the route', !rs.route || rs.route.stops.every(function (st) {
+  return !(st.lat === firstStop.lat && st.lon === firstStop.lon); }));
+var rw = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 15, kmh: 12, end: endOn,
+                  stars: [], starHave: function () { return false; } });
+ok('a one-way route is forward and within the extra time', !rw.route ||
+   (rw.route.backM <= Math.max(150, 0.05 * rw.straightM) && rw.route.extraMin <= 15 + 1e-9));
+
 console.log('\n3: new ground');
 ok('fresh: a corner is offered', !!plan.fresh);
 var fr = plan.fresh.stops[0];
