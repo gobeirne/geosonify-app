@@ -380,7 +380,7 @@ var GeosonifyStarpinNext = (function () {
   }
 
   // opts: { S, fix, progress, isCollected(name), stars, starHave(star),
-  //         rarity(mag), budgetMin, kmh, end }
+  //         rarity(mag), budgetMin, kmh, end, finishOnly }
   function plan(opts) {
     var kmh = opts.kmh > 0 ? +opts.kmh : WALK_KMH, prev = speedKmh;
     var prevEnd = endPt, prevBaseM = baseM, prevBaseMin = baseMin;
@@ -398,7 +398,9 @@ var GeosonifyStarpinNext = (function () {
         end: endPt ? { lat: endPt.lat, lon: endPt.lon } : null, straightM: baseM, straightMin: baseMin,
         finish: finish && finish.far ? null : finish,
         finishFar: !!(finish && finish.far),
-        fresh: bestFresh(S, fix, opts.progress, isCollected, budget),
+        // finishOnly: the map's always-on "next" marker needs only this, and
+        // the new-ground search is the expensive part.
+        fresh: opts.finishOnly ? undefined : bestFresh(S, fix, opts.progress, isCollected, budget),
         star: opts.stars ? bestStar(S, fix, opts.stars, opts.starHave || function () { return false; },
                                     opts.rarity, budget, opts.progress) : undefined
       };

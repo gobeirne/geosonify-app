@@ -159,6 +159,18 @@ ok('goal() reports it', map.goal() && map.goal().lat === -43.5547);
 map.setGoal(null);
 ok('setGoal(null) clears it', map.goal() === null);
 
+head('4c: the best thing to finish, shown without asking');
+lastErr = null;
+try {
+  map.setOpportunity({ stops: [{ lat: -43.5547, lon: 172.6538 }], starlit: true });
+  map.redraw();
+} catch (e) { lastErr = e; }
+ok('an opportunity draws', !lastErr, lastErr && lastErr.message);
+ok('opportunity() reports it', map.opportunity() && map.opportunity().starlit === true);
+map.setOpportunity(null);
+ok('setOpportunity(null) clears it', map.opportunity() === null);
+ok('setOnOpportunity is there for the host', typeof map.setOnOpportunity === 'function');
+
 head('5: tapping — regression: markers stopped being selectable');
 (function () {
   var picked = null;

@@ -446,6 +446,11 @@ var GeosonifyStarpinMap = (function () {
     var pin = null;                     // a read-only probe, never a claim
     var selected = null;                // {kind, id} -> gets the throb
     var phase = 0, throbTimer = null;
+    // The planner's best thing to finish, shown without asking: { stops:
+    // [{lat, lon}], starlit } or null. It pulses for OPP_PULSE_MS after it
+    // first appears or moves, then holds still (no redraw loop on a bike).
+    var opp = null, oppSince = 0, OPP_PULSE_MS = 6000;
+    var onOpportunity = opts.onOpportunity || null;
     var onSelect = opts.onSelect || null;
     var onMove = opts.onMove || null;
 
@@ -757,6 +762,7 @@ var GeosonifyStarpinMap = (function () {
               var at = visibleMiddle(o.sc.pts);
               if (!at) return;
               badges.push({ x: at[0], y: at[1], col: col, primary: k === 1, have: o.c.have,
+                            order: o.c.order, ipix: o.c.ipix,
                             label: o.c.have + ' of 4 \u00b7 ' + PATCH_SIZE_WORD[o.c.order] });
             }
           });
@@ -766,9 +772,43 @@ var GeosonifyStarpinMap = (function () {
       // Badges last, over every edge, primary size first and 3-of-4 before
       // 2-of-4; any badge that would overlap one already placed is dropped,
       // so labels never pile up where patches of two sizes meet.
+      // Nested patches: when one started patch sits inside another (a small
+      // inside a medium), only the badge of the one nearer lighting stays,
+      // the larger on a tie. Both keep their glow and corner markers.
+      badges = badges.filter(function (b) {
+        return !badges.some(function (o) {
+          if (o === b || o.order === b.order) return false;
+          var fine = o.order > b.order ? o : b, coarse = fine === o ? b : o;
+          if ((fine.ipix >> BigInt(2 * (fine.order - coarse.order))) !== coarse.ipix) return false;
+          return o.have > b.have || (o.have === b.have && o.order < b.order);
+        });
+      });
       badges.sort(function (a, b) {
         return (b.primary - a.primary) || (b.have - a.have); });
       var placed = [];
+      // Starlit, readable on any background: a cased gold star in the middle
+      // of the coarsest starlit patch in view (a starlit patch inside a
+      // starlit one is covered). Placed before the badges, which keep clear.
+      (function () {
+        if (!pal.starlit) return;
+        patches.lit.forEach(function (c) {
+          if (!c.starlit || c.starCovered) return;
+          var sc = patchScreen(c); if (!sc || sc.px < 40) return;
+          var at = visibleMiddle(sc.pts); if (!at) return;
+          var R = Math.max(8, Math.min(16, sc.px * 0.09)), ri = R * 0.45;
+          g.beginPath();
+          for (var i = 0; i < 10; i++) {
+            var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? ri : R;
+            var x = at[0] + rr * Math.cos(a), y = at[1] + rr * Math.sin(a);
+            if (i) g.lineTo(x, y); else g.moveTo(x, y);
+          }
+          g.closePath();
+          g.lineJoin = 'round';
+          g.strokeStyle = pal.under; g.lineWidth = 4; g.stroke();
+          g.fillStyle = 'rgb(' + pal.starlit + ')'; g.fill();
+          placed.push([at[0] - R - 2, at[1] - R - 2, at[0] + R + 2, at[1] + R + 2]);
+        });
+      })();
       badges.forEach(function (b) {
         g.font = '700 ' + (b.primary ? 12 : 11) + 'px -apple-system, system-ui, sans-serif';
         var w = (g.measureText ? g.measureText(b.label).width : 34) + 14;
@@ -786,6 +826,41 @@ var GeosonifyStarpinMap = (function () {
       });
 
       hits = [];
+
+      // The best thing to finish near you (planner's "Finish something"), on
+      // the map without pressing anything: each stop a double ring in the
+      // patch colour, gold when finishing it makes a patch starlit, numbered
+      // when there are two, with a small "next" tag. Tapping it starts the
+      // walk. Hidden while something is being followed (the dashed line has
+      // it then).
+      if (opp && !goal) {
+        var oCol = opp.starlit && pal.starlit ? 'rgb(' + pal.starlit + ')' : 'rgba(' + pal.patch + ',1)';
+        var pulse = Date.now() - oppSince < OPP_PULSE_MS ? (1 - Math.abs(Math.sin(phase * 3.1416))) : 0;
+        opp.stops.forEach(function (st, i) {
+          var q = pt(st.lat, st.lon);
+          if (q[0] < -40 || q[0] > size.x + 40 || q[1] < -40 || q[1] > size.y + 40) return;
+          var R = 17 + pulse * 5;
+          g.save();
+          g.beginPath(); g.arc(q[0], q[1], R, 0, 6.2832);
+          g.strokeStyle = pal.under; g.lineWidth = 7; g.stroke();
+          g.strokeStyle = oCol; g.lineWidth = 3; g.stroke();
+          g.beginPath(); g.arc(q[0], q[1], 11, 0, 6.2832);
+          g.strokeStyle = oCol; g.lineWidth = 2; g.stroke();
+          if (typeof g.fillText === 'function') {
+            var lab = opp.stops.length > 1 ? 'next ' + (i + 1) : 'next';
+            g.font = '700 11px -apple-system, system-ui, sans-serif';
+            var w = (g.measureText ? g.measureText(lab).width : 24) + 12, ty = q[1] - R - 12;
+            g.beginPath();
+            if (g.roundRect) g.roundRect(q[0] - w / 2, ty - 9, w, 18, 9); else g.rect(q[0] - w / 2, ty - 9, w, 18);
+            g.fillStyle = pal.under; g.fill();
+            g.strokeStyle = oCol; g.lineWidth = 1.5; g.stroke();
+            g.fillStyle = oCol; g.textAlign = 'center'; g.textBaseline = 'middle';
+            g.fillText(lab, q[0], ty + 0.5);
+          }
+          g.restore();
+          hits.push({ x: q[0], y: q[1], r: R + 8, kind: 'next', data: { name: 'next' } });
+        });
+      }
 
       // Starpins you have bagged, drawn from the LOG and therefore at every
       // zoom, everywhere. The VizieR star layer is a lookup around the current
@@ -986,8 +1061,9 @@ var GeosonifyStarpinMap = (function () {
 
     function throb() {
       phase = (Date.now() % 1400) / 1400;
-      if (selected) redraw();
-      throbTimer = setTimeout(throb, selected ? 90 : 400);
+      var oppPulsing = opp && !goal && Date.now() - oppSince < OPP_PULSE_MS + 200;
+      if (selected || oppPulsing) redraw();
+      throbTimer = setTimeout(throb, selected || oppPulsing ? 90 : 400);
     }
     throb();
 
@@ -997,6 +1073,10 @@ var GeosonifyStarpinMap = (function () {
         var d = Math.hypot(h.x - p.x, h.y - p.y);
         if (d <= h.r && d < bestD) { bestD = d; best = h; }
       });
+      if (best && best.kind === 'next') {
+        if (onOpportunity) onOpportunity();
+        return;
+      }
       if (best) {
         selected = { kind: best.kind, id: best.kind === 'star'
           ? (best.data.name || best.data.ra + ',' + best.data.dec) : best.data.name };
@@ -1094,6 +1174,19 @@ var GeosonifyStarpinMap = (function () {
         goal = nxt; redraw();
       },
       goal: function () { return goal ? { lat: goal.lat, lon: goal.lon } : null; },
+      // { stops: [{lat, lon}], starlit } or null. Pulses again only when the
+      // stops change.
+      setOpportunity: function (o) {
+        var nxt = o && o.stops && o.stops.length ? {
+          stops: o.stops.map(function (q) { return { lat: +q.lat, lon: +q.lon }; }), starlit: !!o.starlit } : null;
+        var key = function (x) { return x ? x.stops.map(function (q) { return q.lat.toFixed(7) + ',' + q.lon.toFixed(7); }).join(';') + (x.starlit ? '*' : '') : ''; };
+        if (key(nxt) === key(opp)) return;
+        opp = nxt; oppSince = Date.now(); redraw();
+      },
+      opportunity: function () { return opp; },
+      // What a tap on the marker does (set after mount, so wrappers such as
+      // the flip need not pass it through).
+      setOnOpportunity: function (fn) { onOpportunity = typeof fn === 'function' ? fn : null; },
       setBasemap: applyBasemap,
       setPalette: function (name) { paletteOverride = PALETTE[name] ? name : null; redraw(); },
       basemap: function () { return key; },

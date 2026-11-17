@@ -839,14 +839,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261115"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261117"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261114c"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261117"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -865,7 +865,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261115"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261117"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1083,6 +1083,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     active = (thin ? [thin] : []).concat(thick ? [thick] : []);
     lastTargets = active;                   // reused by onOrient for heading-only repaints
     syncMapGoal();
+    syncOpportunity(false);
     prox.update(active, heading);
     paintTabBody();
   }
@@ -1094,6 +1095,44 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // each stop of a followed walk or cell in turn, since those set the same
   // targets. On aerial imagery the line is often easier to follow than the
   // dial.
+  /*
+    THE NEXT THING TO FINISH, ON THE MAP WITHOUT ASKING. The planner's
+    "Finish something" pick (same budget, travel mode and end as the Go tab's
+    chips) drawn as a "next" marker; gold when finishing it makes a patch
+    starlit; a tap starts the walk. While the What-next cards are open it is
+    their pick, so the two never disagree. Re-planned when the log changes,
+    a chip changes, or you have moved OPP_REPLAN_M; finish-only, so cheap.
+    Hidden while anything is followed.
+  */
+  var oppAt = null, oppTrip = null, oppEnd = null, OPP_REPLAN_M = 150;
+  function syncOpportunity(force) {
+    if (!map || !map.setOpportunity || !NX) return;
+    if (nextGoal || cellGoal || nextHeading) { map.setOpportunity(null); return; }
+    var o = nextOrigin();
+    if (!o) { map.setOpportunity(null); return; }
+    if (!force && oppAt && S.haversineM(o.lat, o.lon, oppAt.lat, oppAt.lon) < OPP_REPLAN_M) return;
+    var t = null;
+    oppEnd = null;
+    if (nextShown && nextPlan) { t = nextPlan.finish; oppEnd = nextPlan.to || null; }
+    else {
+      try {
+        oppEnd = nextEndPoint();
+        t = NX.plan({ S: S, fix: o, progress: patchAll, budgetMin: nextBudget, kmh: nextKmh(),
+                      end: oppEnd, finishOnly: true,
+                      isCollected: function (n) { return !!collected[csName(n)]; } }).finish;
+      } catch (e) { console.warn('[starpin] next marker:', e); t = null; }
+    }
+    oppAt = { lat: o.lat, lon: o.lon }; oppTrip = t;
+    map.setOpportunity(t ? {
+      stops: t.stops.map(function (q) { return { lat: q.lat, lon: q.lon }; }),
+      starlit: (t.effects || []).some(function (e) { return e.star && e.to === 4; })
+    } : null);
+  }
+  function startOpportunity() {
+    if (!oppTrip) return;
+    nextFollow('finish', oppTrip, oppTrip.detail || 'Finish something', oppEnd);
+  }
+
   function syncMapGoal() {
     if (!map || !map.setGoal) return;
     var g = null;
@@ -1772,6 +1811,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       nextPlan.from = o;                                   // where the trip starts (and ends, if round)
       nextPlan.to = end;                                   // where a one-way trip ends
+      setTimeout(function () { syncOpportunity(true); }, 0);
     } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
     paintNextCards();
   }
@@ -1917,9 +1957,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('route-dlg-close').addEventListener('click', routeClose);
   $('route-dlg').addEventListener('click', function (e) { if (e.target === this) routeClose(); });
 
-  function nextFollow(kind, t, title) {
+  function nextFollow(kind, t, title, endOverride) {
     cellGoal = null; nextHeading = null;
-    var end = nextPlan && nextPlan.to ? { lat: nextPlan.to.lat, lon: nextPlan.to.lon, label: nextPlan.to.label } : null;
+    var e0 = endOverride !== undefined ? endOverride : (nextPlan && nextPlan.to);
+    var end = e0 ? { lat: e0.lat, lon: e0.lon, label: e0.label } : null;
     if (kind === 'star') {
       nextGoal = { kind: 'star', star: t.star, title: title, end: end };
       $('tab-star').click();
@@ -1930,6 +1971,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       cornerstone();
     }
     paintNextFollow();
+    syncOpportunity(true);
     showFollowBoth();
   }
 
@@ -1980,7 +2022,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         if (nc && nc.scrollIntoView) nc.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
       var hs = el('button', null, 'stop'); hs.type = 'button';
-      hs.addEventListener('click', function () { nextHeading = null; paintNextFollow(); syncMapGoal(); });
+      hs.addEventListener('click', function () { nextHeading = null; paintNextFollow(); syncMapGoal(); syncOpportunity(true); });
       hd.appendChild(more); hd.appendChild(hs);
       box.appendChild(hd);
       return;
@@ -1994,7 +2036,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var d = el('div', 'next-follow');
     d.appendChild(el('span', null, txt));
     var b = el('button', null, 'stop'); b.type = 'button';
-    b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); cornerstone(); paintTargets(); });
+    b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); syncOpportunity(true); cornerstone(); paintTargets(); });
     d.appendChild(b);
     box.appendChild(d);
   }
@@ -2006,6 +2048,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (nextGoal && nextGoal.kind === 'star' && starsHave[sourceIdOf(nextGoal.star.name)]) nextWalkDone();
     paintNextFollow();
     if (nextShown) nextReplan();
+    syncOpportunity(true);
   }
 
   Array.prototype.forEach.call(document.querySelectorAll('.next-chips button[data-min]'), function (b) {
@@ -2013,14 +2056,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       nextBudget = +b.getAttribute('data-min');
       Array.prototype.forEach.call(document.querySelectorAll('.next-chips button[data-min]'), function (x) {
         x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
-      if (nextShown) nextReplan();
+      if (nextShown) nextReplan(); else syncOpportunity(true);
     });
   });
   Array.prototype.forEach.call(document.querySelectorAll('#next-mode button'), function (b) {
     b.addEventListener('click', function () {
       nextMode = b.getAttribute('data-mode') === 'bike' ? 'bike' : 'walk';
       try { localStorage.setItem('starpin.travel', nextMode); } catch (e) {}
-      paintNextMode();
+      paintNextMode(); syncOpportunity(true);
       if (nextShown) nextFetchStars(nextReplan);   // a bike reaches further: may need more stars
     });
   });
@@ -2029,7 +2072,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     b.addEventListener('click', function () {
       nextEnd = b.getAttribute('data-end');
       if (nextEnd !== 'home' && nextEnd !== 'pin') nextEnd = 'round';
-      paintNextEnd();
+      paintNextEnd(); syncOpportunity(true);
       if (nextShown) nextFetchStars(nextReplan);
     });
   });
@@ -3014,6 +3057,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
   });
   var map = flip.earth;
+  if (map.setOnOpportunity) map.setOnOpportunity(function () { startOpportunity(); });
   window.starpinFlip = flip;     // for the console
 
   function showRamp() {
