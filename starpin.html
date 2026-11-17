@@ -419,7 +419,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   display:flex;flex-direction:column;align-items:center;gap:.9rem;
   border-top:1.5px solid var(--line)}
 #sheet[data-state="peek"] .sheet-body{visibility:hidden}
+/* The sheet is always full height and slid down, so at half height the
+   bottom of the body is below the screen. --sheet-hidden (set by sheetTo)
+   pads the end of the body by that much, so its last part can always be
+   scrolled into view. */
+#sheet .sheet-body{padding-bottom:calc(2rem + env(safe-area-inset-bottom,0px) + var(--sheet-hidden,0px))}
 .sheet-body section{flex:none}
+#addr-home.linkish{font:inherit;font-size:.72rem;font-weight:700;width:auto;padding:.2rem .5rem;
+  border-radius:999px;box-shadow:none;background:transparent;border:1px solid var(--line);color:var(--ink-2)}
 #tune-key.linkish{font:inherit;font-size:.72rem;font-weight:700;width:auto;padding:.2rem .5rem;
   margin:.2rem 0 0;border-radius:999px;box-shadow:none;background:transparent;
   border:1px solid var(--line);color:var(--ink-2)}
@@ -548,7 +555,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       <button id="pin-go" type="button">Go</button>
     </div>
     <p class="hint" id="addr-hint" style="margin-top:.45rem"></p>
-    <div class="btnrow"><button type="button" id="addr-home">Make this home</button></div>
+    <div class="btnrow" id="addr-home-row"><button type="button" id="addr-home">Make this home</button></div>
     <p class="hint" id="addr-home-msg" hidden></p>
   </div>
   <div id="info" hidden></div>
@@ -846,7 +853,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261117"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261117b"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -865,7 +872,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261117"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261117b"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1141,8 +1148,18 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     if (fix && nextHeading && !nextGoal && !cellGoal) g = nextHeading;
     else if (fix) {
-      if (activeTab === 'star') g = nearestStar ? nearestStar.star : null;
-      else g = thinPrimary ? thinCs : lastCs;
+      // The line is a route, so it never leads to something you already
+      // have. The thick needle still reads the nearest cornerstone at the
+      // rarity floor, collected or not; when that one is yours, the line
+      // goes to the thin needle's corner (the one that moves a cell along)
+      // instead, or nowhere.
+      if (activeTab === 'star') {
+        g = nearestStar && !starsHave[sourceIdOf(nearestStar.star.name)] ? nearestStar.star : null;
+      } else {
+        var have = function (c) { return c && collected[csName(c.name)]; };
+        g = thinPrimary ? thinCs : lastCs;
+        if (have(g)) g = (thinCs && !have(thinCs)) ? thinCs : null;
+      }
     }
     map.setGoal(g && g.lat != null ? { lat: g.lat, lon: g.lon } : null);
   }
@@ -3415,6 +3432,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   }
   function paintMapAddr(lat, lon, label) {
     addrPoint = (lat == null) ? null : { lat: lat, lon: lon };
+    if (typeof paintAddrHome === 'function') paintAddrHome();
     $('addr-fmt').textContent = fmtLabel();
     $('addr-src').textContent = label || '';
     var key = readout.format();
@@ -3437,6 +3455,16 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function showPinLL(lat, lon) { /* superseded by paintMapAddr */ }
   // Home can be set from anywhere: whatever this box shows (the dropped pin,
   // else the map centre, or an address pasted in and gone to) becomes home.
+  // With a home already saved this is a quiet link, not a big button asking
+  // the same question every time a pin is dropped.
+  function paintAddrHome() {
+    var b = $('addr-home'), h = homePoint();
+    if (!b) return;
+    if (!h) { b.className = ''; b.textContent = 'Make this home'; return; }
+    b.className = 'linkish';
+    b.textContent = 'move home here' + (addrPoint
+      ? ' (now ' + nextKm(S.haversineM(h.lat, h.lon, addrPoint.lat, addrPoint.lon)) + ' away)' : '');
+  }
   $('addr-home').addEventListener('click', function () {
     if (!addrPoint) return;
     var had = homePoint();
@@ -3447,6 +3475,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     m.textContent = 'Home set to the ' + ($('addr-src').textContent || 'place shown') +
       '. Kept on this phone only. Choose \u201cto home\u201d on the Go tab to plan on the way there.';
     m.hidden = false;
+    paintAddrHome();
     paintNextEnd();
     if (nextShown && nextEnd === 'home') nextFetchStars(nextReplan);
   });
@@ -3719,12 +3748,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     sheet.setAttribute('data-state', state);
     var m = sheetMetrics();
     sheet.style.setProperty('--sheet-y', (m.H - visibleFor(state, m)) + 'px');
+    sheet.style.setProperty('--sheet-hidden', (m.H - visibleFor(state, m)) + 'px');
   }
   function syncSheet() {
     var m = sheetMetrics();
     // The stage keeps its buttons and credits clear of the sheet's peek.
     document.documentElement.style.setProperty('--spf-bottom', m.peek + 'px');
     sheet.style.setProperty('--sheet-y', (m.H - visibleFor(sheetState, m)) + 'px');
+    sheet.style.setProperty('--sheet-hidden', (m.H - visibleFor(sheetState, m)) + 'px');
   }
   function showMap() {
     goTab('map');

@@ -648,18 +648,37 @@ var GeosonifyStarpinMap = (function () {
         if (!any) return;
         g.lineJoin = 'round';
         g.strokeStyle = 'rgba(' + pal.patch + ',0.9)'; g.lineWidth = 2; g.stroke();
-        // Starlit: a 1 px gold core down the middle of the teal edge.
-        var st = edged.filter(function (c) { return c.starlit; });
-        if (st.length && pal.starlit) {
-          g.beginPath();
-          st.forEach(function (c) { var sc = patchScreen(c); if (sc) tracePatch(sc); });
-          g.strokeStyle = 'rgba(' + pal.starlit + ',0.95)'; g.lineWidth = 1; g.stroke();
-        }
       })();
 
       layers.forEach(function (L) { strokeAll(L, pal.under, L.st.width + 1.8, L.st.alpha * 0.85); });
       layers.slice().reverse().forEach(function (L) { strokeAll(L, pal.grid, L.st.width, L.st.alpha); });
       g.globalAlpha = 1;
+
+      // Starlit: a gold glow round the edge, over the lattice so grid lines
+      // never cut it. Drawn on the coarsest starlit patch (one inside a
+      // starlit patch is covered) at any size that fits the screen, on a dark
+      // casing so it reads over aerial photos and yellow grid lines alike.
+      (function () {
+        if (!pal.starlit) return;
+        var big = Math.max(size.x, size.y) * 1.6;
+        g.beginPath();
+        var any = false;
+        patches.lit.forEach(function (c) {
+          if (!c.starlit || c.starCovered) return;
+          var px = cellWidthM(c.order) / mpp;
+          if (px < PATCH_OUTLINE_MIN_PX || px > big * 4) return;
+          var sc = patchScreen(c); if (!sc) return;
+          tracePatch(sc); any = true;
+        });
+        if (!any) return;
+        g.save();
+        g.lineJoin = 'round';
+        g.strokeStyle = pal.under; g.lineWidth = 6; g.stroke();
+        g.shadowColor = 'rgba(' + pal.starlit + ',1)'; g.shadowBlur = 14;
+        g.strokeStyle = 'rgba(' + pal.starlit + ',1)'; g.lineWidth = 3; g.stroke();
+        g.shadowBlur = 6; g.stroke();
+        g.restore();
+      })();
 
       // Glowing patches, OVER the lattice and meant to be impossible to miss:
       // the nearest unfinished goals, and the thing on this map meant to pull
@@ -786,29 +805,6 @@ var GeosonifyStarpinMap = (function () {
       badges.sort(function (a, b) {
         return (b.primary - a.primary) || (b.have - a.have); });
       var placed = [];
-      // Starlit, readable on any background: a cased gold star in the middle
-      // of the coarsest starlit patch in view (a starlit patch inside a
-      // starlit one is covered). Placed before the badges, which keep clear.
-      (function () {
-        if (!pal.starlit) return;
-        patches.lit.forEach(function (c) {
-          if (!c.starlit || c.starCovered) return;
-          var sc = patchScreen(c); if (!sc || sc.px < 40) return;
-          var at = visibleMiddle(sc.pts); if (!at) return;
-          var R = Math.max(8, Math.min(16, sc.px * 0.09)), ri = R * 0.45;
-          g.beginPath();
-          for (var i = 0; i < 10; i++) {
-            var a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? ri : R;
-            var x = at[0] + rr * Math.cos(a), y = at[1] + rr * Math.sin(a);
-            if (i) g.lineTo(x, y); else g.moveTo(x, y);
-          }
-          g.closePath();
-          g.lineJoin = 'round';
-          g.strokeStyle = pal.under; g.lineWidth = 4; g.stroke();
-          g.fillStyle = 'rgb(' + pal.starlit + ')'; g.fill();
-          placed.push([at[0] - R - 2, at[1] - R - 2, at[0] + R + 2, at[1] + R + 2]);
-        });
-      })();
       badges.forEach(function (b) {
         g.font = '700 ' + (b.primary ? 12 : 11) + 'px -apple-system, system-ui, sans-serif';
         var w = (g.measureText ? g.measureText(b.label).width : 34) + 14;
