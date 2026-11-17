@@ -1135,7 +1135,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function syncOpportunity(force) {
     if (!map || !map.setOpportunity || !NX) return;
     if (nextGoal || cellGoal || nextHeading) { map.setOpportunity(null); return; }
-    if (nextShown && nextPlan && nextPlan.route && currentTab === 'go') { map.setOpportunity(null); return; }   // the route has it
+    if (routePreviewing()) { map.setOpportunity(null); return; }   // the route has it
     var o = nextOrigin();
     if (!o) { map.setOpportunity(null); return; }
     if (!force && oppAt && S.haversineM(o.lat, o.lon, oppAt.lat, oppAt.lon) < OPP_REPLAN_M) return;
@@ -1168,6 +1168,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       nextHeading = null; paintNextFollow();            // arrived
     }
     if (fix && nextHeading && !nextGoal && !cellGoal) g = nextHeading;
+    else if (routePreviewing()) g = null;   // the previewed route's own path leaves from you
     else if (fix) {
       // The line is a route, so it never leads to something you already
       // have. The thick needle still reads the nearest cornerstone at the
@@ -1851,7 +1852,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       nextPlan.from = o;                                   // where the trip starts (and ends, if round)
       nextPlan.to = end;                                   // where a one-way trip ends
-      setTimeout(function () { syncOpportunity(true); syncRoute(); }, 0);
+      setTimeout(function () { syncOpportunity(true); syncRoute(); syncMapGoal(); }, 0);
     } catch (e) { console.warn('[starpin] what next:', e); nextPlan = null; }
     paintNextCards();
   }
@@ -2041,13 +2042,20 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     way and the dashed line goes to the current one. Tap a numbered stop to
     skip it.
   */
+  // A route is being previewed (Go tab, cards open, nothing followed). Then
+  // the map shows only the route: the dashed goal line to the compass's
+  // nearest target would be a second, unrelated route from the same spot.
+  function routePreviewing() {
+    return !nextGoal && !cellGoal && !nextHeading && nextShown && !!(nextPlan && nextPlan.route) &&
+           typeof currentTab !== 'undefined' && currentTab === 'go';
+  }
   function syncRoute() {
     if (!map || !map.setRoute) return;
     var stops = null, end = null;
     if (nextGoal && nextGoal.stops.length > 1) {
       stops = nextGoal.stops.filter(function (st) { return !stopDone(st); });
       end = nextGoal.end;
-    } else if (!nextGoal && nextShown && nextPlan && nextPlan.route && currentTab === 'go') {
+    } else if (routePreviewing()) {
       stops = nextPlan.route.stops; end = nextPlan.to;
     }
     if (!stops || !stops.length) { map.setRoute(null); return; }
@@ -3909,7 +3917,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     // Leaflet caches container size, so a map revealed by a tab switch has to
     // be told its dimensions or it renders into a zero-height box.
     if (name === 'map') setTimeout(function () { map.invalidate(); }, 30);
-    if (typeof syncRoute === 'function') { syncRoute(); syncOpportunity(true); }   // route preview is the Go tab's
+    if (typeof syncRoute === 'function') { syncRoute(); syncOpportunity(true); syncMapGoal(); }   // route preview is the Go tab's
     if (name === 'log') { $('lg-show').click(); refreshFillButton(); refreshShareAllButton(); }
     if (name === 'groups') { try { if (window.StarpinGroups && StarpinGroups.isReady()) { refreshGroupList(); renderActivity(); } } catch (_) {} }
     // Restore after layout settles (the Log rebuilds its panel synchronously
