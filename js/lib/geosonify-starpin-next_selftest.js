@@ -101,6 +101,24 @@ var endBack = { lat: fix.lat + 0.02, lon: fix.lon };
 var backP = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 5, end: endBack });
 ok('the same corner, behind you on the way home, costs extra time',
    !backP.finish || backP.finish.extraMin > wayP.finish.extraMin, backP.finish && backP.finish.extraMin.toFixed(1));
+console.log('\n2c: always getting closer (v0.6)');
+var back60 = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 60, end: endBack });
+ok('a corner behind you is never offered on the way, however much time you have',
+   !back60.finish || back60.finish.stops.every(function (st) {
+     return S.haversineM(st.lat, st.lon, endBack.lat, endBack.lon) <= back60.straightM + Math.max(150, 0.05 * back60.straightM); }));
+ok('...though the same corner is a fine round trip', plan.finish && plan.finish.stops.some(function (st) {
+     return st.name === missing.name || Math.abs(st.lat - missing.lat) < 1e-6; }));
+ok('every one-way suggestion is forward (backM within the slack)',
+   [wayP.finish, wayP.fresh, commute2check()].every(function (t) { return !t || t.forward; }));
+function commute2check() {
+  return N.plan({ S: S, fix: { lat: -43.53, lon: 172.62 }, end: { lat: -43.56, lon: 172.70 },
+                  budgetMin: 30, kmh: 12, progress: P, isCollected: have }).fresh;
+}
+var fwdFresh = commute2check();
+ok('new ground on the way is no further from the end than you are',
+   !fwdFresh || S.haversineM(fwdFresh.stops[0].lat, fwdFresh.stops[0].lon, -43.56, 172.70) <=
+                S.haversineM(-43.53, 172.62, -43.56, 172.70) + 150 + 0.05 * S.haversineM(-43.53, 172.62, -43.56, 172.70));
+
 var t0 = Date.now();
 var commute = N.plan({ S: S, fix: { lat: -43.53, lon: 172.62 }, end: { lat: -43.56, lon: 172.70 },
                        budgetMin: 15, kmh: 12, isCollected: function () { return true; } });

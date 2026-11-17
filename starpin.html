@@ -548,6 +548,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       <button id="pin-go" type="button">Go</button>
     </div>
     <p class="hint" id="addr-hint" style="margin-top:.45rem"></p>
+    <div class="btnrow"><button type="button" id="addr-home">Make this home</button></div>
+    <p class="hint" id="addr-home-msg" hidden></p>
   </div>
   <div id="info" hidden></div>
   <button type="button" id="tune-key" class="linkish">lattice tuning</button>
@@ -837,7 +839,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261114b"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261115"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
@@ -863,7 +865,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261114c"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261115"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -887,6 +889,15 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // compass is following, { kind: 'corners', stops, title } or
   // { kind: 'star', star, title }.
   var patchAll = null, starsHave = {}, nextGoal = null;
+  // After the last stop of a one-way walk: where you are still going
+  // ({ lat, lon, label }), so the map's dashed line carries on to home or the
+  // pin and the follow box offers more on the way. Kept apart from nextGoal
+  // so the compass and the thin needle carry on as when wandering.
+  var nextHeading = null;
+  function nextWalkDone() {
+    if (nextGoal && nextGoal.end) nextHeading = nextGoal.end;
+    nextGoal = null;
+  }
 
   function bearing(a1, o1, a2, o2) {
     var d = Math.PI / 180, y = Math.sin((o2 - o1) * d) * Math.cos(a2 * d);
@@ -971,7 +982,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       var gs = nextGoal.star;
       if (!starsHave[sourceIdOf(gs.name)])
         return { star: gs, distanceM: S.haversineM(fix.lat, fix.lon, gs.lat, gs.lon) };
-      nextGoal = null; paintNextFollow();           // collected: the walk is done
+      nextWalkDone(); paintNextFollow();            // collected: the walk is done
     }
     var best = null;
     map.stars().forEach(function (st) {
@@ -1086,7 +1097,11 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function syncMapGoal() {
     if (!map || !map.setGoal) return;
     var g = null;
-    if (fix) {
+    if (nextHeading && fix && S.haversineM(fix.lat, fix.lon, nextHeading.lat, nextHeading.lon) < ONEWAY_MIN_M) {
+      nextHeading = null; paintNextFollow();            // arrived
+    }
+    if (fix && nextHeading && !nextGoal && !cellGoal) g = nextHeading;
+    else if (fix) {
       if (activeTab === 'star') g = nearestStar ? nearestStar.star : null;
       else g = thinPrimary ? thinCs : lastCs;
     }
@@ -1471,7 +1486,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
           return;
         } catch (e) {}
       }
-      nextGoal = null; paintNextFollow();
+      nextWalkDone(); paintNextFollow();
     }
     // Guided round a cell: the target is the nearest corner of it you do not
     // have yet, whatever its tier — the rarity floor is for wandering, and a
@@ -1614,7 +1629,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var d = el('div', 'next-follow'), o = nextOrigin(), e = nextEndRaw(), pin = map && map.pin ? map.pin() : null;
     var txt;
     if (nextEnd === 'home') {
-      if (!e) txt = 'No home saved yet.';
+      if (!e) txt = 'No home saved yet. Set it here, or anywhere: on the Place tab, move the map ' +
+        'or drop a pin on home (or paste its address) and press \u201cMake this home\u201d.';
       else if (o && S.haversineM(o.lat, o.lon, e.lat, e.lon) < ONEWAY_MIN_M) txt = 'You are at home, so these are round trips.';
       else txt = 'Home is ' + (o ? nextKm(S.haversineM(o.lat, o.lon, e.lat, e.lon)) + ' away, about ' +
         Math.max(1, Math.round(NX.minutesFor(S.haversineM(o.lat, o.lon, e.lat, e.lon), nextKmh()))) + ' min straight there.' : 'saved.');
@@ -1902,12 +1918,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('route-dlg').addEventListener('click', function (e) { if (e.target === this) routeClose(); });
 
   function nextFollow(kind, t, title) {
-    cellGoal = null;
+    cellGoal = null; nextHeading = null;
+    var end = nextPlan && nextPlan.to ? { lat: nextPlan.to.lat, lon: nextPlan.to.lon, label: nextPlan.to.label } : null;
     if (kind === 'star') {
-      nextGoal = { kind: 'star', star: t.star, title: title };
+      nextGoal = { kind: 'star', star: t.star, title: title, end: end };
       $('tab-star').click();
     } else {
-      nextGoal = { kind: 'corners', title: title, stops: t.stops.map(function (s) {
+      nextGoal = { kind: 'corners', title: title, end: end, stops: t.stops.map(function (s) {
         return { name: s.name, lat: s.lat, lon: s.lon }; }) };
       $('tab-corner').click();
       cornerstone();
@@ -1932,11 +1949,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       g = nextGoal.kind === 'star' ? nextGoal.star : (nextStop() || null);
       if (g) map.setGoal({ lat: g.lat, lon: g.lon });
     }
-    if (!g || !map.leaflet || typeof L === 'undefined') return;
+    // NB: no Leaflet L here. In this closure L is the Starpin log module
+    // (var L = GeosonifyStarpinLog, below), so bounds go in as a plain array.
+    if (!g || !map.leaflet) return;
     var below = sheetMetrics().half + 24;
     try {
       if (fix) {
-        map.leaflet.fitBounds(L.latLngBounds([[fix.lat, fix.lon], [g.lat, g.lon]]),
+        map.leaflet.fitBounds([[fix.lat, fix.lon], [g.lat, g.lon]],
           { paddingTopLeft: [40, 90], paddingBottomRight: [40, below], maxZoom: 17 });
       } else {
         map.leaflet.setView([g.lat, g.lon], Math.max(map.leaflet.getZoom(), 16));
@@ -1947,6 +1966,25 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function paintNextFollow() {
     var box = $('next-follow'); if (!box) return;
     box.textContent = '';
+    if (!nextGoal && nextHeading) {
+      var hd = el('div', 'next-follow');
+      hd.appendChild(el('span', null, 'Heading to ' + nextHeading.label +
+        (fix ? ', ' + nextKm(S.haversineM(fix.lat, fix.lon, nextHeading.lat, nextHeading.lon)) : '') +
+        '. The dashed line points there.'));
+      var more = el('button', null, 'more on the way'); more.type = 'button';
+      more.addEventListener('click', function () {
+        nextEnd = nextHeading.label === 'home' ? 'home' : 'pin';
+        paintNextEnd();
+        $('next-go').click();
+        var nc = $('next-cards');
+        if (nc && nc.scrollIntoView) nc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      var hs = el('button', null, 'stop'); hs.type = 'button';
+      hs.addEventListener('click', function () { nextHeading = null; paintNextFollow(); syncMapGoal(); });
+      hd.appendChild(more); hd.appendChild(hs);
+      box.appendChild(hd);
+      return;
+    }
     if (!nextGoal) return;
     var txt = 'Following: ' + nextGoal.title;
     if (nextGoal.kind === 'corners' && nextGoal.stops.length > 1) {
@@ -1956,7 +1994,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var d = el('div', 'next-follow');
     d.appendChild(el('span', null, txt));
     var b = el('button', null, 'stop'); b.type = 'button';
-    b.addEventListener('click', function () { nextGoal = null; paintNextFollow(); syncMapGoal(); cornerstone(); paintTargets(); });
+    b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); cornerstone(); paintTargets(); });
     d.appendChild(b);
     box.appendChild(d);
   }
@@ -1964,8 +2002,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // After every log change: a walk whose stops are all collected is done, and
   // open suggestions are re-planned against what you now hold.
   function nextAfterLog() {
-    if (nextGoal && nextGoal.kind === 'corners' && !nextStop()) nextGoal = null;
-    if (nextGoal && nextGoal.kind === 'star' && starsHave[sourceIdOf(nextGoal.star.name)]) nextGoal = null;
+    if (nextGoal && nextGoal.kind === 'corners' && !nextStop()) nextWalkDone();
+    if (nextGoal && nextGoal.kind === 'star' && starsHave[sourceIdOf(nextGoal.star.name)]) nextWalkDone();
     paintNextFollow();
     if (nextShown) nextReplan();
   }
@@ -3353,6 +3391,21 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     $('pin-ll').value = v;
   }
   function showPinLL(lat, lon) { /* superseded by paintMapAddr */ }
+  // Home can be set from anywhere: whatever this box shows (the dropped pin,
+  // else the map centre, or an address pasted in and gone to) becomes home.
+  $('addr-home').addEventListener('click', function () {
+    if (!addrPoint) return;
+    var had = homePoint();
+    if (had && S.haversineM(had.lat, had.lon, addrPoint.lat, addrPoint.lon) > 20 &&
+        !confirm('Move home to ' + ($('addr-src').textContent || 'this place') + '?')) return;
+    setHome(addrPoint);
+    var m = $('addr-home-msg');
+    m.textContent = 'Home set to the ' + ($('addr-src').textContent || 'place shown') +
+      '. Kept on this phone only. Choose \u201cto home\u201d on the Go tab to plan on the way there.';
+    m.hidden = false;
+    paintNextEnd();
+    if (nextShown && nextEnd === 'home') nextFetchStars(nextReplan);
+  });
 
   // ── reading ANY address pasted into the box ─────────────────────────────
   // Coordinates, a maps link, degrees-minutes-seconds, a Geosonify or Starpin
