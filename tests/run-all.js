@@ -29,6 +29,7 @@ const TESTS = [
   ['Chessboard explainer smoke',           'spec/chessboard-explainer-smoke.test.js', []],
   // App modules.
   ['GeoJSON export',                       'tests/geojson-export.test.js', []],
+  ['WKT import and export',                'tests/wkt.test.js', []],
   ['Sky maths',                            'js/lib/geosonify-sky.selftest.js', []],
   ['Sky URL',                              'js/lib/geosonify-sky-url.selftest.js', []],
   ['Sky overlay',                          'js/lib/geosonify-sky-overlay.selftest.js', []],

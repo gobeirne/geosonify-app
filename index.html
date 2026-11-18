@@ -469,6 +469,7 @@
             <button class="btn btn-secondary import-pill" data-source="wikidata" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🌐 Wikidata</button>
             <button class="btn btn-secondary import-pill" data-source="osmrelation" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🗺️ OSM ID</button>
             <button class="btn btn-secondary import-pill" data-source="parcel" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">🏠 Parcel</button>
+            <button class="btn btn-secondary import-pill" data-source="paste" style="padding:5px 12px; font-size:12px; border-radius:20px; font-weight:500;">📋 Paste</button>
           </div>
           
           <!-- File upload panel (hidden by default) -->
@@ -477,6 +478,15 @@
             <div style="font-size:12px; color:#888; margin-bottom:4px;">Accepts GPX, GeoJSON, KML files</div>
           </div>
           
+          <!-- Paste panel (WP2.4): GeoJSON or WKT text -->
+          <div id="importPanel_paste" style="display:none;">
+            <textarea id="pasteShapeText" rows="5" placeholder="Paste GeoJSON or WKT, e.g. POLYGON ((172.60 -43.50, 172.70 -43.50, 172.70 -43.55, 172.60 -43.50))" spellcheck="false" autocapitalize="off" style="width:100%; box-sizing:border-box; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font:12px/1.4 ui-monospace,Menlo,monospace; margin-bottom:6px;"></textarea>
+            <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+              <button id="pasteShapeLoad" class="btn btn-secondary" style="padding:6px 12px; font-size:13px;">Load</button>
+              <span style="font-size:12px; color:#888;">GeoJSON or WKT (longitude latitude, WGS84)</span>
+            </div>
+          </div>
+
           <!-- URL panel (hidden by default) -->
           <div id="importPanel_url" style="display:none;">
             <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
@@ -543,6 +553,7 @@
           <!-- Info / point count (shared) -->
           <div class="info-box" id="gpxInfo" style="display:none; margin-bottom:12px;">
             <span id="gpxPointCount"></span>
+            <div id="roundTripReport" style="margin-top:6px; font-size:12.5px; line-height:1.45;"></div>
           </div>
           
           <!-- Preview + simplification (shared, same IDs as original) -->
@@ -689,6 +700,7 @@
             <button class="btn btn-secondary" id="exportGpxBtn">📍 Export GPX</button>
             <button class="btn btn-secondary" id="exportKmlBtn">🌍 Export KML</button>
             <button class="btn btn-secondary" id="exportGeoJsonBtn" title="RFC 7946 GeoJSON: geodesic and rhumb edges densified to within 1 m, split at 180°">🗺️ Export GeoJSON</button>
+            <button class="btn btn-secondary" id="exportWktBtn" title="Well-Known Text: the same geometry as the GeoJSON export">🧾 Export WKT</button>
           </div>
           <!-- Sky only: the shape in astronomers' formats (geosonify-sky-export.js) -->
           <div class="btn-row" id="skyExportRow" style="display:none;">
@@ -974,6 +986,7 @@
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20261115c"></script>
 <script src="js/features/geojson-export.js?v=20261115b"></script>
+<script src="js/features/wkt.js?v=20261119a"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
 <script src="js/pocket-mode.js"></script>
 
@@ -1126,7 +1139,7 @@
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261115e';</script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261119a';</script>
 <script src="js/ui/faq-ui.js?v=20261115g"></script>
 <script src="js/ui/tour.js?v=20261119d"></script>
   <script>
@@ -7789,6 +7802,7 @@ function encodeRaw(sol) {
         updateURLWithShape();
       }
       refreshShareQR();
+      try { updateRoundTripReport(); } catch (e) {}
     }
     
     // =================== DELTA ENCODING FOR PATHS ===================
@@ -10938,7 +10952,7 @@ function encodeRaw(sol) {
     document.querySelectorAll('.import-pill').forEach(pill => {
       pill.addEventListener('click', function() {
         const source = this.dataset.source;
-        const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel'];
+        const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel', 'paste'];
         const isActive = this.classList.contains('pill-active');
         
         // Deactivate all pills and hide all panels
@@ -11428,7 +11442,7 @@ function encodeRaw(sol) {
         p.style.background = '';
         p.style.color = '';
       });
-      const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel'];
+      const panels = ['file', 'url', 'wikidata', 'osmrelation', 'parcel', 'paste'];
       for (const p of panels) {
         document.getElementById('importPanel_' + p).style.display = 'none';
       }
@@ -12711,6 +12725,95 @@ function encodeRaw(sol) {
     }
 
     document.getElementById('exportGeoJsonBtn').addEventListener('click', downloadGeoJSON);
+
+    // ── WP2.4: paste GeoJSON or WKT; export WKT; round-trip report ───────
+    document.getElementById('pasteShapeLoad').addEventListener('click', function () {
+      const text = document.getElementById('pasteShapeText').value.trim();
+      if (!text) { showToast('Paste GeoJSON or WKT first'); return; }
+      try {
+        let gjText = text, label = 'pasted GeoJSON';
+        if (typeof GeosonifyWKT !== 'undefined' && GeosonifyWKT.looksLikeWKT(text)) {
+          gjText = JSON.stringify({ type: 'Feature', properties: {}, geometry: GeosonifyWKT.parse(text) });
+          label = 'pasted WKT';
+        }
+        const result = ShapeImport.parseGeoJSONText(gjText);
+        processLoadedShape(result.coords, label, result.groups);
+      } catch (err) {
+        showToast('Could not read that: ' + err.message, 'error');
+      }
+    });
+
+    function downloadWKT() {
+      if (typeof isSkyFrameNow === 'function' && isSkyFrameNow()) { showToast('WKT is for places on Earth'); return; }
+      if (typeof GeosonifyWKT === 'undefined' || typeof GeosonifyGeoJSON === 'undefined' || typeof geodesic === 'undefined') { showToast('WKT export is not available', 'error'); return; }
+      const parts = geojsonExportParts();
+      if (!parts || !parts.length) { alert('No shape to export. Create a shape first.'); return; }
+      const d = getExportablePoints();
+      const name = (d && d.name) || 'Geosonify Shape';
+      // The GeoJSON export's geometry (edges densified to 1 m, 180° split), written as WKT.
+      const fc = GeosonifyGeoJSON.build(parts, { geod: geodesic.Geodesic.WGS84, toleranceM: 1, properties: {} });
+      const wkt = GeosonifyWKT.stringify(fc.features[0].geometry);
+      downloadFile(wkt + '\n', name.toLowerCase().replace(/\s+/g, '_') + '.wkt', 'text/plain');
+    }
+    document.getElementById('exportWktBtn').addEventListener('click', downloadWKT);
+
+    /*
+      Round-trip report for an imported shape: how many vertices came in, how
+      many the link keeps, the cell size, and the largest distance from any
+      original vertex to the shape the link actually decodes to (each kept
+      vertex snapped to its cell centre, exactly as the link carries it). That
+      covers both the simplification and the grid. Shown under the import's
+      point count while the imported shape is the one on screen.
+    */
+    function updateRoundTripReport() {
+      const el = document.getElementById('roundTripReport');
+      if (!el) return;
+      const pv = (typeof currentImportProvenance === 'function') ? currentImportProvenance() : null;
+      if (!pv || !gpxOriginalCoords || !gpxOriginalCoords.length || !lastSolution) { el.textContent = ''; return; }
+      const k = cardState.active, it = cardState.iterations[k];
+      const gd = CARD_GRIDS[k];
+      if (!gd) { el.textContent = ''; return; }
+      const ll = p => Array.isArray(p) ? [p[0], p[1]] : [p.lat, p.lon];
+      const groups = (lastSolution.groups && lastSolution.groups.length > 1) ? lastSolution.groups.map(g => g.map(ll))
+                   : [(lastSolution.points || []).map(ll)];
+      let kept = 0;
+      const snapped = groups.map(g => g.map(p => {
+        kept++;
+        try {
+          const c = decodeCardCode(k, CardRenderer.encodeRaw(k, p[0], p[1], it), false);
+          return (c && isFinite(c.lat)) ? [c.lat, c.lon] : p;
+        } catch (e) { return p; }
+      }));
+      // Distance from each original vertex to the nearest snapped segment (local
+      // metres; segments are short next to the Earth's curvature).
+      const R = 6371008.8, rad = Math.PI / 180;
+      function distToSeg(p, a, b) {
+        const lat0 = p[0] * rad, kx = Math.cos(lat0) * R * rad, ky = R * rad;
+        const ax = (a[1] - p[1]) * kx, ay = (a[0] - p[0]) * ky, bx = (b[1] - p[1]) * kx, by = (b[0] - p[0]) * ky;
+        const dx = bx - ax, dy = by - ay, L = dx * dx + dy * dy;
+        let t = L ? -(ax * dx + ay * dy) / L : 0; t = Math.max(0, Math.min(1, t));
+        const x = ax + t * dx, y = ay + t * dy; return Math.sqrt(x * x + y * y);
+      }
+      const segs = [];
+      snapped.forEach(g => { if (g.length === 1) segs.push([g[0], g[0]]); for (let i = 1; i < g.length; i++) segs.push([g[i - 1], g[i]]); });
+      const orig = gpxOriginalCoords.map(c => [c.lat, c.lon]);
+      const step = Math.max(1, Math.ceil(orig.length * segs.length / 4e7));   // cap the work on huge imports
+      let worst = 0, sampled = 0;
+      for (let i = 0; i < orig.length; i += step) {
+        let best = Infinity; sampled++;
+        for (let j = 0; j < segs.length; j++) { const d = distToSeg(orig[i], segs[j][0], segs[j][1]); if (d < best) best = d; }
+        if (best > worst) worst = best;
+      }
+      // In the person's units (metric or imperial), like the cell size beside it.
+      const fmt = (typeof CardRenderer !== 'undefined' && CardRenderer.formatLength) ? (m => CardRenderer.formatLength(m))
+        : (m => m >= 1000 ? (m / 1000).toFixed(2) + ' km' : m >= 1 ? m.toFixed(1) + ' m' : (m * 100).toFixed(1) + ' cm');
+      const prec = CardRenderer.getPrecisionText ? CardRenderer.getPrecisionText(k, it) : '';
+      el.innerHTML = '';
+      const line = document.createElement('div');
+      line.textContent = 'Round trip: ' + orig.length.toLocaleString() + ' vertices in → ' + kept.toLocaleString() +
+        ' in the link · cells ' + prec + ' · largest error ' + fmt(worst) + (step > 1 ? ' (sampled every ' + step + ' vertices)' : '');
+      el.appendChild(line);
+    }
 
     document.getElementById('exportKmlBtn').addEventListener('click', function() {
       const data = getExportablePoints();
