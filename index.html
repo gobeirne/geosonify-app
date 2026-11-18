@@ -180,6 +180,58 @@
   </style>
 </head>
 <body>
+<script>
+/*
+  GEOHACK PARAMETERS (WP2.5, Nov 2026). ?geohack=<params> takes GeoHack's own
+  "params" string as Wikipedia's {{coord}} writes it, e.g.
+    48.8583_N_2.2945_E_type:landmark_region:FR_dim:300
+    51_28_40_N_0_0_5_W_type:landmark       (degrees, minutes, seconds)
+    -43.53_172.62_type:city                (signed decimal)
+  plus an optional &title=<article title>. Add-only: neither name was in use.
+  dim: (object size; "km" allowed) sets the precision: the coarsest cell no
+  bigger than the object. Without dim:, scale: gives dim = scale / 10 (as
+  MediaWiki's GeoData does); without either, type: gives a typical size.
+  Anything not on Earth (globe: other than earth) is ignored.
+*/
+window.GeosonifyGeoHack = (function () {
+  var TYPE_DIM = {   // metres; GeoHack's own type -> map-scale table, dim = scale / 10
+    country: 1000000, satellite: 1000000, state: 300000, adm1st: 300000, adm2nd: 30000,
+    adm3rd: 10000, city: 10000, mountain: 10000, isle: 10000, river: 10000, waterbody: 10000,
+    event: 5000, forest: 5000, glacier: 5000,
+    airport: 1000, edu: 1000, pass: 1000, landmark: 1000, railwaystation: 1000
+  };
+  function parse(str) {
+    var t = String(str || '').replace(/\+/g, ' ').trim().split(/[_ ]+/).filter(Boolean);
+    var i = 0, nums, lat, lon;
+    function take(hemis) {
+      nums = [];
+      while (i < t.length && /^-?\d+(\.\d+)?$/.test(t[i]) && nums.length < 3) nums.push(parseFloat(t[i++]));
+      if (!nums.length) return null;
+      var v = nums[0] < 0 ? -1 : 1, a = Math.abs(nums[0]) + (nums[1] || 0) / 60 + (nums[2] || 0) / 3600;
+      var h = (t[i] || '').toUpperCase();
+      if (hemis.indexOf(h) >= 0) { i++; if (h === 'S' || h === 'W') v = -1; return v * a; }
+      return hemis === 'NS' && nums.length === 2 ? (i -= 1, nums.length = 1, v * Math.abs(nums[0])) : v * a;
+    }
+    lat = take('NS'); lon = take('EW');
+    if (lat == null || lon == null || !(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) return null;
+    var kv = {};
+    for (; i < t.length; i++) { var m = /^([a-z]+):(.+)$/i.exec(t[i]); if (m) kv[m[1].toLowerCase()] = m[2]; }
+    if (kv.globe && !/^earth$/i.test(kv.globe)) return null;
+    var dim = null, src = null, d = /^([\d.]+)\s*(km|m)?$/i.exec(kv.dim || '');
+    if (d) { dim = parseFloat(d[1]) * (/km/i.test(d[2] || '') ? 1000 : 1); src = 'dim'; }
+    else if (/^\d+$/.test(kv.scale || '')) { dim = +kv.scale / 10; src = 'scale'; }
+    else if (kv.type) { var ty = kv.type.replace(/\(.*$/, '').toLowerCase(); if (TYPE_DIM[ty]) { dim = TYPE_DIM[ty]; src = 'type'; } }
+    return { lat: lat, lon: lon, dim: dim, dimFrom: src, type: kv.type || null, region: kv.region || null };
+  }
+  var info = null;
+  try {
+    var q = new URLSearchParams(location.search);
+    if (q.has('geohack') && !q.has('r')) info = parse(q.get('geohack'));
+    if (info) { info.title = (q.get('title') || '').replace(/_/g, ' ').slice(0, 120) || null; }
+  } catch (e) {}
+  return { parse: parse, info: info };
+})();
+</script>
 <!--
   GEOHACK LANDING (WP1.6, Nov 2026). A visitor arriving from Wikipedia's
   GeoHack page with ?r=<lat>,<lon> sees this sheet at once: it is plain HTML
@@ -202,6 +254,7 @@
   #gsLanding .gl-kicker { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--gl-sub); }
   #gsLanding .gl-dec { font-size: 20px; font-weight: 600; margin: 2px 0 0; font-variant-numeric: tabular-nums; }
   #gsLanding .gl-dms { color: var(--gl-sub); font-variant-numeric: tabular-nums; }
+  #gsLanding .gl-title { font-size: 18px; font-weight: 700; margin-top: 2px; }
   #gsLanding .gl-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
   #gsLanding button { font: inherit; border: 0; border-radius: 10px; padding: 11px 8px; cursor: pointer;
     background: var(--gl-btn); color: var(--gl-fg); }
@@ -228,6 +281,8 @@
 (function () {
   var q = location.search;
   var m = /^\?r=(-?\d{1,2}(?:\.\d+)?)(?:,|%2C)(-?\d{1,3}(?:\.\d+)?)(?:&|$)/i.exec(q);
+  var gh = window.GeosonifyGeoHack && GeosonifyGeoHack.info;
+  if (!m && gh) m = [null, String(gh.lat), String(gh.lon)];
   if (!m || /[?&](display|enc)(=|&|$)/.test(q)) return;
   try { if (sessionStorage.getItem('gsTourJustEnded')) { sessionStorage.removeItem('gsTourJustEnded'); return; } } catch (e) {}
   var lat = +m[1], lon = +m[2];
@@ -276,6 +331,7 @@
   var el = $('gsLanding'), note = $('glNote');
   el.setAttribute('lang', lang);
   $('glKicker').textContent = t.k;
+  if (gh && gh.title) { var tt = document.createElement('div'); tt.className = 'gl-title'; tt.textContent = gh.title; $('glKicker').after(tt); }
   $('glExploreT').textContent = t.ex;
   $('glExploreS').textContent = t.exs;
   $('glTourT').textContent = t.tour;
@@ -2625,6 +2681,29 @@
       setTimeout(() => { if (!window.DISPLAY_MODE) _viewerAddLocateControl(false); }, 1500);
     });
 
+
+    // Cell size in metres (the larger side) for a card at a precision: the same
+    // arithmetic as the card's own precision readout.
+    function cellMetresFor(gridKey, k, lat, lon) {
+      const gd = CARD_GRIDS[gridKey]; if (!gd) return null;
+      try {
+        if (gd.hpwords && typeof HealpixWords !== 'undefined') { const d = HealpixWords.cellMetres(k); return Math.max(d.w, d.h); }
+        if (gd.healpix && typeof HealpixGrids !== 'undefined') { const sc = HealpixGrids.SCHEMES[gd.healpix]; if (sc && sc.cellMetres) { const d = sc.cellMetres(k); return Math.max(d.w, d.h); } }
+        if (gd.gis && typeof GISGrids !== 'undefined') { const sc = GISGrids.SCHEMES[gd.gis]; if (sc && sc.cellMetres) { const d = sc.cellMetres(k, lat, lon); return Math.max(d.w, d.h); } }
+        const g = gd.grid; if (!g) return null;
+        const latM = 180 * 111319.9 / Math.pow(g.length, k), lonM = 360 * 111319.9 * Math.cos(lat * Math.PI / 180) / Math.pow(g[0].length, k);
+        return Math.max(latM, lonM);
+      } catch (e) { return null; }
+    }
+    // The precision whose cell is about the object's size: the coarsest one no
+    // bigger than it (WP2.5).
+    function geohackIterationsFor(gridKey, dim, lat, lon) {
+      const gd = CARD_GRIDS[gridKey]; if (!gd || gd.fixedIterations || gd.dynamicIterations) return null;
+      const lo = gd.minIterations || 1, hi = gd.maxIterations || 24;
+      for (let k = lo; k <= hi; k++) { const m = cellMetresFor(gridKey, k, lat, lon); if (m != null && m <= dim) return k; }
+      return hi;
+    }
+
     // Tab switching logic
     function switchToTab(tabId) {
       // Display (viewer) mode has no tabs — ignore tab switches so decode-time
@@ -4059,7 +4138,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       }
       
       // Check for ?r= (raw mode - rectangle/shape definition with raw coordinates)
-      const rawParam = urlParams.get('r');
+      const _gh = window.GeosonifyGeoHack && GeosonifyGeoHack.info;
+      const rawParam = urlParams.get('r') || (_gh ? (_gh.lat + ',' + _gh.lon) : null);
       if (rawParam) {
         // Decode URI component in case of encoded characters
         const decoded = decodeURIComponent(rawParam);
@@ -4080,8 +4160,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             currentCardCoord = { lat, lon };
             updateCoordDisplay();
             updateMapPin();
+            let _zoom = 15;
+            if (_gh && _gh.dim) {
+              // Precision: the coarsest cell no bigger than the object (dim:).
+              const k = cardState.active, best = geohackIterationsFor(k, _gh.dim, lat, lon);
+              if (best != null) cardState.iterations[k] = best;
+              // Zoom: the object about 300 px across.
+              const mpp = _gh.dim / 300;
+              _zoom = Math.max(3, Math.min(18, Math.round(Math.log2(156543.03 * Math.cos(lat * Math.PI / 180) / mpp))));
+            }
             renderCards();
-            if (map) map.setView([lat, lon], 15);
+            if (map) map.setView([lat, lon], _zoom);
             switchToTab('home');
             finishPointLink({ urlParams, urlFrame, cardKey: null, code: decoded, label: decoded,
               lat, lon, obf: false, isPoint: true, passCapable: false, stamp: false });

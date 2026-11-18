@@ -95,6 +95,11 @@ def main():
         rep = pg.evaluate("roundTripReport.textContent")
         check('paste WKT: becomes a polygon link with a round-trip report', pg.evaluate("lastSolution && lastSolution.type") == 'polygon' and 'Round trip: 5 vertices' in rep, rep)
         ctx.close()
+        # 7. ?geohack= (WP2.5): title on the landing, precision from dim:
+        ctx, pg, errs = page('geohack=48.8583_N_2.2945_E_type:landmark_region:FR_dim:300&title=Eiffel_Tower')
+        r = pg.evaluate("({title: (document.querySelector('#gsLanding .gl-title')||{}).textContent, it: cardState.iterations[cardState.active], active: cardState.active, lat: currentCardCoord && currentCardCoord.lat})")
+        check('geohack: title, place and precision from dim:', r['title'] == 'Eiffel Tower' and r['active'] == 'alphanumeric' and r['it'] == 7 and abs((r['lat'] or 0) - 48.8583) < 1e-9, r)
+        ctx.close()
         # 4. display link of a route shows a length
         ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display&area')
         txt = pg.evaluate("(document.querySelector('.geosonify-viewer-area')||{}).textContent || ''")
