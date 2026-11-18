@@ -258,7 +258,15 @@
         before: function () { show('music'); }, target: function () { return card('music'); } },
       { title: 'Hear it',
         text: 'Tap the speaker to play it, and tap again to stop. No sound? Check your device isn’t on mute.',
-        before: function () { var b = speaker(); if (b) try { b.scrollIntoView({ block: 'center' }); } catch (e) {} },
+        // The speaker is on the music card just shown: move only the highlight,
+        // so it is clear the button belongs to that card. Scroll only if the
+        // speaker is somehow off screen.
+        before: function () {
+          var b = speaker(); if (!b) return;
+          var r = b.getBoundingClientRect();
+          if (r.top < 0 || r.bottom > innerHeight) try { b.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+        },
+        delay: 50,
         target: speaker },
       { title: 'Share your place',
         text: 'Tap share on a card. The link opens exactly this place for anyone you send it to.',
