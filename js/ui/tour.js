@@ -257,7 +257,7 @@
         text: 'And as music: these notes are your place. Every place has its own tune.',
         before: function () { show('music'); }, target: function () { return card('music'); } },
       { title: 'Hear it',
-        text: 'Tap the speaker to play it, and tap again to stop. No sound? Check your phone isn’t on silent.',
+        text: 'Tap the speaker to play it, and tap again to stop. No sound? Check your device isn’t on mute.',
         before: function () { var b = speaker(); if (b) try { b.scrollIntoView({ block: 'center' }); } catch (e) {} },
         target: speaker },
       { title: 'Share your place',

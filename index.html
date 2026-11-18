@@ -1128,7 +1128,7 @@
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
 <script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261115e';</script>
 <script src="js/ui/faq-ui.js?v=20261115g"></script>
-<script src="js/ui/tour.js?v=20261118a"></script>
+<script src="js/ui/tour.js?v=20261119b"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -2520,9 +2520,12 @@
       '<circle class="geosonify-locate-core" cx="12" cy="12" r="3" fill="currentColor"/>' +
       '<path d="M12 1v4M12 19v4M1 12h4M19 12h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
+    let _locateAdded = false;
     function _viewerAddLocateControl(autoStart) {
+      if (_locateAdded) return;                     // once per page (display links and the normal view)
       const m = (typeof map !== 'undefined' && map) || (typeof MapManager !== 'undefined' && MapManager.getMap && MapManager.getMap());
       if (!m || !navigator.geolocation) return;
+      _locateAdded = true;
       try { if (isSkyFrameNow()) return; } catch (e) {}
       let watchId = null, dot = null, acc = null, last = null, following = false, btn = null, warned = false;
 
@@ -2601,6 +2604,13 @@
       m.on('dragstart', () => { if (following) { following = false; if (dot) setState('on'); } });
       if (autoStart) start(false);
     }
+
+    // The same "show my location" button on the normal view (Nov 2026): a blue
+    // dot that follows you, without changing the place being encoded (that is
+    // what Track does). Display links add theirs in setupDisplayViewer.
+    window.addEventListener('load', () => {
+      setTimeout(() => { if (!window.DISPLAY_MODE) _viewerAddLocateControl(false); }, 1500);
+    });
 
     // Tab switching logic
     function switchToTab(tabId) {
