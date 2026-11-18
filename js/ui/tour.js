@@ -102,7 +102,7 @@
     this.tour = tour; this.i = 0; this.els = {}; this.poll = null; this.snap = snapshot();
     var self = this;
     this.onKey = function (e) { if (e.key === 'Escape') { e.preventDefault(); self.end(); } };
-    this.onMove = function () { self.place(); };
+    this.onMove = function () { self.place(true); };   // scrolling moves the highlight, not the callout
   }
   Run.prototype.build = function () {
     injectCSS();
@@ -178,7 +178,7 @@
       }, 250);
     }
   };
-  Run.prototype.place = function () {
+  Run.prototype.place = function (ringOnly) {
     var e = this.els, el = this.target, W = innerWidth, H = innerHeight, pad = 6;
     var r = el ? el.getBoundingClientRect() : null;
     if (r) {
@@ -188,11 +188,13 @@
     } else {
       set(e.t, 0, 0, W, H); set(e.b, 0, 0, 0, 0); set(e.l, 0, 0, 0, 0); set(e.r, 0, 0, 0, 0); e.ring.style.display = 'none';
     }
+    if (ringOnly) return;
     var tip = e.tip, tw = tip.offsetWidth, th = tip.offsetHeight, left, top;
     if (!r) { left = (W - tw) / 2; top = (H - th) / 2; }
     else {
       left = Math.min(Math.max(12, r.left + r.width / 2 - tw / 2), W - tw - 12);
       top = (r.bottom + 14 + th < H - 12) ? r.bottom + 14 : (r.top - 14 - th > 12 ? r.top - 14 - th : Math.max(12, H - th - 12));
+      top = Math.min(Math.max(12, top), Math.max(12, H - th - 12));   // always fully on screen
     }
     tip.style.left = left + 'px'; tip.style.top = top + 'px';
     function set(d, x, y, w, h) { d.style.left = x + 'px'; d.style.top = y + 'px'; d.style.width = Math.max(0, w) + 'px'; d.style.height = Math.max(0, h) + 'px'; }
@@ -219,6 +221,8 @@
   // before naming anything, and uses the visitor's own place when a link
   // brought them here.
   function cards() { return document.querySelector('#cardsContainer .format-card'); }
+  function card(key) { return document.querySelector('#cardsContainer .format-card[data-grid-key="' + key + '"]'); }
+  function show(key) { var c = card(key); if (c) try { c.scrollIntoView({ block: 'start' }); } catch (e) {} }
   function speaker() { return document.querySelector('.audio-speaker-btn[data-grid="music"]') || document.querySelector('.audio-speaker-btn'); }
   function coordKey() { try { return currentCardCoord ? currentCardCoord.lat.toFixed(7) + ',' + currentCardCoord.lon.toFixed(7) : ''; } catch (e) { return ''; } }
   function home() { try { if (typeof switchToTab === 'function') switchToTab('home'); } catch (e) {} }
@@ -240,22 +244,27 @@
         snapshot: coordKey,
         done: function (was) { var now = coordKey(); return now && now !== was; },
         doneText: '✓ That place is now in every card below.' },
-      { title: 'One place, many forms',
-        text: 'Each card is the same place written a different way: letters, words in many languages, emoji, colours, a QR code. Scroll through them.',
-        before: function () { var c = cards(); if (c) try { c.scrollIntoView({ block: 'center' }); } catch (e) {} },
-        target: cards },
-      { title: 'Hear your place',
-        text: 'Every place has its own tune. Tap the speaker on the music card.',
-        hint: 'Waiting for the speaker…',
+      { title: 'In letters and numbers',
+        text: 'Every card is this same place, written a different way. Here it is in letters and numbers.',
+        before: function () { show('alphanumeric'); }, target: function () { return card('alphanumeric'); } },
+      { title: 'As words',
+        text: 'Here it is as four ordinary words, easy to say over the phone. The same place can be written in eleven languages.',
+        before: function () { show('hpbip39english'); }, target: function () { return card('hpbip39english'); } },
+      { title: 'As emoji',
+        text: 'And as a row of emoji.',
+        before: function () { show('emoji'); }, target: function () { return card('emoji'); } },
+      { title: 'As music',
+        text: 'And as music: these notes are your place. Every place has its own tune.',
+        before: function () { show('music'); }, target: function () { return card('music'); } },
+      { title: 'Hear it',
+        text: 'Tap the speaker to play it, and tap again to stop. No sound? Check your phone isn’t on silent.',
         before: function () { var b = speaker(); if (b) try { b.scrollIntoView({ block: 'center' }); } catch (e) {} },
-        target: speaker,
-        done: function () { return !!global.__gsTourHeard; },
-        doneText: '✓ Same place, same tune, every time.' },
+        target: speaker },
       { title: 'Share your place',
         text: 'Tap share on a card. The link opens exactly this place for anyone you send it to.',
         hint: 'Waiting for the share button…',
-        before: function () { var c = cards(); if (c) try { c.scrollIntoView({ block: 'center' }); } catch (e) {} },
-        target: function () { var c = cards(); return c && c.querySelector('.share-btn'); },
+        before: function () { show('alphanumeric'); },
+        target: function () { var c = card('alphanumeric') || cards(); return c && c.querySelector('.share-btn'); },
         snapshot: function () { return null; },
         done: function () { return !!global.__gsTourShared; },
         doneText: '✓ Shared. That is the heart of Geosonify.' },
@@ -268,7 +277,6 @@
   document.addEventListener('click', function (e) {
     if (!active || !e.target || !e.target.closest) return;
     if (e.target.closest('.share-btn')) global.__gsTourShared = true;
-    if (e.target.closest('.audio-speaker-btn')) global.__gsTourHeard = true;
   }, true);
 
   // A first visit to the plain home page: offer the introduction once. The
