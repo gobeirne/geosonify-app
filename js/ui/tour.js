@@ -99,7 +99,9 @@
 
   // ── running a tour ───────────────────────────────────────────────────
   function Run(tour) {
-    this.tour = tour; this.i = 0; this.els = {}; this.poll = null; this.snap = snapshot();
+    this.tour = tour; this.i = 0; this.els = {}; this.poll = null;
+    // Only tours that change settings (a passphrase, cards) snapshot and restore.
+    this.snap = tour.restore ? snapshot() : null;
     var self = this;
     this.onKey = function (e) { if (e.key === 'Escape') { e.preventDefault(); self.end(); } };
     this.onMove = function () { self.place(true); };   // scrolling moves the highlight, not the callout
@@ -125,8 +127,10 @@
   };
   Run.prototype.end = function () {
     this.teardown(); active = null;
-    // Nothing can have changed if the person left at the first step.
-    if (this.i === 0 && !this.touched) { try { sessionStorage.removeItem(SNAP_KEY); } catch (e) {} return; }
+    // A tour that changes nothing itself just steps aside, leaving the person
+    // where they are, free to explore (Greg, Nov 2026). Nothing can have
+    // changed either if they left at the first step.
+    if (!this.snap || (this.i === 0 && !this.touched)) { try { sessionStorage.removeItem(SNAP_KEY); } catch (e) {} return; }
     restoreAndReload(this.snap);
   };
   Run.prototype.go = function (i) {
@@ -227,8 +231,11 @@
   function coordKey() { try { return currentCardCoord ? currentCardCoord.lat.toFixed(7) + ',' + currentCardCoord.lon.toFixed(7) : ''; } catch (e) { return ''; } }
   function home() { try { if (typeof switchToTab === 'function') switchToTab('home'); } catch (e) {} }
 
+  // The intro changes no settings itself (the place, sounds and shares are the
+  // person's own doing), so it does not restore: Done leaves them exploring.
   API.register('intro', {
     title: 'What Geosonify does',
+    restore: false,
     steps: [
       { title: 'Welcome to Geosonify!',
         text: 'Turn any place on Earth into words, colours, music or a code you can share.',
