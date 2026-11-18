@@ -1290,6 +1290,9 @@ var GeosonifyStarpinFlip = (function () {
       status(sv2.label + ': ' + warn, 4200);
     });
     locBtn.addEventListener('click', function () {
+      // A host that owns geolocation (Starpin) can still have the on-map
+      // button: it gets the tap and does the locating itself.
+      if (typeof opts.onLocate === 'function') { opts.onLocate(); return; }
       if (!win.navigator || !win.navigator.geolocation) { status('This browser cannot share a location.', 4000); return; }
       status('Finding you\u2026');
       win.navigator.geolocation.getCurrentPosition(function (pos) {
@@ -1406,7 +1409,7 @@ var GeosonifyStarpinFlip = (function () {
     // ── start ──
     earthEl.style.opacity = face === 'earth' ? '1' : '0';
     skyEl.style.opacity = face === 'sky' ? '1' : '0';
-    if (opts.locate === false) locBtn.style.display = 'none';   // the host owns geolocation
+    if (opts.locate === false && typeof opts.onLocate !== 'function') locBtn.style.display = 'none';   // the host owns geolocation
     applyFace();
     if (face === 'sky') {
       // Opening on the sky: the matched scale, pulled back if the survey needs
@@ -1430,6 +1433,8 @@ var GeosonifyStarpinFlip = (function () {
       imagery: function () { return imagery; }, setImagery: function (k) { setImagery(k, true); },
       renderer: function () { return renderer; }, rendererKind: function () { return rendererKind; },
       setFix: setFix, recentre: recentre,
+      // Host-driven locate button state: pressed (lit) while it is tracking.
+      setLocating: function (on) { locBtn.setAttribute('aria-pressed', on ? 'true' : 'false'); },
       setStars: setStars, stars: function () { return stars.slice(); },
       setFinds: function (list) { finds = (list || []).slice(); earth.setFinds(finds); schedule(); },
       // Bagged cornerstones by name: the map ticks them, the halos turn green.

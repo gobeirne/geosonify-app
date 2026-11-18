@@ -153,6 +153,9 @@ dl{margin:.7rem 0 0}
    map; gold, the starpin colour, for the star card. */
 .next-chips{display:flex;gap:.45rem;margin:.1rem 0 .7rem}
 .next-chips button{flex:1;padding:.5rem .4rem;font-size:.84rem}
+/* Saved places make this row as long as it needs: it wraps, two or three a line. */
+#next-end{flex-wrap:wrap}
+#next-end button{flex:1 1 28%;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .next-card{border:2px solid var(--line);border-radius:18px;padding:.8rem .9rem;margin:.7rem 0 0;
   background:var(--card)}
 .next-card.patch{border-color:#2fbfae}
@@ -503,7 +506,6 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   </div>
   <div class="next-chips" id="next-end" role="group" aria-label="where you finish">
     <button type="button" data-end="round" aria-pressed="true">round trip</button>
-    <button type="button" data-end="home" aria-pressed="false">to home</button>
     <button type="button" data-end="pin" aria-pressed="false">to the pin</button>
   </div>
   <div id="next-end-info"></div>
@@ -520,8 +522,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      instead of from you. Times are there and back from that starting point, <span id="next-speed">walking at an easy
      4&nbsp;km/h</span>, with 30% added because streets are never straight. They are
      still as the crow flies: a river or a motorway can make the trip longer.<span id="next-oneway-hint" hidden>
-     Going home or to the pin, the time you choose is extra time: how much longer than going
-     straight there you are happy to take. Home is kept on this phone only.</span></p>
+     Going to a saved place or the pin, the time you choose is extra time: how much longer than going
+     straight there you are happy to take. Saved places are kept on this phone only.</span></p>
   <p class="hint" id="next-bike-hint" hidden>Ride with your eyes on the road. Check the compass or map
      when you have stopped, then bag the corner on foot.</p>
   <dialog id="route-dlg" aria-labelledby="route-dlg-h">
@@ -567,7 +569,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       <button id="pin-go" type="button">Go</button>
     </div>
     <p class="hint" id="addr-hint" style="margin-top:.45rem"></p>
-    <div class="btnrow" id="addr-home-row"><button type="button" id="addr-home">Make this home</button></div>
+    <div class="btnrow" id="addr-home-row"><button type="button" id="addr-home">Save this place\u2026</button></div>
     <p class="hint" id="addr-home-msg" hidden></p>
   </div>
   <div id="info" hidden></div>
@@ -871,7 +873,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
 <script src="js/lib/geosonify-starpin-vtiles.js?v=20260929"></script>
 <script src="js/lib/geosonify-starpin-place.js?v=20260929"></script>
-<script src="js/lib/geosonify-starpin-flip.js?v=20261117"></script>
+<script src="js/lib/geosonify-starpin-flip.js?v=20261118"></script>
 <script src="js/lib/geosonify-starpin-readout.js?v=20261002"></script>
 <script src="js/lib/geosonify-starpin-card.js?v=20261101"></script>
 
@@ -884,7 +886,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261117d"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261118"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1669,34 +1671,97 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var bh = $('next-bike-hint'); if (bh) bh.hidden = nextMode !== 'bike';
   }
   /*
-    WHERE THE PLAN ENDS. A round trip comes back to where it started. "To
-    home" ends at a home saved on this phone (localStorage starpin.home, never
-    shared or synced); "to the pin" ends at the pin dropped on the Place tab,
-    and then starts from YOU, not the pin. One-way plans count the chosen time
-    as extra time over going straight there (planner v0.5). Starting within
-    ONEWAY_MIN_M of the end is just a round trip. Not remembered between
-    visits: a forgotten "to home" would quietly change every suggestion.
+    WHERE THE PLAN ENDS. A round trip comes back to where it started. A
+    one-way plan ends at a SAVED PLACE (home, work, anywhere you name; kept in
+    localStorage starpin.places on this phone, never shared or synced) or at
+    the pin dropped on the Place tab, and then starts from YOU, not the pin.
+    One-way plans count the chosen time as extra time over going straight
+    there (planner v0.5). Starting within ONEWAY_MIN_M of the end is just a
+    round trip. The choice is not remembered between visits: a forgotten
+    "to work" would quietly change every suggestion. nextEnd is 'round',
+    'pin' or 'place:<id>'. A single home saved before places existed
+    (starpin.home) becomes the place "home" on first read.
   */
-  var nextEnd = 'round', ONEWAY_MIN_M = 150;
-  function homePoint() {
-    try {
+  var nextEnd = 'round', ONEWAY_MIN_M = 150, PLACES_MAX = 8;
+  function placesAll() {
+    var list = [];
+    try { list = JSON.parse(localStorage.getItem('starpin.places') || '[]') || []; } catch (e) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    try {                                             // one-time move of the old single home
       var h = JSON.parse(localStorage.getItem('starpin.home') || 'null');
-      return h && isFinite(h.lat) && isFinite(h.lon) ? { lat: +h.lat, lon: +h.lon } : null;
-    } catch (e) { return null; }
+      if (h && isFinite(h.lat) && isFinite(h.lon)) {
+        if (!list.some(function (p) { return p.name.toLowerCase() === 'home'; }))
+          list.unshift({ id: 'home', name: 'home', lat: +h.lat, lon: +h.lon });
+        localStorage.setItem('starpin.places', JSON.stringify(list));
+        localStorage.removeItem('starpin.home');
+      }
+    } catch (e) {}
+    return list.filter(function (p) { return p && p.id && p.name && isFinite(p.lat) && isFinite(p.lon); });
   }
-  function setHome(p) {
-    try { localStorage.setItem('starpin.home', JSON.stringify({ lat: +p.lat.toFixed(7), lon: +p.lon.toFixed(7) })); } catch (e) {}
+  function placesSave(list) {
+    try { localStorage.setItem('starpin.places', JSON.stringify(list.slice(0, PLACES_MAX))); } catch (e) {}
+  }
+  function placeById(id) { return placesAll().filter(function (p) { return p.id === id; })[0] || null; }
+  function placeByName(name) {
+    var n = String(name || '').trim().toLowerCase();
+    return placesAll().filter(function (p) { return p.name.toLowerCase() === n; })[0] || null;
+  }
+  // Save (or move) a named place. Asks before moving one that exists.
+  function savePlace(name, pt) {
+    name = String(name || '').trim().slice(0, 24);
+    if (!name || !pt) return null;
+    var list = placesAll(), had = placeByName(name);
+    if (had && S.haversineM(had.lat, had.lon, pt.lat, pt.lon) > 20 &&
+        !confirm('Move \u201c' + had.name + '\u201d here?')) return null;
+    if (!had && list.length >= PLACES_MAX) { alert('You can save up to ' + PLACES_MAX + ' places. Remove one first.'); return null; }
+    var rec = { id: had ? had.id : 'p' + Date.now().toString(36), name: had ? had.name : name,
+                lat: +(+pt.lat).toFixed(7), lon: +(+pt.lon).toFixed(7) };
+    list = list.filter(function (p) { return p.id !== rec.id; });
+    list.push(rec); placesSave(list);
+    paintEndChips(); paintNextEnd(); paintAddrHome();
+    if (nextShown && nextEnd === 'place:' + rec.id) nextFetchStars(nextReplan);
+    return rec;
+  }
+  function askSavePlace(pt) {
+    if (!pt) return;
+    var names = placesAll().map(function (p) { return p.name; });
+    var name = prompt('Name this place (home, work, \u2026).' +
+      (names.length ? '\nSaved: ' + names.join(', ') + '. Use one of these names to move it.' : ''),
+      names.indexOf('home') < 0 ? 'home' : '');
+    if (name != null) return savePlace(name, pt);
   }
   function nextEndRaw() {
-    if (nextEnd === 'home') return homePoint();
     if (nextEnd === 'pin') return (map && map.pin) ? map.pin() : null;
+    if (nextEnd.indexOf('place:') === 0) return placeById(nextEnd.slice(6));
     return null;
+  }
+  function nextEndLabel() {
+    if (nextEnd === 'pin') return 'the pin';
+    var pl = nextEndRaw(); return pl ? pl.name : '';
   }
   // The end the planner gets: null for a round trip, or when you are already there.
   function nextEndPoint() {
     var e = nextEndRaw(), o = nextOrigin();
     if (!e || !o || S.haversineM(o.lat, o.lon, e.lat, e.lon) < ONEWAY_MIN_M) return null;
-    return { lat: e.lat, lon: e.lon, label: nextEnd === 'home' ? 'home' : 'the pin' };
+    return { lat: e.lat, lon: e.lon, label: nextEndLabel(), key: nextEnd };
+  }
+  // The chips: round trip, each saved place, the pin.
+  function paintEndChips() {
+    var box = $('next-end'); if (!box) return;
+    Array.prototype.slice.call(box.querySelectorAll('button[data-end^="place:"]')).forEach(function (b) { b.remove(); });
+    var pinBtn = box.querySelector('button[data-end="pin"]');
+    placesAll().forEach(function (p) {
+      var b = el('button', null, 'to ' + p.name); b.type = 'button';
+      b.setAttribute('data-end', 'place:' + p.id);
+      b.addEventListener('click', function () { chooseEnd('place:' + p.id); });
+      box.insertBefore(b, pinBtn);
+    });
+    if (nextEnd.indexOf('place:') === 0 && !nextEndRaw()) nextEnd = 'round';
+  }
+  function chooseEnd(v) {
+    nextEnd = (v === 'pin' || v.indexOf('place:') === 0) ? v : 'round';
+    paintNextEnd(); syncOpportunity(true);
+    if (nextShown) nextFetchStars(nextReplan);
   }
   function paintNextEnd() {
     Array.prototype.forEach.call(document.querySelectorAll('#next-end button'), function (x) {
@@ -1704,42 +1769,49 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     var oh = $('next-oneway-hint'); if (oh) oh.hidden = nextEnd === 'round';
     var box = $('next-end-info'); if (!box) return;
     box.textContent = '';
-    if (nextEnd === 'round') return;
-    var d = el('div', 'next-follow'), o = nextOrigin(), e = nextEndRaw(), pin = map && map.pin ? map.pin() : null;
-    var txt;
-    if (nextEnd === 'home') {
-      if (!e) txt = 'No home saved yet. Set it here, or anywhere: on the Place tab, move the map ' +
-        'or drop a pin on home (or paste its address) and press \u201cMake this home\u201d.';
-      else if (o && S.haversineM(o.lat, o.lon, e.lat, e.lon) < ONEWAY_MIN_M) txt = 'You are at home, so these are round trips.';
-      else txt = 'Home is ' + (o ? nextKm(S.haversineM(o.lat, o.lon, e.lat, e.lon)) + ' away, about ' +
-        Math.max(1, Math.round(NX.minutesFor(S.haversineM(o.lat, o.lon, e.lat, e.lon), nextKmh()))) + ' min straight there.' : 'saved.');
-      d.appendChild(el('span', null, txt));
-      var row = el('div', 'btnrow');
-      var bh = el('button', null, e ? 'Move home to here' : 'Set home here'); bh.type = 'button';
-      bh.addEventListener('click', function () {
-        function save() { if (!fix) return; setHome(fix); paintNextEnd(); if (nextShown) nextFetchStars(nextReplan); }
-        if (!e || confirm('Move home to where you are now?')) { if (!fix) acquireFix(save); else save(); }
-      });
-      row.appendChild(bh);
-      if (pin) {
-        var bp = el('button', null, e ? 'Move home to the pin' : 'Set home at the pin'); bp.type = 'button';
-        bp.addEventListener('click', function () {
-          if (e && !confirm('Move home to the pin?')) return;
-          setHome(pin); paintNextEnd(); if (nextShown) nextFetchStars(nextReplan);
-        });
-        row.appendChild(bp);
-      }
-      d.appendChild(row);
-    } else {
+    var d = el('div', 'next-follow'), o = nextOrigin(), e = nextEndRaw();
+    var row = el('div', 'btnrow'), txt;
+    function btn(label, fn) { var b = el('button', null, label); b.type = 'button'; b.addEventListener('click', fn); row.appendChild(b); }
+    if (nextEnd === 'round') {
+      // With no places saved yet, say how; otherwise stay out of the way.
+      if (placesAll().length) return;
+      d.appendChild(el('span', null, 'Save home, work or anywhere you often go, and plan on the way there.'));
+      btn('Save where I am\u2026', function () {
+        if (fix) askSavePlace(fix); else acquireFix(function () { askSavePlace(fix); }); });
+      d.appendChild(row); box.appendChild(d); return;
+    }
+    if (nextEnd === 'pin') {
       if (!e) txt = 'Drop a pin on the Place tab where you are going.';
       else {
         var w = null;
         try { w = S.findWords({ lat_1e7: Math.round(e.lat * 1e7), lon_1e7: Math.round(e.lon * 1e7) }); } catch (x) {}
         txt = 'Going to your pin' + (w ? ' at ' + w.text : '') +
           (fix ? ', ' + nextKm(S.haversineM(fix.lat, fix.lon, e.lat, e.lon)) + ' away' : '') + '.';
+        btn('Save the pin as a place\u2026', function () { askSavePlace(e); });
       }
       d.appendChild(el('span', null, txt));
+      if (row.children.length) d.appendChild(row);
+      box.appendChild(d); return;
     }
+    var pl = e;
+    if (o && S.haversineM(o.lat, o.lon, pl.lat, pl.lon) < ONEWAY_MIN_M) txt = 'You are at ' + pl.name + ', so these are round trips.';
+    else txt = pl.name.charAt(0).toUpperCase() + pl.name.slice(1) + ' is ' + (o ? nextKm(S.haversineM(o.lat, o.lon, pl.lat, pl.lon)) + ' away, about ' +
+      Math.max(1, Math.round(NX.minutesFor(S.haversineM(o.lat, o.lon, pl.lat, pl.lon), nextKmh()))) + ' min straight there.' : 'saved.');
+    d.appendChild(el('span', null, txt));
+    btn('rename', function () {
+      var n = prompt('New name for \u201c' + pl.name + '\u201d', pl.name);
+      if (n == null || !String(n).trim()) return;
+      if (placeByName(n) && placeByName(n).id !== pl.id) { alert('There is already a place called \u201c' + n + '\u201d.'); return; }
+      placesSave(placesAll().map(function (p) { return p.id === pl.id ? { id: p.id, name: String(n).trim().slice(0, 24), lat: p.lat, lon: p.lon } : p; }));
+      paintEndChips(); paintNextEnd(); paintAddrHome();
+    });
+    btn('forget', function () {
+      if (!confirm('Forget \u201c' + pl.name + '\u201d?')) return;
+      placesSave(placesAll().filter(function (p) { return p.id !== pl.id; }));
+      nextEnd = 'round'; paintEndChips(); paintNextEnd(); paintAddrHome(); syncOpportunity(true);
+      if (nextShown) nextFetchStars(nextReplan);
+    });
+    d.appendChild(row);
     box.appendChild(d);
   }
   // true when the last star lookup failed or timed out: the catalogue could
@@ -1930,7 +2002,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
       });
       var row = el('div', 'btnrow');
       var b = el('button', null, 'Take me there'); b.type = 'button';
-      b.addEventListener('click', function () { nextFollow(kind, t, headline); });
+      b.addEventListener('click', function () { nextFollow(kind, t, kind === 'route' ? t.headline : headline); });
       var r = el('button', null, 'Route in maps'); r.type = 'button';
       r.addEventListener('click', function () { routeDialog(t, headline, p.from, p.to); });
       row.appendChild(b); row.appendChild(r);
@@ -2010,9 +2082,9 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   $('route-dlg').addEventListener('click', function (e) { if (e.target === this) routeClose(); });
 
   function nextFollow(kind, t, title, endOverride) {
-    cellGoal = null; nextHeading = null;
+    cellGoal = null; nextHeading = null; trackUserOff = false;
     var e0 = endOverride !== undefined ? endOverride : (nextPlan && nextPlan.to);
-    var end = e0 ? { lat: e0.lat, lon: e0.lon, label: e0.label } : null;
+    var end = e0 ? { lat: e0.lat, lon: e0.lon, label: e0.label, key: e0.key } : null;
     nextGoal = { kind: kind === 'route' ? 'route' : 'walk', title: title, end: end,
       stops: t.stops.map(function (s) {
         var isStar = kind === 'star' || s.kind === 'star';
@@ -2111,6 +2183,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function paintNextFollow() {
     var box = $('next-follow'); if (!box) return;
     box.textContent = '';
+    syncAutoTrack();
     if (!nextGoal && nextHeading) {
       var hd = el('div', 'next-follow');
       hd.appendChild(el('span', null, 'Heading to ' + nextHeading.label +
@@ -2118,7 +2191,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
         '. The dashed line points there.'));
       var more = el('button', null, 'more on the way'); more.type = 'button';
       more.addEventListener('click', function () {
-        nextEnd = nextHeading.label === 'home' ? 'home' : 'pin';
+        nextEnd = nextHeading.key || 'pin';
         paintNextEnd();
         $('next-go').click();
         var nc = $('next-cards');
@@ -2139,6 +2212,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     }
     var d = el('div', 'next-follow');
     d.appendChild(el('span', null, txt));
+    // Short of time: drop the stop you are heading for and go on to the next.
+    if (nextGoal.stops.filter(function (x) { return !stopDone(x); }).length > 1) {
+      var sk = el('button', null, 'skip'); sk.type = 'button';
+      sk.title = 'Skip this stop and go on to the next';
+      sk.addEventListener('click', function () { skipRouteStop(0); });
+      d.appendChild(sk);
+    }
     var b = el('button', null, 'stop'); b.type = 'button';
     b.addEventListener('click', function () { nextGoal = null; nextHeading = null; paintNextFollow(); syncMapGoal(); syncRoute(); syncOpportunity(true); cornerstone(); paintTargets(); });
     d.appendChild(b);
@@ -2173,14 +2253,10 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     });
   });
   paintNextMode();
-  Array.prototype.forEach.call(document.querySelectorAll('#next-end button'), function (b) {
-    b.addEventListener('click', function () {
-      nextEnd = b.getAttribute('data-end');
-      if (nextEnd !== 'home' && nextEnd !== 'pin') nextEnd = 'round';
-      paintNextEnd(); syncOpportunity(true);
-      if (nextShown) nextFetchStars(nextReplan);
-    });
+  Array.prototype.forEach.call(document.querySelectorAll('#next-end button[data-end="round"], #next-end button[data-end="pin"]'), function (b) {
+    b.addEventListener('click', function () { chooseEnd(b.getAttribute('data-end')); });
   });
+  paintEndChips();
   paintNextEnd();
   $('next-go').addEventListener('click', function () {
     if (!NX) return;
@@ -3149,7 +3225,13 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   var flip = GeosonifyStarpinFlip.mount($('stage'), {
     zoom: 15,                    // about a 200 m scale bar
     lookupStars: false,          // loadStars() below does it, once, and hands them over
-    locate: false,               // this page owns geolocation
+    locate: false,               // this page owns geolocation...
+    onLocate: function () {      // ...but the map's own locate button is handy
+      F.unlock();
+      try { localStorage.setItem('starpin.perm.location', '1'); } catch (e) {}
+      function centre() { if (fix) map.leaflet.setView([fix.lat, fix.lon], Math.max(map.leaflet.getZoom(), 16)); }
+      if (watchId != null && fix) centre(); else acquireFix(centre);
+    },
     onSelect: function (sel) {
       showInfo(sel);
       if (sel) { goTab('map'); sheetTo('half'); }
@@ -3547,26 +3629,22 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // With a home already saved this is a quiet link, not a big button asking
   // the same question every time a pin is dropped.
   function paintAddrHome() {
-    var b = $('addr-home'), h = homePoint();
+    var b = $('addr-home');
     if (!b) return;
-    if (!h) { b.className = ''; b.textContent = 'Make this home'; return; }
-    b.className = 'linkish';
-    b.textContent = 'move home here' + (addrPoint
-      ? ' (now ' + nextKm(S.haversineM(h.lat, h.lon, addrPoint.lat, addrPoint.lon)) + ' away)' : '');
+    var n = placesAll().length;
+    b.className = n ? 'linkish' : '';
+    b.textContent = n ? 'save this place\u2026' : 'Save this place\u2026 (home, work)';
   }
+  // Whatever this box shows (the dropped pin, else the map centre, or an
+  // address pasted in and gone to) can be saved as a named place, from anywhere.
   $('addr-home').addEventListener('click', function () {
     if (!addrPoint) return;
-    var had = homePoint();
-    if (had && S.haversineM(had.lat, had.lon, addrPoint.lat, addrPoint.lon) > 20 &&
-        !confirm('Move home to ' + ($('addr-src').textContent || 'this place') + '?')) return;
-    setHome(addrPoint);
+    var rec = askSavePlace(addrPoint);
+    if (!rec) return;
     var m = $('addr-home-msg');
-    m.textContent = 'Home set to the ' + ($('addr-src').textContent || 'place shown') +
-      '. Kept on this phone only. Choose \u201cto home\u201d on the Go tab to plan on the way there.';
+    m.textContent = '\u201c' + rec.name + '\u201d saved at the ' + ($('addr-src').textContent || 'place shown') +
+      '. Kept on this phone only. Choose \u201cto ' + rec.name + '\u201d on the Go tab to plan on the way there.';
     m.hidden = false;
-    paintAddrHome();
-    paintNextEnd();
-    if (nextShown && nextEnd === 'home') nextFetchStars(nextReplan);
   });
 
   // ── reading ANY address pasted into the box ─────────────────────────────
@@ -4268,10 +4346,46 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     return out;
   }
   var watchId = null;
+  /*
+    SMARTER TRACKING. Continuous GPS costs battery, so it runs only when it
+    earns its keep:
+      * while something is being followed (a walk, a route, a cell, the
+        heading-on after a one-way walk), it starts by itself and stops by
+        itself when that ends (trackAuto). Pressing "Tracking" off while
+        following keeps it off until the next walk (trackUserOff).
+      * "Track me" still turns it on for good, as before.
+      * whenever the page is hidden (phone locked, another app), the watch is
+        dropped and picked up again on return (trackPaused); browsers mostly
+        stop it in the background anyway, and this makes sure.
+    The on-map locate button takes one fix and centres the map, or just
+    centres it while tracking; it is lit while tracking.
+  */
+  var trackAuto = false, trackUserOff = false, trackPaused = false;
+  function syncAutoTrack() {
+    var following = !!(nextGoal || cellGoal || nextHeading);
+    var allowed = !!fix || (function () { try { return localStorage.getItem('starpin.perm.location') === '1'; } catch (e) { return false; } })();
+    if (following && !trackUserOff && allowed && watchId == null && !trackPaused && navigator.geolocation) {
+      trackAuto = true; startTracking();
+      $('track').textContent = 'Tracking while you follow';
+    } else if (!following && trackAuto && watchId != null) {
+      trackAuto = false; stopTracking();
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; prevFix = null; trackPaused = true; }
+    } else if (trackPaused) {
+      trackPaused = false; var wasAuto = trackAuto;
+      if (wasAuto && !(nextGoal || cellGoal || nextHeading)) { trackAuto = false; stopTracking(); return; }
+      startTracking();
+      if (wasAuto) $('track').textContent = 'Tracking while you follow';
+    }
+  });
   function startTracking() {
     if (watchId != null || !navigator.geolocation) return;
     prevFix = null;   // start each tracking run clean
     $('track').setAttribute('aria-pressed', 'true'); $('track').textContent = 'Tracking\u2026';
+    if (flip.setLocating) flip.setLocating(true);
     watchId = navigator.geolocation.watchPosition(function (p) {
       var vel = velocityFrom(p);
       fix = { lat: p.coords.latitude, lon: p.coords.longitude, accuracy_m: p.coords.accuracy,
@@ -4300,15 +4414,17 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
     if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
     prevFix = null;   // don't diff across a stop/start gap
     $('track').setAttribute('aria-pressed', 'false'); $('track').textContent = 'Track me';
+    if (flip.setLocating) flip.setLocating(false);
   }
   $('track').addEventListener('click', function () {
     F.unlock();
     if (watchId != null) {
       try { localStorage.removeItem('starpin.perm.track'); } catch (e) {}
-      stopTracking(); return;
+      if (nextGoal || cellGoal || nextHeading) trackUserOff = true;   // stays off for this walk
+      trackAuto = false; stopTracking(); return;
     }
     try { localStorage.setItem('starpin.perm.track', '1'); } catch (e) {}
-    startTracking();
+    trackAuto = false; startTracking();
   });
   var lastCs = null, lastSp = null;
 

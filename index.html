@@ -206,6 +206,7 @@
   #gsLanding button { font: inherit; border: 0; border-radius: 10px; padding: 11px 8px; cursor: pointer;
     background: var(--gl-btn); color: var(--gl-fg); }
   #gsLanding button.gl-pri { background: var(--gl-pri); color: #fff; grid-column: 1 / -1; font-weight: 600; }
+  #gsLanding button.gl-tour { background: var(--gl-btn); color: var(--gl-fg); }
   #gsLanding .gl-pri small { display: block; font-weight: 400; font-size: 12.5px; opacity: 0.9; margin-top: 3px; line-height: 1.35; }
   #gsLanding .gl-words { font-size: 16px; font-weight: 600; margin-top: 8px; word-break: break-word; }
   #gsLanding button:disabled { opacity: 0.5; cursor: default; }
@@ -218,11 +219,8 @@
     <div class="gl-dms" id="glDms"></div>
     <div class="gl-acts">
       <button type="button" class="gl-pri" id="glExplore"><span id="glExploreT">Explore in Geosonify</span><small id="glExploreS"></small></button>
-      <button type="button" id="glHear" disabled>🔊 Hear it</button>
-      <button type="button" id="glShare" disabled>Share a link</button>
-      <button type="button" id="glWords" disabled style="grid-column: 1 / -1;">Words</button>
+      <button type="button" class="gl-pri gl-tour" id="glTour"><span id="glTourT">Take a tour</span><small id="glTourS"></small></button>
     </div>
-    <div class="gl-words" id="glWordsOut" hidden></div>
     <div class="gl-note" id="glNote" aria-live="polite"></div>
   </div>
 </div>
@@ -231,6 +229,7 @@
   var q = location.search;
   var m = /^\?r=(-?\d{1,2}(?:\.\d+)?)(?:,|%2C)(-?\d{1,3}(?:\.\d+)?)(?:&|$)/i.exec(q);
   if (!m || /[?&](display|enc)(=|&|$)/.test(q)) return;
+  try { if (sessionStorage.getItem('gsTourJustEnded')) { sessionStorage.removeItem('gsTourJustEnded'); return; } } catch (e) {}
   var lat = +m[1], lon = +m[2];
   if (!(lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180)) return;
   window.__geohackLanding = true;            // the app skips its old jump to the Output tab
@@ -242,18 +241,18 @@
     the sheet but English words. Translations need checking by native speakers.
   */
   var T = {
-    en: { k: 'Place from Wikipedia', ex: 'Explore in Geosonify', exs: 'Encode this place as text, words in many languages, emoji, music, GIS and QR codes; draw shapes; or share it privately with a passphrase.', hear: '🔊 Hear it', stop: '⏹ Stop', share: 'Share a link', words: 'Words in English', copied: 'Link copied', wcopied: 'Words copied', wait: 'One moment…' },
-    mi: { k: 'He wāhi nō Wikipedia', ex: 'Tūhurahia i Geosonify', exs: 'Whakawaeheretia tēnei wāhi hei kupu, hei kupu i ngā reo maha, hei emoji, hei puoro, hei waehere GIS, QR hoki; tuhia he āhua; tohaina matatapu rānei ki te kupuhipa.', hear: '🔊 Whakarongo', stop: '⏹ Kāti', share: 'Tohaina he hono', words: 'He kupu (reo Pākehā)', copied: 'Kua tāruatia te hono', wcopied: 'Kua tāruatia ngā kupu', wait: 'Taihoa…' },
-    es: { k: 'Lugar desde Wikipedia', ex: 'Explorar en Geosonify', exs: 'Codifica este lugar como texto, palabras en muchos idiomas, emoji, música, códigos SIG y QR; dibuja formas o compártelo en privado con una contraseña.', hear: '🔊 Escuchar', stop: '⏹ Parar', share: 'Compartir un enlace', words: 'Palabras en español', copied: 'Enlace copiado', wcopied: 'Palabras copiadas', wait: 'Un momento…' },
-    fr: { k: 'Lieu depuis Wikipédia', ex: 'Explorer dans Geosonify', exs: 'Encodez ce lieu en texte, en mots dans de nombreuses langues, en emoji, en musique, en codes SIG et QR ; dessinez des formes ou partagez-le en privé avec une phrase secrète.', hear: '🔊 Écouter', stop: '⏹ Arrêter', share: 'Partager un lien', words: 'Mots en français', copied: 'Lien copié', wcopied: 'Mots copiés', wait: 'Un instant…' },
-    de: { k: 'Ort aus Wikipedia', ex: 'In Geosonify erkunden', exs: 'Diesen Ort als Text, als Wörter in vielen Sprachen, als Emoji, Musik, GIS- und QR-Codes kodieren, Formen zeichnen oder privat mit einer Passphrase teilen.', hear: '🔊 Anhören', stop: '⏹ Stopp', share: 'Link teilen', words: 'Wörter auf Deutsch', copied: 'Link kopiert', wcopied: 'Wörter kopiert', wait: 'Einen Moment…' },
-    it: { k: 'Luogo da Wikipedia', ex: 'Esplora in Geosonify', exs: 'Codifica questo luogo come testo, parole in molte lingue, emoji, musica, codici GIS e QR; disegna forme o condividilo in privato con una passphrase.', hear: '🔊 Ascolta', stop: '⏹ Ferma', share: 'Condividi un link', words: 'Parole in italiano', copied: 'Link copiato', wcopied: 'Parole copiate', wait: 'Un momento…' },
-    pt: { k: 'Lugar da Wikipédia', ex: 'Explorar no Geosonify', exs: 'Codifique este lugar como texto, palavras em muitas línguas, emoji, música, códigos SIG e QR; desenhe formas ou partilhe-o em privado com uma frase-passe.', hear: '🔊 Ouvir', stop: '⏹ Parar', share: 'Partilhar uma ligação', words: 'Palavras em português', copied: 'Ligação copiada', wcopied: 'Palavras copiadas', wait: 'Um momento…' },
-    cs: { k: 'Místo z Wikipedie', ex: 'Prozkoumat v Geosonify', exs: 'Zakódujte toto místo jako text, slova v mnoha jazycích, emoji, hudbu, kódy GIS a QR; kreslete tvary nebo ho sdílejte soukromě s heslem.', hear: '🔊 Poslechnout', stop: '⏹ Zastavit', share: 'Sdílet odkaz', words: 'Slova česky', copied: 'Odkaz zkopírován', wcopied: 'Slova zkopírována', wait: 'Okamžik…' },
-    ja: { k: 'ウィキペディアの場所', ex: 'Geosonifyで見る', exs: 'この場所を文字、多言語の単語、絵文字、音楽、GISやQRコードに変換。図形を描いたり、パスフレーズで非公開に共有したりできます。', hear: '🔊 聴く', stop: '⏹ 停止', share: 'リンクを共有', words: '日本語の単語', copied: 'リンクをコピーしました', wcopied: '単語をコピーしました', wait: '少々お待ちください…' },
-    ko: { k: '위키백과의 장소', ex: 'Geosonify에서 보기', exs: '이 장소를 텍스트, 여러 언어의 단어, 이모지, 음악, GIS 및 QR 코드로 인코딩하고, 도형을 그리거나 암호문으로 비공개 공유하세요.', hear: '🔊 듣기', stop: '⏹ 정지', share: '링크 공유', words: '한국어 단어', copied: '링크를 복사했습니다', wcopied: '단어를 복사했습니다', wait: '잠시만요…' },
-    'zh-Hans': { k: '来自维基百科的地点', ex: '在 Geosonify 中探索', exs: '将此地点编码为文字、多种语言的词语、表情符号、音乐、GIS 和二维码；绘制形状，或用密码短语私密分享。', hear: '🔊 聆听', stop: '⏹ 停止', share: '分享链接', words: '中文词语', copied: '链接已复制', wcopied: '词语已复制', wait: '请稍候…' },
-    'zh-Hant': { k: '來自維基百科的地點', ex: '在 Geosonify 中探索', exs: '將此地點編碼為文字、多種語言的詞語、表情符號、音樂、GIS 和 QR 碼；繪製形狀，或用密碼短語私密分享。', hear: '🔊 聆聽', stop: '⏹ 停止', share: '分享連結', words: '中文詞語', copied: '連結已複製', wcopied: '詞語已複製', wait: '請稍候…' }
+    en: { k: 'Place from Wikipedia', ex: 'Explore in Geosonify', exs: 'Encode this place as text, words in many languages, emoji, music, GIS and QR codes; draw shapes; or share it privately with a passphrase.', tour: 'Take a tour', tours: 'One minute: choose a place, see it as words, colours and music, and share it.' },
+    mi: { k: 'He wāhi nō Wikipedia', ex: 'Tūhurahia i Geosonify', exs: 'Whakawaeheretia tēnei wāhi hei kupu, hei kupu i ngā reo maha, hei emoji, hei puoro, hei waehere GIS, QR hoki; tuhia he āhua; tohaina matatapu rānei ki te kupuhipa.', tour: 'Haere i te haerenga', tours: 'Kotahi meneti: kōwhiria he wāhi, tirohia hei kupu, hei tae, hei puoro, ā, tohaina.' },
+    es: { k: 'Lugar desde Wikipedia', ex: 'Explorar en Geosonify', exs: 'Codifica este lugar como texto, palabras en muchos idiomas, emoji, música, códigos SIG y QR; dibuja formas o compártelo en privado con una contraseña.', tour: 'Hacer un recorrido', tours: 'Un minuto: elige un lugar, míralo como palabras, colores y música, y compártelo.' },
+    fr: { k: 'Lieu depuis Wikipédia', ex: 'Explorer dans Geosonify', exs: 'Encodez ce lieu en texte, en mots dans de nombreuses langues, en emoji, en musique, en codes SIG et QR ; dessinez des formes ou partagez-le en privé avec une phrase secrète.', tour: 'Faire la visite', tours: 'Une minute : choisissez un lieu, voyez-le en mots, en couleurs et en musique, et partagez-le.' },
+    de: { k: 'Ort aus Wikipedia', ex: 'In Geosonify erkunden', exs: 'Diesen Ort als Text, als Wörter in vielen Sprachen, als Emoji, Musik, GIS- und QR-Codes kodieren, Formen zeichnen oder privat mit einer Passphrase teilen.', tour: 'Kurze Tour', tours: 'Eine Minute: einen Ort wählen, als Wörter, Farben und Musik sehen und teilen.' },
+    it: { k: 'Luogo da Wikipedia', ex: 'Esplora in Geosonify', exs: 'Codifica questo luogo come testo, parole in molte lingue, emoji, musica, codici GIS e QR; disegna forme o condividilo in privato con una passphrase.', tour: 'Fai un tour', tours: 'Un minuto: scegli un luogo, guardalo come parole, colori e musica, e condividilo.' },
+    pt: { k: 'Lugar da Wikipédia', ex: 'Explorar no Geosonify', exs: 'Codifique este lugar como texto, palavras em muitas línguas, emoji, música, códigos SIG e QR; desenhe formas ou partilhe-o em privado com uma frase-passe.', tour: 'Fazer uma visita', tours: 'Um minuto: escolha um lugar, veja-o como palavras, cores e música, e partilhe-o.' },
+    cs: { k: 'Místo z Wikipedie', ex: 'Prozkoumat v Geosonify', exs: 'Zakódujte toto místo jako text, slova v mnoha jazycích, emoji, hudbu, kódy GIS a QR; kreslete tvary nebo ho sdílejte soukromě s heslem.', tour: 'Prohlídka', tours: 'Jedna minuta: vyberte místo, uvidíte ho jako slova, barvy a hudbu, a sdílejte ho.' },
+    ja: { k: 'ウィキペディアの場所', ex: 'Geosonifyで見る', exs: 'この場所を文字、多言語の単語、絵文字、音楽、GISやQRコードに変換。図形を描いたり、パスフレーズで非公開に共有したりできます。', tour: 'ツアーを見る', tours: '1分：場所を選び、単語・色・音楽で見て、共有しましょう。' },
+    ko: { k: '위키백과의 장소', ex: 'Geosonify에서 보기', exs: '이 장소를 텍스트, 여러 언어의 단어, 이모지, 음악, GIS 및 QR 코드로 인코딩하고, 도형을 그리거나 암호문으로 비공개 공유하세요.', tour: '둘러보기', tours: '1분: 장소를 고르고, 단어·색·음악으로 보고, 공유해 보세요.' },
+    'zh-Hans': { k: '来自维基百科的地点', ex: '在 Geosonify 中探索', exs: '将此地点编码为文字、多种语言的词语、表情符号、音乐、GIS 和二维码；绘制形状，或用密码短语私密分享。', tour: '快速导览', tours: '一分钟：选一个地点，看它变成词语、颜色和音乐，然后分享。' },
+    'zh-Hant': { k: '來自維基百科的地點', ex: '在 Geosonify 中探索', exs: '將此地點編碼為文字、多種語言的詞語、表情符號、音樂、GIS 和 QR 碼；繪製形狀，或用密碼短語私密分享。', tour: '快速導覽', tours: '一分鐘：選一個地點，看它變成詞語、顏色和音樂，然後分享。' }
   };
   var WORDLIST = { en: 'english', es: 'spanish', fr: 'french', de: 'german', it: 'italian', pt: 'portuguese', cs: 'czech', ja: 'japanese', ko: 'korean', 'zh-Hans': 'chinese_simplified', 'zh-Hant': 'chinese_traditional', mi: 'english' };
   var lang = 'en';
@@ -279,54 +278,22 @@
   $('glKicker').textContent = t.k;
   $('glExploreT').textContent = t.ex;
   $('glExploreS').textContent = t.exs;
-  $('glHear').textContent = t.hear;
-  $('glShare').textContent = t.share;
-  $('glWords').textContent = t.words;
+  $('glTourT').textContent = t.tour;
+  $('glTourS').textContent = t.tours;
   $('glDec').textContent =
     Math.abs(lat).toFixed(6) + '° ' + (lat < 0 ? 'S' : 'N') + ', ' + Math.abs(lon).toFixed(6) + '° ' + (lon < 0 ? 'W' : 'E');
   $('glDms').textContent = dms(lat, 'N', 'S') + ' ' + dms(lon, 'E', 'W');
   el.classList.add('on');
 
-  function say(x) { note.textContent = x; }
-  function copy(text, done) {
-    var ok = function () { say(done); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(ok, function () {});
-    else say(text);
-  }
   $('glExplore').onclick = function () { el.classList.remove('on'); };
-
-  var hear = $('glHear'), share = $('glShare'), words = $('glWords');
-  hear.onclick = function () {
-    var b = document.querySelector('.audio-speaker-btn');
-    if (b) { b.click(); setTimeout(function () { hear.textContent = /🔊|🔉|🔈/.test(b.innerHTML) ? t.stop : t.hear; }, 300); }
+  // The introductory tour (js/ui/tour.js), on this visitor's own place.
+  $('glTour').onclick = function () {
+    el.classList.remove('on');
+    (function go(n) {
+      if (window.GeosonifyTour && typeof currentCardCoord !== 'undefined' && currentCardCoord) { GeosonifyTour.start('intro'); return; }
+      if (n < 80) setTimeout(function () { go(n + 1); }, 250);
+    })(0);
   };
-  share.onclick = function () {
-    var get = (typeof buildShareURLReady === 'function') ? buildShareURLReady() : Promise.resolve(null);
-    Promise.resolve(get).then(function (url) {
-      if (!url) { say(t.wait); return; }
-      if (navigator.share) navigator.share({ title: 'Geosonify', url: url }).catch(function () {});
-      else copy(url, t.copied);
-    });
-  };
-  // HEALPix words: four words (about 4 m), in the visitor's language.
-  words.onclick = function () {
-    try {
-      var w = HealpixWords.encode(lat, lon, 4, WORDLIST[lang]);
-      if (!w) return;
-      var out = $('glWordsOut'); out.textContent = w; out.hidden = false;
-      copy(w, t.wcopied);
-    } catch (e) {}
-  };
-  // (No sky button: a place from Wikipedia is on Earth. Showing the stars at the
-  // same numbers would only make sense for RA/Dec coordinates: Greg, Nov 2026.)
-  var tries = 0;
-  (function ready() {
-    var appUp = typeof buildShareURL === 'function' && typeof lastSolution !== 'undefined' && lastSolution;
-    if (appUp) share.disabled = false;
-    if (document.querySelector('.audio-speaker-btn')) hear.disabled = false;
-    if (typeof HealpixWords !== 'undefined' && HealpixWords.encode) words.disabled = false;
-    if ((share.disabled || hear.disabled || words.disabled) && ++tries < 120) setTimeout(ready, 250);
-  })();
 })();
 </script>
   <!-- A display link (?…&display) opens straight onto the shape: the splash is
@@ -946,6 +913,7 @@
 
     <!-- Tab 4: FAQ / Examples / Credits -->
     <div class="tab-content" id="tab-examples">
+      <button type="button" id="tourBtn" class="btn btn-secondary" style="margin:12px 16px 0;" onclick="GeosonifyTour.start('intro')">▶ Take the tour</button>
       <div id="faq-root"></div>
       <!-- Examples, FAQ and Credits are now rendered from js/lib/faq-data.js by js/ui/faq-ui.js -->
     </div>
@@ -1160,6 +1128,7 @@
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
 <script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261115e';</script>
 <script src="js/ui/faq-ui.js?v=20261115g"></script>
+<script src="js/ui/tour.js?v=20261118a"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
