@@ -100,6 +100,14 @@ def main():
         r = pg.evaluate("({title: (document.querySelector('#gsLanding .gl-title')||{}).textContent, it: cardState.iterations[cardState.active], active: cardState.active, lat: currentCardCoord && currentCardCoord.lat})")
         check('geohack: title, place and precision from dim:', r['title'] == 'Eiffel Tower' and r['active'] == 'alphanumeric' and r['it'] == 7 and abs((r['lat'] or 0) - 48.8583) < 1e-9, r)
         ctx.close()
+        # 8. B1 / D1: a linked path follows the card's precision, never finer than it came
+        ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot')
+        def step(cls):
+            pg.evaluate("c=>document.querySelector('#cardsContainer .format-card.active-card').querySelector(c).click()", cls); pg.wait_for_timeout(1000)
+            return pg.evaluate("({it: cardState.iterations[cardState.active], first: document.getElementById('compactOutput').textContent.split('~')[0].length, addr: decodeURIComponent(location.search).split('=')[1].split('~')[0].length})")
+        a1 = step('.plus-btn'); a2 = step('.minus-btn')
+        check('precision: a linked path stays at its level and re-encodes coarser', a1['it'] == 8 and a1['first'] == 8 and a2['it'] == 7 and a2['first'] == 7 and a2['addr'] == 7, [a1, a2])
+        ctx.close()
         # 4. display link of a route shows a length
         ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display&area')
         txt = pg.evaluate("(document.querySelector('.geosonify-viewer-area')||{}).textContent || ''")

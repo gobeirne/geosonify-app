@@ -1188,7 +1188,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261115m"></script>
+<script src="js/ui/card-renderer.js?v=20261119b"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -2704,6 +2704,47 @@ window.GeosonifyGeoHack = (function () {
       return hi;
     }
 
+
+    /*
+      PRECISION OF A LOADED PATH OR SHAPE (B1, decision D1, Nov 2026).
+      Changing the active card's precision re-encodes the path or shape on
+      screen, so the readout, the compact output and the address bar always
+      describe the same level. Coarser is always allowed. Finer is allowed for
+      a shape drawn in the app (its vertices are exactly where they were put),
+      but not for one that came from a link or an import: its vertices are
+      only known to the level it arrived at, so a finer code would be false
+      precision. The stepper stops there and says why.
+    */
+    let _nextShapeOrigin = null, _shapeOrigin = null, _openedWithLink = false;
+    function noteShapeOrigin() {
+      _shapeOrigin = { from: _nextShapeOrigin || 'drawn', level: null };
+      if (_nextShapeOrigin === 'import') _nextShapeOrigin = null;
+    }
+    function _hasLoadedShape() {
+      if (!lastSolution) return false;
+      // Some link paths are built without createPathPoly: a shape already on
+      // screen when nothing has been drawn came from the link.
+      if (!_shapeOrigin && _openedWithLink) _shapeOrigin = { from: 'link', level: null };
+      if (!_shapeOrigin) return false;
+      const n = (lastSolution.points && lastSolution.points.length) || 0;
+      return n > 1 || (lastSolution.groups && lastSolution.groups.length > 1);
+    }
+    window.geosonifyPrecisionLimit = function (gridKey, prev, next) {
+      if (gridKey !== cardState.active || !_hasLoadedShape()) return null;
+      if (_shapeOrigin.level == null) _shapeOrigin.level = prev;      // the level it is encoded at now
+      if (_shapeOrigin.from === 'drawn' || next <= _shapeOrigin.level) return null;
+      const what = _shapeOrigin.from === 'link' ? 'came from a link' : 'was imported';
+      const cell = (CardRenderer.getPrecisionText && CardRenderer.getPrecisionText(gridKey, _shapeOrigin.level)) || '';
+      showToast('This shape ' + what + ' at ' + cell + ' cells. A finer code would claim precision it doesn’t have, so the link stays at this level.');
+      return _shapeOrigin.level;
+    };
+    window.geosonifyPrecisionChanged = function (gridKey, prev, next) {
+      if (gridKey !== cardState.active || !_hasLoadedShape()) return;
+      if (_shapeOrigin.level == null) _shapeOrigin.level = prev;
+      _suppressURLUpdate = false;
+      updateCompactOutputs();
+    };
+
     // Tab switching logic
     function switchToTab(tabId) {
       // Display (viewer) mode has no tabs — ignore tab switches so decode-time
@@ -3985,6 +4026,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     }
 
     function parseURLParameters() {
+      // A path or shape made while reading the link came from the link (D1).
+      _nextShapeOrigin = 'link';
+      _openedWithLink = window.location.search.length > 1;
+      setTimeout(() => { if (_nextShapeOrigin === 'link') _nextShapeOrigin = null; }, 3000);
       const urlParams = new URLSearchParams(window.location.search);
 
       // ── Labels and styles (?lbl=, ?sty=) ─────────────────────────────
@@ -5937,6 +5982,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // isClosedPolygon moved to geosonify-geo-math.js
 
     function createPathPoly(coords, segmentModes) {
+      noteShapeOrigin();
       const isClosed = isClosedPolygon(coords);
       const centroid = calculateGeographicCentroid(coords);
       
@@ -5987,6 +6033,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
      * @param {Array<Array<Array<number>>>} groups - Array of coordinate arrays
      */
     function createMultiPathPoly(groups, allSegmentModes) {
+      noteShapeOrigin();
       if (!groups || groups.length === 0) return;
       
       // Single group? Delegate to standard createPathPoly
@@ -10966,6 +11013,7 @@ function encodeRaw(sol) {
     }
 
     function processLoadedShape(coords, sourceName, groups) {
+      _nextShapeOrigin = 'import';   // the shape the Import buttons make next (D1)
       const _src = (typeof ShapeImport !== 'undefined' && ShapeImport.takeLastSource) ? ShapeImport.takeLastSource() : null;
       if (!coords || coords.length === 0) {
         showToast('No coordinates found' + (sourceName ? ' from ' + sourceName : ''), 'error');
@@ -11944,6 +11992,7 @@ function encodeRaw(sol) {
     
     // Shared function to process loaded GPX text
     function processLoadedGPX(gpxText, sourceName) {
+      _nextShapeOrigin = 'import';
       const _gsrc = (typeof ShapeImport !== 'undefined' && ShapeImport.takeLastSource) ? ShapeImport.takeLastSource() : null;
       _importProvenance = { src: _gsrc || (sourceName ? { source: 'imported GPX: ' + sourceName } : null), first: null, n: null, gpx: true };
       gpxOriginalCoords = parseGPX(gpxText);

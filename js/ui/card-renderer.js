@@ -4678,7 +4678,8 @@
         card.querySelector('.minus-btn')?.addEventListener('click', () => {
           const min = gridDef.minIterations || 1;
           const step = gridDef.iterStep || 1;
-          cardState.iterations[gridKey] = Math.max(min, (cardState.iterations[gridKey] || gridDef.defaultIterations) - step);
+          const prevIter = cardState.iterations[gridKey] || gridDef.defaultIterations;
+          cardState.iterations[gridKey] = Math.max(min, prevIter - step);
           saveCardState();
           // Persist iterations for custom grids
           if (gridDef.isCustom && typeof CustomGridLoader !== 'undefined' && CustomGridLoader.updateStoredIterations) {
@@ -4688,12 +4689,22 @@
           if (cardState.active === gridKey && typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
             MapManager.refreshHierarchicalGrid();
           }
+          // A loaded path or shape follows its card (B1): index.html re-encodes it.
+          if (typeof window.geosonifyPrecisionChanged === 'function') window.geosonifyPrecisionChanged(gridKey, prevIter, cardState.iterations[gridKey]);
         });
         card.querySelector('.plus-btn')?.addEventListener('click', () => {
           const step = gridDef.iterStep || 1;
-          const newIter = (cardState.iterations[gridKey] || gridDef.defaultIterations) + step;
+          const prevIter = cardState.iterations[gridKey] || gridDef.defaultIterations;
+          const newIter = prevIter + step;
           const max = gridDef.dynamicIterations ? getQRUrlIterations() : gridDef.maxIterations;
-          cardState.iterations[gridKey] = max ? Math.min(max, newIter) : newIter;
+          let nextIter = max ? Math.min(max, newIter) : newIter;
+          // A shape from a link or an import can't be made finer than it was
+          // captured (decision D1): index.html says how far it may go.
+          if (typeof window.geosonifyPrecisionLimit === 'function') {
+            const lim = window.geosonifyPrecisionLimit(gridKey, prevIter, nextIter);
+            if (lim != null) nextIter = lim;
+          }
+          cardState.iterations[gridKey] = nextIter;
           saveCardState();
           // Persist iterations for custom grids
           if (gridDef.isCustom && typeof CustomGridLoader !== 'undefined' && CustomGridLoader.updateStoredIterations) {
@@ -4703,6 +4714,7 @@
           if (cardState.active === gridKey && typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) {
             MapManager.refreshHierarchicalGrid();
           }
+          if (typeof window.geosonifyPrecisionChanged === 'function') window.geosonifyPrecisionChanged(gridKey, prevIter, cardState.iterations[gridKey]);
         });
       }
       
