@@ -210,4 +210,4 @@ if (process.argv.includes('--selftest')) {
   console.log(bad ? `self-test: FAIL (${bad})` : `self-test: PASS (${VECTORS.length} vectors)`);
   process.exit(bad ? 1 : 0);
 }
-module.exports = { decodeCode, decodePath, decodeShape, decodeLink, decodeHealpix, healpixCentre, parseAnnotations };
+module.exports = { decodeCode, decodePath, decodeShape, decodeLink, decodeHealpix, healpixCentre, parseAnnotations, VECTORS };
