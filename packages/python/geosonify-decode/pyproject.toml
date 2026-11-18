@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geosonify-decode"
+version = "1.0.0"
+description = "Decode Geosonify links (core profile v1): points, paths and shapes to WGS84 coordinates"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MPL-2.0" }
+authors = [{ name = "Greg A. O'Beirne" }]
+keywords = ["geosonify", "geocoding", "healpix", "location codes", "decoder"]
+classifiers = [
+  "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: GIS",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://geosonify.org"
+Source = "https://github.com/gobeirne/geosonify-app"
+Specification = "https://github.com/gobeirne/geosonify-app/blob/main/spec/CORE-PROFILE-V1.md"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+geosonify_decode = ["vectors.json"]

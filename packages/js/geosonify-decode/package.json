@@ -1,0 +1,14 @@
+{
+  "name": "geosonify-decode",
+  "version": "1.0.0",
+  "description": "Decode Geosonify links (core profile v1): points, paths and shapes to WGS84 coordinates",
+  "main": "index.js",
+  "files": ["index.js", "vectors.json", "test.js", "README.md"],
+  "scripts": { "test": "node index.js --selftest && node test.js" },
+  "keywords": ["geosonify", "geocoding", "healpix", "location", "decoder"],
+  "author": "Greg A. O'Beirne",
+  "license": "MPL-2.0",
+  "homepage": "https://geosonify.org",
+  "repository": { "type": "git", "url": "https://github.com/gobeirne/geosonify-app.git", "directory": "packages/js/geosonify-decode" },
+  "engines": { "node": ">=14" }
+}

@@ -147,7 +147,7 @@ function parseAnnotations(query) {
 }
 
 function decodeLink(query) {                      // §1
-  const q = query.replace(/^\?/, ''), eq = q.indexOf('=');
+  const q = query.replace(/^[^?]*\?/, ''), eq = q.indexOf('=');   // a whole link or just its query
   const name = q.slice(0, eq), value = decodeURIComponent(q.slice(eq + 1).split('&')[0]);
   const hp = name.match(/^(hphex|hp64)([odrcj]*)$/);
   if (hp) {
