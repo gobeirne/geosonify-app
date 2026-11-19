@@ -1582,7 +1582,8 @@
     _leaveNotBefore = Date.now() + LEAVE_SETTLE_MS;
     let params;
     try {
-      params = new URLSearchParams(window.location.search);
+      // The decrypted query while an encrypted link is open (B9), else the address bar.
+      params = new URLSearchParams(typeof global.geosonifyAppQuery === 'function' ? global.geosonifyAppQuery() : window.location.search);
     } catch (e) { return null; }
     _applyCompareFromURL(params);
     const source = params.get('basemap');

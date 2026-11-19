@@ -1103,7 +1103,7 @@
   }
 
   function isDisplayLink() {
-    try { return /(?:^|[?&])display(?:[=&]|$)/.test(global.location.search || ''); }
+    try { return /(?:^|[?&])display(?:[=&]|$)/.test((typeof global.geosonifyAppQuery === 'function' ? global.geosonifyAppQuery() : global.location.search) || ''); }
     catch (e) { return false; }
   }
 

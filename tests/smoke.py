@@ -108,6 +108,15 @@ def main():
         a1 = step('.plus-btn'); a2 = step('.minus-btn')
         check('precision: a linked path stays at its level and re-encodes coarser', a1['it'] == 8 and a1['first'] == 8 and a2['it'] == 7 and a2['first'] == 7 and a2['addr'] == 7, [a1, a2])
         ctx.close()
+        # 9. B9: an encrypted link opens without the place ever appearing in the address bar
+        ctx, pg, errs = page('b64=v-dzcFN-')
+        blob = pg.evaluate("q=>encryptQueryString(q,'smoke-pass')", 'b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot')
+        ctx.close()
+        ctx, pg, errs = page('enc=' + blob)
+        pg.fill('#encDecryptInput', 'smoke-pass'); pg.click('#encDecryptBtn'); pg.wait_for_timeout(3000)
+        r = pg.evaluate("({type: lastSolution && lastSolution.type, href: location.href})")
+        check('encrypted link: shape loads, address bar keeps ?enc=', r['type'] == 'path' and '?enc=' in r['href'] and 'b64' not in r['href'], r)
+        ctx.close()
         # 4. display link of a route shows a length
         ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display&area')
         txt = pg.evaluate("(document.querySelector('.geosonify-viewer-area')||{}).textContent || ''")

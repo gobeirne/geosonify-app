@@ -1177,7 +1177,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-starpin-flip.js?v=20261031b"></script>
 <script src="js/lib/geosonify-starpin-map.js?v=20261010a"></script>
 <script src="js/lib/geosonify-healpix-lattice.js?v=20261025a"></script>
-<script src="js/lib/geosonify-sky-flip.js?v=20261115k"></script>
+<script src="js/lib/geosonify-sky-flip.js?v=20261119b"></script>
 <script src="js/lib/geosonify-annotations.js?v=20261014c"></script>
 <!-- ?wander=: the Sun, Moon and planets as paths. Astronomy Engine loads only when one is asked for. -->
 <script src="js/lib/geosonify-wanderers.js?v=20261024a"></script>
@@ -1195,8 +1195,8 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261119a';</script>
-<script src="js/ui/faq-ui.js?v=20261115g"></script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261119b';</script>
+<script src="js/ui/faq-ui.js?v=20261119b"></script>
 <script src="js/ui/tour.js?v=20261119d"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -2443,7 +2443,10 @@ window.GeosonifyGeoHack = (function () {
       // bloating an already-long shape URL (and tripping URL length limits).
       let qs = window.location.search.replace(/^\?/, '');
       qs = qs.split('&').filter(p => p.split('=')[0] !== 'display').join('&');
-      link.href = window.location.pathname + (qs ? '?' + qs : '');
+      // An encrypted display link: the full-app link must not carry the place
+      // in the clear (B9), and the display options are inside the blob, so it
+      // opens the app itself.
+      link.href = window.location.pathname + (window.__gsDecrypted ? '' : (qs ? '?' + qs : ''));
       link.textContent = '⬡ geosonify';
       link.title = 'Open in geosonify';
       row.appendChild(link);
@@ -3626,7 +3629,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // (address=/place=/… with auto=), the shape isn't ready yet — the
       // pipeline calls setupDisplayViewer itself when it finishes, so skip here.
       if (window.DISPLAY_MODE) {
-        const _up = new URLSearchParams(window.location.search);
+        const _up = new URLSearchParams(geosonifyAppQuery());
         const _pipelineActive = ['address','place','wikidata','osmrelation','geojson','kml','gpx','wander']
           .some(k => _up.has(k));
         if (!_pipelineActive) {
@@ -3742,6 +3745,33 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       });
     }
 
+
+    // ── The address bar after decryption (B9) ───────────────────────────
+    // What the app should treat as its query: the decrypted one while an
+    // encrypted link is open, otherwise the real address bar.
+    window.geosonifyAppQuery = function () {
+      return window.__gsDecrypted ? window.__gsDecrypted.query : window.location.search;
+    };
+    // While a decrypted link is open, any address-bar write the app makes that
+    // would show the place in the clear updates the in-memory query instead;
+    // writes of an encrypted link (?enc=) pass through as normal.
+    (function () {
+      function guard(orig) {
+        return function (state, title, url) {
+          if (window.__gsDecrypted && url != null && !/[?&]enc=/.test(String(url))) {
+            const u = String(url), q = u.indexOf('?');
+            window.__gsDecrypted.query = q >= 0 ? u.slice(q) : '';
+            return;
+          }
+          return orig.call(window.history, state, title, url);
+        };
+      }
+      try {
+        window.history.replaceState = guard(window.history.replaceState);
+        window.history.pushState = guard(window.history.pushState);
+      } catch (e) {}
+    })();
+
     // =================== ENCRYPTED URL DECODE PROMPT ===================
     function showEncryptedDecodePrompt(encBlob) {
       // Remove any existing prompts
@@ -3834,9 +3864,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // as-is (correct for no-passphrase case, and the decode banner handles
         // the case where a passphrase is needed but wasn't provided here)
         
-        // Replace the URL with the decrypted query string (without reloading)
-        const newURL = window.location.pathname + '?' + decrypted;
-        window.history.replaceState({}, '', newURL);
+        /*
+          B9 (Nov 2026): the decrypted query is NEVER written to the address bar,
+          so it cannot reach history, synced history or a copied URL. The bar
+          keeps ?enc=…; the app reads the decrypted query from memory through
+          geosonifyAppQuery(), and its own later address-bar writes are kept in
+          memory too (see the history guard below). A reload asks for the
+          passphrase again.
+        */
+        window.__gsDecrypted = { query: '?' + decrypted };
         
         // Suppress URL update so the decrypted params don't get overwritten
         _suppressURLUpdate = true;
@@ -3911,11 +3947,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (!urlParams.has('pass') || _linkPass.state !== null) return false;
       const hadValue = !!urlParams.get('pass');
       if (hadValue) {
-        const clean = new URLSearchParams(window.location.search);
+        const clean = new URLSearchParams(geosonifyAppQuery());
         clean.set('pass', '');
         window.history.replaceState({}, '', window.location.pathname + '?' + clean.toString());
       }
-      _linkPass.query = window.location.search;
+      _linkPass.query = geosonifyAppQuery();
       showLinkPassphrasePrompt(hadValue);
       return true;
     }
@@ -4028,9 +4064,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     function parseURLParameters() {
       // A path or shape made while reading the link came from the link (D1).
       _nextShapeOrigin = 'link';
-      _openedWithLink = window.location.search.length > 1;
+      _openedWithLink = geosonifyAppQuery().length > 1;
       setTimeout(() => { if (_nextShapeOrigin === 'link') _nextShapeOrigin = null; }, 3000);
-      const urlParams = new URLSearchParams(window.location.search);
+      const urlParams = new URLSearchParams(geosonifyAppQuery());
 
       // ── Labels and styles (?lbl=, ?sty=) ─────────────────────────────
       // Read first, on every parse (an ?enc= link is parsed again once it is

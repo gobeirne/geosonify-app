@@ -141,8 +141,10 @@ Notes pinned from the shipped code:
   `getURLParamForActiveCard(...) + '=' + compactOutput` (grid key + flags per
   `geosonify-url-codec_v1_1.js`, value possibly `~`-suffixed with shape/delta
   data). The *format* does not depend on that: v1 encrypts any UTF-8 string of
-  ≤ 65 535 bytes, and on successful decryption the app replaces the whole
-  query string with `'?' + plaintext` and re-parses.
+  ≤ 65 535 bytes, and on successful decryption the app parses `'?' + plaintext`
+  as its query. (Until 19 November 2026 it also wrote that query into the
+  address bar; it no longer does, so the plaintext never reaches browser
+  history (B9). This is app behaviour, not part of the format.)
 - When `enc` is present the live parser handles it **first and returns**;
   other parameters in the same URL are ignored by the decode path. (The share
   builder can append `&display…` options after `?enc=…`; under the current
