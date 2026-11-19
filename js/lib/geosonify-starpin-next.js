@@ -1,5 +1,5 @@
 /*
-  geosonify-starpin-next.js v0.7 — "What should I do next?"
+  geosonify-starpin-next.js v0.8 — "What should I do next?"
 
   Pure planning, no DOM. Given where you are, your patches and the starpins
   around you, it suggests up to three walks, each a different KIND of goal so
@@ -65,6 +65,21 @@
   has at least two. opts.skip(stop) leaves stops out (a stop skipped on the
   map). Values are recounted in the final order for the description.
 
+  CALIBRATED ON REAL RIDES (v0.8, Nov 2026). Three e-bike commutes of about
+  6.4 km crow-flies (Strava GPX, Christchurch): the usual way took 26.8 min
+  door to door, 9.24 km of road (1.43 x crow-flies); two mornings that went
+  out of the way for 4 and 5 corners took 30.0 and 31.1 min (1.53 x). So:
+    * EBIKE_KMH = 20 with DETOUR 1.3 times the usual commute at 25.2 min,
+      within 6% of the real 26.8 (lights, junctions and all), where BIKE_KMH
+      12 said 42. "e-bike" is a third travel mode; 12 km/h stays for an
+      ordinary bike, 4 for walking.
+    * Each stop costs STOP_MIN on top of the riding: slowing, the phone out,
+      the bag. From the two mornings, the time not explained by the extra
+      distance was 0.3 and 0.5 min a stop; STOP_MIN = 0.5 (all modes) is
+      the cautious end. Without it, a 5-minute allowance on a bike filled up
+      with eight stops, which no real ride would manage.
+  Trips carry travelMin (riding or walking only) beside minutes (with stops).
+
   The value of a corner comes from the patches it touches. Every patch
   (orders 12, 13, 14) with that corner gains one corner; the gain is weighted
   by size and by how close the patch is to lighting:
@@ -92,7 +107,7 @@
 
 var GeosonifyStarpinNext = (function () {
   var RULE = 'what-next-v0';
-  var WALK_KMH = 4, BIKE_KMH = 12, DETOUR = 1.3;
+  var WALK_KMH = 4, BIKE_KMH = 12, EBIKE_KMH = 20, DETOUR = 1.3, STOP_MIN = 0.5;
   var FRESH_FINE_M = 2500, FRESH_MAX_M = 6000;
   // The speed of the plan in progress. plan() sets it and puts it back; every
   // helper below is synchronous, so nothing else can see it in between.
@@ -189,7 +204,7 @@ var GeosonifyStarpinNext = (function () {
     stops.forEach(function (s) { m += S.haversineM(at.lat, at.lon, s.lat, s.lon); at = s; });
     var back = endPt || fix;
     m += S.haversineM(at.lat, at.lon, back.lat, back.lon);
-    var mins = minutesFor(m);
+    var travel = minutesFor(m), mins = travel + STOP_MIN * stops.length;
     var backM = 0;
     if (endPt) {
       var togo = baseM;
@@ -199,7 +214,7 @@ var GeosonifyStarpinNext = (function () {
         togo = d;
       });
     }
-    var t = { kind: kind, rule: RULE, stops: stops, metres: m, minutes: mins,
+    var t = { kind: kind, rule: RULE, stops: stops, metres: m, minutes: mins, travelMin: travel,
               extraMin: endPt ? Math.max(0, mins - baseMin) : mins, oneWay: !!endPt,
               backM: backM, forward: !endPt || backM <= forwardSlackM(),
               outM: S.haversineM(fix.lat, fix.lon, stops[0].lat, stops[0].lon) };
@@ -469,13 +484,14 @@ var GeosonifyStarpinNext = (function () {
     pool = pool.slice(0, ROUTE_POOL).map(function (p) { return p.st; });
     if (pool.length < 2) return null;
 
+    function routeMin(stops) { return minutesFor(routeMetres(S, fix, stops)) + STOP_MIN * stops.length; }
     function fits(stops) {
-      var mins = minutesFor(routeMetres(S, fix, stops));
+      var mins = routeMin(stops);
       var extra = endPt ? mins - baseMin : mins;
       return extra <= budgetMin && routeBackM(S, stops) <= slack;
     }
     var route = [], used = {};
-    var cur = { value: 0, minutes: minutesFor(routeMetres(S, fix, [])) };
+    var cur = { value: 0, minutes: routeMin([]) };
     while (route.length < ROUTE_MAX) {
       var best = null;
       for (var i = 0; i < pool.length; i++) {
@@ -486,14 +502,14 @@ var GeosonifyStarpinNext = (function () {
           var val = routeValues(S, cand, progress).value;
           var dv = val - cur.value;
           if (dv <= 0.01) continue;
-          var dm = Math.max(0.5, minutesFor(routeMetres(S, fix, cand)) - cur.minutes);
+          var dm = Math.max(0.5, routeMin(cand) - cur.minutes);
           var ratio = dv / dm;
           if (!best || ratio > best.ratio) best = { ratio: ratio, i: i, stops: cand, value: val };
         }
       }
       if (!best) break;
       used[best.i] = 1; route = best.stops;
-      cur = { value: best.value, minutes: minutesFor(routeMetres(S, fix, route)) };
+      cur = { value: best.value, minutes: routeMin(route) };
     }
     // Untangle.
     var improved = true, guard = 0;
@@ -552,7 +568,7 @@ var GeosonifyStarpinNext = (function () {
     } finally { speedKmh = prev; endPt = prevEnd; baseM = prevBaseM; baseMin = prevBaseMin; }
   }
 
-  return { VERSION: '0.7', ROUTE_MAX: ROUTE_MAX, STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
+  return { VERSION: '0.8', EBIKE_KMH: EBIKE_KMH, STOP_MIN: STOP_MIN, ROUTE_MAX: ROUTE_MAX, STAR_W: STAR_W, RULE: RULE, OVER: OVER, WALK_KMH: WALK_KMH, BIKE_KMH: BIKE_KMH,
            DETOUR: DETOUR, FRESH_FINE_M: FRESH_FINE_M, FRESH_MAX_M: FRESH_MAX_M,
            minutesFor: minutesFor, metresFor: metresFor, describe: describe,
            finishCandidates: finishCandidates, plan: plan };

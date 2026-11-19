@@ -503,6 +503,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <div class="next-chips" id="next-mode" role="group" aria-label="how you are getting there">
     <button type="button" data-mode="walk" aria-pressed="true">on foot</button>
     <button type="button" data-mode="bike" aria-pressed="false">by bike</button>
+    <button type="button" data-mode="ebike" aria-pressed="false">e-bike</button>
   </div>
   <div class="next-chips" id="next-end" role="group" aria-label="where you finish">
     <button type="button" data-end="round" aria-pressed="true">round trip</button>
@@ -520,7 +521,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   <div id="next-cards"></div>
   <p class="hint" id="next-hint">With a pin dropped on the Place tab, suggestions start from the pin
      instead of from you. Times are there and back from that starting point, <span id="next-speed">walking at an easy
-     4&nbsp;km/h</span>, with 30% added because streets are never straight. They are
+     4&nbsp;km/h</span>, with 30% added because streets are never straight, and half a minute
+     for each stop. They are
      still as the crow flies: a river or a motorway can make the trip longer.<span id="next-oneway-hint" hidden>
      Going to a saved place or the pin, the time you choose is extra time: how much longer than going
      straight there you are happy to take. Saved places are kept on this phone only.</span></p>
@@ -860,14 +862,14 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
 <script src="js/lib/geosonify-sky-neighbour.js?v=20261101"></script>
 <script src="js/lib/geosonify-sky-stars.js?v=20260801"></script>
 <script src="js/lib/geosonify-starpin.js?v=20261111b"></script>
-<script src="js/lib/geosonify-starpin-next.js?v=20261117b"></script>
+<script src="js/lib/geosonify-starpin-next.js?v=20261119"></script>
 <script src="js/lib/geosonify-starpin-clock.js?v=20260808"></script>
 <script src="js/lib/geosonify-starpin-canonical.js?v=20260922"></script>
 <script src="js/lib/geosonify-starpin-log.js?v=20260808"></script>
 <script src="js/lib/geosonify-scales-v1.js?v=20261009"></script>
 <script src="js/lib/geosonify-starpin-feedback.js?v=20261112"></script>
 <script src="js/lib/geosonify-starpin-replay.js?v=20261009"></script>
-<script src="js/lib/geosonify-starpin-map.js?v=20261117d"></script>
+<script src="js/lib/geosonify-starpin-map.js?v=20261119"></script>
 <script src="js/lib/geosonify-sky-renderer.js?v=20260731"></script>
 <script src="js/lib/geosonify-sky-aladin.js?v=20261101d"></script>
 <script src="js/lib/geosonify-sky-cutout.js?v=20261101"></script>
@@ -886,7 +888,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
      are ADDITIVE — if any fail to load, ordinary Starpin must still work. -->
 <script src="js/lib/vendor/starpin-crypto-noble-h1.8.0-c1.3.0.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-target.js?v=20260919"></script>
-<script src="js/lib/starpin-faq-data.js?v=20261118"></script>
+<script src="js/lib/starpin-faq-data.js?v=20261119"></script>
 <script src="js/lib/geosonify-starpin-group.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-storage.js?v=20260919"></script>
 <script src="js/lib/geosonify-starpin-sharing.js?v=20260919"></script>
@@ -1660,15 +1662,19 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   // On foot or by bike: the speed every suggestion is timed at, and the
   // default for directions in a maps app. Remembered on this device.
   var nextMode = 'walk';
-  try { if (localStorage.getItem('starpin.travel') === 'bike') nextMode = 'bike'; } catch (e) {}
-  function nextKmh() { return NX ? (nextMode === 'bike' ? NX.BIKE_KMH : NX.WALK_KMH) || 4 : 4; }
+  try { var tv = localStorage.getItem('starpin.travel'); if (tv === 'bike' || tv === 'ebike') nextMode = tv; } catch (e) {}
+  function nextKmh() {
+    if (!NX) return 4;
+    return (nextMode === 'ebike' ? NX.EBIKE_KMH || 20 : nextMode === 'bike' ? NX.BIKE_KMH : NX.WALK_KMH) || 4;
+  }
   function paintNextMode() {
     Array.prototype.forEach.call(document.querySelectorAll('#next-mode button'), function (x) {
       x.setAttribute('aria-pressed', x.getAttribute('data-mode') === nextMode ? 'true' : 'false'); });
     var sp = $('next-speed');
-    if (sp) sp.innerHTML = nextMode === 'bike'
+    if (sp) sp.innerHTML = nextMode === 'ebike' ? 'on an e-bike at ' + nextKmh() + '&nbsp;km/h'
+      : nextMode === 'bike'
       ? 'riding at a relaxed ' + nextKmh() + '&nbsp;km/h' : 'walking at an easy ' + nextKmh() + '&nbsp;km/h';
-    var bh = $('next-bike-hint'); if (bh) bh.hidden = nextMode !== 'bike';
+    var bh = $('next-bike-hint'); if (bh) bh.hidden = nextMode === 'walk';
   }
   /*
     WHERE THE PLAN ENDS. A round trip comes back to where it started. A
@@ -2054,7 +2060,7 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   function routeDialog(t, title, from, to) {
     var d = $('route-dlg');
     routeTrip = { t: t, from: from, to: to || null };
-    routeMode = nextMode; paintRouteMode();          // the travel setting is the default
+    routeMode = nextMode === 'walk' ? 'walk' : 'bike'; paintRouteMode();   // the travel setting is the default
     var n = t.stops.length;
     $('route-dlg-what').textContent = title + ' \u2014 ' + n + ' stop' + (n === 1 ? '' : 's') +
       (to ? ', then ' + to.label : '') + '.' +
@@ -2246,7 +2252,8 @@ body{padding:0;display:block;gap:0;background:#070A14;overscroll-behavior:none}
   });
   Array.prototype.forEach.call(document.querySelectorAll('#next-mode button'), function (b) {
     b.addEventListener('click', function () {
-      nextMode = b.getAttribute('data-mode') === 'bike' ? 'bike' : 'walk';
+      var md = b.getAttribute('data-mode');
+      nextMode = (md === 'bike' || md === 'ebike') ? md : 'walk';
       try { localStorage.setItem('starpin.travel', nextMode); } catch (e) {}
       paintNextMode(); syncOpportunity(true);
       if (nextShown) nextFetchStars(nextReplan);   // a bike reaches further: may need more stars

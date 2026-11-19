@@ -76,8 +76,19 @@ ok('...and new ground there is still offered', paris.fresh && paris.fresh.minute
 
 var bikeP = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 30, kmh: N.BIKE_KMH });
 ok('a bike plan reports its speed', bikeP.kmh === 12 && plan.kmh === 4);
-ok('the same finish is a third of the time by bike', bikeP.finish && plan.finish &&
-   Math.abs(bikeP.finish.minutes * 3 - plan.finish.minutes) < 1e-6);
+ok('the same finish is a third of the riding time by bike', bikeP.finish && plan.finish &&
+   Math.abs(bikeP.finish.travelMin * 3 - plan.finish.travelMin) < 1e-6);
+
+console.log('\n2e: calibrated on real rides (v0.8)');
+ok('every stop costs STOP_MIN on top of the travelling', plan.finish &&
+   Math.abs(plan.finish.minutes - plan.finish.travelMin - N.STOP_MIN * plan.finish.stops.length) < 1e-9);
+// The usual e-bike commute: 6.46 km crow-flies, 26.8 min door to door.
+ok('an e-bike times the usual 6.46 km commute within 10% of the real 26.8 min',
+   Math.abs(N.minutesFor(6460, N.EBIKE_KMH) - 26.8) / 26.8 < 0.10, N.minutesFor(6460, N.EBIKE_KMH).toFixed(1));
+var eb = N.plan({ S: S, fix: fix, progress: P, isCollected: have, budgetMin: 5, kmh: N.EBIKE_KMH, end: endOn,
+                  stars: [], starHave: function () { return false; } });
+ok('five minutes extra on an e-bike is not eight stops any more', !eb.route || eb.route.stops.length <= 5,
+   eb.route && eb.route.stops.length);
 var farFix = { lat: missing.lat + 0.03, lon: missing.lon };          // ~3.3 km away
 ok('a corner out of reach on foot in 30 min is in reach by bike',
    N.plan({ S: S, fix: farFix, progress: P, isCollected: have, budgetMin: 30 }).finishFar === true &&

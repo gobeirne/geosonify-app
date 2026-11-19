@@ -443,6 +443,9 @@ var GeosonifyStarpinMap = (function () {
       return ringCache[k];
     }
     var stars = [], hits = [];          // hits: screen-space targets for tapping
+    // A starpin's visit radius on the ground, for the windows cut in the
+    // shading (3 arcsec on the sky, 92.77 m here), and the layer they are cut in.
+    var STAR_R_M = ((S && S.VISIT_R_ARCSEC) || 3) * ((S && S.M_PER_ARCSEC) || 30.92), fillLayer = null;
     var pin = null;                     // a read-only probe, never a claim
     var selected = null;                // {kind, id} -> gets the throb
     var phase = 0, throbTimer = null;
@@ -637,6 +640,35 @@ var GeosonifyStarpinMap = (function () {
         g.fill();
       }
       if (shading) {
+      // Windows over the stars: the fills go on a layer of their own, the
+      // circle round every starpin (its visit radius, about 93 m) is cut out
+      // of that layer with a soft edge, and the layer goes down on the map.
+      // So the sky photograph (or the street) inside each ring shows through
+      // untinted. One extra canvas pass a redraw; if anything about the
+      // layer fails, the fills are drawn straight on, as before.
+      var gMain = g, holes = [], layer = null;
+      (function () {
+        var R = STAR_R_M / mpp;
+        if (R < 6) return;                               // too small to read as a window
+        function add(q) {
+          if (q.lat == null || q.lon == null) return;
+          var xy = pt(q.lat, q.lon);
+          if (xy[0] < -R || xy[0] > size.x + R || xy[1] < -R || xy[1] > size.y + R) return;
+          holes.push(xy);
+        }
+        stars.forEach(add); finds.forEach(add);
+        if (!holes.length) return;
+        try {
+          if (!fillLayer) fillLayer = (cv.ownerDocument || document).createElement('canvas');
+          if (fillLayer.width !== cv.width) fillLayer.width = cv.width;
+          if (fillLayer.height !== cv.height) fillLayer.height = cv.height;
+          var lg = fillLayer.getContext('2d');
+          lg.setTransform(1, 0, 0, 1, 0, 0);
+          lg.clearRect(0, 0, fillLayer.width, fillLayer.height);
+          lg.setTransform(gMain.getTransform());
+          layer = lg; g = lg;
+        } catch (e) { layer = null; g = gMain; }
+      })();
       fillPatches(patches.lit.filter(function (c) { return !c.covered; }), pal.patchA);
       fillPatches(patches.lit.filter(function (c) { return c.bright && !c.brightCovered; }), pal.brightA);
       // starlit-v1: a static warm tint over lit, and a brief gold flash for a
@@ -651,6 +683,27 @@ var GeosonifyStarpinMap = (function () {
           fillPatches(fl, 0.5 * Math.sin(Math.PI * (1 - k)), pal.starlit);
         }
       })();
+      if (layer) {
+        try {
+          var R = STAR_R_M / mpp;
+          layer.save();
+          layer.globalCompositeOperation = 'destination-out';
+          holes.forEach(function (q) {
+            // Solid to 82% of the radius, fading out just past the ring.
+            // (Inner radius 0: a gradient with an inner circle paints nothing
+            // inside it, which left the middle of each window tinted.)
+            var gr = layer.createRadialGradient(q[0], q[1], 0, q[0], q[1], R * 1.04);
+            gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.79, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+            layer.fillStyle = gr;
+            layer.beginPath(); layer.arc(q[0], q[1], R * 1.04, 0, 6.2832); layer.fill();
+          });
+          layer.restore();
+          gMain.save(); gMain.setTransform(1, 0, 0, 1, 0, 0);
+          gMain.drawImage(fillLayer, 0, 0);
+          gMain.restore();
+        } catch (e) { /* the window is a nicety; the map draws on */ }
+      }
+      g = gMain;
       }
       // A lit patch also gets a crisp solid edge at the size outlined at this
       // zoom, so it reads as a finished shape and not as a tint on the streets.
