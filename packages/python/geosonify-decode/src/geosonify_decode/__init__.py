@@ -18,7 +18,7 @@ from urllib.parse import unquote
 
 __all__ = ['decode_link', 'decode_code', 'decode_path', 'decode_shape', 'decode_healpix',
            'healpix_centre', 'parse_annotations']
-__version__ = '1.0.0'
+__version__ = '1.1.0'
 
 A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
 HEX = '0123456789abcdefABCDEF'
@@ -296,6 +296,31 @@ def parse_annotations(query):
     return {'labels': labels, 'styles': styles}
 
 
+def _closed_ring(pts):
+    if len(pts) < 4:
+        return False
+    a, b = pts[0], pts[-1]
+    dy = (a[0] - b[0]) * 111195
+    dx = (a[1] - b[1]) * 111195 * math.cos(a[0] * math.pi / 180)
+    return math.sqrt(dx * dx + dy * dy) <= 1
+
+
+def _groups_of(value, decode_one):
+    """Groups (section 3.2) and holes (3.3, v1.1): ':' marks a hole in the outer ring before it."""
+    out, last_outer_closed = [], False
+    for raw in value.split('~~~'):
+        hole = raw[:1] == ':'
+        g = decode_one(raw[1:] if hole else raw)
+        if hole:
+            if not last_outer_closed or not _closed_ring(g['pts']):
+                continue
+        else:
+            last_outer_closed = _closed_ring(g['pts'])
+        g['hole'] = hole
+        out.append(g)
+    return out
+
+
 def decode_link(query):
     """A Geosonify link (or just its query) to a point, groups of paths, or a shape (section 1)."""
     q = query.split('?', 1)[1] if '?' in query else query
@@ -307,7 +332,7 @@ def decode_link(query):
             raise ValueError('obfuscated: outside the core profile')
         one = lambda c: decode_healpix(c, hp.group(1))
         if 'd' in hp.group(2):
-            return {'groups': [decode_path(g, 'r' in hp.group(2), one) for g in value.split('~~~')]}
+            return {'groups': _groups_of(value, lambda g: decode_path(g, 'r' in hp.group(2), one))}
         return {'point': one(value)}
     m = re.match(r'^b64([odrc]*)$', name)
     if not m:
@@ -315,7 +340,7 @@ def decode_link(query):
     if 'o' in m.group(1):
         raise ValueError('obfuscated: outside the core profile')
     if 'd' in m.group(1):
-        return {'groups': [decode_path(g, 'r' in m.group(1)) for g in value.split('~~~')]}
+        return {'groups': _groups_of(value, lambda g: decode_path(g, 'r' in m.group(1)))}
     t = value.find('~')
     if t < 0:
         return {'point': decode_code(value)}

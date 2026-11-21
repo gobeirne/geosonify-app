@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "geosonify-decode"
-version = "1.0.0"
+version = "1.1.0"
 description = "Decode Geosonify links (core profile v1): points, paths and shapes to WGS84 coordinates"
 readme = "README.md"
 requires-python = ">=3.8"

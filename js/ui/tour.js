@@ -33,6 +33,7 @@
   'use strict';
 
   var tours = {}, active = null;
+  var INITIAL_SEARCH = (function () { try { return location.search || ''; } catch (e) { return ''; } })();
   var SNAP_KEY = 'gsTourSnapshot', DONE_KEY = 'gsTourJustEnded';
 
   function injectCSS() {
@@ -298,7 +299,9 @@
   // flag is set before the tour starts, so the snapshot keeps it.
   function offerOnce() {
     try {
-      if (location.search || localStorage.getItem('gsIntroOffered') || API.justEnded()) return;
+      // The address as the page opened: link pipelines strip their parameters
+      // from the address bar on load, and must not count as a plain visit.
+      if (INITIAL_SEARCH || location.search || localStorage.getItem('gsIntroOffered') || API.justEnded()) return;
       localStorage.setItem('gsIntroOffered', '1');
       setTimeout(function () { if (!active && !location.search) API.start('intro'); }, 1500);
     } catch (e) {}

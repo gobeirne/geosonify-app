@@ -190,6 +190,17 @@ const ShapeImport = (function () {
     function ringToLatLon(ring) {
       return ring.map(c => ({ lat: c[1], lon: c[0] }));
     }
+    // A polygon's rings in order: outer, then holes marked ._hole = true.
+    function polygonRings(rings) {
+      const out = [];
+      (rings || []).forEach((r, i) => {
+        const ll = ringToLatLon(r || []);
+        if (!ll.length) return;
+        if (i > 0) { if (!out.length) return; ll._hole = true; }
+        out.push(ll);
+      });
+      return out;
+    }
 
     switch (geometry.type) {
       case 'Point':
@@ -207,14 +218,12 @@ const ShapeImport = (function () {
           .map(line => line.map(c => ({ lat: c[1], lon: c[0] })));
 
       case 'Polygon':
-        // Outer ring only (skip holes)
-        return [ringToLatLon(geometry.coordinates[0])];
+        // Outer ring, then its holes, each hole marked (WP2.1: kept as holes).
+        return polygonRings(geometry.coordinates);
 
       case 'MultiPolygon':
-        // Outer ring of each polygon
-        return geometry.coordinates
-          .map(polygon => ringToLatLon(polygon[0]))
-          .filter(ring => ring.length > 0);
+        // Each polygon's outer ring followed by its holes.
+        return [].concat.apply([], geometry.coordinates.map(polygonRings));
 
       case 'GeometryCollection':
         {
@@ -627,8 +636,28 @@ const ShapeImport = (function () {
       }
 
       // Merge ways into separate closed rings
-      const rings = mergeWaysToRings(outerWays);
-      return rings.filter(r => r.length > 0);
+      const rings = mergeWaysToRings(outerWays).filter(r => r.length > 0);
+      // Inner members are holes (WP2.1): each goes after the outer ring that
+      // contains it, marked ._hole = true. One that fits no outer ring is left out.
+      const innerWays = members
+        .filter(m => m.type === 'way' && m.role === 'inner' && m.geometry)
+        .map(m => m.geometry.map(n => ({ lat: n.lat, lon: n.lon })));
+      if (!innerWays.length) return rings;
+      const inners = mergeWaysToRings(innerWays).filter(r => r.length > 3);
+      const inside = (pt, ring) => {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const a = ring[i], b = ring[j];
+          if ((a.lat > pt.lat) !== (b.lat > pt.lat) && pt.lon < (b.lon - a.lon) * (pt.lat - a.lat) / (b.lat - a.lat) + a.lon) c = !c;
+        }
+        return c;
+      };
+      const out = [];
+      rings.forEach(outer => {
+        out.push(outer);
+        inners.forEach(h => { if (!h._used && inside(h[0], outer)) { h._used = true; h._hole = true; out.push(h); } });
+      });
+      return out;
 
     } else {
       // Route or other — concatenate all ways as a single group

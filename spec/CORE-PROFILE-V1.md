@@ -1,4 +1,4 @@
-# Geosonify core profile v1 — points, paths, shapes and annotations
+# Geosonify core profile v1.1 — points, paths, holes, shapes and annotations
 
 Status: draft, 15 November 2026. Describes the live code with the B13 (segment modes) and B14 (shape suffixes) fixes. Reference decoder: `spec/core-profile-v1-reference.js` (`node spec/core-profile-v1-reference.js --selftest`), which loads no app code. Everything in this document is covered by the reference decoder's vectors.
 
@@ -62,7 +62,11 @@ The encoder uses the variable form whenever a path mixes geodesic and rhumb segm
 
 ### 3.2 Polygons and groups
 
-A path whose last vertex is within 1 m of its first is a polygon (a closed ring); otherwise it is a line. A value may carry several groups separated by `~~~`; each group after the first is a self-contained path (its own first code and payload). Each group is a polygon, a line or (one vertex) a point on its own. Holes are not yet representable: every ring is an outer ring.
+A path whose last vertex is within 1 m of its first is a polygon (a closed ring); otherwise it is a line. A value may carry several groups separated by `~~~`; each group after the first is a self-contained path (its own first code and payload). Each group is a polygon, a line or (one vertex) a point on its own.
+
+### 3.3 Holes (v1.1, 22 November 2026)
+
+A group that begins with `:` is a **hole** in the nearest outer group before it (`…~~~:CODE~deltas`). An outer ring may have any number of holes; the next group without `:` starts a new outer ring. A hole must be a closed ring and should lie wholly inside its outer ring (it may touch it at a point, never cross it); a decoder drops a `:` group that is not closed, or that follows no closed outer ring (for example the first group, or one after a line). `:` appears in no grid's output and nowhere else in the path grammar. A v1.0 decoder sees `:` as an invalid code and keeps only the outer rings, so a holed shape degrades to its outline. In GeoJSON and WKT a hole is an interior ring, wound clockwise.
 
 ## 4. Shape suffixes
 

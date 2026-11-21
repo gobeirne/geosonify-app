@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
   core-profile-v1-reference.js — reference decoder for spec/CORE-PROFILE-V1.md
-  (Base64 and HEALPix points, paths, groups, shape suffixes and annotations). Independent of the app:
+  (Base64 and HEALPix points, paths, groups, holes, shape suffixes and annotations; core profile v1.1). Independent of the app:
   no app code is loaded. Run:  node spec/core-profile-v1-reference.js --selftest
   The vectors below were produced by the live app (15 Nov 2026).
 */
@@ -146,6 +146,27 @@ function parseAnnotations(query) {
   return { labels, styles };
 }
 
+// §3.2 groups and §3.3 holes (v1.1): a group starting with ':' is a hole in
+// the nearest outer ring before it; a hole that is not closed, or follows no
+// closed outer ring, is dropped. Outer groups carry hole: false.
+function closedRing(pts) {
+  if (pts.length < 4) return false;
+  const a = pts[0], b = pts[pts.length - 1], k = Math.PI / 180;
+  const dy = (a[0] - b[0]) * 111195, dx = (a[1] - b[1]) * 111195 * Math.cos(a[0] * k);
+  return Math.sqrt(dx * dx + dy * dy) <= 1;
+}
+function groupsOf(value, decodeOne) {
+  const out = []; let lastOuterClosed = false;
+  for (const raw of value.split('~~~')) {
+    const hole = raw.charAt(0) === ':';
+    const g = decodeOne(hole ? raw.slice(1) : raw);
+    if (hole) { if (!lastOuterClosed || !closedRing(g.pts)) continue; }
+    else lastOuterClosed = closedRing(g.pts);
+    g.hole = hole; out.push(g);
+  }
+  return out;
+}
+
 function decodeLink(query) {                      // §1
   const q = query.replace(/^[^?]*\?/, ''), eq = q.indexOf('=');   // a whole link or just its query
   const name = q.slice(0, eq), value = decodeURIComponent(q.slice(eq + 1).split('&')[0]);
@@ -154,12 +175,12 @@ function decodeLink(query) {                      // §1
     if (/[oj]/.test(hp[2])) throw new Error('obfuscated: outside the core profile');
     const first = value.split('~')[0];
     const one = c => decodeHealpix(c, hp[1]);
-    if (hp[2].includes('d')) return { groups: value.split('~~~').map(g => decodePath(g, hp[2].includes('r'), one)) };
+    if (hp[2].includes('d')) return { groups: groupsOf(value, g => decodePath(g, hp[2].includes('r'), one)) };
     return { point: one(value) };
   }
   const m = name.match(/^b64([odrc]*)$/); if (!m) throw new Error('not a core parameter');
   if (m[1].includes('o')) throw new Error('obfuscated: outside the core profile');
-  if (m[1].includes('d')) return { groups: value.split('~~~').map(g => decodePath(g, m[1].includes('r'))) };
+  if (m[1].includes('d')) return { groups: groupsOf(value, g => decodePath(g, m[1].includes('r'))) };
   const t = value.indexOf('~');
   if (t < 0) return { point: decodeCode(value) };
   const rest = value.slice(t + 1), grat = rest.startsWith('~');
@@ -173,6 +194,8 @@ const VECTORS = [
   ['b64dr=MqSvSsWo~d6Th4BPvTxc2LJSvSsWo', { n: 4, modes: 'RRRR' }],
   ['b64d=MqSvSsWo~3h4B~1Pv', { n: 4 }],                            // legacy gear, built by hand; app's DeltaGear agrees
   ['b64d=v-dzcFN-~4=dA8r~~~MqSvSsWo~d6Th4BPv', { groups: 2 }],
+  ['b64dr=v-dr27bv~d5s38ar8P0yz7Ozz3r27bv~~~:v-d0Rhi1~d4Umj10Or1xJq1Rhi1', { groups: 2, holes: 1 }],   // v1.1: a hole
+  ['b64d=v-dzcFN-~4=dA8r~~~:MqSvSsWo~d6Th4BPv', { groups: 1, holes: 0 }],   // a hole after an open path is dropped
   ['b64=v-d0hZKV~.01I', { shape: { type: 'circle', radius: 54 } }],
   ['b64=v-d0hZKV~.0DW', { shape: { type: 'circle', radius: 500 } }],
   ['b64=v-d0hZKV~.3UW', { shape: { type: 'circle', radius: 5000 } }],
@@ -202,7 +225,7 @@ if (process.argv.includes('--selftest')) {
       if (want.first) ok = ok && Math.abs(g.pts[0][0] - want.first[0]) < 1e-9 && Math.abs(g.pts[0][1] - want.first[1]) < 1e-9;
       if (want.last) ok = ok && Math.abs(g.pts[want.n - 1][0] - want.last[0]) < 1e-8 && Math.abs(g.pts[want.n - 1][1] - want.last[1]) < 1e-8;
       if (want.modes) ok = ok && g.modes.join('') === want.modes; }
-    if (want.groups) ok = got.groups.length === want.groups;
+    if (want.groups) ok = got.groups.length === want.groups && (want.holes == null || got.groups.filter(g => g.hole).length === want.holes);
     if (want.shape) ok = Object.keys(want.shape).every(k => got.shape[k] === want.shape[k]);
     if (want.ann) { const a = parseAnnotations(q); ok = JSON.stringify(a.labels) === JSON.stringify(want.ann.labels) && a.styles.length === want.ann.styles; }
     if (!ok) { bad++; console.log('FAIL', q, JSON.stringify(got)); }
