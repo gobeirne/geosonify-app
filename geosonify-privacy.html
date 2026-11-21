@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Geosonify — Privacy</title>
+<style>
+  :root { --ink:#16201f; --muted:#56615f; --line:#d5dddb; --bg:#f6f8f7; --accent:#325756; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8eeec; --muted:#a3b0ad; --line:#33403e; --bg:#141a19; --accent:#7fc3bd; color-scheme: dark; }
+  }
+  html { background: var(--bg); }
+  body { margin: 0 auto; max-width: 720px; padding: calc(24px + env(safe-area-inset-top, 0px)) 20px calc(40px + env(safe-area-inset-bottom, 0px));
+         color: var(--ink); background: var(--bg); font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 19px; margin: 28px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); }
+  p, li { margin: 0 0 10px; }
+  ul { padding-left: 22px; }
+  .sub { color: var(--muted); margin-bottom: 18px; }
+  a { color: var(--accent); }
+  code { font-family: ui-monospace, Menlo, monospace; font-size: 0.92em; }
+  table { border-collapse: collapse; width: 100%; font-size: 15px; margin: 6px 0 12px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  .wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<p><a href="./">← Geosonify</a></p>
+<h1>Privacy</h1>
+<p class="sub">Last updated 20 November 2026</p>
+
+<p>Geosonify runs in your browser. There is no Geosonify server, no account and no advertising. Places, shapes and passphrases are worked out on your device. This page says exactly what leaves it.</p>
+
+<h2>The website itself</h2>
+<p>geosonify.org is a set of files served by GitHub Pages. When you open a page, GitHub receives the request, including the link's address. For an ordinary shared link that address contains the place, in encoded form; for an encrypted link (<code>?enc=</code>) it contains only the encrypted text. GitHub's handling of these requests is covered by <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub's privacy statement</a>.</p>
+
+<h2>Visit counting</h2>
+<p>To know whether anyone uses Geosonify, and whether people arrive from Wikipedia, each page load may be counted by <a href="https://www.goatcounter.com">GoatCounter</a>. The count sends only the <em>kind</em> of page (the home page, a link from Wikipedia, a display link, an encrypted link or another shared link), the site you came from, and your screen size. It never sends the page's address, so it never sends a place. There are no cookies and nothing is stored on your device. GoatCounter, like any server, sees the IP address and browser of the request; how it treats them is set out in <a href="https://www.goatcounter.com/help/privacy">GoatCounter's privacy policy</a>. If your browser asks sites not to track you (Do Not Track or Global Privacy Control), nothing is counted. Only the site's owner can see the counts.</p>
+
+<h2>Maps and imagery</h2>
+<p>To draw a map, your browser fetches tiles from the map service you choose (OpenStreetMap, Esri and others), and in the sky view, survey images from CDS in Strasbourg and its mirrors. These services therefore learn roughly which area is on your screen, as with any web map. That cannot be avoided while a map is shown.</p>
+
+<h2>Lookups that use the position</h2>
+<p>A few features ask an outside service about the position itself:</p>
+<div class="wrap"><table>
+  <tr><th>Feature</th><th>Service</th></tr>
+  <tr><td>Place names (choosing between codes; word entry)</td><td>OpenStreetMap Nominatim</td></tr>
+  <tr><td>Which sky surveys cover the view; Aladin Lite's start-up log</td><td>CDS, Strasbourg</td></tr>
+  <tr><td>What object is at a tapped point in the sky</td><td>SIMBAD (CDS)</td></tr>
+  <tr><td>The nearest catalogued stars, and their picture</td><td>VizieR and hips2fits (CDS and mirrors)</td></tr>
+</table></div>
+<p>All of these are switched off whenever the position is meant to be private: while a grid passphrase or obfuscation is on, while hard encryption is on, and for the rest of the visit after an encrypted link has been opened. Only map tiles still load.</p>
+<p>Searches you type yourself, such as a place name, a Wikidata ID or a file's address, are sent to the service that answers them (OpenStreetMap, Wikidata, Overpass, or the site holding the file).</p>
+
+<h2>Code libraries</h2>
+<p>Some program libraries load from public code hosts (unpkg, jsDelivr, OpenCV's documentation site and CDS), at pinned versions and, where possible, checked against a fingerprint so a changed file is refused. These hosts see that a page asked for the library, not what you are doing with it.</p>
+
+<h2>Your location</h2>
+<p>The "show my location" button and Track use your device's location only on your device: to draw the blue dot, or to move the place you are encoding. It is never sent anywhere by Geosonify and never becomes part of a link unless you share the place yourself.</p>
+
+<h2>Encrypted links and passphrases</h2>
+<p>Passphrases are never sent anywhere and never stored. An encrypted link is decrypted on your device; after it opens, the address bar keeps showing the encrypted link, so the place does not reach your browser's history or a copied address, and reloading asks for the passphrase again. Requests to other sites carry only geosonify.org as the referrer, never the page's address.</p>
+
+<h2>What is stored on your device</h2>
+<p>Your settings (which cards you show, their precision, map imagery, sound settings, whether you have seen the introduction) are kept in your browser's local storage on this device only. Clearing the site's data in your browser removes them.</p>
+
+<h2>Links you share</h2>
+<p>A link you send goes wherever you send it, and anyone who has an ordinary link can see the place. Use a passphrase or hard encryption when that matters.</p>
+
+<h2>Questions</h2>
+<p>Geosonify is open source: every request described here can be checked in <a href="https://github.com/gobeirne/geosonify-app">its code</a>. Questions or concerns: open an issue there.</p>
+</body>
+</html>

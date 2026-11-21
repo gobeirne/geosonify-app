@@ -1195,7 +1195,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261119b';</script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261120a';</script>
 <script src="js/ui/faq-ui.js?v=20261119b"></script>
 <script src="js/ui/tour.js?v=20261119d"></script>
   <script>
@@ -2747,6 +2747,41 @@ window.GeosonifyGeoHack = (function () {
       _suppressURLUpdate = false;
       updateCompactOutputs();
     };
+
+
+    /*
+      VISIT COUNTING (decision D2, Nov 2026). Off until GOATCOUNTER_CODE is set
+      to the site code of a GoatCounter account (https://www.goatcounter.com),
+      whose dashboard is private to its owner by default.
+      What is sent, once per page load, as one image request and no script:
+        - which KIND of page it was, never the address: "/", "/wikipedia"
+          (arrived from GeoHack), "/display", "/encrypted" or "/link" (any
+          other shared link). The query, which can hold a place, is never sent;
+        - the referring site (browsers send Wikipedia's origin only);
+        - the screen width, for layout decisions.
+      No cookies, nothing stored on the device. GoatCounter also sees the IP
+      address and browser of the request, as every server does (see its
+      privacy policy). Nothing is sent when the browser
+      asks not to be tracked (Do Not Track or Global Privacy Control).
+    */
+    const GOATCOUNTER_CODE = '';   // e.g. 'geosonify' -> https://geosonify.goatcounter.com
+    window.addEventListener('load', () => {
+      try {
+        if (!GOATCOUNTER_CODE || navigator.doNotTrack === '1' || navigator.globalPrivacyControl) return;
+        if (/^(localhost|127\.|192\.168\.)/.test(location.hostname)) return;
+        const q = new URLSearchParams(location.search);
+        const kind = (q.has('r') || q.has('geohack')) ? '/wikipedia'
+                   : q.has('enc') ? '/encrypted'
+                   : q.has('display') ? '/display'
+                   : location.search.length > 1 ? '/link' : '/';
+        let ref = '';
+        try { ref = document.referrer ? new URL(document.referrer).origin : ''; } catch (e) {}
+        if (ref === location.origin) ref = '';
+        const u = 'https://' + GOATCOUNTER_CODE + '.goatcounter.com/count?p=' + encodeURIComponent(kind) +
+          '&r=' + encodeURIComponent(ref) + '&s=' + encodeURIComponent([screen.width, screen.height, window.devicePixelRatio || 1].join(',')) + '&rnd=' + Math.random().toString(36).slice(2);
+        new Image().src = u;
+      } catch (e) {}
+    });
 
     // Tab switching logic
     function switchToTab(tabId) {
