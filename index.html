@@ -1028,7 +1028,95 @@ window.GeosonifyGeoHack = (function () {
   <script src="js/core/delta-gear.js?v=20261014c"></script>
   
 <!-- Services -->
-<script src="js/services/audio-service.js?v=20261009g"></script>
+<!--
+  AUDIO ENGINE ON DEMAND (WP1.3, Nov 2026). js/services/audio-service.js
+  (60 KB compressed) loads when sound is about to be needed: as soon as a
+  card's speaker button comes into view (so it is ready before the tap), when
+  the sound design panel opens, or when anything asks it to play. Until then a
+  stand-in answers under the same name: isPlaying is false, settings
+  (compression, place lock, scale, volume, presets…) are kept and handed over,
+  and play() / setupJourney() load the engine first. Afterwards every call goes
+  straight to the real engine, including from code that kept the stand-in.
+-->
+<script>
+(function () {
+  var SRC = 'js/services/audio-service.js?v=20261009g';
+  var real = null, loading = null, latest = {}, order = [];
+  function load() {
+    if (real) return Promise.resolve(real);
+    if (loading) return loading;
+    loading = new Promise(function (resolve, reject) {
+      var el = document.createElement('script');
+      el.src = SRC;
+      el.onload = function () {
+        if (window.AudioService && window.AudioService !== stub) real = window.AudioService;
+        if (!real) { loading = null; reject(new Error('audio engine did not load')); return; }
+        order.forEach(function (name) { try { real[name].apply(real, latest[name]); } catch (e) { console.warn('[audio] replay', name, e); } });
+        resolve(real);
+      };
+      el.onerror = function () { loading = null; reject(new Error('audio engine could not be loaded')); };
+      document.head.appendChild(el);
+    });
+    return loading;
+  }
+  // Settings: the newest value of each, handed over in first-set order.
+  function keep(name) {
+    return function () {
+      if (real) return real[name].apply(real, arguments);
+      if (!(name in latest)) order.push(name);
+      latest[name] = [].slice.call(arguments);
+    };
+  }
+  // Actions: load first, then do it (returns a promise for callers that await).
+  function act(name) {
+    return function () {
+      var a = arguments;
+      if (real) return real[name].apply(real, a);
+      return load().then(function (r) { return r[name].apply(r, a); });
+    };
+  }
+  // Questions: a silent engine's answers until the real one is there.
+  function ask(name, fallback) {
+    return function () {
+      if (real) return real[name].apply(real, arguments);
+      load().catch(function () {});
+      return typeof fallback === 'function' ? fallback.apply(null, arguments) : fallback;
+    };
+  }
+  var stub = {
+    __load: load,
+    __isStandIn: function () { return !real; },
+    play: act('play'), setupJourney: act('setupJourney'),
+    stop: function () { if (real) return real.stop.apply(real, arguments); },
+    setOctaveCompression: keep('setOctaveCompression'), setPlaceLock: keep('setPlaceLock'),
+    setPlaceSeeds: keep('setPlaceSeeds'), setScale: keep('setScale'), setVolume: keep('setVolume'),
+    setMusicalCode: keep('setMusicalCode'), setPreset: keep('setPreset'), setPresetA: keep('setPresetA'),
+    setPresetB: keep('setPresetB'), setCrossfade: keep('setCrossfade'), setJourneyProgress: keep('setJourneyProgress'),
+    setTestMode: keep('setTestMode'), updateSpeed: keep('updateSpeed'),
+    getAcceleration: ask('getAcceleration', 1), getCrossfade: ask('getCrossfade', 0),
+    getPresetParams: ask('getPresetParams', null), getSoundParams: ask('getSoundParams', null),
+    isBuiltInPreset: ask('isBuiltInPreset', false), isLeadPhrasing: ask('isLeadPhrasing', false),
+    lerpParams: ask('lerpParams', function (a, b) { return a || b || null; })
+  };
+  Object.defineProperty(stub, 'isPlaying', { get: function () { return real ? real.isPlaying : false; } });
+  window.AudioService = stub;
+
+  // Load once a speaker button is on screen, so the engine is ready before the tap.
+  function watch() {
+    if (real || loading || typeof IntersectionObserver === 'undefined') return;
+    var io = new IntersectionObserver(function (es) {
+      if (es.some(function (e) { return e.isIntersecting; })) { io.disconnect(); load().catch(function () {}); }
+    }, { rootMargin: '300px' });
+    var seen = new WeakSet(), tries = 0;
+    (function scan() {
+      if (real || loading) { io.disconnect(); return; }
+      document.querySelectorAll('.audio-speaker-btn').forEach(function (b) { if (!seen.has(b)) { seen.add(b); io.observe(b); } });
+      if (++tries < 240) setTimeout(scan, 1000);
+    })();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watch); else watch();
+})();
+</script>
 <script src="js/services/journey-service.js?v=20260109"></script>
 <!-- REMOVED: overwrites RGB111Scanner with broken implementation
 <script src="js/services/scanner-service.js?v=20260627"></script>
@@ -1041,13 +1129,24 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20261115c"></script>
-<script src="js/features/geojson-export.js?v=20261115b"></script>
+<script src="js/features/geojson-export.js?v=20261122b"></script>
 <script src="js/features/wkt.js?v=20261119a"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
 <script src="js/pocket-mode.js"></script>
 
 <!-- UIs (after their services) -->
 <script src="js/ui/audio-ui.js?v=20261009e"></script>
+<script>
+  // The sound design panel needs the real engine's presets and parameters.
+  (function () {
+    if (!window.AudioUI || !AudioUI.showSoundDesign || !window.AudioService || !AudioService.__load) return;
+    var open = AudioUI.showSoundDesign, loadEngine = AudioService.__load;   // the stand-in's loader, kept
+    AudioUI.showSoundDesign = function () {
+      var a = arguments;
+      return loadEngine().then(function () { return open.apply(AudioUI, a); });
+    };
+  })();
+</script>
 <script src="js/ui/piano-roll.js?v=202603173"></script>
 <script src="js/ui/scanner-ui.js?v=20261115h"></script>
 <script src="js/lib/gis-grids.js?v=20260622"></script>
@@ -1188,7 +1287,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261119b"></script>
+<script src="js/ui/card-renderer.js?v=20261122a"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -2506,7 +2605,8 @@ window.GeosonifyGeoHack = (function () {
         off += g.length;
         if (g.length < 2) continue;
         const closed = g.length > 3 && isClosedPolygon(g);
-        if (closed) { areaM2 += _ringAreaM2(g); continue; }
+        const isHole = sol.groupRoles && sol.groupRoles[groups.indexOf(g)] === 'hole';
+        if (closed) { areaM2 += (isHole ? -1 : 1) * _ringAreaM2(g); continue; }
         let seq = g;
         if (geod && typeof GeosonifyGeoJSON !== 'undefined') seq = GeosonifyGeoJSON._densify(geod, g, modes, false, 1);
         for (let i = 1; i < seq.length; i++) lengthM += geodesicDistance(seq[i - 1], seq[i]);
@@ -2722,6 +2822,16 @@ window.GeosonifyGeoHack = (function () {
     function noteShapeOrigin() {
       _shapeOrigin = { from: _nextShapeOrigin || 'drawn', level: null };
       if (_nextShapeOrigin === 'import') _nextShapeOrigin = null;
+      // D3: a shape made here (drawn or imported, not opened from a link) uses
+      // the Base64 card unless the person has chosen a card; say so once.
+      if (_shapeOrigin.from !== 'link' && typeof CardRenderer !== 'undefined' && CardRenderer.adoptShapeCarrier && CardRenderer.adoptShapeCarrier()) {
+        try {
+          if (!localStorage.getItem('gsCarrierNoted')) {
+            localStorage.setItem('gsCarrierNoted', '1');
+            setTimeout(() => showToast('Shapes use the Base64 card: it makes the shortest links. Star another card to use that one instead.'), 400);
+          }
+        } catch (e) {}
+      }
     }
     function _hasLoadedShape() {
       if (!lastSolution) return false;
@@ -2764,7 +2874,7 @@ window.GeosonifyGeoHack = (function () {
       privacy policy). Nothing is sent when the browser
       asks not to be tracked (Do Not Track or Global Privacy Control).
     */
-    const GOATCOUNTER_CODE = '';   // e.g. 'geosonify' -> https://geosonify.goatcounter.com
+    const GOATCOUNTER_CODE = 'geosonify';
     window.addEventListener('load', () => {
       try {
         if (!GOATCOUNTER_CODE || navigator.doNotTrack === '1' || navigator.globalPrivacyControl) return;
@@ -6103,6 +6213,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
      * Each group is a separate polygon or path segment.
      * @param {Array<Array<Array<number>>>} groups - Array of coordinate arrays
      */
+    let _drawGroupRoles = null;   // roles for the drawing in progress (WP2.1)
     function createMultiPathPoly(groups, allSegmentModes) {
       noteShapeOrigin();
       if (!groups || groups.length === 0) return;
@@ -6114,6 +6225,23 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         return;
       }
       
+      // HOLES (WP2.1): a hole is valid only if it is a closed ring and the
+      // nearest outer group before it is a closed ring too. An invalid one is
+      // dropped, as core profile v1.1 says (its segment modes go with it).
+      let roles = Array.isArray(groups._roles) ? groups._roles.slice() : groups.map(() => 'outer');
+      if (roles.includes('hole')) {
+        const keepG = [], keepR = [], keepM = allSegmentModes ? {} : null;
+        let lastOuterClosed = false;
+        groups.forEach((g, gi) => {
+          const hole = roles[gi] === 'hole';
+          if (hole && !(lastOuterClosed && g.length > 3 && isClosedPolygon(g))) return;
+          if (!hole) lastOuterClosed = g.length > 3 && isClosedPolygon(g);
+          if (keepM && allSegmentModes[gi]) keepM[keepG.length] = allSegmentModes[gi];
+          keepG.push(g); keepR.push(hole ? 'hole' : 'outer');
+        });
+        groups = keepG; roles = keepR; if (allSegmentModes) allSegmentModes = keepM;
+        if (groups.length === 1) { createPathPoly(groups[0], (allSegmentModes && allSegmentModes[0]) || null); return; }
+      }
       // Flatten all points for centroid computation
       const allPoints = groups.flat();
       const centroid = calculateGeographicCentroid(allPoints);
@@ -6151,7 +6279,10 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         segmentModes: flatSegModes
       };
       
+      if (roles.includes('hole')) lastSolution.groupRoles = roles.slice();
+      _drawGroupRoles = roles;
       drawMultiPathPolyOnMap(groups, centroid, groupTypes, true, true, flatSegModes);
+      _drawGroupRoles = null;
       
       // Calculate stats
       let totalLength = 0;
@@ -6164,7 +6295,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           totalLength += geodesicDistance(g[i], g[i + 1]);
         }
         if (groupTypes[gi] === 'polygon' && g.length >= 3) {
-          totalArea += calculatePolygonArea(g);
+          // A hole's area comes off its outer ring's.
+          totalArea += (roles[gi] === 'hole' ? -1 : 1) * calculatePolygonArea(g);
         }
       }
       
@@ -6175,8 +6307,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           : `\nTotal Area: ${(totalArea / 1e6).toFixed(4)} km²`;
       }
       
+      const _holeCount = roles.filter(r => r === 'hole').length;
       document.getElementById('results').textContent = 
-        `Type: Multi-${hasPolygon ? 'Polygon' : 'Path'} (${groups.length} parts)\n` +
+        `Type: Multi-${hasPolygon ? 'Polygon' : 'Path'} (${groups.length - _holeCount} parts${_holeCount ? ', ' + _holeCount + ' hole' + (_holeCount > 1 ? 's' : '') : ''})\n` +
         `Centroid: ${centroid[0].toFixed(6)}, ${centroid[1].toFixed(6)}\n` +
         `Total Points: ${totalPoints}\n` +
         `Total Length: ${totalLength < 1000 ? totalLength.toFixed(2) + ' m' : (totalLength/1000).toFixed(3) + ' km'}` +
@@ -6692,8 +6825,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             radius: 6, fillColor: '#ef4444', color: 'white', weight: 2, fillOpacity: 0.9
           }));
         } else if (groupTypes[gi] === 'polygon') {
+          const R = _drawGroupRoles;
+          if (R && R[gi] === 'hole') continue;          // drawn with its outer ring
           const densified = densifyPolygonGreatCircle(g, 10, gModes);
-          layers.push(L.polygon(densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }));
+          const rings = [densified];
+          if (R) for (let hj = gi + 1; hj < displayGroups.length && R[hj] === 'hole'; hj++) {
+            rings.push(densifyPolygonGreatCircle(displayGroups[hj], 10, groupSegModes[hj] || null));
+            allCoords.push(...displayGroups[hj]);
+          }
+          layers.push(L.polygon(rings.length > 1 ? rings : densified, { color: _shapeColor(), weight: 2, fillOpacity: 0.3 }));
         } else {
           const densified = densifyPathGreatCircle(g, 10, gModes);
           layers.push(L.polyline(densified, { color: _shapeColor(), weight: 3 }));
@@ -8731,7 +8871,11 @@ function encodeRaw(sol) {
             }
           }
           
-          const groupPayloads = sol.groups.map((g, i) => encodeGroupPayload(g, i === 0));
+          const groupPayloads = sol.groups.map((g, i) => {
+            const pl = encodeGroupPayload(g, i === 0);
+            // WP2.1: a hole is written with ':' in front (never the first group).
+            return (i > 0 && sol.groupRoles && sol.groupRoles[i] === 'hole') ? ':' + pl : pl;
+          });
           return groupPayloads.join('~~~');
         }
         
@@ -9390,11 +9534,18 @@ function encodeRaw(sol) {
       // Subsequent segments are each a self-contained group: "firstCode~deltas"
       
       const groups = [];
+      groups._roles = [];   // WP2.1: 'outer' or 'hole', one per group
       let detectedGrid = null;
       
       for (let si = 0; si < segments.length; si++) {
-        const seg = segments[si].trim();
+        let seg = segments[si].trim();
         if (!seg) continue;
+        // HOLES (core profile v1.1, decision D4): ':' at the start of a group
+        // marks it as a hole in the nearest outer ring before it.
+        const _isHole = seg.charAt(0) === ':';
+        if (_isHole) seg = seg.slice(1).trim();
+        const _before = groups.length;
+        const _mark = () => { if (groups.length > _before) groups._roles[groups.length - 1] = _isHole ? 'hole' : 'outer'; };
         
         // Try to decode this segment as a path/polygon
         // For the first segment, this is the anchor + group1
@@ -9411,18 +9562,20 @@ function encodeRaw(sol) {
             return [lat, lon];
           }).filter(c => c.every(Number.isFinite));
           if (coords.length > 0) groups.push(coords);
+          _mark();
           continue;
         }
         
         // Check if this is a single encoded point (no tilde)
         if (!seg.includes('~')) {
-          // Try to detect grid and decode as a single point
-          const grid = detectGridFromCode(seg);
+          // Try to detect grid and decode as a single point (the link's own grid first: B22)
+          const grid = ((window._pathGridHint && CARD_GRIDS[window._pathGridHint]) ? window._pathGridHint : null) || detectedGrid || detectGridFromCode(seg);
           if (grid) {
             if (!detectedGrid) detectedGrid = grid;
             const coord = decodeCardCode(grid, seg, obfuscated);
             if (coord) {
               groups.push([coord]);
+              _mark();
               continue;
             }
           }
@@ -9433,7 +9586,11 @@ function encodeRaw(sol) {
         // Delta-encoded segment: put it in the redraw input and decode
         // Use the same logic as redrawFromString for delta paths
         const firstPart = segParts[0].trim();
-        const gridKey = detectedGrid || detectGridFromCode(firstPart);
+        // B22: the grid the link names (b64d, hphexd, …) wins; guessing from the
+        // first code alone failed for some Base64 codes (e.g. "v-dr27bv"), so
+        // a multi-part Base64 link kept only its last part.
+        const _hint = (window._pathGridHint && CARD_GRIDS[window._pathGridHint]) ? window._pathGridHint : null;
+        const gridKey = _hint || detectedGrid || detectGridFromCode(firstPart);
         if (gridKey && !detectedGrid) detectedGrid = gridKey;
         
         if (gridKey) {
@@ -9446,6 +9603,7 @@ function encodeRaw(sol) {
               groups._allSegmentModes[groups.length] = coords._segmentModes;
             }
             groups.push(coords);
+            _mark();
             continue;
           }
         }
@@ -12874,8 +13032,13 @@ function encodeRaw(sol) {
           g = g.concat([g[0]]);                  // close it; the closing edge keeps its mode
           closed = true;
         }
-        return { kind: closed ? 'polygon' : 'line', coords: g, modes };
-      }).filter(p => p.coords.length);
+        return { kind: closed ? 'polygon' : 'line', coords: g, modes, hole: !!(lastSolution.groupRoles && lastSolution.groupRoles[groups.indexOf(g)] === 'hole') };
+      }).filter(p => p.coords.length).reduce((out, p) => {
+        // WP2.1: a hole travels with the polygon before it, as an interior ring.
+        const prev = out[out.length - 1];
+        if (p.hole && prev && prev.kind === 'polygon') { (prev.holes = prev.holes || []).push(p); return out; }
+        delete p.hole; out.push(p); return out;
+      }, []);
     }
 
     let _importProvenance = null;

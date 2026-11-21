@@ -1198,6 +1198,29 @@
     }
   }
   
+  /*
+    D3 (Nov 2026): a path or polygon made in the app uses the Base64 card, the
+    most compact carrier, unless the person has chosen a card themselves (by
+    starring one). Only when the active card is still the default
+    (Alphanumeric) and was never chosen; a card set by an opened link counts
+    as that link's choice and is left alone by the caller. Returns true if it
+    switched, so the caller can say so once.
+  */
+  function adoptShapeCarrier() {
+    if (cardState.activeChosen || rawModeActive) return false;
+    if (cardState.active && cardState.active !== 'alphanumeric') return false;
+    if (typeof CARD_GRIDS === 'undefined' || !CARD_GRIDS.base64) return false;
+    if (Array.isArray(cardState.visible) && cardState.visible.indexOf('base64') < 0) {
+      const i = cardState.visible.indexOf('alphanumeric');
+      cardState.visible.splice(i >= 0 ? i + 1 : 0, 0, 'base64');
+    }
+    cardState.active = 'base64';
+    saveCardState();
+    renderCards();
+    if (typeof MapManager !== 'undefined' && MapManager.refreshHierarchicalGrid) MapManager.refreshHierarchicalGrid();
+    return true;
+  }
+
   function saveCardState() {
     try { 
       localStorage.setItem('geosonify_card_state', JSON.stringify(cardState)); 
@@ -4268,6 +4291,7 @@
       // Event handlers
       if (card.querySelector('.active-btn')) card.querySelector('.active-btn').onclick = () => {
         cardState.active = gridKey;
+        cardState.activeChosen = true;   // the person's own choice: shapes keep it (D3)
         rawModeActive = false;
         updateRawModeUI();
         saveCardState();
@@ -7656,6 +7680,7 @@ if (gridDef.hpwords && typeof HPWordsEntry !== 'undefined' && !gisRedacted) {
     // --- Precision control surface (used by the PRECISION control + gates) ---
     // Pure math (exposed for the precision round-trip gate):
     getPrecisionText: getPrecisionText,
+    adoptShapeCarrier: adoptShapeCarrier,
     resolutionToIterations: resolutionToIterations,
     // Length formatting funnel (one toggle drives metric/US everywhere):
     formatLength: formatLength,

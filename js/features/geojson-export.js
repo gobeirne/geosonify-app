@@ -342,8 +342,26 @@
       var res = splitPolygon(seq);
       if (res.split) stats.split = true;
       if (res.pole) stats.poles.push(res.pole);
-      res.rings.forEach(function (ring) {
-        if (ring.length >= 4) polys.push([ring.map(toPos)]);
+      // Holes (core profile v1.1): interior rings, clockwise (RFC 7946 §3.1.6).
+      // Kept when the outer ring is one plain polygon; across 180° or round a
+      // pole they are left out and the properties say so.
+      var holes = [];
+      if (part.holes && part.holes.length) {
+        if (res.rings.length === 1 && !res.split && !res.pole) {
+          var shift = res.rings[0][0][1] - seq[0][1];
+          part.holes.forEach(function (h) {
+            var hs = densify(geod, h.coords, h.modes, false, tol).map(function (q) { return [q[0], q[1] + shift]; });
+            hs = closeRing(hs);
+            if (signedArea(hs) > 0) hs.reverse();
+            if (hs.length >= 4) holes.push(hs.map(toPos));
+          });
+          stats.holes = (stats.holes || 0) + holes.length;
+        } else {
+          stats.holesDropped = (stats.holesDropped || 0) + part.holes.length;
+        }
+      }
+      res.rings.forEach(function (ring, ri) {
+        if (ring.length >= 4) polys.push([ring.map(toPos)].concat(ri === 0 ? holes : []));
       });
     });
 
@@ -360,7 +378,8 @@
     props.edges = 'Geodesic (WGS84) and rhumb edges densified so each straight lon/lat segment is within ' +
       tol + ' m of the true edge; original vertices unchanged.';
     props.densify_tolerance_m = tol;
-    props.holes = 'not represented: every ring is an outer ring';
+    if (stats.holes) props.holes = stats.holes + ' interior ring' + (stats.holes > 1 ? 's' : '') + ' (holes), clockwise';
+    if (stats.holesDropped) props.holes_omitted = stats.holesDropped + ' hole(s) left out: their outer ring crosses 180° or encloses a pole';
     if (stats.split) props.antimeridian = 'split at 180° (RFC 7946 §3.1.9)';
     if (stats.poles.length) props.pole_enclosed = stats.poles.join(',') +
       ' (convention: a ring that winds round the globe encloses the pole on the side of its mean latitude)';

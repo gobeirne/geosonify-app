@@ -117,6 +117,28 @@ def main():
         r = pg.evaluate("({type: lastSolution && lastSolution.type, href: location.href})")
         check('encrypted link: shape loads, address bar keeps ?enc=', r['type'] == 'path' and '?enc=' in r['href'] and 'b64' not in r['href'], r)
         ctx.close()
+        # 10. audio engine on demand (WP1.3): not at start, loaded when the music card is seen
+        ctx, pg, errs = page('b64=v-dzcFN-')
+        before = pg.evaluate("typeof AudioService.__isStandIn === 'function'")
+        pg.evaluate("document.querySelector('#cardsContainer .format-card[data-grid-key=music]').scrollIntoView({block:'center'})"); pg.wait_for_timeout(3000)
+        after = pg.evaluate("typeof AudioService.__isStandIn !== 'function' && typeof AudioService.play === 'function'")
+        pg.evaluate("AudioUI.showSoundDesign()"); pg.wait_for_timeout(1500)
+        check('audio: engine loads on view and the sound panel opens', before and after and pg.evaluate("!!document.querySelector('.audio-design-modal')"), [before, after])
+        ctx.close()
+        # 11. D3: a new visitor's drawn shape is carried by Base64
+        ctx, pg, errs = page('r=-43.5,172.6')
+        pg.evaluate("createPathPoly([[-43.50,172.60],[-43.51,172.62],[-43.52,172.61],[-43.50,172.60]], null); updateCompactOutputs()"); pg.wait_for_timeout(800)
+        check('D3: a drawn shape uses Base64 by default', pg.evaluate("getURLParamForActiveCard(true)") == 'b64d', pg.evaluate("cardState.active"))
+        ctx.close()
+        # 12. WP2.1 holes: a ':' group is a hole; area is net; the link round-trips
+        ctx, pg, errs = page('b64=v-dzcFN-')
+        pg.evaluate("(()=>{const g=[[[-43.50,172.60],[-43.50,172.70],[-43.56,172.70],[-43.56,172.60],[-43.50,172.60]],[[-43.52,172.63],[-43.52,172.67],[-43.54,172.67],[-43.54,172.63],[-43.52,172.63]]]; g._roles=['outer','hole']; createMultiPathPoly(g, null); updateCompactOutputs();})()")
+        q = pg.evaluate("getURLParamForActiveCard(true)+'='+document.getElementById('compactOutput').textContent")
+        ctx.close()
+        ctx, pg, errs = page(q)
+        r = pg.evaluate("({roles: lastSolution && lastSolution.groupRoles, text: document.getElementById('results').textContent})")
+        check('holes: the marker round-trips and the hole is subtracted', '~~~:' in q and r['roles'] == ['outer', 'hole'] and '1 hole' in r['text'], [q[:40], r['roles']])
+        ctx.close()
         # 4. display link of a route shows a length
         ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display&area')
         txt = pg.evaluate("(document.querySelector('.geosonify-viewer-area')||{}).textContent || ''")
