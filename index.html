@@ -2764,7 +2764,7 @@ window.GeosonifyGeoHack = (function () {
       privacy policy). Nothing is sent when the browser
       asks not to be tracked (Do Not Track or Global Privacy Control).
     */
-    const GOATCOUNTER_CODE = '';   // e.g. 'geosonify' -> https://geosonify.goatcounter.com
+    const GOATCOUNTER_CODE = 'geosonify';
     window.addEventListener('load', () => {
       try {
         if (!GOATCOUNTER_CODE || navigator.doNotTrack === '1' || navigator.globalPrivacyControl) return;
