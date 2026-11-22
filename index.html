@@ -142,6 +142,7 @@
     .geosonify-viewer-tag a { color: #1a6ebd; text-decoration: none; }
     .geosonify-viewer-tag a:hover { text-decoration: underline; }
     .geosonify-viewer-area { color: #333; font-weight: 600; }
+    .geosonify-viewer-menu { display: flex; flex-direction: column; gap: 6px; padding: 6px 2px 2px; }
     /* Display links: "show my location" button (under the zoom buttons) */
     .geosonify-locate a { display: flex; align-items: center; justify-content: center;
       width: 30px; height: 30px; color: #555; background: #fff; cursor: pointer; }
@@ -180,6 +181,20 @@
   </style>
 </head>
 <body>
+<script>
+// WP2.3: "Make your own" from an encrypted display link. The decrypted query
+// was put in this tab's session storage; read it once, delete it, and let the
+// app use it from memory (B9), with nothing in the address bar.
+(function () {
+  try {
+    if (location.hash !== '#continue') return;
+    var q = sessionStorage.getItem('gsContinue');
+    sessionStorage.removeItem('gsContinue');
+    history.replaceState(null, '', location.pathname);
+    if (q) window.__gsDecrypted = { query: q };
+  } catch (e) {}
+})();
+</script>
 <script>
 /*
   GEOHACK PARAMETERS (WP2.5, Nov 2026). ?geohack=<params> takes GeoHack's own
@@ -554,7 +569,7 @@ window.GeosonifyGeoHack = (function () {
           <!-- Wikidata QID panel (hidden by default) -->
           <div id="importPanel_wikidata" style="display:none;">
             <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
-              <input type="text" id="wikidataInput" placeholder="e.g. Q1094308 or 1094308" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" />
+              <input type="text" id="wikidataInput" placeholder="Wikipedia title or link, or Wikidata Q1094308" style="flex:1; padding:6px 8px; border:1px solid #ccc; border-radius:4px; font-size:13px;" />
               <button id="wikidataLoad" class="btn btn-secondary" style="padding:6px 12px; font-size:13px; white-space:nowrap;">Load</button>
             </div>
           </div>
@@ -915,6 +930,20 @@ window.GeosonifyGeoHack = (function () {
           <div class="btn-row">
             <button class="btn btn-secondary" id="copyOutputBtn">📋 Copy</button>
             <button class="btn btn-secondary" id="copyURLBtn">🔗 Share URL</button>
+            <!-- WP2.6: share a place less precisely, as an equal-area cell -->
+            <div id="generaliseBox" style="margin-top:10px; padding:8px 10px; border:1px solid var(--ios-separator, #ddd); border-radius:8px; font-size:13px;">
+              <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <label for="generaliseSel" style="font-weight:600;">Share less precisely</label>
+                <select id="generaliseSel" style="padding:4px 6px;">
+                  <option value="100">about 100 m</option>
+                  <option value="1000" selected>about 1 km</option>
+                  <option value="10000">about 10 km</option>
+                  <option value="100000">about 100 km</option>
+                </select>
+                <button class="btn btn-secondary" id="generaliseCopy" style="padding:5px 10px; font-size:13px;">Copy link</button>
+              </div>
+              <div id="generaliseNote" style="margin-top:6px; color:var(--ios-gray, #666); line-height:1.4;"></div>
+            </div>
             <button class="btn btn-secondary" id="visitURLBtn">↗ Visit</button>
           </div>
           <div class="btn-row" style="margin-top:6px;">
@@ -1128,7 +1157,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/features/map-manager.js?v=20261108f"></script>
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
-<script src="js/features/shape-import.js?v=20261122b"></script>
+<script src="js/features/shape-import.js?v=20261122c"></script>
 <script src="js/features/geojson-export.js?v=20261122b"></script>
 <script src="js/features/wkt.js?v=20261119a"></script>
 <script src="js/features/property-import.js?v=20260616a"></script>
@@ -1294,7 +1323,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261122a';</script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261122d';</script>
 <script src="js/ui/faq-ui.js?v=20261119b"></script>
 <script src="js/ui/tour.js?v=20261122a"></script>
   <script>
@@ -2518,6 +2547,10 @@ window.GeosonifyGeoHack = (function () {
       const skyFormats = (typeof GeosonifySkyExport !== 'undefined') ? GeosonifySkyExport.FORMATS : {};
       const wanted = (opts.exports && opts.exports.length) ? opts.exports : (opts.export ? [opts.export] : []);
       const inSky = isSkyFrameNow();
+      // WP2.3: with no export= in the link, one quiet "↓ Export" button offers
+      // every format that fits this sphere, in a small menu.
+      const _offer = wanted.length ? null
+        : (inSky ? Object.keys(skyFormats) : ['gpx', 'kml', 'geojson', 'wkt']);
       wanted.forEach(fmt => {
         let label = null, run = null;
         if ((fmt === 'gpx' || fmt === 'kml') && !inSky) {
@@ -2535,6 +2568,34 @@ window.GeosonifyGeoHack = (function () {
         btn.onclick = run;
         row.appendChild(btn);
       });
+      if (_offer && _offer.length) {
+        const run = fmt => (fmt === 'gpx' || fmt === 'kml') ? _viewerExport(fmt)
+          : fmt === 'geojson' ? downloadGeoJSON() : fmt === 'wkt' ? downloadWKT() : downloadSkyExport(fmt);
+        const name = fmt => ({ gpx: 'GPX', kml: 'KML', geojson: 'GeoJSON', wkt: 'WKT' })[fmt] || (skyFormats[fmt] && skyFormats[fmt].label) || fmt;
+        const btn = document.createElement('button');
+        btn.className = 'geosonify-viewer-export';
+        btn.textContent = '↓ Export';
+        btn.title = 'Download this shape';
+        btn.setAttribute('aria-haspopup', 'true');
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const open = tag.querySelector('.geosonify-viewer-menu');
+          if (open) { open.remove(); return; }
+          const menu = document.createElement('div');
+          menu.className = 'geosonify-viewer-menu';
+          menu.setAttribute('role', 'menu');
+          _offer.forEach(fmt => {
+            const it = document.createElement('button');
+            it.className = 'geosonify-viewer-export'; it.setAttribute('role', 'menuitem');
+            it.textContent = name(fmt);
+            it.onclick = (ev) => { ev.stopPropagation(); menu.remove(); run(fmt); };
+            menu.appendChild(it);
+          });
+          tag.appendChild(menu);
+          setTimeout(() => document.addEventListener('click', function close() { menu.remove(); document.removeEventListener('click', close); }), 0);
+        };
+        row.appendChild(btn);
+      }
 
       const link = document.createElement('a');
       // Build by string surgery rather than URLSearchParams, which would
@@ -2546,8 +2607,21 @@ window.GeosonifyGeoHack = (function () {
       // in the clear (B9), and the display options are inside the blob, so it
       // opens the app itself.
       link.href = window.location.pathname + (window.__gsDecrypted ? '' : (qs ? '?' + qs : ''));
-      link.textContent = '⬡ geosonify';
-      link.title = 'Open in geosonify';
+      // WP2.3: "Make your own" opens the editor with this shape loaded. For an
+      // encrypted link the place travels in this tab's session storage, never
+      // in an address (B9), and is read once and deleted.
+      if (window.__gsDecrypted) {
+        link.href = window.location.pathname + '#continue';
+        link.onclick = () => {
+          try {
+            const q = String(window.__gsDecrypted.query || '').replace(/^\?/, '')
+              .split('&').filter(p => p.split('=')[0] !== 'display').join('&');
+            sessionStorage.setItem('gsContinue', '?' + q);
+          } catch (e) {}
+        };
+      }
+      link.textContent = '⬡ Make your own';
+      link.title = 'Open this in Geosonify to edit it or make your own';
       row.appendChild(link);
 
       tag.appendChild(row);
@@ -2891,6 +2965,50 @@ window.GeosonifyGeoHack = (function () {
           '&r=' + encodeURIComponent(ref) + '&s=' + encodeURIComponent([screen.width, screen.height, window.devicePixelRatio || 1].join(',')) + '&rnd=' + Math.random().toString(36).slice(2);
         new Image().src = u;
       } catch (e) {}
+    });
+
+
+    /*
+      GENERALISATION (WP2.6, Nov 2026). For a sensitive place (a nest, a rare
+      plant, a home), share only an equal-area HEALPix cell around it. The link
+      carries just the coarse cell (hphex at order k, with @k) and &cell, so it
+      opens showing the cell's outline; the exact place is not in the link, its
+      exports, or anything derived from it. Every cell at an order has the same
+      area, so the uncertainty is the same everywhere on Earth.
+    */
+    function generaliseOrderFor(sideM) {
+      const area = 4 * Math.PI * 6371008.8 * 6371008.8;                 // m²
+      const k = Math.round(Math.log(area / (12 * sideM * sideM)) / Math.log(4));
+      return Math.max(1, Math.min(24, k));
+    }
+    function generalisedLink() {
+      if (typeof HealpixGrids === 'undefined' || !currentCardCoord) return null;
+      if (lastSolution && lastSolution.type && lastSolution.type !== 'point') return null;
+      const side = +document.getElementById('generaliseSel').value;
+      const k = generaliseOrderFor(side);
+      const code = HealpixGrids.encodeStandalone('hphex', currentCardCoord.lat, currentCardCoord.lon, k);
+      const areaKm2 = 4 * Math.PI * 6371.0088 * 6371.0088 / (12 * Math.pow(4, k));
+      return { k, code, areaKm2, sideM: Math.sqrt(areaKm2) * 1000,
+               url: window.location.origin + window.location.pathname + '?hphex=' + code + '&cell' };
+    }
+    function updateGeneraliseNote() {
+      const note = document.getElementById('generaliseNote'), btn = document.getElementById('generaliseCopy');
+      if (!note) return;
+      const g = generalisedLink();
+      if (!g) { note.textContent = 'For a single place: a path or shape can be shared coarser with its card’s − button.'; btn.disabled = true; return; }
+      btn.disabled = false;
+      const fmtA = a => a >= 1 ? a.toLocaleString(undefined, { maximumFractionDigits: a >= 100 ? 0 : 1 }) + ' km²' : Math.round(a * 1e6).toLocaleString() + ' m²';
+      const fmtS = m => m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 0 : 1) + ' km' : Math.round(m) + ' m';
+      note.textContent = 'The link shows only an equal-area cell of ' + fmtA(g.areaKm2) + ' (about ' + fmtS(g.sideM) +
+        ' across) containing the place, not the place itself. HEALPix order ' + g.k + '.';
+    }
+    document.getElementById('generaliseSel').addEventListener('change', updateGeneraliseNote);
+    document.getElementById('generaliseCopy').addEventListener('click', () => {
+      const g = generalisedLink(); if (!g) return;
+      const done = () => showToast('Less precise link copied');
+      if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) navigator.share({ title: 'Geosonify', url: g.url }).catch(() => {});
+      else if (navigator.clipboard) navigator.clipboard.writeText(g.url).then(done, () => prompt('Copy this link:', g.url));
+      else prompt('Copy this link:', g.url);
     });
 
     // Tab switching logic
@@ -3775,7 +3893,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // pipeline calls setupDisplayViewer itself when it finishes, so skip here.
       if (window.DISPLAY_MODE) {
         const _up = new URLSearchParams(geosonifyAppQuery());
-        const _pipelineActive = ['address','place','wikidata','osmrelation','geojson','kml','gpx','wander']
+        const _pipelineActive = ['address','place','wikidata','wikipedia','osmrelation','geojson','kml','gpx','wander']
           .some(k => _up.has(k));
         if (!_pipelineActive) {
           setTimeout(setupDisplayViewer, 300);
@@ -4032,7 +4150,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         if (becameDisplay) {
           try { syncLatticeFadeRow(); } catch (e) {}
           const _dp = new URLSearchParams(decrypted);
-          const _pipe = ['address','place','wikidata','osmrelation','geojson','kml','gpx','wander'].some(k => _dp.has(k));
+          const _pipe = ['address','place','wikidata','wikipedia','osmrelation','geojson','kml','gpx','wander'].some(k => _dp.has(k));
           if (!_pipe) setTimeout(setupDisplayViewer, 300);
         }
       }
@@ -4659,6 +4777,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       //   ignored), &result=r|s|c
       const shapeImportParams = {
         wikidata:    urlParams.get('wikidata'),
+        // ?wikipedia=Title (or lang:Title, or an article link): WP2.2, add-only.
+        wikipedia:   urlParams.get('wikipedia'),
         place:       urlParams.get('place'),
         osmrelation: urlParams.get('osmrelation'),
         geojson:     urlParams.get('geojson'),
@@ -8150,6 +8270,7 @@ function encodeRaw(sol) {
       }
       refreshShareQR();
       try { updateRoundTripReport(); } catch (e) {}
+      try { updateGeneraliseNote(); } catch (e) {}
     }
     
     // =================== DELTA ENCODING FOR PATHS ===================
@@ -11535,7 +11656,9 @@ function encodeRaw(sol) {
     document.getElementById('wikidataLoad').addEventListener('click', async function() {
       const input = document.getElementById('wikidataInput');
       const qid = input.value.trim();
-      if (!qid) { showToast('Please enter a Wikidata QID', 'error'); return; }
+      if (!qid) { showToast('Enter a Wikipedia title or link, or a Wikidata ID', 'error'); return; }
+      // WP2.2: anything that isn't a Wikidata ID is a Wikipedia title or link.
+      const isQid = /^q?\d+$/i.test(qid);
       
       const btn = this;
       btn.disabled = true; btn.textContent = 'Loading...';
@@ -11544,8 +11667,8 @@ function encodeRaw(sol) {
       loadingEl.style.display = 'block';
       
       try {
-        const result = await ShapeImport.fetchWikidataGeometry(qid);
-        processLoadedShape(result.coords, result.name || `Wikidata ${qid}`, result.groups);
+        const result = isQid ? await ShapeImport.fetchWikidataGeometry(qid) : await ShapeImport.fetchWikipediaGeometry(qid);
+        processLoadedShape(result.coords, result.name || (isQid ? `Wikidata ${qid}` : qid), result.groups);
       } catch (err) {
         showToast(err.message, 'error');
         loadingEl.style.display = 'none';
@@ -11839,6 +11962,14 @@ function encodeRaw(sol) {
             processLoadedShape(wdResult.coords, wdResult.name || `Wikidata ${value}`, wdResult.groups);
             break;
             
+          case 'wikipedia':
+            activateImportPill('wikidata');
+            document.getElementById('wikidataInput').value = value;
+            document.getElementById('shapeImportLoadingText').textContent = `Looking up “${value}” on Wikipedia...`;
+            const wpResult = await ShapeImport.fetchWikipediaGeometry(value);
+            processLoadedShape(wpResult.coords, wpResult.name || value, wpResult.groups);
+            break;
+
           case 'place':
             document.getElementById('placeNameInput').value = value;
             document.getElementById('shapeImportLoadingText').textContent = `Searching "${value}"...`;
@@ -13060,6 +13191,14 @@ function encodeRaw(sol) {
       const props = { name, generator: 'Geosonify (geosonify.org)', created: new Date().toISOString() };
       const pv = currentImportProvenance();
       props.source = pv ? pv.src.source : 'Geosonify';
+      // WP2.6: a cell link is a generalised place: say so, with its size.
+      try {
+        const cell = (typeof _viewerCell === 'function') ? _viewerCell() : null;
+        if (cell) {
+          props.uncertainty = 'generalised: this outline is the equal-area cell containing the place' +
+            (cell.areaM2 ? ', ' + (cell.areaM2 / 1e6).toFixed(cell.areaM2 >= 1e8 ? 0 : 3) + ' km²' : '') + '; the exact place is not recorded';
+        }
+      } catch (e) {}
       if (pv && pv.src.licence) props.licence = pv.src.licence;
       if (pv && pv.n) props.source_vertices = pv.n;   // before any simplification
       try {

@@ -328,6 +328,48 @@ const ShapeImport = (function () {
   function setSource(s) { _lastSource = s; }
   function takeLastSource() { const s = _lastSource; _lastSource = null; return s; }
 
+  /*
+    WP2.2 (Nov 2026): a Wikipedia article to its outline. Accepts a title
+    ("Lake Taupō"), "lang:Title" ("fr:Lac Taupo"), or an article link
+    (https://mi.wikipedia.org/wiki/Taupō-nui-a-Tia). The Wikipedia API
+    (CORS-enabled with origin=*) gives the article's Wikidata item; the Wikidata
+    pipeline then finds the OpenStreetMap outline. Never a stand-in circle: if
+    no outline exists, the error says so.
+  */
+  function parseWikipediaInput(input) {
+    let s = String(input || '').trim(), lang = 'en';
+    const url = /^https?:\/\/([a-z-]+)\.(?:m\.)?wikipedia\.org\/wiki\/([^?#]+)/i.exec(s);
+    if (url) { lang = url[1].toLowerCase(); s = decodeURIComponent(url[2]); }
+    else { const m = /^([a-z]{2,3}(?:-[a-z]+)?):(.+)$/i.exec(s); if (m && !/^\s/.test(m[2])) { lang = m[1].toLowerCase(); s = m[2]; } }
+    return { lang, title: s.replace(/_/g, ' ').trim() };
+  }
+  async function wikipediaToWikidata(input) {
+    const { lang, title } = parseWikipediaInput(input);
+    if (!title) throw new Error('Enter a Wikipedia article title or link');
+    const url = 'https://' + lang + '.wikipedia.org/w/api.php?' + new URLSearchParams({
+      action: 'query', prop: 'pageprops', ppprop: 'wikibase_item', redirects: '1',
+      titles: title, format: 'json', origin: '*'
+    });
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Wikipedia did not answer (HTTP ' + res.status + ')');
+    const data = await res.json();
+    const pages = (data.query && data.query.pages) || {};
+    const page = Object.values(pages)[0];
+    if (!page || page.missing !== undefined) throw new Error('No ' + lang + '.wikipedia.org article called “' + title + '”');
+    const qid = page.pageprops && page.pageprops.wikibase_item;
+    if (!qid) throw new Error('The article “' + page.title + '” has no Wikidata item, so no outline can be found');
+    return { qid, lang, title: page.title };
+  }
+  async function fetchWikipediaGeometry(input) {
+    const w = await wikipediaToWikidata(input);
+    let got;
+    try { got = await fetchWikidataGeometry(w.qid); }
+    catch (e) { throw new Error('“' + w.title + '” (' + w.qid + ') has no outline on OpenStreetMap, so it can’t be shown as a shape'); }
+    if (_lastSource) _lastSource.source = 'Wikipedia “' + w.title + '” (' + w.lang + ') → ' + _lastSource.source;
+    if (got && !got.name) got.name = w.title;
+    return got;
+  }
+
   async function fetchWikidataGeometry(qid) {
     // Normalise: accept 'Q123' or '123'
     qid = qid.toUpperCase().trim();
@@ -917,6 +959,8 @@ const ShapeImport = (function () {
 
   return {
     takeLastSource: takeLastSource,
+    fetchWikipediaGeometry: fetchWikipediaGeometry,
+    parseWikipediaInput: parseWikipediaInput,
     // Core utilities
     toGpxCoordArray: toGpxCoordArray,
     suggestEpsilon: suggestEpsilon,

@@ -139,6 +139,18 @@ def main():
         r = pg.evaluate("({roles: lastSolution && lastSolution.groupRoles, text: document.getElementById('results').textContent})")
         check('holes: the marker round-trips and the hole is subtracted', '~~~:' in q and r['roles'] == ['outer', 'hole'] and '1 hole' in r['text'], [q[:40], r['roles']])
         ctx.close()
+        # 13. WP2.3: a display link offers Export and Make your own
+        ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display')
+        labels = pg.evaluate("[...document.querySelectorAll('.geosonify-viewer-tag button, .geosonify-viewer-tag a')].map(e=>e.textContent)")
+        href = pg.evaluate("(document.querySelector('.geosonify-viewer-tag a')||{}).getAttribute ? document.querySelector('.geosonify-viewer-tag a').getAttribute('href') : ''")
+        check('display link: Export and Make your own (opens the editor without display)', '↓ Export' in labels and '⬡ Make your own' in labels and 'display' not in href and 'b64d=' in href, [labels, href])
+        ctx.close()
+        # 14. WP2.6: share less precisely gives an equal-area cell link without the exact place
+        ctx, pg, errs = page('r=-43.5321234,172.6305678')
+        pg.evaluate("switchToTab('output')"); pg.select_option('#generaliseSel', '1000')
+        url = pg.evaluate("generalisedLink().url")
+        check('generalise: a 1 km link is a cell at order 13, without the exact place', 'hphex=' in url and '@13&cell' in url and '43.53212' not in url, url)
+        ctx.close()
         # 4. display link of a route shows a length
         ctx, pg, errs = page('b64d=v-dzcFN-~4=dA8rdpn8lcKRl3Ot&display&area')
         txt = pg.evaluate("(document.querySelector('.geosonify-viewer-area')||{}).textContent || ''")

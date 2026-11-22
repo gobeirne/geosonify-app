@@ -519,7 +519,15 @@
             id: 'display-my-location',
             q: 'Can a display link show where I am?',
             a: `<p>Yes. Every display link of a place on Earth has the standard location button under its zoom buttons. Tap it and your position appears as a blue dot, with a lighter circle showing how accurate the fix is, and the map follows you as you move, which makes a shared route usable for finding your way. Drag the map to look elsewhere and it stops following; tap the button again to come back to yourself, and tap it once more to turn your location off.</p>
-<p>Your browser asks for permission the first time. Your position is used only to draw the dot on your own screen: it is not sent anywhere and never becomes part of the link. Adding <code>&amp;gps</code> to a display link shows the dot as soon as it opens, without moving the map.</p>`
+<p>Your browser asks for permission the first time. Your position is used only to draw the dot on your own screen: it is not sent anywhere and never becomes part of the link. Adding <code>&amp;gps</code> to a display link shows the dot as soon as it opens, without moving the map.</p>
+<p>A display link also has <strong>↓ Export</strong>, which downloads the shape (GPX, KML, GeoJSON or WKT on Earth; CSV, DS9 or a MOC in the sky), and <strong>Make your own</strong>, which opens it in the full app to change it or start from it. An encrypted display link carries on into the app without the place ever appearing in the address bar.</p>`
+          },
+
+          {
+            id: 'share-less-precisely',
+            q: 'How do I share a place without giving it away exactly?',
+            a: `<p>For a nest, a rare plant, an archaeological find or a home, use <strong>Share less precisely</strong> on the Output tab. Choose a size (about 100 m, 1 km, 10 km or 100 km) and copy the link. It carries only the HEALPix cell of that size that contains the place, and it opens showing that cell's outline, so the recipient sees the area, not the spot. The exact place is not in the link, so it cannot be recovered from it or from anything exported from it; an exported GeoJSON file is the cell's outline, labelled as generalised.</p>
+<p>HEALPix cells at one level all have the same area, wherever they are on Earth, so "about 1 km" means the same uncertainty in Fiji as in Finland. Remember that the cell still says roughly where the place is: choose a size large enough for what you are protecting.</p>`
           },
 
           {
@@ -747,6 +755,7 @@ sty=s&lt;i&gt;[-j]:&lt;colour&gt;[,w&lt;n&gt;][,dash]   sides i to j</pre>
   <tr><th>Source</th><th>Parameter</th><th>Example</th><th>Resolved via</th></tr>
   <tr><td>Place name</td><td><code>?place=</code></td><td>Budapest, Lake Geneva, Vatican City</td><td>Nominatim geocoder</td></tr>
   <tr><td>Wikidata entity</td><td><code>?wikidata=</code></td><td>Q4902980 (Bibbulmun Track)</td><td>Wikidata SPARQL → OSM</td></tr>
+  <tr><td>Wikipedia article</td><td><code>?wikipedia=</code></td><td>Lake Taupō, <code>fr:Lac Taupo</code>, or an article link</td><td>Wikipedia → Wikidata → OSM (holes kept; an honest message if there is no outline)</td></tr>
   <tr><td>OSM relation</td><td><code>?osmrelation=</code></td><td>54391 (Stockholm)</td><td>Overpass API</td></tr>
   <tr><td>File by URL</td><td><code>?geojson= ?kml= ?gpx=</code></td><td>any hosted geometry file</td><td>Direct fetch / upload</td></tr>
 </table>
