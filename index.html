@@ -927,13 +927,16 @@ window.GeosonifyGeoHack = (function () {
             <p id="displayShareWarn" style="display:none; margin:10px 0 0; font-size:13px; color:#b8860b;"></p>
           </div>
 
-          <div class="btn-row">
+          <div class="btn-row" style="display:grid; grid-template-columns:repeat(4, minmax(0, 1fr));">
             <button class="btn btn-secondary" id="copyOutputBtn">📋 Copy</button>
             <button class="btn btn-secondary" id="copyURLBtn">🔗 Share URL</button>
-            <!-- WP2.6: share a place less precisely, as an equal-area cell -->
-            <div id="generaliseBox" style="margin-top:10px; padding:8px 10px; border:1px solid var(--ios-separator, #ddd); border-radius:8px; font-size:13px;">
+            <button class="btn btn-secondary" id="generaliseToggle" aria-expanded="false" title="Share only an area around the place, not the place itself">◌ Share less precisely</button>
+            <button class="btn btn-secondary" id="visitURLBtn">↗ Visit</button>
+          </div>
+          <!-- WP2.6: share a place less precisely, as an equal-area cell -->
+          <div id="generaliseBox" style="display:none; margin-top:8px; padding:8px 10px; border:1px solid var(--ios-separator, #ddd); border-radius:8px; font-size:13px;">
               <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-                <label for="generaliseSel" style="font-weight:600;">Share less precisely</label>
+                <label for="generaliseSel">Size of area</label>
                 <select id="generaliseSel" style="padding:4px 6px;">
                   <option value="100">about 100 m</option>
                   <option value="1000" selected>about 1 km</option>
@@ -944,8 +947,6 @@ window.GeosonifyGeoHack = (function () {
               </div>
               <div id="generaliseNote" style="margin-top:6px; color:var(--ios-gray, #666); line-height:1.4;"></div>
             </div>
-            <button class="btn btn-secondary" id="visitURLBtn">↗ Visit</button>
-          </div>
           <div class="btn-row" style="margin-top:6px;">
             <button class="btn btn-secondary" id="shareQRBtn" aria-expanded="false">▦ Share as QR code</button>
           </div>
@@ -1316,7 +1317,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-chessboard-lib_v1_0.js?v=20260623"></script>
 <!-- Maps hand-off: pin links and the &nav directions sheet. Before card-renderer and the entry panels, which use it. -->
 <script src="js/ui/geosonify-nav.js?v=20261031a"></script>
-<script src="js/ui/card-renderer.js?v=20261122a"></script>
+<script src="js/ui/card-renderer.js?v=20261122c"></script>
 <script src="js/lib/geosonify-passphrase-strength.js?v=20260819"></script>
 <script src="js/ui/geosonify-passphrase-ui.js?v=20260819"></script>
 <script src="js/lib/bip39-geo-lookup.js?v=20260324"></script>
@@ -3003,12 +3004,47 @@ window.GeosonifyGeoHack = (function () {
         ' across) containing the place, not the place itself. HEALPix order ' + g.k + '.';
     }
     document.getElementById('generaliseSel').addEventListener('change', updateGeneraliseNote);
+    document.getElementById('generaliseToggle').addEventListener('click', function () {
+      const box = document.getElementById('generaliseBox');
+      const open = box.style.display === 'none';
+      box.style.display = open ? 'block' : 'none';
+      this.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (open) updateGeneraliseNote();
+    });
     document.getElementById('generaliseCopy').addEventListener('click', () => {
       const g = generalisedLink(); if (!g) return;
       const done = () => showToast('Less precise link copied');
       if (navigator.share && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) navigator.share({ title: 'Geosonify', url: g.url }).catch(() => {});
       else if (navigator.clipboard) navigator.clipboard.writeText(g.url).then(done, () => prompt('Copy this link:', g.url));
       else prompt('Copy this link:', g.url);
+    });
+
+    /*
+      zoom=N and lattice=<0..1> on ordinary links too (Nov 2026), not only
+      display links: zoom sets the map's zoom level, centred on the place or
+      shape, once the link has loaded; lattice sets the HEALPix grid's opacity
+      for this visit (0 hides it) without changing the person's own setting.
+    */
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        try {
+          if (window.DISPLAY_MODE) return;                // display links handle both themselves
+          const p = new URLSearchParams(geosonifyAppQuery());
+          if (p.has('lattice') && typeof GeosonifyHealpixLattice !== 'undefined' && GeosonifyHealpixLattice.setOpacity) {
+            const v = parseFloat(p.get('lattice'));
+            if (isFinite(v)) GeosonifyHealpixLattice.setOpacity(Math.max(0, Math.min(1, v)), { transient: true });
+          }
+          const z = parseFloat(p.get('zoom'));
+          if (p.has('zoom') && isFinite(z) && map) {
+            let centre = null;
+            if (lastSolution && lastSolution.type && lastSolution.type !== 'point' && shapeLayer && shapeLayer.getBounds) {
+              try { const b = shapeLayer.getBounds(); if (b && b.isValid()) centre = b.getCenter(); } catch (e) {}
+            }
+            if (!centre && currentCardCoord) centre = L.latLng(currentCardCoord.lat, currentCardCoord.lon);
+            map.setView(centre || map.getCenter(), Math.max(map.getMinZoom() || 1, Math.min(map.getMaxZoom() || 22, z)));
+          }
+        } catch (e) {}
+      }, 1500);
     });
 
     // Tab switching logic

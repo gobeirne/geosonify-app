@@ -1334,13 +1334,14 @@
   */
   /*
     The a-b button on a grouped card turns the hyphens off and on, for every
-    grouped card at once, remembered across visits. On by default. Copy
+    grouped card at once, remembered across visits. Off by default (Nov 2026). Copy
     follows the screen (what you see is what you paste); share links and
     every frozen derivation always use the bare code.
   */
   const CODE_GROUPS_KEY = 'geosonify_code_groups';
   function codeGroupsOn() {
-    try { return localStorage.getItem(CODE_GROUPS_KEY) !== 'off'; } catch (e) { return true; }
+    // Off by default (Greg, Nov 2026): codes show bare until the a-b switch turns grouping on.
+    try { return localStorage.getItem(CODE_GROUPS_KEY) === 'on'; } catch (e) { return false; }
   }
   function setCodeGroupsOn(on) {
     try { localStorage.setItem(CODE_GROUPS_KEY, on ? 'on' : 'off'); } catch (e) { /* this session only */ }

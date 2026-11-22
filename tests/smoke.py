@@ -147,7 +147,7 @@ def main():
         ctx.close()
         # 14. WP2.6: share less precisely gives an equal-area cell link without the exact place
         ctx, pg, errs = page('r=-43.5321234,172.6305678')
-        pg.evaluate("switchToTab('output')"); pg.select_option('#generaliseSel', '1000')
+        pg.evaluate("switchToTab('output')"); pg.click('#generaliseToggle'); pg.select_option('#generaliseSel', '1000')
         url = pg.evaluate("generalisedLink().url")
         check('generalise: a 1 km link is a cell at order 13, without the exact place', 'hphex=' in url and '@13&cell' in url and '43.53212' not in url, url)
         ctx.close()
