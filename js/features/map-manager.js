@@ -1,5 +1,14 @@
 /**
- * geosonify-map-manager.js v1.14
+ * geosonify-map-manager.js v1.15
+ *
+ * v1.15 (2026-11-26): A CATALOGUE LAYER'S ATTRIBUTION IS SHOWN FOR XYZ LAYERS
+ *   TOO. An XYZ template from the imagery catalogue showed "Imagery © its
+ *   provider" whatever the catalogue said; it now shows the entry's `a`, and
+ *   its zoom range. If the catalogue is still loading (a link opening on one of
+ *   its layers), the attribution and zoom range are put right when it arrives.
+ *   An entry's `al` (an https address) makes the attribution a link, as the
+ *   National Library of Scotland's permission asks ("Reproduced with the
+ *   permission of the National Library of Scotland", linked to maps.nls.uk).
  *
  * v1.14 (2026-11-08): PEEK, for hold-to-flick. peekPrepare(source) starts
  *   loading the comparison imagery out of sight (or, with the divider open,
@@ -690,7 +699,13 @@
     }
     return C.byUrl(url);
   }
-  const _catAttrib = (e, fallback) => (e && e.a) ? _escapeHTML(String(e.a).slice(0, 200)) : fallback;
+  // v1.15: with `al` (an https address) the attribution links to it.
+  const _catAttrib = (e, fallback) => {
+    if (!(e && e.a)) return fallback;
+    const text = _escapeHTML(String(e.a).slice(0, 200));
+    const href = (typeof e.al === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(e.al)) ? e.al : '';
+    return href ? '<a href="' + _escapeHTML(href) + '" target="_blank" rel="noopener">' + text + '</a>' : text;
+  };
 
   async function _applyWms(w, attribution, options, seq) {
     const entry = await _catalogueEntry(w.raw);
@@ -1285,7 +1300,7 @@
         return { ok: true, pending: true, promise };
       }
       tileUrl = resolved.url;
-      attrib = attribution || 'Imagery © its provider';
+      attrib = attribution || _catAttrib(_catalogueEntryNow(options._sourceUrl || tileUrl), 'Imagery © its provider');
       isImagery = true;   // any pasted custom basemap is assumed to be imagery
     }
 
@@ -1299,7 +1314,38 @@
       maxZoom: _basemapMaxZoom
     }, _zoomRangeOpts([nz.min || null, nz.max], 2)));
     _installBasemap(newLayer, isImagery, tileUrl === _OSM_URL, options, _tileWatch(newLayer));
+    // v1.15: a catalogue XYZ layer opened before the catalogue arrived (a
+    // link): put its attribution and zoom range right once it has.
+    if (isImagery && !attribution && !BASEMAP_ALIASES[aliasKey]) _catalogueLate(newLayer, options._sourceUrl || tileUrl);
     return { ok: true, url: tileUrl };
+  }
+
+  // v1.15: the catalogue entry for a URL if the catalogue is already loaded.
+  function _catalogueEntryNow(url) {
+    try {
+      const C = global.GeosonifyImageryCatalogue;
+      return (C && C.isLoaded && C.isLoaded() && C.byUrl) ? C.byUrl(url) : null;
+    } catch (e) { return null; }
+  }
+  function _catalogueLate(layer, url) {
+    const C = global.GeosonifyImageryCatalogue;
+    if (!C || !C.load || (C.isLoaded && C.isLoaded())) return;
+    C.load().then(() => {
+      const e = C.byUrl(url);
+      if (!e || !layer._map) return;                   // not a catalogue layer, or already replaced
+      const was = layer.options.attribution;
+      const now = _catAttrib(e, was);
+      if (now !== was) {
+        layer.options.attribution = now;
+        const ac = layer._map.attributionControl;
+        if (ac) { if (was) ac.removeAttribution(was); ac.addAttribution(now); }
+      }
+      if (Array.isArray(e.zr)) {
+        const nz = _nativeZooms(layer._url, url);
+        Object.assign(layer.options, _zoomRangeOpts([nz.min || null, nz.max], 2));
+        layer.redraw();
+      }
+    }, () => {});
   }
 
   // Recolour the currently-drawn shape/centroid to the active _shapeColor,

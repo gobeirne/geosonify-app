@@ -130,6 +130,14 @@
 
   v1.4: a sparse tile cache (one survey's strips) is followed down from the
   footprint's fullest tile, child by child, to find picture at high zoom.
+
+  v1.5: curated terms on the source line, after the URL: attribution=<text>
+  (shown on the map instead of the server's own copyright text), link=<https
+  URL> (the attribution links there), zoom=<min>-<max> (the server's levels,
+  either end may be left out), licence=<text> and group=relief (a seabed or
+  terrain layer: the app lists it under Topographic, never with the aerial
+  photography). A field with no '=' is still the coverage. Written to the
+  catalogue as a, al, zr, lic and g.
 */
 (function () {
   'use strict';
@@ -152,8 +160,30 @@
       const key = p[2] + '|' + p[1];
       if (seen.has(key)) return;
       seen.add(key);
-      const boxes = (p[3] || '').split(';').map(b => b.split(',').map(Number)).filter(b => b.length === 4 && b.every(isFinite));
-      out.push({ n: out.length + 1, line: i + 1, region: p[0], label: p[1], url: p[2], boxes, status: 'pending', detail: '' });
+      // v1.5: after the URL, a field without '=' is the coverage; fields
+      // "attribution=…", "link=…", "zoom=min-max" and "licence=…" are the
+      // curated terms for sources that don't describe themselves (or whose
+      // terms must be shown in a set form, such as a permission letter's).
+      const extra = { boxes: [] };
+      p.slice(3).forEach(f => {
+        const kv = /^(attribution|link|zoom|licence|group)\s*=\s*(.*)$/i.exec(f);
+        if (!kv) {
+          extra.boxes = extra.boxes.concat(f.split(';').map(b => b.split(',').map(Number)).filter(b => b.length === 4 && b.every(isFinite)));
+          return;
+        }
+        const k = kv[1].toLowerCase(), v = kv[2].trim();
+        if (k === 'attribution' && v) extra.attribution = v;
+        else if (k === 'link' && /^https:\/\/[^\s"'<>]+$/i.test(v)) extra.link = v;
+        else if (k === 'licence' && v) extra.licence = v;
+        else if (k === 'group' && /^[a-z]+$/i.test(v)) extra.group = v.toLowerCase();
+        else if (k === 'zoom') {
+          const z = /^(\d{1,2})?\s*-\s*(\d{1,2})?$/.exec(v);
+          if (z && (z[1] || z[2])) extra.zr = [z[1] != null ? +z[1] : null, z[2] != null ? +z[2] : null];
+        }
+      });
+      const boxes = extra.boxes;
+      out.push({ n: out.length + 1, line: i + 1, region: p[0], label: p[1], url: p[2], boxes, status: 'pending', detail: '',
+        curated: { attribution: extra.attribution, link: extra.link, licence: extra.licence, zr: extra.zr, group: extra.group } });
     });
     return out;
   }
@@ -1041,7 +1071,7 @@
     if (pvLayer) pvLayer.addTo(map);
     map.fitBounds(pvBoxes.getBounds(), { maxZoom: 15 });
     $('#sideinfo').innerHTML = '<b>' + esc(e.region) + ' · ' + esc(e.label) + '</b><br>' + esc(e.kind) + ' — ' + esc(e.status) + '<br>' +
-      esc(e.detail) + (e.attr ? '<br>Attribution: ' + esc(e.attr) : '') + (e.licence ? '<br>Licence: ' + esc(e.licence) : '') +
+      esc(e.detail) + ((e.curated && e.curated.attribution) || e.attr ? '<br>Attribution: ' + esc((e.curated && e.curated.attribution) || e.attr) : '') + (e.licence ? '<br>Licence: ' + esc(e.licence) : '') +
       (e.sample ? '<br><a href="' + esc(e.sample) + '" target="_blank" rel="noopener">sample image</a>' : '');
   });
 
@@ -1062,10 +1092,15 @@
       note: 'Built by tools/imagery-catalogue-builder.html from tools/imagery-sources.txt. Only layers whose images loaded are included.',
       entries: usable.map(e => {
         const o = { r: e.region, l: e.label, y: yearOf(e.label), u: e.linkUrl || e.url, k: e.kind, b: e.bbox, s: e.status };
-        if (e.attr) o.a = e.attr.slice(0, 200);
-        if (e.licence) o.lic = e.licence;
+        const cu = e.curated || {};
+        // The source line's terms win over what the server says about itself.
+        const attr = cu.attribution || e.attr;
+        if (attr) o.a = attr.slice(0, 200);
+        if (cu.link) o.al = cu.link;
+        if (cu.group) o.g = cu.group;
+        if (cu.licence || e.licence) o.lic = cu.licence || e.licence;
         if (e.layer != null) o.layer = e.layer;
-        if (e.zr) o.zr = e.zr;
+        if (cu.zr || e.zr) o.zr = cu.zr || e.zr;
         if (e.blind) o.blind = 1;
         if (e.kind === 'arcgis-export' && e.format) o.f = e.format;
         if (e.kind === 'arcgis-tiles' && e.zoom) o.z = e.zoom;

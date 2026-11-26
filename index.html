@@ -1154,8 +1154,8 @@ window.GeosonifyGeoHack = (function () {
 
 <!-- Features -->
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
-<script src="js/lib/geosonify-imagery-catalogue.js?v=20261108b"></script>
-<script src="js/features/map-manager.js?v=20261108f"></script>
+<script src="js/lib/geosonify-imagery-catalogue.js?v=20261127a"></script>
+<script src="js/features/map-manager.js?v=20261126a"></script>
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
 <script src="js/features/shape-import.js?v=20261122c"></script>
@@ -1324,8 +1324,8 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261122d';</script>
-<script src="js/ui/faq-ui.js?v=20261119b"></script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261127a';</script>
+<script src="js/ui/faq-ui.js?v=20261127a"></script>
 <script src="js/ui/tour.js?v=20261122a"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
@@ -3776,7 +3776,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           const active = window.__GEOSONIFY_BASEMAP_ACTIVE;
           const kind = (typeof GeosonifyBasemap !== 'undefined' && GeosonifyBasemap.kindOf) ? GeosonifyBasemap.kindOf(active) : '';
           const want = isSkyFrameNow() ? 'sky'
-            : ((kind === 'aerial' || basemapIsDatedAerial(active)) ? 'aerial' : (kind === 'topo' ? 'topo' : 'osm'));
+            : ((kind === 'aerial' || basemapIsDatedAerial(active)) ? 'aerial' : ((kind === 'topo' || basemapIsRelief(active)) ? 'topo' : 'osm'));
           const radio = document.querySelector(`input[name="displayBasemap"][value="${want}"]`);
           if (radio) radio.checked = true;
         }
@@ -5666,8 +5666,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // catalogue) is carried as itself, not as the latest plain Aerial.
         params.push('basemap=' + encodeURIComponent(basemapIsDatedAerial(active) ? active : 'aerial'));
       } else if (basemap === 'topo') {
-        params.push('basemap=topo');
-      } else if (basemap === 'osm' && kind === 'custom' && !basemapIsDatedAerial(active)) {
+        // A seabed layer chosen under Topographic is carried as itself.
+        params.push('basemap=' + encodeURIComponent(basemapIsRelief(active) ? active : 'topo'));
+      } else if (basemap === 'osm' && kind === 'custom' && !basemapIsDatedAerial(active) && !basemapIsRelief(active)) {
         params.push('basemap=' + encodeURIComponent(active));
       }
       // The comparison under a swipe divider travels with the imagery.
@@ -5746,7 +5747,17 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       if (kind !== 'custom') return false;
       try {
         const C = window.GeosonifyImageryCatalogue;
-        return !!(C && C.isLoaded && C.isLoaded() && C.byUrl(src));
+        const e = (C && C.isLoaded && C.isLoaded()) ? C.byUrl(src) : null;
+        return !!e && e.g !== 'relief';     // seabed layers belong to Topographic
+      } catch (e) { return false; }
+    }
+    // A seabed (relief) layer of the imagery catalogue: listed under Topographic,
+    // and carried as itself by a display link whose imagery is Topographic.
+    function basemapIsRelief(src) {
+      try {
+        const C = window.GeosonifyImageryCatalogue;
+        const e = (C && C.isLoaded && C.isLoaded()) ? C.byUrl(src) : null;
+        return !!e && e.g === 'relief';
       } catch (e) { return false; }
     }
 

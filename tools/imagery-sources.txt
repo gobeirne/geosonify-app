@@ -1,6 +1,6 @@
 # Geosonify curated historical imagery — source list for tools/imagery-catalogue-builder.html
 #
-# One layer per line:   Region | Label | URL [| coverage]
+# One layer per line:   Region | Label | URL [| coverage] [| key=value …]
 #   URL       an ArcGIS …/MapServer, …/MapServer/<layer>, …/ImageServer, an XYZ
 #             template ({z} {x} {y}), a WMS endpoint with ?layers=<name>, or a
 #             WMS/WMTS GetCapabilities URL (the builder lists its layers for you
@@ -10,6 +10,15 @@
 #             description a browser can't read (no CORS, or too slow): one or
 #             more boxes "s,w,n,e" separated by ";". The builder tightens them
 #             to the imagery's real footprint where the pixels can be read.
+#   key=value optional curated terms, for sources that don't describe themselves
+#             or whose terms must be shown in a set form:
+#               attribution=<text>   shown on the map (instead of the server's own)
+#               link=<https URL>     the attribution links there
+#               zoom=<min>-<max>     the zoom levels the server has (either end
+#                                    may be left out: zoom=-21)
+#               licence=<text>
+#               group=relief         listed under Topographic (seabed and terrain
+#                                    relief), never in the Aerial date list
 # Blank lines and lines starting with # are ignored.
 
 # ── New Zealand ──────────────────────────────────────────────────────────────
@@ -685,15 +694,40 @@ Flanders | c. 1840 Atlas der Buurtwegen (map) | https://geo.api.vlaanderen.be/hi
 Flanders | 1842–1879 Popp cadastral map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=popp | 50.675,2.825,50.7,2.875;50.675,3.875,50.7,4.075;50.675,4.2,50.7,4.325;50.675,5.125,50.7,5.2;50.7,2.75,50.725,2.875;50.7,3.3,50.725,3.4;50.7,3.6,50.725,3.65;50.7,3.875,50.725,4.4;50.7,4.5,50.725,4.55;50.7,5.025,50.725,5.325;50.7,5.375,50.725,5.525;50.7,5.775,50.725,5.925;50.725,2.725,50.75,2.9;50.725,3.15,50.75,3.2;50.725,3.25,50.75,3.45;50.725,3.525,50.75,3.675;50.725,3.75,50.75,4.675;50.725,4.875,50.75,4.975;50.725,5.0,50.75,5.55;50.75,2.7,50.775,2.975;50.75,3.0,50.775,4.675;50.75,4.8,50.775,5.625;50.725,5.725,50.775,5.925;50.775,2.675,50.8,2.975;50.775,3.0,50.8,5.675;50.775,5.725,50.8,5.775;50.8,2.6,50.825,5.675;50.825,2.575,50.85,5.65;50.85,2.575,50.875,5.675;50.875,2.575,50.9,5.725;50.9,2.55,50.925,5.75;50.925,2.575,50.975,5.775;50.975,2.55,51.0,5.775;51.0,2.525,51.05,5.8;51.05,2.5,51.075,5.825;51.075,2.5,51.1,5.85;51.1,2.525,51.125,5.875;51.125,2.6,51.15,5.85;51.15,2.65,51.175,5.85;51.175,2.7,51.2,5.775;51.2,2.775,51.225,5.65;51.225,2.85,51.25,3.8;51.225,3.95,51.25,5.55;51.25,2.9,51.275,3.4;51.25,3.475,51.275,3.8;51.25,4.025,51.275,5.55;51.275,2.975,51.3,3.375;51.275,3.475,51.3,3.725;51.275,4.1,51.3,5.225;51.275,5.4,51.3,5.55;51.3,3.025,51.325,3.375;51.3,4.15,51.325,5.225;51.325,3.1,51.35,3.375;51.325,4.175,51.35,5.125;51.35,3.175,51.375,3.375;51.35,4.2,51.375,5.125;51.375,3.3,51.4,3.375;51.375,4.375,51.4,5.1;51.4,4.35,51.425,5.1;51.425,4.35,51.45,4.6;51.425,4.625,51.45,4.85;51.425,4.95,51.45,5.1;51.45,4.375,51.475,4.55;51.45,4.675,51.475,4.85;51.45,4.975,51.475,5.1;51.475,4.45,51.5,4.55;51.475,4.7,51.5,4.85;51.475,5.0,51.5,5.05
 Flanders | 1846–1854 Vandermaelen map (map) | https://geo.api.vlaanderen.be/histcart/wms?layers=vandermaelen | 50.675,2.825,50.7,2.875;50.675,3.875,50.7,4.075;50.675,4.2,50.7,4.325;50.675,5.125,50.7,5.2;50.7,2.75,50.725,2.875;50.7,3.3,50.725,3.4;50.7,3.6,50.725,3.65;50.7,3.875,50.725,4.4;50.7,4.5,50.725,4.55;50.7,5.025,50.725,5.325;50.7,5.375,50.725,5.525;50.7,5.775,50.725,5.925;50.725,2.725,50.75,2.9;50.725,3.15,50.75,3.2;50.725,3.25,50.75,3.45;50.725,3.525,50.75,3.675;50.725,3.75,50.75,4.675;50.725,4.875,50.75,4.975;50.725,5.0,50.75,5.55;50.75,2.7,50.775,2.975;50.75,3.0,50.775,4.675;50.75,4.8,50.775,5.625;50.725,5.725,50.775,5.925;50.775,2.675,50.8,2.975;50.775,3.0,50.8,5.675;50.775,5.725,50.8,5.775;50.8,2.6,50.825,5.675;50.825,2.575,50.85,5.65;50.85,2.575,50.875,5.675;50.875,2.575,50.9,5.725;50.9,2.55,50.925,5.75;50.925,2.575,50.975,5.775;50.975,2.55,51.0,5.775;51.0,2.525,51.05,5.8;51.05,2.5,51.075,5.825;51.075,2.5,51.1,5.85;51.1,2.525,51.125,5.875;51.125,2.6,51.15,5.85;51.15,2.65,51.175,5.85;51.175,2.7,51.2,5.775;51.2,2.775,51.225,5.65;51.225,2.85,51.25,3.8;51.225,3.95,51.25,5.55;51.25,2.9,51.275,3.4;51.25,3.475,51.275,3.8;51.25,4.025,51.275,5.55;51.275,2.975,51.3,3.375;51.275,3.475,51.3,3.725;51.275,4.1,51.3,5.225;51.275,5.4,51.3,5.55;51.3,3.025,51.325,3.375;51.3,4.15,51.325,5.225;51.325,3.1,51.35,3.375;51.325,4.175,51.35,5.125;51.35,3.175,51.375,3.375;51.35,4.2,51.375,5.125;51.375,3.3,51.4,3.375;51.375,4.375,51.4,5.1;51.4,4.35,51.425,5.1;51.425,4.35,51.45,4.6;51.425,4.625,51.45,4.85;51.425,4.95,51.45,5.1;51.45,4.375,51.475,4.55;51.45,4.675,51.475,4.85;51.45,4.975,51.475,5.1;51.475,4.45,51.5,4.55;51.475,4.7,51.5,4.85;51.475,5.0,51.5,5.05
 #
+# Great Britain (National Library of Scotland). Permission for Geosonify given by
+# NLS on 23 November 2026 (Louise Speller, Map Assistant, maps@nls.uk): free,
+# non-commercial use of the NLS XYZ/WMTS layers marked "Re-use: CC-BY (NLS)" in
+# the Georeferenced Maps viewer, with the attribution below and a link to
+# maps.nls.uk. If Geosonify is ever commercialised, ask NLS for a licence.
+# Only add layers whose Overlay box in https://maps.nls.uk/geo/explore/ says
+# "Re-use: CC-BY (NLS)"; take the XYZ URL and maximum zoom from that box.
+# London five-foot plan: viewer layer 188 (suggested by NLS as the first layer).
+London | 1893–1896 OS five-foot town plan (map) | https://geo.nls.uk/mapdata3/os/london/{z}/{x}/{y}.png | 51.36,-0.33,51.62,0.15 | attribution=Reproduced with the permission of the National Library of Scotland | link=https://maps.nls.uk/ | zoom=-21
+#
 # Looked at, not added:
 #   Netherlands, Kadaster Topotijdreis (1815–present, one service per year, e.g.
 #     https://tiles.arcgis.com/tiles/nSZVuSZjHpEZZbRo/arcgis/rest/services/Historische_tijdreis_1925/MapServer):
 #     tiles only, in the Dutch RD projection (EPSG:28992), so they can't be lined up
 #     with this map; the services refuse /export.
-#   London and Great Britain, National Library of Scotland (OS five-foot London
-#     1893–96, 1940s London, OS 25-inch and 6-inch county series): the public tile
-#     copies are not licensed for use in websites; the open route needs a MapTiler
-#     key. Ask maps@nls.uk for permission for a free educational site first.
+#   Other National Library of Scotland layers (1940s London, OS 25-inch and 6-inch
+#     county series, …): covered by the permission above only where the viewer marks
+#     them "Re-use: CC-BY (NLS)"; some are offered only through MapTiler (a key).
+#     NLS offered to suggest Great Britain layers given time frames and scales.
+
+# ── Seabed (listed under Topographic, not with the aerial photography) ──────
+# Keyless services only. None of these may be used for navigation; GEBCO and
+# LINZ say so explicitly. New Zealand's finest open source (NIWA's 250 m model)
+# has no public map service at present, and LINZ's chart tiles need a key, so New
+# Zealand is covered by GEBCO for now.
+# GEBCO: the 'LATEST' layers move to each year's grid (GEBCO_2026 from Aug 2026);
+# update the year in the label and attribution when they do. GEBCO_LATEST_2 is
+# drawn by the server from about zoom 4 (MaxScaleDenominator 4e7).
+World | Seabed, GEBCO 2026 grid | https://wms.gebco.net/mapserv?layers=GEBCO_LATEST_2 | -85.0511,-180,85.0511,180 | group=relief | zoom=4- | attribution=Imagery reproduced from the GEBCO_2026 Grid, GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi:10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa) | link=https://www.gebco.net/
+# NOAA NCEI: global elevation mosaic with the coastal DEMs (to ~3 m) on US coasts.
+World | Seabed and land, NOAA NCEI elevation models | https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_global_mosaic_hillshade/ImageServer | -85.0511,-180,85.0511,180 | group=relief | attribution=Elevation models © NOAA National Centers for Environmental Information | link=https://www.ncei.noaa.gov/
+# EMODnet: latest European DTM (~115 m), Web Mercator to zoom 15. Its capabilities
+# box is 11–90° N, 70.5° W–43° E; the builder tightens it to the sea.
+Europe | Seabed, EMODnet Bathymetry | https://tiles.emodnet-bathymetry.eu/latest/mean_atlas_land/web_mercator/{z}/{x}/{y}.png | 11,-70.5,85.0511,43 | group=relief | zoom=-15 | attribution=Bathymetry © EMODnet Bathymetry Consortium | link=https://emodnet.ec.europa.eu/en/bathymetry
 
 # ── Chosen from capabilities documents ──────────────────────────────────────
 # Estonia (kaart.maaamet.ee/wms/ajalooline): the orthophoto layers below. The same

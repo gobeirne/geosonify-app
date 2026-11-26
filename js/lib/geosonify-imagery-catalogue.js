@@ -1,5 +1,5 @@
 /*
-  geosonify-imagery-catalogue.js  v1.0  — curated local historical imagery
+  geosonify-imagery-catalogue.js  v1.2  — curated local historical imagery
 
   Loads js/lib/geosonify-imagery-catalogue.json (written by
   tools/imagery-catalogue-builder.html from tools/imagery-sources.txt) the
@@ -11,9 +11,16 @@
     byUrl(url)       the catalogue entry for an imagery URL (as links carry it)
 
   Each entry: { r: region, l: label, y: year, u: URL, k: kind, b: [[s,w,n,e]…],
-  a: attribution, layer, zr: [minZoom, maxZoom], wms: {base, layers, version,
-  crs, format, time}, blind }. Kinds: arcgis-tiles, arcgis-export, arcgis-layer,
+  a: attribution, al: the https address the attribution links to (v1.1),
+  layer, zr: [minZoom, maxZoom], wms: {base, layers, version, crs, format,
+  time}, blind }. Kinds: arcgis-tiles, arcgis-export, arcgis-layer,
   arcgis-image, wms, xyz.
+
+  v1.1 (2026-11-26): the National Library of Scotland's London five-foot plan
+  (1893–1896), with the attribution its permission requires; `al`.
+
+  v1.2 (2026-11-27): seabed layers (GEBCO, NOAA NCEI, EMODnet), marked
+  g: 'relief'. The app lists them under Topographic, never in the Aerial list.
 
   Nothing is fetched until the Aerial date list (or a link carrying one of these
   URLs) needs it. Nothing here touches a code or a frozen format.
@@ -21,7 +28,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v1.0';
+  var VERSION = 'v1.2';
   // The JSON sits next to this script; work out where that is once, now.
   var SRC = (function () {
     try {
@@ -30,7 +37,7 @@
     } catch (e) {}
     return 'js/lib/geosonify-imagery-catalogue.json';
   })();
-  var CACHE_BUST = '20261108b';
+  var CACHE_BUST = '20261127a';
 
   var entries = null, byKey = null, loading = null;
 
