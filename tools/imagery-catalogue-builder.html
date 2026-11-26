@@ -138,6 +138,10 @@
   terrain layer: the app lists it under Topographic, never with the aerial
   photography). A field with no '=' is still the coverage. Written to the
   catalogue as a, al, zr, lic and g.
+
+  v1.6: attribution2= and link2= (a second credit, e.g. the tile host: a2,
+  al2); check=no (a keyed service this tool can't fetch: the line is taken as
+  written, as status=loaded unless status=confirmed says otherwise).
 */
 (function () {
   'use strict';
@@ -166,7 +170,7 @@
       // terms must be shown in a set form, such as a permission letter's).
       const extra = { boxes: [] };
       p.slice(3).forEach(f => {
-        const kv = /^(attribution|link|zoom|licence|group)\s*=\s*(.*)$/i.exec(f);
+        const kv = /^(attribution|link|attribution2|link2|zoom|licence|group|check|status)\s*=\s*(.*)$/i.exec(f);
         if (!kv) {
           extra.boxes = extra.boxes.concat(f.split(';').map(b => b.split(',').map(Number)).filter(b => b.length === 4 && b.every(isFinite)));
           return;
@@ -176,6 +180,10 @@
         else if (k === 'link' && /^https:\/\/[^\s"'<>]+$/i.test(v)) extra.link = v;
         else if (k === 'licence' && v) extra.licence = v;
         else if (k === 'group' && /^[a-z]+$/i.test(v)) extra.group = v.toLowerCase();
+        else if (k === 'attribution2' && v) extra.attribution2 = v;
+        else if (k === 'link2' && /^https:\/\/[^\s"'<>]+$/i.test(v)) extra.link2 = v;
+        else if (k === 'check' && /^no$/i.test(v)) extra.nocheck = true;
+        else if (k === 'status' && /^(confirmed|loaded)$/i.test(v)) extra.status = v.toLowerCase();
         else if (k === 'zoom') {
           const z = /^(\d{1,2})?\s*-\s*(\d{1,2})?$/.exec(v);
           if (z && (z[1] || z[2])) extra.zr = [z[1] != null ? +z[1] : null, z[2] != null ? +z[2] : null];
@@ -183,7 +191,7 @@
       });
       const boxes = extra.boxes;
       out.push({ n: out.length + 1, line: i + 1, region: p[0], label: p[1], url: p[2], boxes, status: 'pending', detail: '',
-        curated: { attribution: extra.attribution, link: extra.link, licence: extra.licence, zr: extra.zr, group: extra.group } });
+        curated: { attribution: extra.attribution, link: extra.link, attribution2: extra.attribution2, link2: extra.link2, licence: extra.licence, zr: extra.zr, group: extra.group, nocheck: extra.nocheck, status: extra.status } });
     });
     return out;
   }
@@ -1005,6 +1013,13 @@
     ['kind', 'bbox', 'hot', 'footprint', 'coverNote', 'blind', 'layer', 'linkUrl', 'zr', 'wms', 'format', 'zoom', 'sample'].forEach(k => delete e[k]);
     draw(e);
     const k = kindOf(e.url);
+    // v1.6: a keyed service (check=no) can't be fetched from here: its source
+    // line is taken as it stands.
+    if (e.curated && e.curated.nocheck) {
+      e.kind = k; e.bbox = e.boxes.map(boxR);
+      if (e.curated.zr) e.zr = e.curated.zr;
+      return set(e, e.curated.status || 'loaded', 'not checked (check=no on its source line): taken as written');
+    }
     try {
       if (k === 'arcgis-map') return await doArcgisMap(e);
       if (k === 'arcgis-layer') return await doArcgisLayer(e);
@@ -1098,6 +1113,8 @@
         if (attr) o.a = attr.slice(0, 200);
         if (cu.link) o.al = cu.link;
         if (cu.group) o.g = cu.group;
+        if (cu.attribution2) o.a2 = cu.attribution2.slice(0, 200);
+        if (cu.link2) o.al2 = cu.link2;
         if (cu.licence || e.licence) o.lic = cu.licence || e.licence;
         if (e.layer != null) o.layer = e.layer;
         if (cu.zr || e.zr) o.zr = cu.zr || e.zr;

@@ -701,8 +701,17 @@ Flanders | 1846–1854 Vandermaelen map (map) | https://geo.api.vlaanderen.be/hi
 # maps.nls.uk. If Geosonify is ever commercialised, ask NLS for a licence.
 # Only add layers whose Overlay box in https://maps.nls.uk/geo/explore/ says
 # "Re-use: CC-BY (NLS)"; take the XYZ URL and maximum zoom from that box.
-# London five-foot plan: viewer layer 188 (suggested by NLS as the first layer).
-London | 1893–1896 OS five-foot town plan (map) | https://geo.nls.uk/mapdata3/os/london/{z}/{x}/{y}.png | 51.36,-0.33,51.62,0.15 | attribution=Reproduced with the permission of the National Library of Scotland | link=https://maps.nls.uk/ | zoom=-21
+# Both layers below are CC-BY (NLS) and, for Great Britain, served only through
+# MapTiler Cloud (NLS moved them there in March 2022; the old geo.nls.uk London
+# address no longer serves). The app adds Geosonify's MapTiler key to the tile
+# requests only (map-manager.js TILE_KEYS); the key accepts requests only from
+# geosonify.org, so this tool can't check them (check=no). MapTiler's free plan:
+# non-commercial, about 100,000 tile requests a month, its credit and logo shown.
+# London five-foot plan (NLS viewer layer 188, suggested by NLS): MapTiler
+# tileset uk-oslondon1k1893, zoom 9-20. Six-inch: uk-osgb10k1888, zoom 1-17
+# (NLS: "OS Six Inch, 1888-1915", England, Scotland and Wales).
+London | 1893–1896 OS five-foot town plan (map) | https://api.maptiler.com/tiles/uk-oslondon1k1893/{z}/{x}/{y}.jpg | 51.36,-0.33,51.62,0.15 | attribution=Reproduced with the permission of the National Library of Scotland | link=https://maps.nls.uk/ | attribution2=© MapTiler | link2=https://www.maptiler.com/copyright/ | zoom=9-20 | check=no
+Great Britain | 1888–1913 OS six-inch (map) | https://api.maptiler.com/tiles/uk-osgb10k1888/{z}/{x}/{y}.jpg | 49.8,-8.7,60.9,1.8 | attribution=Reproduced with the permission of the National Library of Scotland | link=https://maps.nls.uk/ | attribution2=© MapTiler | link2=https://www.maptiler.com/copyright/ | zoom=1-17 | check=no | status=confirmed
 #
 # Looked at, not added:
 #   Netherlands, Kadaster Topotijdreis (1815–present, one service per year, e.g.

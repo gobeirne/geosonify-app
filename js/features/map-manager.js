@@ -1,5 +1,15 @@
 /**
- * geosonify-map-manager.js v1.15
+ * geosonify-map-manager.js v1.16
+ *
+ * v1.16 (2026-11-27): KEYED TILE SERVICES. A few tile services need a key
+ *   (MapTiler, which serves the National Library of Scotland's London
+ *   five-foot plan and OS six-inch map). The key is added only to the tile
+ *   requests: the imagery's address everywhere else (the catalogue, the
+ *   address bar, share links, display links) is the keyless one. The key is
+ *   not secret: MapTiler accepts it only from geosonify.org (an origin rule on
+ *   the key). While a MapTiler layer is on the map (either side of a
+ *   comparison), MapTiler's logo is shown, as its free plan requires. A
+ *   catalogue entry may carry a second credit (`a2`, linked to `al2`).
  *
  * v1.15 (2026-11-26): A CATALOGUE LAYER'S ATTRIBUTION IS SHOWN FOR XYZ LAYERS
  *   TOO. An XYZ template from the imagery catalogue showed "Imagery © its
@@ -700,12 +710,60 @@
     return C.byUrl(url);
   }
   // v1.15: with `al` (an https address) the attribution links to it.
-  const _catAttrib = (e, fallback) => {
-    if (!(e && e.a)) return fallback;
-    const text = _escapeHTML(String(e.a).slice(0, 200));
-    const href = (typeof e.al === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(e.al)) ? e.al : '';
+  const _okHref = h => (typeof h === 'string' && /^https:\/\/[^\s"'<>]+$/i.test(h)) ? h : '';
+  const _credit = (t, h) => {
+    const text = _escapeHTML(String(t).slice(0, 200));
+    const href = _okHref(h);
     return href ? '<a href="' + _escapeHTML(href) + '" target="_blank" rel="noopener">' + text + '</a>' : text;
   };
+  const _catAttrib = (e, fallback) => {
+    if (!(e && e.a)) return fallback;
+    return _credit(e.a, e.al) + (e.a2 ? ' · ' + _credit(e.a2, e.al2) : '');
+  };
+
+  // v1.16: keys for tile services that need one, by host. Added to tile
+  // requests only, never to the imagery's address (see the header).
+  const TILE_KEYS = { 'api.maptiler.com': 'TArBQPaZ6hdmgkNWosSA' };
+  function _withTileKey(url) {
+    try {
+      const host = new URL(String(url).replace(/\{[^}]*\}/g, '0')).hostname;
+      const key = TILE_KEYS[host];
+      if (!key || /[?&]key=/i.test(url)) return url;
+      return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'key=' + encodeURIComponent(key);
+    } catch (e) { return url; }
+  }
+  const _isMapTiler = url => /^https:\/\/api\.maptiler\.com\//i.test(String(url || ''));
+
+  // v1.16: MapTiler's logo, shown while any MapTiler layer is on the map.
+  let _mtLogo = null, _mtHooked = false;
+  function _syncMapTilerLogo() {
+    if (!map || typeof L === 'undefined') return;
+    let on = false;
+    map.eachLayer(l => { if (l && l._url && _isMapTiler(l._url)) on = true; });
+    if (on && !_mtLogo) {
+      const Ctl = L.Control.extend({
+        options: { position: 'bottomleft' },
+        onAdd: function () {
+          const a = L.DomUtil.create('a', 'gs-maptiler-logo');
+          a.href = 'https://www.maptiler.com/'; a.target = '_blank'; a.rel = 'noopener';
+          a.title = 'Map tiles served by MapTiler';
+          a.style.cssText = 'display:block;line-height:0;opacity:.9;';
+          const img = L.DomUtil.create('img', '', a);
+          img.src = 'https://api.maptiler.com/resources/logo.svg';
+          img.alt = 'MapTiler'; img.height = 21;
+          img.onerror = () => { a.textContent = 'MapTiler'; a.style.cssText = 'font:600 12px system-ui,sans-serif;color:#325756;background:#fffc;padding:2px 6px;border-radius:4px;'; };
+          L.DomEvent.disableClickPropagation(a);
+          return a;
+        }
+      });
+      _mtLogo = new Ctl(); _mtLogo.addTo(map);
+    } else if (!on && _mtLogo) { _mtLogo.remove(); _mtLogo = null; }
+  }
+  function _hookMapTilerLogo() {
+    if (_mtHooked || !map) return;
+    _mtHooked = true;
+    map.on('layeradd layerremove', () => setTimeout(_syncMapTilerLogo, 0));
+  }
 
   async function _applyWms(w, attribution, options, seq) {
     const entry = await _catalogueEntry(w.raw);
@@ -1308,7 +1366,8 @@
     // v1.10: past the last level enlarge it; a missing tile is taken from
     // its ancestors (OverzoomTiles); below the first level shrink it for two
     // levels, then nothing.
-    const newLayer = (isImagery ? _overzoomTileLayer : L.tileLayer)(tileUrl, Object.assign({
+    if (_isMapTiler(tileUrl)) _hookMapTilerLogo();
+    const newLayer = (isImagery ? _overzoomTileLayer : L.tileLayer)(_withTileKey(tileUrl), Object.assign({
       attribution: attrib,
       maxNativeZoom: 19,
       maxZoom: _basemapMaxZoom
@@ -2264,6 +2323,6 @@
   // For backward compatibility
   global.normalizeLongitude = normalizeLongitude;
 
-  console.log('[geosonify] map-manager v1.14 loaded');
+  console.log('[geosonify] map-manager v1.16 loaded');
 
 })(typeof window !== 'undefined' ? window : this);

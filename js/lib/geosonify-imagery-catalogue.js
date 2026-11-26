@@ -16,8 +16,13 @@
   time}, blind }. Kinds: arcgis-tiles, arcgis-export, arcgis-layer,
   arcgis-image, wms, xyz.
 
-  v1.1 (2026-11-26): the National Library of Scotland's London five-foot plan
-  (1893–1896), with the attribution its permission requires; `al`.
+  v1.1 (2026-11-26): `al` (the attribution links there). The National Library
+  of Scotland's London five-foot plan was added and withdrawn on 27 Nov: its
+  tile address did not serve (see tools/imagery-sources.txt).
+
+  v1.3 (2026-11-27): NLS's London five-foot plan and OS six-inch map, served by
+  MapTiler (keyed: the key is added to tile requests by map-manager.js only);
+  a second credit, `a2` linked to `al2`.
 
   v1.2 (2026-11-27): seabed layers (GEBCO, NOAA NCEI, EMODnet), marked
   g: 'relief'. The app lists them under Topographic, never in the Aerial list.
@@ -37,7 +42,7 @@
     } catch (e) {}
     return 'js/lib/geosonify-imagery-catalogue.json';
   })();
-  var CACHE_BUST = '20261127a';
+  var CACHE_BUST = '20261127c';
 
   var entries = null, byKey = null, loading = null;
 
