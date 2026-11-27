@@ -1,5 +1,5 @@
 /*
-  geosonify-sky-export.js  v0.1  — a sky shape in astronomers' formats
+  geosonify-sky-export.js  v0.2  — a sky shape in astronomers' formats
 
   What a Geosonify sky link names -- a list of directions, perhaps tonight's
   targets -- written out for the tools astronomers already use:
@@ -9,6 +9,13 @@
             per side, carrying lbl= names and sty= colours, widths and dashes
       moc   the HEALPix cells of the vertices as an ASCII MOC (IVOA MOC 2.0),
             at the HEALPix card's order (MOC stops at order 29)
+      amoc      the AREA the shape's closed rings enclose, as an ASCII MOC
+      amocjson  the same as MOC 2.0 JSON (v0.2, js/lib/geosonify-moc.js)
+
+  v0.2 (2026-11-27): area MOCs; both MOC exports written in MOC 2.0
+  canonical form by GeosonifyMOC (four sibling cells become their parent, and
+  a bare "k/" keeps the order when no cell is that fine), byte for byte as
+  MOCPy writes them.
 
   And the measurements a display link shows in the sky: lengths as angles
   along great circles, and areas as solid angles. Never metres: no Earth
@@ -26,7 +33,7 @@
 (function (global) {
   'use strict';
 
-  var VERSION = 'v0.1';
+  var VERSION = 'v0.2';
   var D2R = Math.PI / 180;
   var MOC_MAX_ORDER = 29;
 
@@ -128,6 +135,12 @@
   function toMOC(verts, order, HP) {
     if (!HP || !HP.nestIndex) throw new Error('HEALPix engine needed for a MOC');
     var k = Math.max(0, Math.min(MOC_MAX_ORDER, Math.round(order)));
+    var M = global.GeosonifyMOC;
+    if (M) {
+      return M.toASCII(M.fromCells(verts.map(function (v) {
+        return { order: k, ipix: BigInt(HP.nestIndex(v[0], ra360(v[1]), k)) };
+      }), k)) + '\n';
+    }
     var seen = {}, cells = [];
     verts.forEach(function (v) {
       var ip = BigInt(HP.nestIndex(v[0], ra360(v[1]), k));
@@ -143,6 +156,32 @@
       i = j + 1;
     }
     return k + '/' + parts.join(' ') + '\n';
+  }
+
+  /*
+    The area the closed rings enclose, as a MOC (holes, role 'hole',
+    subtract). groups/closed as in measure(); roles[i] 'hole' or 'outer'.
+    opts.json for MOC 2.0 JSON; opts.maxOrder caps the order (the default is
+    the deepest whose edge stays within about 3000 cells, at most 24).
+    Returns { text, order, cells, areaDeg2 }.
+  */
+  function toAreaMOC(groups, closed, roles, opts) {
+    var M = global.GeosonifyMOC;
+    if (!M) throw new Error('MOC support is not loaded');
+    opts = opts || {};
+    var outer = [], holes = [];
+    groups.forEach(function (g, i) {
+      if (!(closed && closed[i]) || g.length < 3) return;
+      (roles && roles[i] === 'hole' ? holes : outer).push(g);
+    });
+    if (!outer.length) throw new Error('an area MOC needs a closed shape (a polygon, rectangle or circle)');
+    var k = M.suggestOrder(outer.concat(holes));
+    if (opts.maxOrder !== undefined && opts.maxOrder < k) k = Math.max(0, opts.maxOrder);
+    var moc = M.fromPolygon(outer, { maxOrder: k, holes: holes });
+    return {
+      text: (opts.json ? M.toJSON(moc) : M.toASCII(moc)) + '\n',
+      order: k, cells: M.cellCount(moc), areaDeg2: M.areaDeg2(moc)
+    };
   }
 
   // ── Measurements (angles only) ─────────────────────────────────────────
@@ -238,7 +277,10 @@
     csv: { label: 'CSV', mime: 'text/csv', ext: 'csv' },
     reg: { label: 'DS9', mime: 'text/plain', ext: 'reg' },
     // The cells the POINTS lie in, not the area a polygon encloses: named so.
-    moc: { label: 'Target-cell MOC', mime: 'text/plain', ext: 'moc.txt', file: 'geosonify-sky-target-cells.moc.txt' }
+    moc: { label: 'Target-cell MOC', mime: 'text/plain', ext: 'moc.txt', file: 'geosonify-sky-target-cells.moc.txt' },
+    // v0.2: the area enclosed (closed rings only), ASCII and JSON.
+    amoc: { label: 'Area MOC', mime: 'text/plain', ext: 'moc.txt', file: 'geosonify-sky-area.moc.txt', area: true },
+    amocjson: { label: 'Area MOC (JSON)', mime: 'application/json', ext: 'moc.json', file: 'geosonify-sky-area.moc.json', area: true }
   };
 
   var API = {
@@ -248,6 +290,7 @@
     toCSV: toCSV,
     toDS9: toDS9,
     toMOC: toMOC,
+    toAreaMOC: toAreaMOC,
     measure: measure,
     sepDeg: sepDeg,
     solidAngleDeg2: solidAngleDeg2,

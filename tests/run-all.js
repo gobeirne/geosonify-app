@@ -32,6 +32,7 @@ const TESTS = [
   ['WKT import and export',                'tests/wkt.test.js', []],
   ['Decoder packages match the spec',      'tests/packages.test.js', []],
   ['Sky maths',                            'js/lib/geosonify-sky.selftest.js', []],
+  ['Sky MOC (against MOCPy vectors)',      'js/lib/geosonify-moc.js', ['--selftest']],
   ['Sky URL',                              'js/lib/geosonify-sky-url.selftest.js', []],
   ['Sky overlay',                          'js/lib/geosonify-sky-overlay.selftest.js', []],
   ['Sky panel',                            'js/lib/geosonify-sky-panel.selftest.js', []],

@@ -1,5 +1,12 @@
 /*
-  geosonify-sky-view.js  v0.11  — the in-app sky view
+  geosonify-sky-view.js  v0.12  — the in-app sky view
+
+  v0.12 (2026-11-27): A MOC ON THE SKY. setMoc(moc, opts) draws a MOC (from
+  js/lib/geosonify-moc.js: one read from a file or pasted, or the area MOC of
+  the shape) as filled HEALPix cells under the shapes; setMoc(null) removes it.
+  Only cells near the field are drawn, and when more than MOC_MAX_DRAW would
+  be, the MOC is shown at a coarser order (widened outward, so it never looks
+  smaller than it is) until it fits. Orders past 24 are shown at 24.
 
   A full-screen overlay. Deliberately NOT a change to the map pane: it mounts
   itself over everything, and closing it leaves the app exactly as it was. One
@@ -803,6 +810,89 @@
 
   function clearShapes() { shapes = []; draw(); }
 
+  // ── a MOC layer (v0.12) ─────────────────────────────────────────────────
+  var MOC_MAX_DRAW = 3000;
+  var mocLayer = null;                 // { levels: [{order, cells}] finest first, style }
+  function setMoc(moc, style) {
+    var M = global.GeosonifyMOC;
+    if (!moc || !M) { mocLayer = null; draw(); return null; }
+    var base = moc.maxOrder > 24 ? M.degrade(moc, 24) : moc;
+    var levels = [], cur = base, cells = M.cells(cur);
+    levels.push({ order: cur.maxOrder, cells: cells });
+    // Coarser stand-ins, for when the whole MOC is in view and too many cells.
+    while (cells.length > MOC_MAX_DRAW && cur.maxOrder > 0) {
+      cur = M.degrade(cur, cur.maxOrder - 1);
+      cells = M.cells(cur);
+      levels.push({ order: cur.maxOrder, cells: cells });
+    }
+    mocLayer = { levels: levels, style: style || {} };
+    if (style && style.frame) frameMoc(levels[levels.length - 1].cells);
+    draw();
+    return { order: base.maxOrder, cells: levels[0].cells.length };
+  }
+  // Point the view at the MOC without moving the mark (the place itself).
+  function frameMoc(cells) {
+    var S = _Sky(); if (!S || !renderer || !cells.length) return;
+    var V = [];
+    cells.slice(0, 400).forEach(function (c) {
+      try { S.cellBoundary(c.order, c.ipix, { frame: 'sky', step: 1, close: false }).forEach(function (p) { V.push(p); }); } catch (e) {}
+    });
+    var sx = 0, sy = 0, sz = 0;
+    V.forEach(function (p) { var v = _vec(p[0], p[1]); sx += v[0]; sy += v[1]; sz += v[2]; });
+    var n = Math.sqrt(sx * sx + sy * sy + sz * sz); if (!n) return;
+    var C = [sx / n, sy / n, sz / n], rad = 0;
+    V.forEach(function (p) { var v = _vec(p[0], p[1]); rad = Math.max(rad, Math.acos(Math.max(-1, Math.min(1, v[0] * C[0] + v[1] * C[1] + v[2] * C[2])))); });
+    var dec = Math.asin(C[2]) * 180 / Math.PI, ra = Math.atan2(C[1], C[0]) * 180 / Math.PI;
+    if (ra < 0) ra += 360;
+    renderer.setCenter(ra, dec);
+    renderer.setFovDeg(Math.max(1e-6, Math.min(180, rad * 180 / Math.PI * 2 * 1.4)));
+  }
+  function _cellCentre(core, c) {
+    return core.pixcoord2vec_nest(Math.pow(2, c.order), Number(c.ipix), 0.5, 0.5);
+  }
+  function drawMoc(g) {
+    var Overlay = _Overlay(), S = _Sky(), hp = _HP();
+    if (!mocLayer || !Overlay || !S || !hp || !hp._core) return;
+    var vp = renderer.getSize(), centre = null, fovDeg = 180;
+    try { centre = renderer.getCenter(); fovDeg = renderer.getFovDeg(); } catch (e) {}
+    var cv = (centre && isFinite(centre[0]) && isFinite(centre[1])) ? _vec(centre[1], centre[0]) : null;   // getCenter() is [ra, dec]
+    var reach = Math.min(Math.PI, (isFinite(fovDeg) ? fovDeg : 180) * Math.PI / 180 * 0.9);
+    var core = hp._core, pick = null;
+    for (var li = 0; li < mocLayer.levels.length; li++) {
+      var L = mocLayer.levels[li], seen = [];
+      var side = 1.0233267079464885;                    // order-0 cell side, radians
+      for (var i = 0; i < L.cells.length; i++) {
+        var c = L.cells[i];
+        if (cv) {
+          var r = 1.5 * side / Math.pow(2, c.order);
+          var d = Math.acos(Math.max(-1, Math.min(1, (function (v) { return v[0] * cv[0] + v[1] * cv[1] + v[2] * cv[2]; })(_cellCentre(core, c)))));
+          if (d > reach + r) continue;
+        }
+        seen.push(c);
+        if (seen.length > MOC_MAX_DRAW) break;
+      }
+      if (seen.length <= MOC_MAX_DRAW || li === mocLayer.levels.length - 1) { pick = seen.slice(0, MOC_MAX_DRAW); break; }
+    }
+    if (!pick || !pick.length) return;
+    var st = mocLayer.style, parts = [];
+    pick.forEach(function (c) {
+      var ring;
+      try { ring = S.cellBoundary(c.order, c.ipix, { frame: 'sky', step: c.order < 5 ? 8 : 2 }); } catch (e) { return; }
+      var pr = Overlay.projectRing(ring, renderer.project, { viewport: vp });
+      if (!pr.visible) return;
+      var d = Overlay.ringToPath(pr, { close: true });
+      if (d) parts.push(d);
+    });
+    if (!parts.length) return;
+    var p = document.createElementNS(SVGNS, 'path');
+    p.setAttribute('d', parts.join(' '));
+    p.setAttribute('fill', st.fill || 'rgba(236, 72, 153, 0.28)');
+    p.setAttribute('stroke', st.stroke || 'rgba(236, 72, 153, 0.75)');
+    p.setAttribute('stroke-width', st.strokeWidth || 0.6);
+    p.setAttribute('stroke-linejoin', 'round');
+    g.appendChild(p);
+  }
+
   function shapeRing(spec) {
     var S = _Shapes();
     switch (spec.type) {
@@ -1209,8 +1299,12 @@
       });
     }
 
-    // Shapes and labels go in their own layer, above the HEALPix lattice.
-    drawShapes(topLayer() || g);
+    // A MOC (v0.12) under the shapes; shapes and labels go in their own
+    // layer, above the HEALPix lattice.
+    // topLayer() empties the layer each time it is called: call it once.
+    var top = topLayer() || g;
+    drawMoc(top);
+    drawShapes(top);
 
     var mp = renderer.project(mark.ra, mark.dec);
     if (mp) {
@@ -1772,6 +1866,8 @@
     addShape: addShape,
     frameOn: frameOn,
     clearShapes: clearShapes,
+    setMoc: setMoc,
+    hasMoc: function () { return !!mocLayer; },
     getShapes: function () { return shapes.slice(); },
     _viewRuns: viewRuns,
     shapeRing: shapeRing,
