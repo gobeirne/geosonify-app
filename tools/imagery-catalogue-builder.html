@@ -139,6 +139,9 @@
   photography). A field with no '=' is still the coverage. Written to the
   catalogue as a, al, zr, lic and g.
 
+  v1.7: a label containing "(map)" gives group map (listed under Standard,
+  not in the Aerial list), unless the line sets another group.
+
   v1.6: attribution2= and link2= (a second credit, e.g. the tile host: a2,
   al2); check=no (a keyed service this tool can't fetch: the line is taken as
   written, as status=loaded unless status=confirmed says otherwise).
@@ -1113,6 +1116,7 @@
         if (attr) o.a = attr.slice(0, 200);
         if (cu.link) o.al = cu.link;
         if (cu.group) o.g = cu.group;
+        else if (/\(map\)/.test(e.label)) o.g = 'map';      // v1.7: old maps are listed under Standard
         if (cu.attribution2) o.a2 = cu.attribution2.slice(0, 200);
         if (cu.link2) o.al2 = cu.link2;
         if (cu.licence || e.licence) o.lic = cu.licence || e.licence;

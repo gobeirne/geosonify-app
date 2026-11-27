@@ -28,6 +28,24 @@
   Earth with the same animation as the Earth button, with the chosen imagery
   already loading underneath, so the ground arrives in it.
 
+  v1.21: HISTORICAL MAPS UNDER STANDARD. Catalogue layers marked g: 'map'
+  (old maps and plans: the Black Maps, Dufour, Cassini, the OS five-foot plan
+  …) leave the Aerial date list, which keeps only photographs, and are listed
+  under the Standard chip, after "Today" (OpenStreetMap), only where they
+  cover the map's centre. They count as Standard: the chip lights, a failing
+  one falls back to Standard, leaving one's coverage goes back to Standard,
+  and ⇆ offers the imagery of the family left (or today's Aerial). Tapping
+  Standard itself always gives today's map. The Topographic list and this one
+  share one list-row helper.
+
+  v1.20: ⇆ ACROSS KINDS. The compare button now also appears while
+  Topographic or a seabed layer is showing. What it offers, if it still covers
+  the map's centre: within Aerial, an earlier date (as before); otherwise the
+  imagery of the family left (a seabed map seen before moving to Aerial, or
+  the historical layer seen before Topographic), ignoring today's photograph
+  passed through on the way; within Topographic, the previous one there.
+  Standard is never offered; with nothing else, today's Aerial.
+
   v1.19: SEABED UNDER TOPOGRAPHIC. Catalogue layers marked g: 'relief' (GEBCO,
   NOAA NCEI, EMODnet) are listed in a row under the Topographic chip while
   Topographic is showing, after "Land" (Esri's topographic map), only where
@@ -129,7 +147,7 @@
 (function(global) {
   'use strict';
 
-  const __FAQ_UI_VER__ = 'v1.19';
+  const __FAQ_UI_VER__ = 'v1.21';
   try { console.log('[geosonify] faq-ui ' + __FAQ_UI_VER__ + ' loaded'); } catch(e) {}
 
   const SUBTAB_KEY = 'geosonify_faq_subtab';
@@ -522,6 +540,10 @@
       <label for="basemapWaybackSelect" id="basemapWaybackLabel">Aerial as published</label>
       <select id="basemapWaybackSelect"><option value="">Latest</option></select>
     </div>
+    <div class="basemap-wayback-row" id="basemapMapRow" style="display:none;">
+      <label for="basemapMapSelect" id="basemapMapLabel">Standard</label>
+      <select id="basemapMapSelect"><option value="">Today</option></select>
+    </div>
     <div class="basemap-wayback-row" id="basemapTopoRow" style="display:none;">
       <label for="basemapTopoSelect" id="basemapTopoLabel">Topographic</label>
       <select id="basemapTopoSelect"><option value="">Land</option></select>
@@ -780,10 +802,16 @@
   }
   // v1.19: seabed and terrain relief layers (g: 'relief') belong to Topographic.
   const _isReliefEntry = e => !!(e && e.g === 'relief');
+  // v1.21: historical maps and plans belong to Standard.
+  const _isMapEntry = e => !!(e && e.g === 'map');
   function _isAerialFamily(source) {
     const k = _kindOf(source);
-    if (k === 'custom') { const e = _catEntry(source); return !!e && !_isReliefEntry(e); }
+    if (k === 'custom') { const e = _catEntry(source); return !!e && !_isReliefEntry(e) && !_isMapEntry(e); }
     return k === 'aerial' || k === 'wayback';
+  }
+  function _isStdFamily(source) {
+    const k = _kindOf(source);
+    return k === 'osm' || (k === 'custom' && _isMapEntry(_catEntry(source)));
   }
   function _isTopoFamily(source) {
     const k = _kindOf(source);
@@ -819,6 +847,10 @@
   let _lastAerial = null;
   // v1.16: the Aerial imagery shown before _lastAerial (what ⇆ compares with).
   let _prevAerial = null;
+  // v1.20: the imagery left on moving to another family (Aerial ↔ Topographic
+  // and seabed), and the previous one within Topographic.
+  let _lastAny = null, _prevOther = null, _prevTopo = null, _prevStd = null;
+  const _familyOf = s => _isAerialFamily(s) ? 'aerial' : (_isTopoFamily(s) ? 'topo' : (_isStdFamily(s) ? 'std' : _kindOf(s)));
   // v1.19: the relief layer last chosen under Topographic (null: Land).
   let _lastTopo = null;
 
@@ -840,7 +872,7 @@
     // A dated Aerial or a local layer from the Aerial list that fails falls
     // back to plain Aerial (you were in Aerial); anything else to Standard.
     const ce = _catEntry(source);
-    const fallback = _isReliefEntry(ce) ? 'topo' : ((_kindOf(source) === 'wayback' || ce) ? 'aerial' : 'osm');
+    const fallback = _isReliefEntry(ce) ? 'topo' : (_isMapEntry(ce) ? 'osm' : ((_kindOf(source) === 'wayback' || ce) ? 'aerial' : 'osm'));
     const res = MapManager.setBasemap(source, {
       attribution: attribution,
       fallback: fallback,
@@ -867,7 +899,16 @@
     } else {
       const a = global.__GEOSONIFY_BASEMAP_ACTIVE;
       const k = _kindOf(a);
-      want = _isAerialFamily(a) ? 'aerial' : (_isTopoFamily(a) ? 'topo' : k);
+      want = _isAerialFamily(a) ? 'aerial' : (_isTopoFamily(a) ? 'topo' : (_isStdFamily(a) ? 'osm' : k));
+      const nowAny = a || 'osm';
+      if (nowAny !== _lastAny) {
+        if (_lastAny && _lastAny !== 'osm') {
+          if (_familyOf(_lastAny) !== _familyOf(nowAny)) _prevOther = _lastAny;
+          else if (_familyOf(nowAny) === 'topo') _prevTopo = _lastAny;
+          else if (_familyOf(nowAny) === 'std') _prevStd = _lastAny;
+        }
+        _lastAny = nowAny;
+      }
       if (want === 'topo' && a && a !== 'topo') _lastTopo = a;
       if (want === 'topo' && a === 'topo') _lastTopo = null;
       if (want === 'aerial') {
@@ -878,6 +919,7 @@
     chips.forEach(c => { if (c.dataset.basemap === want) c.classList.add('active'); });
     _syncWaybackRow();
     _syncTopoRow();
+    _syncMapRow();
     _syncSkyRow();
     _syncCompareButton();
   }
@@ -901,13 +943,28 @@
   }
   function _compareTarget() {
     const a = global.__GEOSONIFY_BASEMAP_ACTIVE || 'aerial';
-    let p = _prevAerial;
     // A local layer that does not reach the map's centre would show nothing.
-    if (p && _kindOf(p) === 'custom') {
-      const C = global.GeosonifyImageryCatalogue, c = _wbCentre(), e = _catEntry(p);
-      if (!e || !C || !C.covers || !c || !C.covers(e, c.lat, c.lon)) p = null;
+    const usable = p => {
+      if (!p || p === a || p === 'osm' || _kindOf(p) === 'sky') return false;
+      if (_kindOf(p) === 'custom') {
+        const C = global.GeosonifyImageryCatalogue, c = _wbCentre(), e = _catEntry(p);
+        if (!e || !C || !C.covers || !c || !C.covers(e, c.lat, c.lon)) return false;
+      }
+      return true;
+    };
+    // v1.20. Within Aerial, an earlier date wins (then and now); today's
+    // photograph passed through on the way does not count, so the imagery of
+    // the family left (a seabed map, Topographic) is offered instead.
+    if (_isTopoFamily(a)) {
+      if (usable(_prevTopo)) return _prevTopo;
+      if (usable(_prevOther)) return _prevOther;
+    } else if (_isStdFamily(a)) {
+      if (usable(_prevStd)) return _prevStd;
+      if (usable(_prevOther)) return _prevOther;
+    } else {
+      if (usable(_prevAerial) && _prevAerial !== 'aerial') return _prevAerial;
+      if (usable(_prevOther)) return _prevOther;
     }
-    if (p && p !== a) return p;
     return a !== 'aerial' ? 'aerial' : null;
   }
   function _compareOpen() {
@@ -992,7 +1049,8 @@
   function _syncCompareButton() {
     const display = document.documentElement.classList.contains('display-mode');
     const open = _compareOpen();
-    const want = !display && !skyIsOpen() && (open || (_historicNow() && !!_compareTarget()));
+    const act = global.__GEOSONIFY_BASEMAP_ACTIVE;
+    const want = !display && !skyIsOpen() && (open || ((_historicNow() || _isTopoFamily(act) || _isMapEntry(_catEntry(act))) && !!_compareTarget()));
     if (!want && !_cmpCtl) return;
     const ctl = _ensureCompareButton();
     if (!ctl || !ctl.getContainer()) return;
@@ -1154,6 +1212,7 @@
     presets.querySelectorAll('.basemap-chip').forEach(chip => _wireChip(chip, presets));
     _wireWayback(scope);
     _wireTopoRow(scope);
+    _wireMapRow(scope);
     _wireSkyRow(scope);
     _resyncChips();
   }
@@ -1320,8 +1379,8 @@
     const C = global.GeosonifyImageryCatalogue;
     if (!C || !C.isLoaded()) return activeEntry ? [activeEntry] : [];
     const area = e => (e.b || []).reduce((t, b) => t + Math.abs((b[2] - b[0]) * (b[3] - b[1])), 0);
-    const list = C.near(c.lat, c.lon).filter(e => !_isReliefEntry(e) && (e.s !== 'loaded' || area(e) <= WB_LOADED_MAX_AREA));
-    if (activeEntry && !_isReliefEntry(activeEntry) && !list.includes(activeEntry)) list.push(activeEntry);
+    const list = C.near(c.lat, c.lon).filter(e => !_isReliefEntry(e) && !_isMapEntry(e) && (e.s !== 'loaded' || area(e) <= WB_LOADED_MAX_AREA));
+    if (activeEntry && !_isReliefEntry(activeEntry) && !_isMapEntry(activeEntry) && !list.includes(activeEntry)) list.push(activeEntry);
     return list;
   }
 
@@ -1469,8 +1528,60 @@
     _fillWayback(sel, want, entry);
   }
 
-  // ── Topographic: Land, then seabed relief (v1.19) ──────────────────────────
-  let _topoItems = {}, _topoMapHooked = false, _topoTimer = null;
+  // ── Lists under a chip (v1.19 Topographic, v1.21 Standard) ────────────────
+  // cfg: row/select ids, base (the chip's own source), baseLabel, isEntry
+  // (which catalogue entries belong), isFamily, and a loaded-area filter.
+  function _listRow(cfg) {
+    let items = {}, hooked = false, timer = null;
+    function wire(scope) {
+      const sel = scope.querySelector('#' + cfg.selId);
+      if (!sel) return;
+      const setWarn = _warner(scope.querySelector('#basemapWarn'));
+      sel.addEventListener('change', () => {
+        const e = items[sel.value];
+        if (!e) { setWarn(''); _choose(cfg.base, setWarn, {}, () => setWarn('')); return; }
+        setWarn('Loading ' + e.l + '…');
+        _choose(e.u, setWarn, {}, () => setWarn(''));
+      });
+    }
+    function sync() {
+      const row = document.getElementById(cfg.rowId);
+      const sel = document.getElementById(cfg.selId);
+      if (!row || !sel) return;
+      const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
+      const C = global.GeosonifyImageryCatalogue, c = _wbCentre();
+      let list = (C && C.isLoaded() && c) ? C.near(c.lat, c.lon).filter(cfg.isEntry) : [];
+      if (cfg.areaLimit) list = list.filter(cfg.areaLimit);
+      const activeEntry = _catEntry(active);
+      if (cfg.isEntry(activeEntry) && !list.includes(activeEntry)) list.push(activeEntry);
+      // Standard's row only appears when there is an old map to offer.
+      const show = cfg.isFamily(active) && !skyIsOpen() && !skyModeOn() && (cfg.always || list.length > 0);
+      row.style.display = show ? 'flex' : 'none';
+      if (c && !hooked) {
+        hooked = true;
+        c.map.on('moveend', () => {
+          if (!cfg.isFamily(global.__GEOSONIFY_BASEMAP_ACTIVE)) return;
+          clearTimeout(timer);
+          timer = setTimeout(sync, 400);
+        });
+      }
+      if (C && !C.isLoaded() && cfg.isFamily(active)) { C.load().then(() => sync(), () => {}); }
+      if (!show) return;
+      items = {};
+      const opts = [{ value: '', label: cfg.baseLabel }].concat(list.map(e => {
+        const v = 'c:' + e.i;
+        items[v] = e;
+        const out = c && !C.covers(e, c.lat, c.lon);
+        const zoomIn = c && e.zr && e.zr[0] != null && c.zoom < e.zr[0];
+        return { value: v, label: e.l + ' · ' + e.r + (out ? ' (not here)' : zoomIn ? ' (zoom in)' : '') };
+      }));
+      const want = cfg.isEntry(activeEntry) ? 'c:' + activeEntry.i : '';
+      if (document.activeElement === sel) return;           // don't rebuild under a finger
+      sel.innerHTML = opts.map(o => '<option value="' + _esc(o.value) + '">' + _esc(o.label) + '</option>').join('');
+      sel.value = want;
+    }
+    return { wire: wire, sync: sync };
+  }
   function _topoToRestore() {
     const s = _lastTopo;
     if (!s) return 'topo';
@@ -1478,51 +1589,15 @@
     if (!e || !C || !C.covers || !c) return 'topo';
     return C.covers(e, c.lat, c.lon) ? s : 'topo';
   }
-  function _wireTopoRow(scope) {
-    const sel = scope.querySelector('#basemapTopoSelect');
-    if (!sel) return;
-    const setWarn = _warner(scope.querySelector('#basemapWarn'));
-    sel.addEventListener('change', () => {
-      const e = _topoItems[sel.value];
-      if (!e) { setWarn(''); _choose('topo', setWarn, {}, () => setWarn('')); return; }
-      setWarn('Loading ' + e.l + '…');
-      _choose(e.u, setWarn, {}, () => setWarn(''));
-    });
-  }
-  function _syncTopoRow() {
-    const row = document.getElementById('basemapTopoRow');
-    const sel = document.getElementById('basemapTopoSelect');
-    if (!row || !sel) return;
-    const active = global.__GEOSONIFY_BASEMAP_ACTIVE;
-    const show = _isTopoFamily(active) && !skyIsOpen() && !skyModeOn();
-    row.style.display = show ? 'flex' : 'none';
-    if (!show) return;
-    const C = global.GeosonifyImageryCatalogue, c = _wbCentre();
-    if (c && !_topoMapHooked) {
-      _topoMapHooked = true;
-      c.map.on('moveend', () => {
-        if (row.style.display === 'none') return;
-        clearTimeout(_topoTimer);
-        _topoTimer = setTimeout(_syncTopoRow, 400);
-      });
-    }
-    if (C && !C.isLoaded()) { C.load().then(() => _syncTopoRow(), () => {}); }
-    const activeEntry = _catEntry(active);
-    let list = (C && C.isLoaded() && c) ? C.near(c.lat, c.lon).filter(_isReliefEntry) : [];
-    if (_isReliefEntry(activeEntry) && !list.includes(activeEntry)) list.push(activeEntry);
-    _topoItems = {};
-    const opts = [{ value: '', label: 'Land' }].concat(list.map(e => {
-      const v = 'c:' + e.i;
-      _topoItems[v] = e;
-      const out = c && !C.covers(e, c.lat, c.lon);
-      const zoomIn = c && e.zr && e.zr[0] != null && c.zoom < e.zr[0];
-      return { value: v, label: e.l + ' · ' + e.r + (out ? ' (not here)' : zoomIn ? ' (zoom in)' : '') };
-    }));
-    const want = _isReliefEntry(activeEntry) ? 'c:' + activeEntry.i : '';
-    if (document.activeElement === sel) return;           // don't rebuild under a finger
-    sel.innerHTML = opts.map(o => '<option value="' + _esc(o.value) + '">' + _esc(o.label) + '</option>').join('');
-    sel.value = want;
-  }
+  const _topoRow = _listRow({ rowId: 'basemapTopoRow', selId: 'basemapTopoSelect', base: 'topo', baseLabel: 'Land',
+    isEntry: _isReliefEntry, isFamily: _isTopoFamily, always: true });
+  const _mapRow = _listRow({ rowId: 'basemapMapRow', selId: 'basemapMapSelect', base: 'osm', baseLabel: 'Today',
+    isEntry: _isMapEntry, isFamily: _isStdFamily,
+    areaLimit: e => e.s !== 'loaded' || (Math.abs(e.b[0][2] - e.b[0][0]) * Math.abs(e.b[0][3] - e.b[0][1])) <= WB_LOADED_MAX_AREA });
+  function _wireTopoRow(scope) { _topoRow.wire(scope); }
+  function _syncTopoRow() { _topoRow.sync(); }
+  function _wireMapRow(scope) { _mapRow.wire(scope); }
+  function _syncMapRow() { _mapRow.sync(); }
 
   // ── The paste-your-own card in the FAQ pane ────────────────────────────────
   function wirePaste(scope) {
@@ -1640,9 +1715,10 @@
     if (!m || _viewTouches(entry, m)) return;
     const warnEl = document.getElementById('basemapWarn');
     const setWarn = _warner(warnEl);
-    const relief = _isReliefEntry(entry);
-    _choose(relief ? 'topo' : 'aerial', setWarn, { warn: warnEl }, () => {
+    const relief = _isReliefEntry(entry), oldMap = _isMapEntry(entry);
+    _choose(relief ? 'topo' : (oldMap ? 'osm' : 'aerial'), setWarn, { warn: warnEl }, () => {
       const msg = relief ? 'Outside the ' + entry.l + ' (' + entry.r + ') — back to Topographic.'
+                : oldMap ? 'Outside the ' + entry.l + ' (' + entry.r + ') — back to Standard.'
                          : 'Outside the ' + entry.l + ' ' + entry.r + ' imagery — back to Aerial.';
       if (typeof global.showToast === 'function') { try { global.showToast(msg); } catch (e) { setWarn(msg); } }
       else setWarn(msg);

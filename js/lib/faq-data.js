@@ -147,7 +147,7 @@
             a: `<p>Yes. The <strong>Map imagery</strong> panel on the main screen, beside Encoding Mode and Precision, has four choices. <strong>Standard</strong> is the OpenStreetMap street map, <strong>Aerial</strong> is worldwide satellite imagery, and <strong>Topographic</strong> shows terrain. <strong>Sky</strong> swaps the Earth for the sky: the same codes, read as directions among the stars (see <em>What is Sky mode?</em>). While Sky is chosen, a <strong>Sky</strong> button in the corner of the map turns between the two.</p>
 <p>While <strong>Aerial</strong> is showing, a date list appears under the buttons: <strong>Latest</strong>, or an earlier edition of the same worldwide imagery as Esri published it, back to February 2014 (Esri's <em>World Imagery Wayback</em> archive). Esri republishes the whole mosaic every few weeks, but the photographs of any one place change only every few years, so the list offers just the editions in which the imagery <em>at the centre of the map</em> actually changed, and labels each with when those photographs were taken ("2019-06-26 · photos 2015-03"). An edition's own date is when it was published; its photographs can be years older, and other parts of the view may come from different years. <strong>Every release…</strong> at the end of the list shows them all.</p>
 <p>In many places the same list also holds older local photography published by councils, regional and national mapping agencies and libraries — Christchurch and Canterbury back to the 1940s, Marlborough, the Bay of Plenty, Wellington and Dunedin, Sydney and New South Wales, Tasmania, Toronto, Calgary, Ottawa, New York, Belgium, Catalonia, Vienna, Switzerland and more — interleaved with Esri's editions in the order the photographs were taken. Only layers that cover the centre of the map are offered, so the list changes as you move. Each one is drawn by its provider's own server, which reprojects it to fit the map where needed; choosing one keeps you in Aerial, so you can step from the 1940s to today without leaving the list.</p>
-<p>The list also holds scanned historical maps, marked <em>(map)</em> and placed by the year they show: Canterbury's Black Maps, the first survey plans of 1848 to about 1870; Switzerland's Dufour map and its national map year by year from 1864; France's Cassini and État-major maps and its 1950 map; Flanders' maps from Pourbus in 1571 to Vandermaelen in the 1850s; and, from the National Library of Scotland, Britain's Ordnance Survey six-inch map of 1888 to 1913 and London's five-foot plan of 1893 to 1896 (1:1,056), detailed enough to show the inside of churches and railway stations. A map shows what a place was called and how it was divided, which a photograph cannot: roads, boundaries, names and land use, often from before there were any aerial photographs at all.</p>
+<p>Scanned historical maps have their own list, under <strong>Standard</strong>: while Standard is showing and an old map covers the centre of the map, a list appears under the buttons with <strong>Today</strong> (OpenStreetMap) and the maps, by the year they show (tapping Standard itself always gives today's map). They include Canterbury's Black Maps, the first survey plans of 1848 to about 1870; Switzerland's Dufour map and its national map year by year from 1864; France's Cassini and État-major maps and its 1950 map; Flanders' maps from Pourbus in 1571 to Vandermaelen in the 1850s; and, from the National Library of Scotland, Britain's Ordnance Survey six-inch map of 1888 to 1913 and London's five-foot plan of 1893 to 1896 (1:1,056), detailed enough to show the inside of churches and railway stations. A map shows what a place was called and how it was divided, which a photograph cannot: roads, boundaries, names and land use, often from before there were any aerial photographs at all. The ⇆ button compares an old map with today's aerial photograph, or with the imagery you were looking at before it.</p>
 <p>While <strong>Topographic</strong> is showing, a list under the buttons offers the seabed as well as the land: <strong>Land</strong> is Esri's topographic map; the GEBCO 2026 grid shows the shape of the sea floor worldwide at about 15 arc-seconds (roughly 460 m); NOAA's elevation models cover the world too and are far finer along the coasts of the United States; and EMODnet's grid shows Europe's seas at about 115 m. Only those covering the centre of the map are offered. These are pictures of the sea floor for exploring and teaching, not charts: they must never be used for navigation, and close to shore they can be coarse or out of date.</p>
 <p>While <strong>Sky</strong> is showing, the same place lists the sky's pictures instead: the best available first, then each telescope's own (see <em>Which pictures of the sky can I see?</em>).</p>
 <p>Imagery you paste yourself (see below) is kept on this device and appears as a <strong>Custom</strong> button before Sky, so you can switch between it and the others. <strong>Hold Standard</strong> while any other imagery is showing to see the streets drawn over it, and let go to hide them again; a tap still switches to the street map. Over old photography, that answers "where is that street now?"</p>
@@ -508,6 +508,23 @@
             id: 'routes-polygons',
             q: 'How are routes and polygons represented?',
             a: `<p>Routes are represented as sequences of coordinates. To keep them compact, Geosonify uses hierarchical delta encoding: nearby points often share long coordinate prefixes, so only the changing suffixes need to be stored rather than each full code in sequence. This reduces the size of route descriptions substantially while preserving full precision at every point. Polygons are simply closed routes - if the final point matches the first, the system recognises the geometry as an area rather than a path.</p>`
+          },
+
+          {
+            id: 'holes-and-parts',
+            q: 'Can a shape have holes or several parts?',
+            a: `<p>Yes. A shape can be several separate parts (islands, parcels, a route in pieces), and a polygon can have holes (a lake with islands, a country with an enclave such as Lesotho within South Africa). The area leaves the holes out, they are drawn as holes, and the GeoJSON and WKT exports write them as the polygon's inner rings.</p>
+<p><strong>Drawing one.</strong> In the Shape tab, with <strong>Path/Polygon</strong> chosen, draw the outer ring by tapping the map and close it on its first point. Then tap <strong>◌ Start a hole</strong> and tap round the hole; it is closed for you. <strong>＋ Start a new part</strong> begins a separate part the same way. In the coordinate list these show as a line <code>hole</code> or <code>---</code> before the points they start, so a shape can be typed or pasted too:</p>
+<pre>-43.52, 172.62
+-43.52, 172.64
+-43.54, 172.64
+-43.54, 172.62
+hole
+-43.525, 172.625
+-43.525, 172.635
+-43.535, 172.635</pre>
+<p>A hole belongs to the outer ring before it. In a shape with a hole, every ring is closed for you.</p>
+<p><strong>In a link</strong>, parts are separated by <code>~~~</code>, and a part that begins with <code>:</code> is a hole. Imports keep holes too: GeoJSON and WKT inner rings, and OpenStreetMap multipolygons with their inner members. A copy of Geosonify from before holes existed shows such a link's outer polygons without the holes, rather than anything wrong.</p>`
           },
 
           {
@@ -1046,6 +1063,25 @@ AES URL encryption → standard authenticated encryption, recommended for sensit
 <p>The encrypted text is the link's whole query: the code, and with it the frame of a sky link (<code>frame=icrs&amp;epoch=J2000</code>) and any labels and colours (<code>lbl=</code>, <code>sty=</code>). None of them is repeated outside the blob, so an encrypted link does not reveal that it points at the sky, or what its points are called. A display link's own options (<code>display</code>, <code>area</code>, <code>export=</code>, <code>lattice=</code>, <code>zoom=</code>, <code>bare</code>) go inside too, so an encrypted display link looks like any other encrypted link: nothing outside <code>?enc=</code> says it is a display link, or of the sky. The person opening it enters the passphrase first, and the page then becomes the display view. (Encrypted display links made before October 2026 kept those options outside the blob; they still open as they always did.)</p>
 </div>
 </details>`
+          },
+
+          {
+            id: 'private-links',
+            q: 'Can a link keep the place away from servers?',
+            a: `<p>Yes. Any Geosonify link can carry its contents after <code>#?</code> instead of <code>?</code>:</p>
+<pre>https://geosonify.org/#?hphex=95625281C9B5&amp;zoom=17</pre>
+<p>Browsers never send anything after a <code>#</code> to a server. So when this link is opened, GitHub Pages (which hosts geosonify.org), and any network on the way such as a workplace or school proxy, learn only that someone opened geosonify.org, never which place. It behaves exactly like the <code>?</code> form in every other way: everything after <code>#?</code> is the same text, and every option works.</p>
+<p>To share links this way, turn on <strong>🙈 Keep the place out of server logs</strong> in the Share card; it is remembered on this device, and the address bar switches to the <code>#?</code> form too. A page opened from a <code>#?</code> link keeps using it. Very long links (over 8,000 characters, such as detailed shapes) use it automatically, because servers refuse queries that long and a fragment has no such limit. To convert a link by hand, put <code>#</code> before its <code>?</code>.</p>
+<p>This is not encryption. Anyone you send the link to sees the place, and it stays in your browser's history like any address. For a place that must stay secret, use a passphrase or hard encryption; an encrypted link can use the <code>#?</code> form as well, so a server never even receives the scrambled version. Map tiles still reveal roughly which area is on screen to the map service, as with any web map.</p>`
+          },
+
+          {
+            id: 'offline',
+            q: 'Does Geosonify work offline?',
+            a: `<p>Yes, for decoding. After you have opened geosonify.org once with a connection, the app's own code is kept on your device, so a Geosonify link opens with no coverage at all: the place is decoded, every card shows its code, and the words, sounds, barcodes and sky positions all work. A message says when you are offline.</p>
+<p>What still needs a connection: map imagery and the sky's survey pictures (tiles you have not seen before cannot be drawn), and anything that asks an outside service, such as place names, Wikipedia, or what object is at a point in the sky. Open the places you will need while you still have coverage, and their tiles may still be in your browser's ordinary cache.</p>
+<p>How it works: a small service worker (<code>sw.js</code>) keeps the page and the files it uses, about 2 MB to download once (less with Data Saver on, when only what you have used is kept). With a connection, the current site is always fetched first, and replaced files are dropped, so you never run an old version while online. It never stores the address you opened, so no place is kept by it, and it stores nothing from map or imagery servers. Clearing the site's data in your browser removes it.</p>
+<p>On an iPhone or iPad, Safari deletes a website's stored files, these included, after seven days of using Safari without visiting it. To keep Geosonify ready for the field, add it to the home screen (Share, then Add to Home Screen) and open it from there, or visit it once a week.</p>`
           },
 
           {

@@ -65,9 +65,11 @@
 
 <h2>What is stored on your device</h2>
 <p>Your settings (which cards you show, their precision, map imagery, sound settings, whether you have seen the introduction) are kept in your browser's local storage on this device only. Clearing the site's data in your browser removes them.</p>
+<p>So that links open without a connection, a service worker keeps a copy of the app's own files (the page, its scripts and the libraries it loads) in your browser's cache on this device. It never stores the address you opened, so it keeps no place, and it stores nothing from map, imagery or lookup services. Clearing the site's data removes it too.</p>
 
 <h2>Links you share</h2>
 <p>A link you send goes wherever you send it, and anyone who has an ordinary link can see the place. Use a passphrase or hard encryption when that matters.</p>
+<p>A link can also carry the place after <code>#?</code> instead of <code>?</code> (the Share card's "Keep the place out of server logs"). Browsers never send anything after <code>#</code> to a server, so geosonify.org's host and any network on the way never learn the place from such a link. Anyone you send it to still sees the place, as with an ordinary link.</p>
 
 <h2>Questions</h2>
 <p>Geosonify is open source: every request described here can be checked in <a href="https://github.com/gobeirne/geosonify-app">its code</a>. Questions or concerns: open an issue there.</p>

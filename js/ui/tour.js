@@ -33,7 +33,9 @@
   'use strict';
 
   var tours = {}, active = null;
-  var INITIAL_SEARCH = (function () { try { return location.search || ''; } catch (e) { return ''; } })();
+  // The link's query: geosonifyAppQuery() also covers "#?" links (WP3.3).
+  function appQuery() { try { return (typeof window.geosonifyAppQuery === 'function' ? window.geosonifyAppQuery() : location.search) || ''; } catch (e) { return ''; } }
+  var INITIAL_SEARCH = appQuery();
   var SNAP_KEY = 'gsTourSnapshot', DONE_KEY = 'gsTourJustEnded';
 
   function injectCSS() {
@@ -301,9 +303,9 @@
     try {
       // The address as the page opened: link pipelines strip their parameters
       // from the address bar on load, and must not count as a plain visit.
-      if (INITIAL_SEARCH || location.search || localStorage.getItem('gsIntroOffered') || API.justEnded()) return;
+      if (INITIAL_SEARCH || appQuery().length > 1 || localStorage.getItem('gsIntroOffered') || API.justEnded()) return;
       localStorage.setItem('gsIntroOffered', '1');
-      setTimeout(function () { if (!active && !location.search) API.start('intro'); }, 1500);
+      setTimeout(function () { if (!active && !(appQuery().length > 1)) API.start('intro'); }, 1500);
     } catch (e) {}
   }
   if (document.readyState === 'complete') offerOnce(); else global.addEventListener('load', offerOnce);

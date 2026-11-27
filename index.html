@@ -182,6 +182,39 @@
 </head>
 <body>
 <script>
+/*
+  WP3.3 (28 Nov 2026): THE FRAGMENT CARRIER. A link may carry its query after
+  "#?" instead of "?": geosonify.org/#?hphex=…&zoom=17. Browsers never send
+  anything after "#" to a server, so the place never reaches GitHub Pages or
+  any network in between, and there is no server limit on its length. What
+  follows "#?" is the ordinary query grammar, byte for byte (add-only: no
+  parameter changes meaning). If a link has both, the fragment wins.
+
+  geosonifyAppQuery() is THE way to read the link's query: the decrypted query
+  while an encrypted link is open (B9), else the fragment's, else the real
+  query. Nothing in the app may read location.search directly. While a "#?"
+  link is open, the app's own address-bar writes go after "#?" too (the guard
+  near "The address bar after decryption").
+*/
+(function () {
+  try {
+    var h = location.hash || '';
+    if (h.length > 2 && h.charAt(1) === '?') window.__gsFragment = { query: h.slice(1) };
+  } catch (e) {}
+  window.geosonifyAppQuery = function () {
+    if (window.__gsDecrypted) return window.__gsDecrypted.query;
+    if (window.__gsFragment) return window.__gsFragment.query;
+    return window.location.search;
+  };
+  // A different "#?" link typed or pasted into this tab's address bar changes
+  // only the fragment, so the page would not reload by itself: reload it.
+  window.addEventListener('hashchange', function () {
+    var h = location.hash || '';
+    if (h.length > 2 && h.charAt(1) === '?' && (!window.__gsFragment || window.__gsFragment.query !== h.slice(1))) location.reload();
+  });
+})();
+</script>
+<script>
 // WP2.3: "Make your own" from an encrypted display link. The decrypted query
 // was put in this tab's session storage; read it once, delete it, and let the
 // app use it from memory (B9), with nothing in the address bar.
@@ -240,7 +273,7 @@ window.GeosonifyGeoHack = (function () {
   }
   var info = null;
   try {
-    var q = new URLSearchParams(location.search);
+    var q = new URLSearchParams(geosonifyAppQuery());
     if (q.has('geohack') && !q.has('r')) info = parse(q.get('geohack'));
     if (info) { info.title = (q.get('title') || '').replace(/_/g, ' ').slice(0, 120) || null; }
   } catch (e) {}
@@ -294,7 +327,7 @@ window.GeosonifyGeoHack = (function () {
 </div>
 <script>
 (function () {
-  var q = location.search;
+  var q = geosonifyAppQuery();
   var m = /^\?r=(-?\d{1,2}(?:\.\d+)?)(?:,|%2C)(-?\d{1,3}(?:\.\d+)?)(?:&|$)/i.exec(q);
   var gh = window.GeosonifyGeoHack && GeosonifyGeoHack.info;
   if (!m && gh) m = [null, String(gh.lat), String(gh.lon)];
@@ -371,7 +404,7 @@ window.GeosonifyGeoHack = (function () {
        hidden before it is ever painted. Encrypted display links cannot be told
        apart from outside, so they keep it. -->
   <script>
-    try { if (/(?:^|[?&])display(?:[=&]|$)/.test(location.search)) document.documentElement.classList.add('display-link'); } catch (e) {}
+    try { if (/(?:^|[?&])display(?:[=&]|$)/.test(geosonifyAppQuery())) document.documentElement.classList.add('display-link'); } catch (e) {}
   </script>
   <!-- Splash Screen -->
   <div class="splash-screen" id="splashScreen">
@@ -740,6 +773,13 @@ window.GeosonifyGeoHack = (function () {
         <div class="card-header">Coordinates</div>
         <div class="card-body">
           <textarea id="inputCoords" placeholder="Paste coordinates here (one per line)&#10;Format: lat, lon&#10;&#10;Or paste a compact string to decode"></textarea>
+          <!-- WP2.1: holes and separate parts while drawing. A line "hole" starts a
+               hole in the polygon above it, "---" a separate part; the buttons add
+               one and the next taps on the map go into it. -->
+          <div class="btn-row" id="shapePartRow" style="margin-top:8px;">
+            <button class="btn btn-secondary" id="startHoleBtn" title="The next points you tap make a hole in the polygon (both are closed for you)">◌ Start a hole</button>
+            <button class="btn btn-secondary" id="startPartBtn" title="The next points you tap make a separate part of the same shape">＋ Start a new part</button>
+          </div>
           <button class="btn btn-primary" id="calcBtn2" style="margin-top:12px;">Process</button>
         </div>
       </div>
@@ -844,6 +884,11 @@ window.GeosonifyGeoHack = (function () {
               <label>Compress path/poly (delta)</label>
               <div class="toggle"><input type="checkbox" id="useDeltaCompression" checked /><span class="toggle-slider"></span></div>
             </div>
+          </div>
+          <!-- WP3.3: the link's query after "#?" instead of "?", so servers never see it -->
+          <div class="list-row" style="padding:0; margin-top:4px;" title="The place goes after # in the link, which browsers never send to a server: not to geosonify.org's host, nor any network on the way. Anyone you send the link to still sees the place; for a secret place use encryption.">
+            <label>🙈 Keep the place out of server logs</label>
+            <div class="toggle"><input type="checkbox" id="fragmentLinks" /><span class="toggle-slider"></span></div>
           </div>
           <div class="list-row" style="padding:0; margin-top:4px;">
             <label>🔒 Hard encrypt URL</label>
@@ -1170,7 +1215,7 @@ window.GeosonifyGeoHack = (function () {
 
 <!-- Features -->
 <script src="js/lib/geosonify-wayback.js?v=20261024i"></script>
-<script src="js/lib/geosonify-imagery-catalogue.js?v=20261127c"></script>
+<script src="js/lib/geosonify-imagery-catalogue.js?v=20261128a"></script>
 <script src="js/features/map-manager.js?v=20261127b"></script>
 <script src="js/features/cell-outline.js?v=20261029a"></script>
 <script src="js/features/gps-tracking.js?v=20260109"></script>
@@ -1343,9 +1388,9 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261127e';</script>
-<script src="js/ui/faq-ui.js?v=20261127b"></script>
-<script src="js/ui/tour.js?v=20261122a"></script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261128d';</script>
+<script src="js/ui/faq-ui.js?v=20261128b"></script>
+<script src="js/ui/tour.js?v=20261128a"></script>
   <script>
     // ============== GeoMath Module Compatibility ==============
     // These aliases allow existing code to work with the extracted geo-math module
@@ -2631,12 +2676,13 @@ window.GeosonifyGeoHack = (function () {
       // Build by string surgery rather than URLSearchParams, which would
       // percent-encode every '~' to '%7E' — tripling the separator length and
       // bloating an already-long shape URL (and tripping URL length limits).
-      let qs = window.location.search.replace(/^\?/, '');
+      let qs = geosonifyAppQuery().replace(/^\?/, '');
       qs = qs.split('&').filter(p => p.split('=')[0] !== 'display').join('&');
       // An encrypted display link: the full-app link must not carry the place
       // in the clear (B9), and the display options are inside the blob, so it
       // opens the app itself.
-      link.href = window.location.pathname + (window.__gsDecrypted ? '' : (qs ? '?' + qs : ''));
+      // A "#?" link opens the app as a "#?" link too (WP3.3).
+      link.href = window.location.pathname + (window.__gsDecrypted ? '' : (qs ? (window.__gsFragment ? '#?' : '?') + qs : ''));
       // WP2.3: "Make your own" opens the editor with this shape loaded. For an
       // encrypted link the place travels in this tab's session storage, never
       // in an address (B9), and is read once and deleted.
@@ -2983,11 +3029,14 @@ window.GeosonifyGeoHack = (function () {
       try {
         if (!GOATCOUNTER_CODE || navigator.doNotTrack === '1' || navigator.globalPrivacyControl) return;
         if (/^(localhost|127\.|192\.168\.)/.test(location.hostname)) return;
-        const q = new URLSearchParams(location.search);
+        // The kind of page only, never the place; a "#?" link counts the same
+        // as a "?" link (the fragment itself is never sent).
+        const _aq = geosonifyAppQuery();
+        const q = new URLSearchParams(_aq);
         const kind = (q.has('r') || q.has('geohack')) ? '/wikipedia'
                    : q.has('enc') ? '/encrypted'
                    : q.has('display') ? '/display'
-                   : location.search.length > 1 ? '/link' : '/';
+                   : _aq.length > 1 ? '/link' : '/';
         let ref = '';
         try { ref = document.referrer ? new URL(document.referrer).origin : ''; } catch (e) {}
         if (ref === location.origin) ref = '';
@@ -3118,6 +3167,24 @@ window.GeosonifyGeoHack = (function () {
 
     // Secondary calc button (on Input tab)
     document.addEventListener('DOMContentLoaded', () => {
+      // WP2.1: start a hole or a new part. Typed: a marker line is added to the
+      // list; tapped: the next marker placed on the map starts it.
+      [['startHoleBtn', 'hole'], ['startPartBtn', 'part']].forEach(([id, kind]) => {
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.addEventListener('click', () => {
+          const pathRadio = document.querySelector('input[name="shapeMode"][value="pathpoly"]');
+          if (pathRadio && !pathRadio.checked) pathRadio.click();
+          window._gsPendingBreak = kind;
+          const ta = document.getElementById('inputCoords');
+          if (ta && !markers.length && ta.value.trim()) {
+            ta.value = ta.value.replace(/\s+$/, '') + '\n' + (kind === 'hole' ? 'hole' : '---') + '\n';
+            window._gsPendingBreak = null;
+          }
+          showToast(kind === 'hole' ? 'Tap the map round the hole (or type its points after the line "hole")'
+                                    : 'Tap the map for the new part (or type its points after the line "---")', 'info');
+        });
+      });
       const calcBtn2 = document.getElementById('calcBtn2');
       if (calcBtn2) {
         calcBtn2.addEventListener('click', () => {
@@ -3127,7 +3194,7 @@ window.GeosonifyGeoHack = (function () {
       }
       
       // Check for URL parameter and switch to Output tab if present
-      const urlParams = new URLSearchParams(window.location.search);
+      const urlParams = new URLSearchParams(geosonifyAppQuery());
       if (urlParams.has('r') && !window.__geohackLanding) {
         // Will be processed by parseURLParameters, then switch to output.
         // (A bare point from GeoHack gets the landing sheet instead: WP1.6.)
@@ -3277,11 +3344,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       // area for closed shapes), &export=gpx|kml|geojson (download button),
       // &zoom=N (absolute zoom, centred on shape), &context=N (auto-fit with
       // N× breathing room), &fixzoom (lock zoom interactions).
-      readDisplayOptions(window.location.search);
+      readDisplayOptions(geosonifyAppQuery());
       try { initLatticeFade(); } catch (e) { console.warn('[geosonify] grid strength:', e); }
 
       // Check if URL has params - if so, skip splash and random location
-      const hasURLParams = window.location.search.length > 1;
+      const hasURLParams = geosonifyAppQuery().length > 1;
       
       // Handle splash screen
       const splash = document.getElementById('splashScreen');
@@ -3609,14 +3676,18 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         // Limit to 4 pins for rect/graticule modes
         if (!isPathPoly && !isPoints && markers.length >= 4) return;
         
+        // WP2.1: the part being drawn starts at the last marker that starts one.
+        let _partStart = 0;
+        for (let i = markers.length - 1; i > 0; i--) if (markers[i]._gsBreak) { _partStart = i; break; }
+        const _partMarkers = markers.slice(_partStart);
         // In path/poly mode, check if clicking near the first pin to close polygon
-        if (isPathPoly && markers.length >= 3) {
-          const firstMarker = markers[0].getLatLng();
+        if (isPathPoly && !window._gsPendingBreak && _partMarkers.length >= 3) {
+          const firstMarker = _partMarkers[0].getLatLng();
           const firstCoord = [firstMarker.lat, normalizeLongitude(firstMarker.lng)];
           const distToFirst = geodesicDistance(newCoord, firstCoord);
           
           // Calculate threshold: 2% of the bounding box diagonal or 20m, whichever is larger
-          const bounds = L.latLngBounds(markers.map(m => m.getLatLng()));
+          const bounds = L.latLngBounds(_partMarkers.map(m => m.getLatLng()));
           const diagonal = geodesicDistance(
             [bounds.getSouth(), bounds.getWest()],
             [bounds.getNorth(), bounds.getEast()]
@@ -3625,7 +3696,11 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           
           if (distToFirst < threshold) {
             if (confirm('Close polygon? Click OK to close, Cancel to add another point.')) {
-              // Close the polygon - don't add a new marker, just process
+              // Close the polygon - don't add a new marker, just process. The
+              // last pin is marked as closing its part, so the list repeats the
+              // part's first point and the shape becomes a polygon (until 28 Nov
+              // 2026 it stayed an open path).
+              markers[markers.length - 1]._gsClose = true;
               updatePinsFromMarkers();
               processInput();
               return;
@@ -3640,6 +3715,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           autoPanSpeed: 10
         }).addTo(map);
         marker.on('dragend', updatePinsFromMarkers);
+        if (isPathPoly && window._gsPendingBreak) { marker._gsBreak = window._gsPendingBreak; window._gsPendingBreak = null; }
         markers.push(marker);
         updatePinsFromMarkers();
       });
@@ -3666,6 +3742,30 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         updateCompactOutputs();
       });
       
+      // WP3.3: "Keep the place out of server logs". Remembered on this device.
+      // Turning it on also moves this page's own address to the "#?" form (its
+      // query was sent when the page loaded, but a reload or a copied address
+      // won't send it again); turning it off moves it back.
+      (function () {
+        const cb = document.getElementById('fragmentLinks');
+        if (!cb) return;
+        try { cb.checked = localStorage.getItem('gsFragmentLinks') === '1' || !!window.__gsFragment; } catch (e) {}
+        cb.addEventListener('change', function () {
+          try { localStorage.setItem('gsFragmentLinks', this.checked ? '1' : '0'); } catch (e) {}
+          if (!window.__gsDecrypted) {
+            const q = geosonifyAppQuery();
+            if (this.checked) {
+              window.__gsFragment = { query: q };
+              if (q.length > 1) history.replaceState(null, '', window.location.pathname + '#' + q);
+            } else if (window.__gsFragment) {
+              window.__gsFragment = null;
+              history.replaceState(null, '', window.location.pathname + (q.length > 1 ? q : ''));
+            }
+          }
+          updateCompactOutputs();
+        });
+      })();
+
       // Encrypt URL toggle — prompts for passphrase when enabled
       document.getElementById('encryptURL')?.addEventListener('change', function() {
         if (this.checked) {
@@ -4077,9 +4177,8 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     // ── The address bar after decryption (B9) ───────────────────────────
     // What the app should treat as its query: the decrypted one while an
     // encrypted link is open, otherwise the real address bar.
-    window.geosonifyAppQuery = function () {
-      return window.__gsDecrypted ? window.__gsDecrypted.query : window.location.search;
-    };
+    // geosonifyAppQuery() is defined at the top of <body> (WP3.3), where it
+    // also covers "#?" links.
     // While a decrypted link is open, any address-bar write the app makes that
     // would show the place in the clear updates the in-memory query instead;
     // writes of an encrypted link (?enc=) pass through as normal.
@@ -4090,6 +4189,18 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             const u = String(url), q = u.indexOf('?');
             window.__gsDecrypted.query = q >= 0 ? u.slice(q) : '';
             return;
+          }
+          // WP3.3: while a "#?" link is open, the query goes after "#?", so a
+          // reload never sends the place to the server.
+          if (window.__gsFragment && url != null) {
+            const u = String(url);
+            if (u.indexOf('#') < 0) {
+              const q = u.indexOf('?');
+              const path = q >= 0 ? u.slice(0, q) : u;
+              const query = q >= 0 ? u.slice(q) : '';
+              window.__gsFragment.query = query;
+              return orig.call(window.history, state, title, (path || window.location.pathname) + (query.length > 1 ? '#' + query : ''));
+            }
           }
           return orig.call(window.history, state, title, url);
         };
@@ -5777,7 +5888,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       try {
         const C = window.GeosonifyImageryCatalogue;
         const e = (C && C.isLoaded && C.isLoaded()) ? C.byUrl(src) : null;
-        return !!e && e.g !== 'relief';     // seabed layers belong to Topographic
+        return !!e && e.g !== 'relief' && e.g !== 'map';   // seabed: Topographic; old maps: Standard
       } catch (e) { return false; }
     }
     // A seabed (relief) layer of the imagery catalogue: listed under Topographic,
@@ -5831,7 +5942,29 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       return buildShareURL();
     }
 
+    /*
+      WP3.3: a share link in "#?" form when the person asks for it (the Share
+      option, remembered on this device), when this page was itself opened from
+      a "#?" link, or when the link is longer than FRAGMENT_AUTO_CHARS (servers
+      refuse longer queries; a fragment has no such limit).
+    */
+    const FRAGMENT_AUTO_CHARS = 8000;
+    function wantFragmentLinks() {
+      try { if (localStorage.getItem('gsFragmentLinks') === '1') return true; } catch (e) {}
+      return !!window.__gsFragment;
+    }
+    function toFragmentForm(u) {
+      if (!u) return u;
+      const q = u.indexOf('?');
+      if (q < 0 || u.indexOf('#') >= 0) return u;
+      return u.slice(0, q) + '#' + u.slice(q);
+    }
     function buildShareURL() {
+      const u = buildShareURLQueryForm();
+      if (!u) return u;
+      return (wantFragmentLinks() || u.length > FRAGMENT_AUTO_CHARS) ? toFragmentForm(u) : u;
+    }
+    function buildShareURLQueryForm() {
       const encrypted = !!(encryptURL && encryptPassphrase);
       const encKey = encrypted ? encryptedDisplayKey() : null;
       if (encKey) {
@@ -6200,7 +6333,15 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       
       markers.forEach(m => map.removeLayer(m));
       markers = [];
-      const coords = parseCoords(text);
+      // WP2.1: marker lines ("hole", "---") are not points; they flag the next one.
+      const _kept = [], _flags = [];
+      let _pending = null;
+      text.split('\n').forEach(l => {
+        const m = SHAPE_BREAK_RE.exec(l);
+        if (m) { _pending = /hole/i.test(m[1]) ? 'hole' : 'part'; return; }
+        if (l.trim()) { _kept.push(l); _flags.push(_pending); _pending = null; }
+      });
+      const coords = parseCoords(_kept.join('\n'));
       
       // Auto-switch to path/poly mode if more than 4 coords entered AND not in rect or points mode
       // (If user explicitly selected rect mode, they may want OBB fitting)
@@ -6217,13 +6358,14 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         }
       }
       
-      coords.forEach(c => {
+      coords.forEach((c, _ci) => {
         const marker = L.marker([c[0], normalizeLongitude(c[1])], { 
           draggable: true,
           autoPan: true,
           autoPanPadding: [50, 50],
           autoPanSpeed: 10
         }).addTo(map);
+        marker._gsBreak = _flags[_ci] || null;
         marker.on('dragend', updatePinsFromMarkers);
         markers.push(marker);
       });
@@ -6249,9 +6391,16 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
     }
 
     function updatePinsFromMarkers() {
-      const txt = markers.map(m => {
+      let _partFirst = null;
+      const txt = markers.map((m, i) => {
         const { lat, lng } = m.getLatLng();
-        return `${lat.toFixed(6)}, ${normalizeLongitude(lng).toFixed(6)}`;
+        const line = `${lat.toFixed(6)}, ${normalizeLongitude(lng).toFixed(6)}`;
+        if (i === 0 || m._gsBreak) _partFirst = line;
+        // WP2.1: a marker that starts a hole or a part carries its marker line
+        let out = m._gsBreak ? (m._gsBreak === 'hole' ? 'hole' : '---') + '\n' + line : line;
+        // A pin closed with "Close polygon?" repeats its part's first point.
+        if (m._gsClose && _partFirst && _partFirst !== line) out += '\n' + _partFirst;
+        return out;
       }).join("\n");
       document.getElementById('inputCoords').value = txt;
       
@@ -6410,7 +6559,9 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
      * @param {Array<Array<Array<number>>>} groups - Array of coordinate arrays
      */
     let _drawGroupRoles = null;   // roles for the drawing in progress (WP2.1)
-    function createMultiPathPoly(groups, allSegmentModes) {
+    function createMultiPathPoly(groups, allSegmentModes, opts) {
+      // opts.keepPins (WP2.1): drawing in the app keeps the tapped pins.
+      const _keepPins = !!(opts && opts.keepPins);
       noteShapeOrigin();
       if (!groups || groups.length === 0) return;
       
@@ -6477,7 +6628,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
       
       if (roles.includes('hole')) lastSolution.groupRoles = roles.slice();
       _drawGroupRoles = roles;
-      drawMultiPathPolyOnMap(groups, centroid, groupTypes, true, true, flatSegModes);
+      drawMultiPathPolyOnMap(groups, centroid, groupTypes, !_keepPins, !_keepPins, flatSegModes);
       _drawGroupRoles = null;
       
       // Calculate stats
@@ -7182,9 +7333,54 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
 
 
     // =================== Main Processing ===================
+    /*
+      WP2.1 (28 Nov 2026): a coordinate list with marker lines. "hole" starts a
+      hole in the nearest outer ring before it; "---" starts a separate part.
+      Returns null when there are no marker lines. Each part: { role:
+      'outer' | 'hole', coords }. In a shape with a hole, every ring of three
+      or more points is closed (a hole needs a closed polygon round it).
+    */
+    const SHAPE_BREAK_RE = /^\s*(---+|hole)\s*$/i;
+    function splitShapeParts(text) {
+      const lines = String(text || '').split('\n');
+      if (!lines.some(l => SHAPE_BREAK_RE.test(l))) return null;
+      const parts = [{ role: 'outer', lines: [] }];
+      lines.forEach(l => {
+        const m = SHAPE_BREAK_RE.exec(l);
+        if (m) parts.push({ role: /hole/i.test(m[1]) ? 'hole' : 'outer', lines: [] });
+        else if (l.trim()) parts[parts.length - 1].lines.push(l);
+      });
+      const out = parts.filter(p => p.lines.length).map(p => ({ role: p.role, coords: parseCoords(p.lines.join('\n')) }));
+      if (out.length && out[0].role === 'hole') out[0].role = 'outer';      // nothing to be a hole in
+      const anyHole = out.some(p => p.role === 'hole');
+      out.forEach(p => {
+        const c = p.coords;
+        if (anyHole && c.length >= 3 && !isClosedPolygon(c)) c.push(c[0].slice());
+      });
+      return out;
+    }
+
     function processInput() {
       _suppressURLUpdate = false; // User is actively creating/modifying a shape
       const text = document.getElementById('inputCoords').value.trim();
+      
+      // WP2.1: parts and holes drawn in the app
+      const _parts = (!text.includes('~') && document.querySelector('input[name="shapeMode"]:checked').value === 'pathpoly')
+        ? splitShapeParts(text) : null;
+      if (_parts) {
+        const groups = _parts.map(p => p.coords).filter(c => c.length);
+        groups._roles = _parts.filter(p => p.coords.length).map(p => p.role);
+        if (groups.length === 1) { createPathPoly(groups[0], null); return; }
+        if (groups.length) {
+          const allPts = groups.flat();
+          const c = calculateGeographicCentroid(allPts);
+          currentCardCoord = { lat: c[0], lon: c[1] };
+          updateCoordDisplay();
+          renderCards();
+          createMultiPathPoly(groups, null, { keepPins: true });
+        }
+        return;
+      }
       
       // Check for redraw string format
       if (text.includes('~')) {
@@ -12359,6 +12555,8 @@ function encodeRaw(sol) {
               frameQuerySuffix() + annotationQuerySuffix() +
               (window.DISPLAY_MODE && p.result !== 'r' && p.result !== 'c' ? '' : basemapQuerySuffix());
           }
+          // WP3.3: the same "#?" rule as every other share link.
+          if (shareURL && (wantFragmentLinks() || shareURL.length > FRAGMENT_AUTO_CHARS)) shareURL = toFragmentForm(shareURL);
           
           if (p.result === 'r') {
             // Navigate to the encoded URL — full decode experience
@@ -13288,8 +13486,9 @@ function encodeRaw(sol) {
           }
         }
       } catch (e) {}
-      if (window.location.search.length > 1 && !/[?&]enc=/.test(window.location.search)) {
-        props.geosonify_link = window.location.origin + window.location.pathname + window.location.search;
+      const _lq = geosonifyAppQuery();
+      if (_lq.length > 1 && !/[?&]enc=/.test(_lq) && !window.__gsDecrypted) {
+        props.geosonify_link = window.location.origin + window.location.pathname + (window.__gsFragment ? '#' : '') + _lq;
       }
       return props;
     }
@@ -13705,5 +13904,27 @@ function encodeRaw(sol) {
   
   <!-- Main bootstrap (must be last) -->
   <script src="js/main.js?v=20260622"></script>
+<script>
+  /*
+    WP2.7 (28 Nov 2026): offline. sw.js keeps the app's own code on this device
+    after one visit with a connection, so a link opens and decodes with no
+    coverage. It never stores the query (the place a link names), and leaves
+    map tiles, imagery and lookups to the network. See sw.js (and its KILL
+    switch). Only over https, or on this computer for testing.
+  */
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var h = location.hostname;
+    if (location.protocol !== 'https:' && h !== 'localhost' && h !== '127.0.0.1') return;
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js', { scope: './', updateViaCache: 'none' }).catch(function () {});
+      if (navigator.onLine === false && typeof showToast === 'function') {
+        setTimeout(function () {
+          showToast('Offline: codes, cards and sounds work; maps and imagery need a connection', 'info');
+        }, 1200);
+      }
+    });
+  })();
+</script>
 </body>
 </html>
