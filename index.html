@@ -886,10 +886,13 @@ window.GeosonifyGeoHack = (function () {
             </div>
           </div>
           <!-- WP3.3: the link's query after "#?" instead of "?", so servers never see it -->
-          <div class="list-row" style="padding:0; margin-top:4px;" title="The place goes after # in the link, which browsers never send to a server: not to geosonify.org's host, nor any network on the way. Anyone you send the link to still sees the place; for a secret place use encryption.">
-            <label>🙈 Keep the place out of server logs</label>
+          <div class="list-row" style="padding:0; margin-top:4px;" title="The place goes after # in the link, which browsers never send to a server: not to geosonify.org's host, nor any network on the way.">
+            <label>🙈 Don't send the place to servers</label>
             <div class="toggle"><input type="checkbox" id="fragmentLinks" /><span class="toggle-slider"></span></div>
           </div>
+          <!-- What it does not do, said where the choice is made: people may read
+               "private" as "not in my history" too. -->
+          <p id="fragmentLinksNote" style="margin:2px 2px 6px; font-size:12px; line-height:1.4; color:var(--ios-secondary-label, #8a8a8e);">Still kept in your browser history and wherever you send the link, and anyone with the link sees the place. For a secret place, use a passphrase or encryption.</p>
           <div class="list-row" style="padding:0; margin-top:4px;">
             <label>🔒 Hard encrypt URL</label>
             <div class="toggle"><input type="checkbox" id="encryptURL" /><span class="toggle-slider"></span></div>
@@ -1388,7 +1391,7 @@ window.GeosonifyGeoHack = (function () {
 <script src="js/lib/geosonify-bip39-entry.js?v=20261115a"></script>
 <script src="js/lib/geosonify-hpwords-entry.js?v=20261115a"></script>
 <!-- The FAQ and Examples text (70 KB) loads when its tab first opens (WP1.3). -->
-<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261128d';</script>
+<script>window.GEOSONIFY_FAQ_SRC = 'js/lib/faq-data.js?v=20261128f';</script>
 <script src="js/ui/faq-ui.js?v=20261128b"></script>
 <script src="js/ui/tour.js?v=20261128a"></script>
   <script>
@@ -3742,7 +3745,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
         updateCompactOutputs();
       });
       
-      // WP3.3: "Keep the place out of server logs". Remembered on this device.
+      // WP3.3: "Don't send the place to servers". Remembered on this device.
       // Turning it on also moves this page's own address to the "#?" form (its
       // query was sent when the page loaded, but a reload or a copied address
       // won't send it again); turning it off moves it back.
@@ -6015,10 +6018,26 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
           if (typeof GeosonifySkyView === 'undefined' || !GeosonifySkyView.isAvailable()) return;
           const o = { dec: dec, ra: ((ra % 360) + 360) % 360 };
           if (order) o.order = order;
+          /*
+            A sky link opened on a phone starts with a tall sky view (about 78%
+            of the screen), so the picture is not squeezed between the sky's
+            own bars and the panel below. For this visit only: the height is
+            not remembered, and the drag bar still brings the panel back.
+            (Display links have no panel and are left alone.)
+          */
+          try {
+            const mc = document.getElementById('mapContainerMobile');
+            if (mc && !window.DISPLAY_MODE && mc.offsetParent !== null && window.innerWidth < 800) {
+              const want = Math.round(window.innerHeight * 0.78);
+              if (mc.offsetHeight < want) { mc.style.height = want + 'px'; window.dispatchEvent(new Event('resize')); }
+            }
+          } catch (e) {}
           GeosonifySkyView.open(o);
           /*
-            A link that names a CELL (a MOC) opens framed on that cell, so it
-            fills about a fifth of the view. Without this an order-26 cell,
+            A link that names a CELL (a MOC) opens framed on that cell: the
+            field is about 5 to 6 cells across (pad 4 on the cell's diagonal),
+            the zoom people chose by hand on a phone (28 Nov 2026; until then
+            pad 5, about 7 to 8 cells, in a view squeezed by the panel). Without this an order-26 cell,
             3 milliarcseconds across, opened in the default 1.5-degree field,
             two million times wider, and took a dozen zooms to find.
           */
@@ -6028,7 +6047,7 @@ var randominitiallocation = randominitiallocations[Math.floor((randominitialloca
             try {
               const ip = HealpixGrids.nestIndex(dec, o.ra, order);
               const ring = GeosonifySky.cellBoundary(order, ip, { step: 2, close: false, frame: 'sky' });
-              if (ring && ring.length > 2) framed = GeosonifySkyView.frameOn(ring, { pad: 5 });
+              if (ring && ring.length > 2) framed = GeosonifySkyView.frameOn(ring, { pad: 4 });
             } catch (e) { console.warn('[geosonify] could not frame the linked cell:', e); }
           }
           if (!framed) GeosonifySkyView.redraw();
